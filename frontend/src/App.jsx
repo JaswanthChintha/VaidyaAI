@@ -3,6 +3,7 @@ import { useAuth } from './lib/auth';
 import SignIn from './pages/SignIn';
 import Profile from './pages/Profile';
 import Reports from './pages/Reports';
+import Dashboard from './pages/Dashboard';
 
 /**
  * `checking` is a real state and is rendered as one.
@@ -73,6 +74,14 @@ export default function App() {
           element={
             <RequireAuth>
               <Reports />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/reports/:id"
+          element={
+            <RequireAuth>
+              <Dashboard />
             </RequireAuth>
           }
         />

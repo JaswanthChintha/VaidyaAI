@@ -103,3 +103,22 @@ button.link {
   padding: 16px 24px; background: var(--card); border-top: 1px solid var(--line);
   color: var(--muted); font-size: 14px; text-align: center;
 }
+
+.button-link {
+  display: inline-block; padding: 9px 16px; border-radius: 7px;
+  background: var(--accent); color: #fff; text-decoration: none; font-size: 15px;
+}
+.report__actions { display: flex; gap: 10px; align-items: center; }
+.crumbs { color: var(--muted); font-size: 14px; }
+.overall__status { font-size: 20px; }
+.caveat { color: var(--medium); }
+.condition-list { list-style: none; padding: 0; }
+.condition__head { display: flex; justify-content: space-between; align-items: baseline; }
+.lab-table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
+.lab-table th, .lab-table td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+.lab--rejected { background: #fdf6f6; }
+.lab__printed { font-weight: 400; color: var(--muted); font-size: 13px; }
+.lab__range { color: var(--muted); }
+.flag--high, .flag--critical { color: var(--high); font-weight: 700; }
+.flag--low { color: var(--medium); font-weight: 700; }
+.guidance, .warnings { padding-left: 20px; }

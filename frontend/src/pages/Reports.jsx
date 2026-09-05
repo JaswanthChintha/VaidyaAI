@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { Absent } from '../components/Absent';
 
@@ -139,6 +140,11 @@ export default function Reports() {
               <p className="report__note">{report.statusMessage}</p>
             ) : null}
             <div className="report__actions">
+              {report.status === 'processed' || report.status === 'partial' ? (
+                <Link className="button-link" to={`/reports/${report.id}`}>
+                  View dashboard
+                </Link>
+              ) : null}
               {report.status === 'uploaded' || report.status === 'failed' ? (
                 <button
                   type="button"
