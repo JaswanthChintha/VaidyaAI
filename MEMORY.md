@@ -18,7 +18,8 @@ them.
 |---|---|
 | `backend/` (Node/Express) | **618** passing + 3 opt-in live |
 | `ai-service/` (Python/FastAPI) | **3,667** passing + 7 skipped |
-| **Total** | **4,285** |
+| `frontend/` (React/Vitest) | **44** passing |
+| **Total** | **4,329** (incl. 44 frontend) |
 
 Modules 27–32 now HAVE tests — **+911 written 2026-09-04/05** (see §6o). They found a real
 patient-safety defect on their first run.
@@ -40,9 +41,9 @@ them. Treat every claim about them as unverified.
 - **Modules 27–32 have NO TESTS and NO AUDIT.** They are new code on a project whose
   audits have repeatedly found live holes behind a fully green suite — and here there is
   no suite at all. This is the top priority.
-- **No frontend at all.** Spec §15 wants React; the whole thing is API-only today.
-  Module 27 is specced as "the frontend dashboard" and was built as the backend read-model
-  a dashboard would render — the React layer is still missing.
+- ~~No frontend at all.~~ **BUILT 2026-09-05 — see §6q.** `frontend/` is a React client
+  covering every module: auth, profile, reports, the Module 27 dashboard, the timeline
+  (28/29/30), the clinician summary (32) and population context (31). 44 tests.
 - **Modules 21–26 have not been independently audited.** Modules 1–20 have.
 
 **AUDITED AND FIXED 2026-09-04 — see §6n.** An end-to-end pass over Modules 1–32 (both
@@ -2096,6 +2097,97 @@ most repeatedly-vindicated line in this file.
 
 ---
 
+## 6q. The React frontend · 2026-09-05 · spec §15, built in four slices
+
+`frontend/` — Vite + React + react-router, plain CSS, no state library. **44 tests.** Built
+in four commits so each slice was independently verifiable, after two sessions of agents
+being killed mid-edit by rate limits made large single generations a bad bet.
+
+Every module now has a user-facing surface: auth and profile (1, 2), reports with upload and
+analyse (3), the dashboard (27), the timeline (28/29/30), the clinician summary (32) and
+population context (31).
+
+### The one thing to read first: `src/lib/absence.js`
+
+Every layer beneath the UI was made careful about absence at real cost — `INSUFFICIENT_DATA`
+carries no risk, a gap structurally has no `value` field, fewer than two readings is never
+`stable`, a model that declined to predict says so. **All of it can be undone by one line of
+JSX.** `{risk ?? 'Low'}` renders a missing risk as reassurance; `{value || 0}` renders a
+rejected reading as zero. And a dashboard has to show *something* in every box, which is
+exactly the pressure that turns an absence into a value.
+
+So `absence.js` and `components/Absent.jsx` are the only sanctioned way to render a
+possibly-absent clinical value, and **not one of them accepts a fallback VALUE — only a
+fallback EXPLANATION.** `Risk` has no way to express "missing means Low". `Section` cannot
+render an absent section without a reason. There is deliberately no `defaultValue` prop
+anywhere, because the whole class of bug is someone reaching for one under deadline.
+
+The rule they encode: **branch on the API's explicit flag** — `available`, `present`,
+`any_assessed`, `generated_explanation_available` — **never on the truthiness of the value.**
+A real `0`, a real `false` and a real empty string are all falsy and all meaningful.
+
+### Architecture decisions
+
+- **The browser never contacts `ai-service`.** Every call goes through the Node backend,
+  where authentication, owner scoping and 404-before-403 live.
+- **The dev server proxies `/api` rather than relaxing CORS.** Both services default
+  `CORS_ALLOW_ORIGINS` to empty deliberately; proxying keeps that default untouched and keeps
+  the browser same-origin, so no relaxation is needed locally and none is tempting to add.
+- **Tokens:** access token in memory, refresh token in `localStorage`. A stated trade-off,
+  not an oversight — in-memory-only logs a patient out on every reload, which pushes people
+  toward staying signed in on shared devices. The mitigation that matters is the backend's
+  rotation-on-every-use. **The correct end state is an httpOnly cookie, which needs a backend
+  change. Recorded as a known limitation.**
+- One shared refresh promise: concurrent 401s share a single rotation, or a dashboard firing
+  five requests on load would burn five refresh tokens against a rotating store.
+- `checking` is a real auth state, rendered as one. Guessing signed-out bounces a signed-in
+  patient on every reload; guessing signed-in flashes a dashboard about to 401.
+
+### Two defects found by checking the contract against a RUNNING backend
+
+A live check (real mongod + backend, 24 assertions) found what the build could not:
+
+1. **The sign-up hint stated only a length rule.** The real policy also demands upper, lower,
+   digit and symbol — a patient would have hit a 422 they were never warned about. Found
+   because the check's own test password was rejected.
+2. **The profile form sent `null` for an unanswered tri-state**, which the validator rejects
+   outright. So choosing "Not sure" — the honest answer, and the one the tri-state design
+   exists to protect — produced an unactionable 422. **Absence is sent by OMITTING the key**,
+   and the form now saves with `PUT`, whose replace semantics are what let a patient move an
+   answer back to unknown. A comment asserting the opposite was corrected.
+
+### Tests, and the mutations that prove they can fail
+
+Per project convention every important assertion was verified to FAIL against a plausible
+wrong implementation, then restored:
+
+| reverted to | tests that caught it |
+|---|---|
+| printing `status` instead of `statusLabel` | 1 (the `Healthy (partial assessment)` flattening) |
+| defaulting a missing trend to `"stable"` | 2 (incl. `CLINICAL_DIRECTION_UNKNOWN`) |
+| dropping the model-limits block | 2 (a bare probability, and the incomplete-record code) |
+
+What the suite holds: a real `0` and a real `false` still print; a rejected reading never
+renders as `0` nor as the rejected number; a missing risk never renders as `Low`, and a risk
+arriving beside `anyAssessed: false` is refused anyway; `INSUFFICIENT_DATA` never renders as
+`stable`; an unavailable population entry carries no percentile at all; every model
+probability is rendered with its detection rate and precision; `metrics_absent_code` is
+surfaced so a partial record cannot read as complete; a withheld section always states its
+reason.
+
+**One test bug caught in myself:** an assertion on `/50/` matched both the included count and
+the cap — it would have passed for the wrong reason. Re-asserted on the sentence.
+
+### Not done
+
+- **No browser has driven a full upload → analyse → dashboard flow.** The contract is
+  verified against a running backend and every component is unit-tested, but the two have not
+  met in a real browser against a real analysis.
+- **No accessibility review.** This is a medical tool; that gap is worth closing.
+- No loading skeletons, no pagination on the report list, no report deletion in the UI.
+
+---
+
 ## 7. Module 1 → later modules: inherited obligations
 
 **RESOLVED by Module 2:** `ownership.js` is now wired up and enforced, `ownerScopedFilter` throws
@@ -2173,8 +2265,10 @@ In the order that gives the most value:
    against the five new routers.
 2. **Decide the Module 5 reference-range unit bug** (§0 item 4). It is a real defect, it
    predates this wave, and two modules now carry a workaround for it.
-3. **A frontend.** Spec section 15 asks for React and there is none. Everything is API-only,
-   and Module 27 was built as the read-model a React dashboard would consume.
+3. ~~A frontend.~~ **DONE 2026-09-05 (§6q).** Still worth doing on top of it: a real
+   end-to-end pass through the browser against a live analysis (the contract was verified
+   against a running backend, but no browser has driven a full upload-to-dashboard flow),
+   and an accessibility review — this is a medical tool and none has been done.
 4. **Audit Modules 21-26 as a group.** Module 24 was audited alone; 21, 22, 23, 25 and 26
    have never been independently checked.
 5. **Reconcile the three safety scanners** into one rule table (see 6k, D5).
