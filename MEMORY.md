@@ -2254,30 +2254,26 @@ In the order that gives the most value:
    the next time quota allows — the proof used a synthetic 3s block, not a real 190s one.
 1. ~~Write tests for Modules 27-32.~~ **DONE 2026-09-04/05 — +911 tests (§6o).** They
    found a real patient-safety defect (D8) on their first run.
-2. **AUDIT MODULES 27-32.** They now have tests, but the tests and the code were written in
-   the same week by agents working from the same brief — an independent auditor deriving
-   its own checklist from the spec is still the step that has caught the most here. They are built (§6m) and have *no* tests and *no*
-   audit — roughly 8,000 lines of new code on a project where independent audits have
-   repeatedly found live holes behind a fully green suite. Start with the two things most
-   likely to be wrong: Module 29's abnormality/transition logic (it is the one that can
-   invent an alarming "newly abnormal" finding) and every new router's ownership and auth
-   path. Run `tests/test_auth.py` first — its recursive route walk has never been run
-   against the five new routers.
-2. **Decide the Module 5 reference-range unit bug** (§0 item 4). It is a real defect, it
-   predates this wave, and two modules now carry a workaround for it.
-3. ~~A frontend.~~ **DONE 2026-09-05 (§6q).** Still worth doing on top of it: a real
+2. ~~Audit Modules 27-32.~~ **DONE 2026-09-05 (§6p).** Three independent auditors found
+   **17 defects** in code that had 911 tests and a fully green suite. All 17 are fixed.
+   The finding worth carrying forward is one auditor's summary of the test suite's shape:
+   *"the branch that refuses is tested, the branch that answers on thin evidence is not."*
+3. ~~Decide the Module 5 reference-range unit bug.~~ **FIXED at source 2026-09-04
+   (§6n D1).** The interval is now converted with the value; Modules 29/32 short-circuit
+   on `provenance.reference_converted` so nothing double-converts.
+4. ~~A frontend.~~ **DONE 2026-09-05 (§6q).** Still worth doing on top of it: a real
    end-to-end pass through the browser against a live analysis (the contract was verified
    against a running backend, but no browser has driven a full upload-to-dashboard flow),
    and an accessibility review — this is a medical tool and none has been done.
-4. **Audit Modules 21-26 as a group.** Module 24 was audited alone; 21, 22, 23, 25 and 26
+5. **Audit Modules 21-26 as a group.** Module 24 was audited alone; 21, 22, 23, 25 and 26
    have never been independently checked.
-5. **Reconcile the three safety scanners** into one rule table (see 6k, D5).
-6. **Two measured data gaps**, both already quantified:
+6. **Reconcile the three safety scanners** into one rule table (see 6k, D5).
+7. **Two measured data gaps**, both already quantified:
    - adding systolic BP to Module 2 is worth ~0.10 ROC-AUC to Module 11;
    - adding `blood_urea` and `albumin` to `feature_catalog.py` is the biggest available
      win for Module 12, which can currently use only 5 of the CKD dataset's 24 attributes.
-7. **Add a liver-enzyme KB document** so Module 25 stops refusing SGPT, which the spec names.
-8. **A background job queue for `analyze`.** It still blocks on a slow LLM round trip.
+8. **Add a liver-enzyme KB document** so Module 25 stops refusing SGPT, which the spec names.
+9. **A background job queue for `analyze`.** It still blocks on a slow LLM round trip.
    Extraction worst case is bounded but large; the explanation stage is now parallel but
    still synchronous.
 
