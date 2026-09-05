@@ -133,3 +133,13 @@ button.link {
 .history { color: var(--muted); font-size: 14px; }
 .progress__score { font-size: 34px; margin: 6px 0; }
 .timeline h1 { margin-bottom: 4px; }
+
+.assessment-list, .population__list { list-style: none; padding: 0; }
+.bases { margin-top: 10px; }
+.basis { border-left: 3px solid var(--line); padding-left: 12px; margin-bottom: 12px; }
+.basis__head { margin: 0 0 4px; }
+.limits__figures, .limits__caveats { padding-left: 18px; margin: 6px 0; font-size: 14px; color: var(--muted); }
+.limits__caveats li { margin-bottom: 4px; }
+.population__band { font-size: 18px; margin: 4px 0; }
+.dashboard__links { margin: 8px 0 16px; }
+.doctor-summary h1, .population h1 { margin-bottom: 4px; }

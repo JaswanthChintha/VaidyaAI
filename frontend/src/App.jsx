@@ -5,6 +5,8 @@ import Profile from './pages/Profile';
 import Reports from './pages/Reports';
 import Dashboard from './pages/Dashboard';
 import Timeline from './pages/Timeline';
+import DoctorSummary from './pages/DoctorSummary';
+import Population from './pages/Population';
 
 /**
  * `checking` is a real state and is rendered as one.
@@ -84,6 +86,22 @@ export default function App() {
           element={
             <RequireAuth>
               <Dashboard />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/reports/:id/doctor-summary"
+          element={
+            <RequireAuth>
+              <DoctorSummary />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/reports/:id/population"
+          element={
+            <RequireAuth>
+              <Population />
             </RequireAuth>
           }
         />

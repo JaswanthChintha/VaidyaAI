@@ -261,6 +261,12 @@ export default function Dashboard() {
         {report?.originalName || 'This report'}
       </p>
 
+      <p className="dashboard__links">
+        <Link to={`/reports/${id}/doctor-summary`}>Summary for a clinician</Link>
+        {' · '}
+        <Link to={`/reports/${id}/population`}>How your results compare</Link>
+      </p>
+
       <OverallCard overall={dashboard.overall} />
 
       <h2>Conditions</h2>
