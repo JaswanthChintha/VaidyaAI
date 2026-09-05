@@ -4,6 +4,7 @@ import SignIn from './pages/SignIn';
 import Profile from './pages/Profile';
 import Reports from './pages/Reports';
 import Dashboard from './pages/Dashboard';
+import Timeline from './pages/Timeline';
 
 /**
  * `checking` is a real state and is rendered as one.
@@ -29,6 +30,7 @@ function Nav() {
     <nav className="nav">
       <span className="nav__brand">VaidyaAI</span>
       <Link to="/reports">Reports</Link>
+      <Link to="/timeline">Timeline</Link>
       <Link to="/profile">Your details</Link>
       <span className="nav__spacer" />
       <span className="nav__user">{user?.name || user?.email}</span>
@@ -82,6 +84,14 @@ export default function App() {
           element={
             <RequireAuth>
               <Dashboard />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/timeline"
+          element={
+            <RequireAuth>
+              <Timeline />
             </RequireAuth>
           }
         />

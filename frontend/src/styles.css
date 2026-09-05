@@ -122,3 +122,14 @@ button.link {
 .flag--high, .flag--critical { color: var(--high); font-weight: 700; }
 .flag--low { color: var(--medium); font-weight: 700; }
 .guidance, .warnings { padding-left: 20px; }
+
+.trend--improving { color: var(--low); font-weight: 700; }
+.trend--worsening { color: var(--high); font-weight: 700; }
+.trend--stable { color: var(--muted); font-weight: 700; }
+.category--newly_abnormal { color: var(--high); font-weight: 700; }
+.category--newly_normal, .category--improved { color: var(--low); font-weight: 700; }
+.category--worsened { color: var(--high); font-weight: 700; }
+.category--unchanged { color: var(--muted); }
+.history { color: var(--muted); font-size: 14px; }
+.progress__score { font-size: 34px; margin: 6px 0; }
+.timeline h1 { margin-bottom: 4px; }
