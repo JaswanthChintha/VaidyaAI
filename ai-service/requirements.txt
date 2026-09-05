@@ -1,0 +1,23 @@
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.7.0
+pydantic-settings>=2.3.0
+python-multipart>=0.0.9
+google-genai>=0.3.0
+pymupdf>=1.24.0
+pillow>=10.3.0
+
+# --- Modules 9-10: ML prediction engine ---
+# Runtime needs these to LOAD and run the persisted pipeline; training is a
+# separate, hand-run script (ml/train_diabetes.py) and never happens at import
+# or request time. The artifact is version-sensitive: a scikit-learn major
+# upgrade requires retraining, which is why the version is pinned in the
+# artifact and asserted by tests/test_diabetes_predictor.py.
+scikit-learn>=1.5.0,<2
+joblib>=1.4.0
+pandas>=2.2.0
+numpy>=1.26.0
+
+# --- dev / test ---
+pytest>=8.0.0
+httpx>=0.27.0

@@ -1,0 +1,2203 @@
+# VaidyaAI — Project Memory
+
+> Living context file for the VaidyaAI build. Keep this in the project folder so the
+> project's history, decisions, and state survive independently of any chat session.
+>
+> **Last updated:** 2026-09-04 · **Modules 1–26 built** · Modules 27–32 not started
+
+---
+
+## 0. RESUME HERE (read this first in a new session)
+
+**State:** **ALL 32 SPEC MODULES ARE NOW BUILT.** Modules 1–26 are wired end to end and
+the full spec §16 pipeline has been verified live against real Gemini. Modules **27–32 were
+built on 2026-09-04 and are NOT TESTED AND NOT AUDITED** — see §6m before trusting any of
+them.
+
+| | Tests |
+|---|---|
+| `backend/` (Node/Express) | **618** passing + 3 opt-in live |
+| `ai-service/` (Python/FastAPI) | **3,667** passing + 7 skipped |
+| **Total** | **4,285** |
+
+Modules 27–32 now HAVE tests — **+911 written 2026-09-04/05** (see §6o). They found a real
+patient-safety defect on their first run.
+
+Run them: `cd backend && npm test` · `cd ai-service && .venv/Scripts/python.exe -m pytest`
+(on this machine `pytest -q` may not print its summary to a redirected stream — use
+`--junitxml` and parse it when scripting.)
+
+**BASELINE RE-RUN 2026-09-04 after the 27–32 wave: BOTH SUITES GREEN.**
+`backend/` 476 passed / 0 failures · `ai-service/` 2,876 passed, 6 skipped / 0 failures.
+So the new code caused **no regressions**. But note what that does and does not prove: the
+counts are unchanged because **no tests were written for Modules 27–32**, by explicit user
+instruction ("build modules 27 to 32, don't test, we
+will test later everything"). Those modules are verified only by import checks, their own
+import-time `_self_check()`s, and ad-hoc in-process smoke runs by the agents that wrote
+them. Treat every claim about them as unverified.
+
+**What is NOT done:**
+- **Modules 27–32 have NO TESTS and NO AUDIT.** They are new code on a project whose
+  audits have repeatedly found live holes behind a fully green suite — and here there is
+  no suite at all. This is the top priority.
+- **No frontend at all.** Spec §15 wants React; the whole thing is API-only today.
+  Module 27 is specced as "the frontend dashboard" and was built as the backend read-model
+  a dashboard would render — the React layer is still missing.
+- **Modules 21–26 have not been independently audited.** Modules 1–20 have.
+
+**AUDITED AND FIXED 2026-09-04 — see §6n.** An end-to-end pass over Modules 1–32 (both
+suites re-run, an independent contract audit, and a live run against real Gemini) found
+seven defects. **ALL SEVEN ARE FIXED**, including a CRITICAL one that put a 60x-wrong
+reference range into the patient-facing LLM prompt, a HIGH one where Module 32 was dead on
+100% of calls, and D7, where one upload could make the whole ai-service unavailable for an
+hour. Read §6n before doing anything else.
+
+**Immediate known issues, none blocking:**
+1. A live-test assertion expects an `explanation`-stage warning inside the stored clinical
+   report's `warnings_by_stage`. It cannot be there — the report is generated BEFORE the
+   explanation stage runs. Either the assertion is wrong or late-stage warnings need a
+   home. Decide which; do not just delete the assertion.
+2. **Gemini free-tier quota was exhausted** by repeated live runs on 2026-09-04. Live tests
+   need quota to have reset.
+3. The three safety scanners (`app/safety/policy.py`, `app/data/knowledge_safety.py`,
+   `app/data/recommendation_catalog.py`) are **still not reconciled** into one rule table.
+   Documented, not done.
+4. ~~**A real latent bug in Module 5.**~~ **FIXED 2026-09-04 — see §6n D1.** The
+   interval is now carried into the value's unit inside `feature_engineer._reference_bounds`,
+   and Modules 29/32 short-circuit on `provenance.reference_converted` so nothing converts
+   twice. Original description kept below for context.
+   ORIGINAL: `feature_engineer.py` (~line 317) copies
+   `reference_low` / `reference_high` through **unchanged** while converting the value to
+   canonical units. On a report printed in µmol/L the stored value is mg/dL and the stored
+   reference range is still µmol/L. Any consumer that compares a value to its own range is
+   comparing two unit systems. Module 29 found this and works around it by re-applying the
+   conversion recorded in `provenance.conversion`; Module 32 reuses that workaround. **The
+   underlying field is still mismatched for every other consumer, including Module 27's
+   dashboard, which places value and range side by side.** Decide whether to fix Module 5
+   at source or make the workaround the documented contract.
+5. ~~`tests/test_auth.py` route walk unproven against the five new routers.~~
+   **RESOLVED 2026-09-04:** run, 59 passed. All five new routers carry the service-key
+   dependency.
+6. ~~**Contract mismatch between the services.**~~ **FIXED 2026-09-04:** 400 now joins the
+   422 branch in `mapAxiosError`. Both are deterministic caller-content refusals, so
+   reporting one as a 502 server fault was wrong. Still unreachable live (the backend
+   pre-checks and 422s first), so verified by reading and the suite, not by execution.
+   ORIGINAL: Module 29 raises
+   HTTP 400 `COMPARISON_REPORT_NOT_FOUND` for a named report that is not in the supplied
+   set, but `aiServiceClient.mapAxiosError` maps unclassified 4xx to 502
+   `AI_SERVICE_REJECTED_REQUEST` ("contract mismatch"). The backend pre-checks and returns
+   422 first, so it cannot fire today. Decide whether `mapAxiosError` should learn about
+   400 before something else calls that endpoint.
+
+**Working agreement with the user:** build with agents, one module (or tight group) per
+agent; a SEPARATE agent audits; the auditor reports defects and does not fix them. The
+user decides what gets fixed. **Agents have repeatedly found live holes that a fully green
+suite missed — never take a build agent's self-report at face value.**
+
+---
+
+## 1. What this project is
+
+**VaidyaAI** — an AI-powered health intelligence platform that turns unstructured lab
+reports (PDF/image) into structured, explainable, safety-validated health insights.
+
+Full specification: `Project Description.txt` (1,897 lines, 32 modules).
+
+**Core thesis:** no single AI technique controls the interpretation. Deterministic clinical
+rules, condition-specific ML, retrieved medical knowledge, and an LLM each do a specialised
+job; their outputs are fused with evidence attached and passed through a safety validator.
+
+It is explicitly an **AI-assisted education and decision-support platform, not an autonomous
+diagnostic system.**
+
+**Pipeline:**
+
+```
+Auth -> Profile -> Upload -> OCR -> Extraction -> Feature Engineering -> Validation
+     -> Feature Repository -> (Clinical Rule Engine || ML Predictors)
+     -> Decision Engine -> Fusion Engine -> (RAG || XAI) -> LLM
+     -> Safety Validator -> Final Report -> (Dashboard / Trends / Doctor Summary)
+```
+
+---
+
+## 2. Working method (agreed with the user)
+
+- Build **one module at a time**, with **a dedicated agent per module**.
+- A **separate, independent auditor agent** verifies each module against the spec.
+  The auditor derives its own checklist from `Project Description.txt` before reading code,
+  re-runs the test suite itself, and actively attacks the implementation.
+  It **reports defects; it does not fix them**.
+- Defects are reported to the user, who decides what gets fixed before moving on.
+- **Cadence change (2026-08-28):** after Module 1, build Modules 2–5 (one agent each), then
+  a **single combined test pass over Modules 1–5** that checks both per-module spec
+  conformance *and* end-to-end process syncing between modules — not just isolated passes.
+
+**Why this method:** controlled, verifiable progress instead of a large unreviewed codebase.
+The auditor has repeatedly caught working-looking code with live security holes, so
+build-agent self-reports are never taken at face value.
+
+---
+
+## 3. Technology decisions (locked)
+
+| Area | Decision | Rationale |
+|---|---|---|
+| Backend | Node.js + Express 4 + MongoDB (Mongoose) + JWT | Per spec §15 |
+| Module style | **CommonJS**, not ESM | Avoids jest/ESM friction; consistent everywhere |
+| AI/ML service | **Python + FastAPI**, separate service in `ai-service/` | Per spec §15 |
+| **LLM provider** | **Google Gemini**, model `gemini-3.6-flash` | User's choice — free tier |
+| **OCR (Module 4)** | **Gemini vision**, NOT Tesseract | Better on multi-column lab tables; no native Windows binaries |
+| **File storage (Module 3)** | **Local disk + MongoDB metadata**, behind a storage-adapter interface | Free, self-contained; swappable to Cloudinary/Supabase/Firebase later as a one-file change. NOT GridFS — Atlas free tier is only 512 MB |
+| PDF rendering | `pymupdf` (fitz) | Pure-Python wheels on Windows; avoids Poppler dependency |
+| ML algorithm | Random Forest + sklearn pipelines | Per spec §10 |
+| Frontend | React (not started) | Per spec §15 |
+
+### Resolved
+
+- **`gemini-3.6-flash` model ID is VERIFIED** (2026-08-28). A `GEMINI_API_KEY` was found in the
+  environment and the live model list queried: `models/gemini-3.6-flash` exists among 53 models.
+  No substitution needed. Lives in `GEMINI_MODEL`, defaulting to `gemini-3.6-flash`.
+
+- **ML datasets RESOLVED (2026-08-29).** All three are real, published, and verified —
+  **no synthetic data anywhere**, by explicit user instruction. See
+  `ai-service/datasets/PROVENANCE.md` for per-feature spec-match tables.
+  * Module 10: Kaggle *Diabetes prediction* (100k rows) — 2 mirrors byte-identical.
+  * Module 11: Kaggle *Cardiovascular Disease* (70k rows) — **3 GitHub sources byte-identical**.
+  * Module 12: **UCI CKD, official full 25-attribute version** — UCI ships only a `.rar`;
+    extracted with Windows' bundled `bsdtar` (`C:/Windows/System32/tar.exe`), which reads
+    RAR via libarchive.
+  Two earlier heart candidates (UCI Cleveland, Kaggle Heart Failure) were **removed** —
+  both lack BMI *and* smoking history, which spec Module 11 explicitly names.
+
+### Open items
+
+- **No Kaggle credentials and no Kaggle MCP** (the registry has no Kaggle connector).
+  Datasets were sourced from verified public mirrors instead. Not currently blocking.
+- **Module 11's model is weak (ROC-AUC 0.697) and the cause is a DATA GAP, not modelling.**
+  Adding a systolic blood-pressure field to Module 2 is worth **~0.10 ROC-AUC** — measured,
+  not estimated. Highest-value change available to Module 11.
+- **Module 12 can only use 5 of the CKD dataset's 24 attributes** because
+  `feature_catalog.py` has no entry for them. Adding `blood_urea` and `albumin` is likely the
+  single biggest quality win available to Module 12.
+
+---
+
+## 4. Repository layout
+
+```
+Vaidhyaai/
+  Project Description.txt     # the spec — source of truth
+  MEMORY.md                   # this file
+  backend/                    # Node/Express — Modules 1,2,3 + orchestration
+    src/services/aiServiceClient.js   # the 8-stage HTTP client
+    src/services/analysisService.js   # the pipeline itself
+  ai-service/                 # Python/FastAPI — Modules 4-26 and 28-32
+    app/rag/                  # Module 21
+    app/safety/               # Module 24 (policy.py = rule table)
+    app/population/           # Module 31 (policy.py + tables.py)
+    app/ml/ + ml/artifacts/   # Modules 9-13 (3 committed .joblib models)
+    app/data/                 # reviewable tables: features, rules, KB, catalogue,
+                              #   trend_polarity.py (28), progress_scoring.py (30)
+    datasets/                 # 3 REAL ML datasets + PROVENANCE.md
+    datasets/population/      # Module 31: NHANES raw .xpt + build script +
+                              #   7 tables + PROVENANCE.md
+```
+
+No git repository has been initialised. No commits have been made.
+
+---
+
+## 5. Module status
+
+Legend: **Done** = built, independently audited, defects resolved. **In progress** = agent running.
+
+| # | Module | Where | Status |
+|---|---|---|---|
+| 1 | User Authentication & Authorization | `backend/` | **Done** — audited PASS |
+| 2 | Patient Profile Management | `backend/` | **Done** — audited PASS (no defect found) |
+| 3 | Medical Report Upload & Management | `backend/` | **Done** — audited PASS WITH ISSUES; D1–D4 fixed |
+| — | **Pipeline orchestration** (§16 data flow) | `backend/` | **Done** — full chain 4→5→6→(8‖9/10), live end-to-end verified 2026-08-30 |
+| 4 | OCR & Medical Text Extraction | `ai-service/` | **Done** — live-verified against real Gemini |
+| 5 | Medical Feature Engineering | `ai-service/` | **Done** — audited PASS (strong); all 9 conversion factors independently verified |
+| 6 | Medical Feature Validation Engine | `ai-service/` | **Done** — audited PASS; bounds now clinically checked |
+| 7 | Feature Repository | `ai-service/` | **Done** — audited PASS (strong) |
+| 8 | Clinical Rule Engine | `ai-service/` | **Done** — audited PASS |
+| 14 | Clinical Decision Object | `ai-service/` | **Done** — audited PASS with 2 latent gaps (see §6h) |
+| 9/13 | ML Prediction Engine + Predictor Registry | `ai-service/` | **Done** — audited PASS |
+| 10 | Diabetes Prediction Model | `ai-service/` | **Done** — audited PASS (strong); metrics reproduce bit-for-bit |
+| 11 | Heart Disease Model | `ai-service/` | **Done** — trained on real data; **WEAK model, see §6i** |
+| 12 | Kidney Disease Model | `ai-service/` | **Done** — trained on official UCI CKD; sufficiency skip working |
+| 15 | Decision Engine | `ai-service/` | **Done** — groups by (condition, source) |
+| 16 | Hybrid Decision Fusion Engine | `ai-service/` | **Done** — the hybrid AI layer |
+| 17 | Clinical Report Generation | `ai-service/` | **Done** — the user-visible deliverable |
+| 18 | Overall Health Status & Risk | `ai-service/` | **Done** — incl. the spec's missing 4th case |
+| 19 | Risk Prioritization Engine | `ai-service/` | **Done** — by condition, not decision count |
+| 20 | Evidence & Explainability | `ai-service/` | **Done** — rejected-feature join implemented |
+| 21 | Retrieval-Augmented Generation | `ai-service/` | **Done** — TF-IDF; free text anchored to the catalogue (§6k D7) |
+| 22 | Medical Knowledge Base | `ai-service/` | **Done** — 62 docs / 243 chunks, import-time safety-scanned |
+| 23 | LLM Patient-Friendly Explanation | `ai-service/` | **Done** — gated by Module 24; per-feature calls now PARALLEL |
+| 24 | Medical Safety & Validation Layer | `ai-service/` | **Done** — audited **FAIL**; D1–D8 all fixed (§6k) |
+| 25 | Medical Terminology Explainer | `ai-service/` | **Done** — exact-map only; refusal echo validated alone |
+| 26 | Educational Lifestyle Guidance | `ai-service/` | **Done** — catalogue only, calls no model |
+| — | **Backend orchestration to explanation** | `backend/` | **Done** — 8 stages, live-verified |
+| 27 | Health Dashboard | `backend/` | **Built 2026-09-04** — untested, unaudited |
+| 28 | Health Timeline & Trend Analysis | `ai-service/` | **Built 2026-09-04** — untested, unaudited |
+| 29 | Smart Report Comparison | `ai-service/` | **Built 2026-09-04** — untested, unaudited |
+| 30 | Health Progress Analysis | `ai-service/` | **Built 2026-09-04** — untested, unaudited |
+| 31 | Population Context & Percentiles | `ai-service/` | **Built 2026-09-04** — untested, unaudited |
+| 32 | Doctor-Friendly Clinical Summary | `ai-service/` | **Built 2026-09-04** — untested, unaudited |
+| — | **Longitudinal backend layer** (history + 28/29/30/32 endpoints) | `backend/` | **Built 2026-09-04** — untested, unaudited |
+
+**Test counts:** `backend/` **476 passing + 3 opt-in live** ·
+`ai-service/` **2,876 passing + 6 skipped**. Total **3,352**.
+
+**Modules 21–26 were not audited as a group.** Module 24 WAS audited (verdict **FAIL**) and
+every defect it raised is fixed — see §6k.
+
+**Modules 11-20 AUDITED 2026-08-30.** One CRITICAL defect found and fixed (D1, below).
+Verdicts: 11 PASS · 12 FAIL→fixed · 15 PASS · 16 PASS (strong) · 17 PASS w/ issues →fixed ·
+18 PASS (strong) · 19 PASS (strong) · 20 PASS w/ issues →fixed.
+
+**ORCHESTRATION GAP CLOSED.** `backend/` now runs the full §16 flow — see §6j.
+
+**Integration audit 2026-08-30: PASS for Modules 4–10 as a whole.** No defect found in the
+"silently corrupts data across a boundary" class. See §6h for what was verified and the
+three items carried into the Module 15/16 brief.
+
+---
+
+## 6. Module 1 — Authentication (COMPLETE)
+
+**Location:** `backend/` · **Tests:** 95 passing (3 suites) · **Verdict:** PASS, all raised defects closed.
+
+### Endpoints
+
+`POST /api/v1/auth/{register,login,refresh,logout}` · `GET /api/v1/auth/me` ·
+`GET /api/v1/auth/admin/users` (admin-only; exists to exercise `restrictTo`) ·
+`GET /api/v1/health`
+
+### Design decisions
+
+- **Refresh tokens:** JWT with a separate secret + random `jti`. Only a **SHA-256 digest**
+  is stored, in a `select:false` array on the user doc. Max 5 sessions, oldest evicted.
+  **Rotated on every refresh**; replaying a rotated token returns 401.
+  SHA-256 rather than bcrypt because the token is high-entropy machine material, not a
+  human password.
+- **Logout is session-scoped** — other sessions survive.
+- **DB role beats the JWT claim.** `protect` re-loads the user from Mongo each request, so a
+  forged `role:"admin"` token gets 403.
+- **Role escalation blocked at registration** in two places: the validator rejects any role
+  other than `patient` (422), and the controller hard-codes `ROLES.PATIENT` regardless.
+  Clinician/admin accounts must be provisioned **out-of-band** — no path exists yet, and
+  one will be needed eventually.
+- **Password policy:** bcryptjs cost 12 (4 in tests for speed), `select:false`,
+  **72-byte cap enforced in three places** — register validator, **model layer**, and login
+  validator. The model layer is the one that matters; see the truncation notes below.
+- **Config fails fast:** missing `MONGODB_URI`/`JWT_SECRET`/`JWT_REFRESH_SECRET`, identical
+  secrets, or secrets under 32 chars all refuse to start.
+
+### Security defects found by audit and fixed
+
+All five were **demonstrated live**, not theorised:
+
+1. **HIGH — Rate limiting fully bypassable.** `trust proxy: 1` was set unconditionally with no
+   proxy in front, so a client-supplied `X-Forwarded-For` became the rate-limiter key.
+   8 failed logins with rotating XFF gave `401` ×8, zero 429s.
+   **Fixed:** `TRUST_PROXY` env var, **defaults to false**, fails closed on garbage input.
+2. **HIGH — Login type confusion.** The login `email` chain lacked `.isString()`, so a JSON
+   **array** reached `findOne({email})` and Mongo's scalar-vs-array matching authenticated
+   against any listed address — one request could spray a password across thousands of
+   accounts for the cost of one `bcrypt.compare`.
+   **Fixed:** `.isString().bail()` on **every** validator chain.
+3. **MEDIUM — bcrypt 72-byte truncation.** Passwords over 72 bytes were silently truncated;
+   a 103-char password authenticated with its first 72 chars plus arbitrary garbage.
+   **Fixed** at validator, model, and login-candidate level (see below).
+4. **MEDIUM — Password change did not revoke refresh sessions.** `protect` checked
+   `passwordChangedAt`; `refresh` did not. An attacker kept a live session for up to 7 days
+   after the victim's password reset.
+   **Fixed:** `pre('save')` purges stored digests **and** refresh re-checks independently.
+5. **MEDIUM-LOW — Oversized body returned 500 with a stack trace** leaking absolute
+   filesystem paths to unauthenticated callers.
+   **Fixed:** mapped to 413, plus 400/415/403 for other body-parser errors.
+
+### Notable findings worth remembering
+
+- **bcrypt truncates the candidate too.** While fixing #3 the agent found a second gap: for an
+  account whose password was exactly 72 bytes, `<password> + JUNK` compared **equal** and
+  returned 200. Hence the login-side cap.
+- **Two tests were passing for the wrong reason** and were rewritten — one asserted a login
+  failure that actually occurred because the account had never been created.
+- The auditor verifies regression tests genuinely **fail against the old code** by reverting
+  fixes in a scratch mirror. This has proven worth doing.
+
+### Known limitations (accepted debt, documented in `backend/README.md`)
+
+- 1-second `passwordChangedAt` grace window (a token minted in the same second survives).
+- `normalizeEmail` strips subaddresses — `Foo.Bar+tag@GMail.com` stores as `foo.bar@gmail.com`.
+- `jwt.verify` does not pin `algorithms` (not exploitable on jsonwebtoken 9.x, but relies on a library default).
+- Mongoose `CastError` can echo submitted values (now largely unreachable via routes).
+- `/health` is unauthenticated and unthrottled; discloses uptime and DB state.
+- `GET /auth/admin/users` returns names + emails with only `.limit(100)` — a PII listing to revisit against §19.
+
+### Operational caveat
+
+**`TRUST_PROXY` is now a deploy-time security decision.** The default (false) is safe for
+direct exposure, but **setting it to `1` without a real proxy fully reopens defect 1** — this
+was measured. When deploying behind a load balancer it must be set to the real hop count;
+leaving it false there means one abusive client throttles everyone.
+
+---
+
+## 6a. Module 2 — Patient Profile (BUILT)
+
+**Endpoints:** `GET|POST|PUT|PATCH|DELETE /api/v1/profile/me` — no id in any URL, so there is
+nothing to tamper with; the owner always comes from the verified JWT.
+
+**Key decisions:**
+
+- **Units are explicit and enforced:** `heightCm`, `weightKg`, `age` (whole years), `bmi` (kg/m²).
+  Numeric fields accept JSON numbers only — `"70kg"` and `"170"` are 422, so a unit cannot be
+  smuggled through as a string.
+- **BMI is derived twice over** — excluded from the writable allow-list AND recomputed by a
+  model `pre('validate')` hook. A client-supplied BMI is always ignored.
+- **`gender`:** `male | female | other | prefer_not_to_say`. The user's real answer is stored and
+  never coerced into a binary category; `Profile.ML_GENDER_VALUES` exports the subset a binary
+  model can consume.
+- **`smokingHistory`:** `never | former | current | ever | not_current | no_info` — exactly the
+  diabetes-dataset categories, directly encodable with no translation layer.
+- **`hypertension` / `heartDisease`: TRI-STATE** — `true`, `false`, or **absent meaning unknown**.
+  Absent must never be collapsed to `false`; that fabricates a negative finding. Module 12's
+  kidney predictor depends on this distinction to decide when to skip.
+- **Semantics:** `GET` 404s when no profile exists (not an empty 200). `POST` strict-creates,
+  409 on duplicate. `PUT` upserts with **replace** semantics (omitted fields cleared). `PATCH`
+  partial, never creates. Free text is arrays only, 30 × 200 chars.
+- **`completeness`** — `{ fields, filled, percent, missing[] }` over the 7 ML-relevant fields,
+  so Module 12 can decide to skip without probing.
+
+**Ownership is now ENFORCED, not merely available.** `ownership.js` was previously imported by
+nothing; it now backs every profile operation, with queries owner-scoped AND loaded documents
+re-checked (deliberately redundant, so a future widened filter still denies).
+
+**`allowRoles` now DENIES BY DEFAULT** (`[]`, was `[ROLES.ADMIN]`). Admins do **not** bypass
+ownership on medical data. The two Module 1 tests that pinned the old permissive behaviour were
+**inverted, not deleted**, and two new tests prove an explicit `allowRoles: [ROLES.ADMIN]` grant
+still works — the capability survives, only the default changed.
+`ownerScopedFilter` now **throws** when there is no identity instead of returning `{user: null}`
+(which matched null-owner documents). Call it only after `protect`.
+
+**Reasoning for the default flip, worth remembering:** an opt-out security default fails open.
+This is the same failure shape as the validator-only password cap and the missing `.isString()`
+on one of five chains — in every case the fix that held was at the lowest layer, on by default.
+
+---
+
+## 6b. Module 3 — Report Upload (BUILT)
+
+**Endpoints:** `POST /api/v1/reports` (multipart) · `GET /` (chronological, paginated) ·
+`GET /:id` · `GET /:id/download` · `DELETE /:id` — all authenticated and owner-scoped.
+
+**Storage adapter interface:** `name`, `save({userId, buffer, extension}) → {key, size}`,
+`createReadStream(key)`, `stat(key)`, `remove(key)` (idempotent), `removeUserScope(userId)`.
+The `key` is **opaque** — the DB stores it plus the driver that produced it, and only the adapter
+may resolve it. **Never build a path from a key.**
+Swapping to cloud = add one file, register it in the `DRIVERS` map, set `STORAGE_DRIVER`.
+Because the driver is recorded **per row**, old rows keep resolving through the old adapter, so
+migration can be gradual.
+Local layout: `<UPLOAD_ROOT>/<userId>/<64 hex>.<detected ext>`, written to `.part` then renamed,
+`wx` flag, mode 0600, outside any static-served directory.
+
+**Orphan handling:** rejections never touch the filesystem (multer buffers in memory, so the
+adapter is the only thing that ever writes report bytes). File-write failure removes its own
+`.part`. DB-insert failure removes the just-written file without masking the original error.
+Delete removes the **row first, then the file** — an interruption leaves an invisible orphan
+file rather than a user-visible broken download. A missing file is not an error.
+
+**Attacks verified:** HTML/PHP/SVG/PE/ZIP/text payloads named `.pdf`/`.jpg` with matching
+declared `Content-Type` → **415** (magic bytes decide, not extension or client MIME; a PDF
+signature at non-zero offset also 415). Path-traversal filenames collapse to their last
+component. A `storageKey` tampered **through the raw driver** to `../secret.txt` → 404, no
+disclosure. Oversized → **413** with no stack. User B, **admin**, and **clinician** each get
+404 on A's report for all four operations, byte-identical to a random-id 404. Download sets
+`attachment` + `nosniff` + `no-store`, and a header-injection filename still parses as exactly
+one quoted filename.
+
+**Known gaps (documented):** upload throttling keys on `req.ip`, not user id, so it inherits the
+`TRUST_PROXY` caveat. Files are buffered in memory (bounded by `UPLOAD_MAX_BYTES`) — a much
+larger cap would need a streaming redesign. No encryption at rest, no download audit log, no
+per-user quota, no duplicate rejection (checksum is stored and indexed for it), no `.part`
+sweeper.
+
+**Module 4 inherits:** resolve files via `getStorage(driver).createReadStream(key)` — never build
+a path. Verified `mimeType`, `sizeBytes`, `checksumSha256` are available. It owns the
+`status`/`statusMessage` lifecycle (`uploaded → processing → processed|failed`), and
+**`statusMessage` must never hold report text**. `chronoDate` is already correct for Modules
+28–30 and must not be altered by extraction.
+**Magic bytes prove the container type only, not that the file is benign** — Module 4 must not
+assume a file is safe to hand to a native parser.
+
+---
+
+## 6c. Module 4 — OCR & Extraction (BUILT)
+
+**Endpoint:** `POST /api/v1/ocr/extract` (multipart) · `GET /api/v1/health`.
+**194 tests passing offline + 2 opt-in live.** Offline verified three ways, including with
+outbound HTTP patched to raise — proving no hidden network dependency.
+
+**The live integration works.** Real extraction of a synthetic 7-row report returned every row
+correctly at confidence 0.99, with the contract holding: `Urine Ketones` → `value_numeric: null`
+with `value_raw: "Negative"` preserved, and names left unnormalised (`Vitamin D (25-OH)`,
+`Haemoglobin`).
+
+**Decisions worth remembering:**
+
+- **MuPDF silently repairs damaged PDFs.** A mildly truncated scan does not fail — MuPDF recovers
+  and renders what it can. This is kept deliberately (a damaged scan should still be read) but
+  surfaced via `doc.is_repaired` as a warning, since recovered pages may be missing content.
+  Severely truncated files still fail cleanly with 422.
+- **Partial degradation on multi-page documents:** one failed page returns 200 with that page's
+  `raw_text: null` plus a warning naming it. Only if *every* page fails do you get 502. Module 5
+  will therefore sometimes see partial results rather than nothing.
+- **Truncated responses are NOT retried** (`MAX_TOKENS` is deterministic — a retry burns quota
+  for the same outcome); **malformed/empty JSON IS** resampled.
+- **Gemini's schema dialect is a restricted OpenAPI subset** that rejects `$defs`/`$ref`/`anyOf`
+  — exactly what `pydantic.model_json_schema()` emits. The model-facing schema is therefore
+  hand-written in `gemini_response_schema()`, with a test asserting it stays in the safe subset
+  and its keys match `PageExtraction`. **Keep the two in sync if you edit either.**
+- **The live model often sets `flag: "normal"` where the FLAG column was blank**, deriving it
+  from an unambiguous reference range. Contract-compliant, but expect `"normal"` more often than
+  `null`. The service itself never adds a flag the model did not return.
+- Size cap trips **during** the read (1 MB chunks, aborts past the limit), so a huge upload
+  cannot exhaust memory before validation.
+- **PHI log-leak protection is enforced by canary tests** — planted strings must appear in the
+  HTTP response but never in logs, including on the unhandled-exception path where only the
+  exception *type* is logged.
+
+---
+
+## 6d. Module 5 — Feature Engineering (BUILT)
+
+**Endpoints:** `POST /api/v1/features/engineer` · `GET /api/v1/features/catalog`.
+Also exposed as a framework-independent `engineer_features()` so Module 7 and the ML layer can
+call it without HTTP.
+
+**Canonical units and conversion factors** (`canonical = raw × factor + offset`):
+
+| Feature | Canonical | Conversions |
+|---|---|---|
+| `hba1c` | `%` NGSP | `mmol/mol` (IFCC) → `%`: **×0.09148 + 2.152** — **AFFINE, not a ratio** (48 → 6.543 %) |
+| `blood_glucose` | `mg/dl` | `mmol/l` ×18.0156 · `g/l` ×100 · `mg/l` ×0.1 |
+| `hemoglobin` | `g/dl` | `g/l` ×0.1 · `mmol/l` ×1.61145 |
+| `vitamin_d` | `ng/ml` | `nmol/l` ×0.400641 (inv 2.496) · `ug/l` ×1 |
+| `vitamin_b12` | `pg/ml` | `pmol/l` ×1.35537 (inv 0.7378) · `ng/l` ×1 |
+| `creatinine` | `mg/dl` | `umol/l` ×0.011312 (inv 88.4017) · `mmol/l` ×11.312 · `mg/l` ×0.1 |
+| `cholesterol` | `mg/dl` | `mmol/l` ×38.6654 · `g/l` ×100 · `mg/l` ×0.1 |
+| `triglycerides` | `mg/dl` | `mmol/l` ×88.57 · `g/l` ×100 · `mg/l` ×0.1 |
+
+**The HbA1c IFCC→NGSP conversion is affine, not a ratio.** Any code path treating it as a pure
+multiplication is a serious defect. *(These factors have NOT yet been independently audited.)*
+
+**Other decisions:**
+
+- **Unrecognised units are never assumed canonical** — the feature is still emitted (Module 6 must
+  see it) but unconverted, with `canonical_unit: false` and a warning. A **missing** unit is a
+  separate case: canonical assumed, `unit_assumed: true`, warning.
+- **Safety guards beyond the brief:** urine/CSF/stool specimens never map to blood features
+  (`unsupported_specimen`); HDL/LDL/VLDL never fold into `cholesterol` (`distinct_analyte`).
+- **Duplicate resolution** is a total deterministic rank: synonym specificity (fasting glucose 3 >
+  unqualified 2 > random 1 > post-prandial 0) → recognised unit → uncensored → confidence → page →
+  input order. Losers appear in both `duplicates_resolved[]` and `unmapped[]`.
+- **Censored values** (`<0.1`) kept at the detection limit with `provenance.censored`.
+- **Tri-state preserved by ABSENCE from the `features` map**, never by a default. Explicit `false`
+  is present with value `false`; absent/null/unknown yields no feature plus the name in
+  `missing_features`; an unrecognised token yields no feature plus a warning — **never `false`**.
+- Added **`gender`** as a 14th feature (not in the spec's 13) since Module 2 stores it and Module 11
+  consumes it. Also has a **BMI fallback derivation** from height/weight — the builder itself flags
+  this as arguably scope creep, since Module 2 derives BMI authoritatively. *Possible second source
+  of truth; unaudited.*
+- Module 5 applies **no** range or plausibility check — that is entirely Module 6's job.
+
+---
+
+## 6e. Integration state — VERIFIED 2026-08-28
+
+I pushed real data through the seams myself rather than reasoning from docs.
+
+**Seam D (Module 4 → 5) WORKS.** Module 4's exact live output was accepted; all six lab features
+mapped correctly (`hba1c` 6.8 %, `blood_glucose` 112 mg/dl, `hemoglobin` 14.2 g/dl, `creatinine`
+1.0 mg/dl, `cholesterol` 190 mg/dl, `vitamin_d` 35 ng/ml) and non-numeric `Urine Ketones` was
+correctly routed to `unmapped[]` rather than invented into a number.
+
+**Seam B (Module 2 → 5) WORKS.** Module 5 accepts Module 2's actual **camelCase** JSON via pydantic
+aliases (`smokingHistory` → `smoking_history`, `heartDisease` → `heart_disease`), and provenance
+preserves the original field name. **The tri-state survives the language boundary**: with
+`hypertension` absent, it stayed out of `features` and appeared in `missing_features` — it did
+**not** become `false`. This was the highest-risk silent-corruption path and it holds.
+
+**DEFECT — Module 4's warnings are silently dropped by Module 5.** Verified: input
+`warnings: ["page 1 was recovered by the PDF repairer"]` → Module 5 output `warnings: []`.
+MuPDF's silent repair and multi-page partial degradation surface **only** as warnings, and Module 17
+requires validation warnings in the final report. A report from a damaged, partially-unreadable scan
+is currently indistinguishable from one from a clean scan — an unreadable row silently becomes
+"test not present". **Being fixed.**
+
+**DEFECT — `ai-service` has no authentication of any kind.** Anyone who can reach the port can
+submit medical documents and receive extractions. Against §19. **Being fixed** via
+`AI_SERVICE_API_KEY` + `X-Service-Key` header, constant-time compare, fail-closed (an unset key must
+refuse startup, never mean "open"); `/health` stays unauthenticated.
+
+**All seams are now WIRED and live-verified** (see §6f). The pre-wiring state is kept above
+because the defects it uncovered are worth remembering.
+
+---
+
+## 6f. Pipeline orchestration — WIRED AND LIVE-VERIFIED 2026-08-28
+
+The §16 data flow is now real. `backend/` drives `ai-service/` over HTTP.
+
+**Endpoints:** `POST /api/v1/reports/:id/analyze` · `GET /api/v1/reports/:id/analysis` ·
+`GET /api/v1/health/ai`. Owner-scoped identically to every other report route — B/admin/clinician
+get byte-identical 404s to a random id on both.
+
+**Service-to-service contract (BINDING — both sides implement exactly this):**
+
+| | |
+|---|---|
+| Env var (both services) | `AI_SERVICE_API_KEY`, **minimum 32 chars**, enforced at startup on both sides |
+| Header | `X-Service-Key` |
+| Backend base URL | `AI_SERVICE_URL` |
+| Correlation | `X-Request-Id`, charset `[A-Za-z0-9._:-]{1,128}` — anything else silently discarded |
+| Protected | `POST /ocr/extract`, `POST /features/engineer`, `GET /features/catalog` |
+| Open | `GET /api/v1/health`, `GET /` |
+| Rejection | **401** `{success:false, error:{code:"UNAUTHORIZED"}}` |
+| Extraction call | multipart, file part named exactly **`file`** |
+| Feature call body | **`{"extraction": <Module 4's `data`, UNWRAPPED>, "profile": {...}}`** |
+| Profile format | Module 2's **camelCase**, sent untranslated (Module 5 has pydantic aliases) |
+
+Auth is **fail-closed on both sides**: an unset or short key refuses startup. `ai-service` compares
+`hmac.compare_digest` over SHA-256 digests of both sides, so key *length* does not leak either.
+Missing / wrong / empty / whitespace keys are byte-identical 401s — **so a 401 cannot distinguish
+"misconfigured" from "wrong key"**; the backend therefore logs its own config (URL + key length,
+never the key) at startup.
+
+**EXTENDED 2026-08-30 — the chain now runs all the way to decisions.** See §6g.
+
+**Persistence.** On the `Report` document:
+`extraction`, `features`, `analysisWarnings` — all `select:false` so listings do not drag them —
+plus an always-loaded `analysis.{version, runCount, requestId, startedAt, completedAt, durationMs,
+profileUsed, extractionConfidence, pagesUnreadable, warningCount}`.
+**Raw report text is deliberately NOT persisted** (`raw_text` → `raw_text_available`, per page too),
+mirroring the Python side's PHI stance. The full extraction is still forwarded to Module 5.
+
+**Re-run semantics:** overwrite, `analysis.version` bumped. A *failed* run writes only
+status/message/timing, so a prior successful analysis survives — `status` describes the latest
+**attempt**, `analysis.version` the stored **payload**.
+
+**Concurrency:** the transition to `processing` *is* the lock — a single conditional
+`findOneAndUpdate` (test-and-claim atomic). A second caller gets 409; 5 parallel claims → exactly
+1 winner. Stale locks past `AI_SERVICE_LOCK_TTL_MS` can be taken over, and both terminal writes are
+conditioned on still owning the lock so a superseded run cannot clobber the winner.
+
+**`statusMessage` PHI exclusion is structural** — it comes from a table lookup on an error code,
+never a formatted message, so report text cannot reach it by construction.
+
+**`assertProductiveFeatures`:** a 200 where the extraction had parameters but Module 5 accounted for
+**none** of them fails as `AI_SERVICE_EMPTY_RESULT`. This exists because the empty-but-200 silent
+failure (below) would otherwise be reported as success.
+
+**Warnings:** the backend reads `all_warnings` first, folding in `upstream_warnings` / `warnings` /
+the extraction's own as a safety net, never overwriting origins.
+
+### Live end-to-end verification (real Gemini, real PDF)
+
+`analyze → 200`, version 1, confidence 0.99, features
+`[hba1c, age, bmi, heart_disease, smoking_history, gender]` — **`hypertension` correctly ABSENT**,
+proving the tri-state survives the real Node→Python boundary. A wrong service key → clean 502, no
+stack.
+
+### Defects found and fixed during wiring
+
+- **Everything except `extracted_parameters` was dropped at the 4→5 boundary.** `ExtractionInput`
+  had `extra="ignore"` and only two fields, so `warnings`, `source`, `report_metadata` and `pages`
+  were discarded **at parse time**, and `extraction_confidence` never reached the output. The
+  warnings symptom I originally spotted was one visible part of a much broader bug.
+- **Relaying Module 4's envelope unmodified was silently accepted → HTTP 200 with `features: {}`.**
+  A pipeline wired that way looks healthy and produces nothing. Now 422-on-ambiguous rather than
+  guessing.
+- **`GET /health/ai` was an unauthenticated outbound-request amplifier** (one inbound → one
+  outbound, unbounded). Now cached 15 s with in-flight coalescing; 8 inbound → 1 outbound.
+- A `storage.stat()` throw on a tampered key could still reach the stack-printing 500 branch from
+  the analyze path; now the same clean 404 a missing file gives.
+
+### Known limitations (documented, deliberately not fixed)
+
+- **`analyze` blocks until extraction completes.** `ai-service` worst case is
+  `(GEMINI_MAX_RETRIES × GEMINI_TIMEOUT_SECONDS + backoff) × MAX_PAGE_COUNT` = **~61 min with
+  shipped defaults**; the backend's default client timeout is 5 min. A pathological multi-page scan
+  will time out on the backend while the Python side keeps spending Gemini quota.
+  **A background job queue is the real fix** — deliberately out of scope so far.
+  Recommended tightening: `GEMINI_TIMEOUT_SECONDS=45, GEMINI_MAX_RETRIES=2` (~15 min worst case).
+  **The two services must be tuned together.**
+- Retry re-uploads and re-processes the whole file on a transient failure (default 1 retry).
+- One shared secret, no rotation window — changing it requires restarting both services together.
+- No rate limiting on `ai-service`, so a key-holder can drive unlimited Gemini spend. Keep the
+  backend's analyze endpoint rate-limited and the Python service off the public internet.
+- No mTLS or request signing — `X-Service-Key` is a bearer credential and must travel over TLS or a
+  private network.
+
+---
+
+## 6g. Pipeline orchestration COMPLETED to decisions — LIVE-VERIFIED 2026-08-30
+
+`backend/` previously stopped at feature engineering: `aiServiceClient` knew only three
+endpoints, so Modules 6–10 were live but **the backend called none of them**. The §16 flow
+now runs end to end.
+
+**Stage sequence** (`POST /reports/:id/analyze`):
+
+```
+extract (4) -> engineer (5) -> validate (6) -> [ rules (8)  ||  predict (9/10) ]  -> persist
+```
+
+Rules and ML are **parallelised** — same input, neither reads the other, §16 draws them in
+parallel. Each is wrapped so it **settles rather than rejects**, so one failing cannot discard
+the other's result (a bare `Promise.all` would).
+
+**Module 7 (Feature Repository) is deliberately NOT called.** Its backend is in-memory and
+process-local — lost on restart, not shared between workers. MongoDB is the durable copy, so
+`/repository/load` would be a **second source of truth guaranteed to disagree after any
+restart**, with no owner scoping. Modules 8 and 9/10 take Module 6's output directly, so it is
+not on the critical path. Revisit only if it gains a persistent backend.
+
+**Partial-failure semantics — two classes of stage:**
+
+| Stage | Class | On failure |
+|---|---|---|
+| 4 extraction, 5 features | **load-bearing** | nothing persisted, `status=failed`, previous analysis survives |
+| 6 validation | downstream | features still stored; rules+ML **skipped** (`VALIDATION_UNAVAILABLE`), never re-pointed at unvalidated input; `status=partial` |
+| 8 rules | downstream | **ML result still stored**; `status=partial` |
+| 9/10 ML | downstream | **rule decisions still stored**; `status=partial` |
+
+New status **`partial`** added to the enum. `processed` now means *every* stage succeeded —
+a failed stage may never hide behind it. A partial run is a **200** whose body says so twice
+(`report.status` + `analysis.stages`). A stage that did not answer has its payload and counts
+**unset**, never left stale beside a newer run's features. A count is `undefined`, never `0`,
+when a stage did not answer — same class of error as collapsing an absent tri-state to `false`.
+
+**New persisted fields** (all `select:false`): `featureValidation` (M6), `ruleDecisions` (M8),
+`mlDecisions` (M9/10). Always-loaded additions: `analysis.{stages, stagesFailed,
+ruleDecisionCount, mlDecisionCount, decisionCount, highestRisk, conditionsFlagged,
+validFeatureCount, questionableFeatureCount, rejectedFeatureCount}`.
+
+**`analysis.stages` is PHI-safe by the same construction as `statusMessage`** — `errorCode` /
+`reasonCode` come from fixed tables of our own machine codes; anything else degrades to
+`ANALYSIS_STAGE_FAILED`.
+
+**DECISIONS ARE NEVER DE-DUPLICATED.** The unit of a rule decision is one **rule**, not one
+condition — the live run produced **5 rule decisions across 1 flagged condition** (`Diabetes`).
+That is what makes per-rule traceability possible; grouping/fusing is Module 15/16's job.
+`decisionCount` counts decisions; `conditionsFlagged` is a **set of conditions** and is not a count.
+
+**Timeouts are per stage.** Extraction keeps the 5-min default; validation/rules/ML get
+`AI_SERVICE_STAGE_TIMEOUT_MS` (30 s) with per-stage overrides. Measured live: **10 ms / 14 ms /
+1657 ms**. Letting them inherit the extraction timeout would pin three more Node handles for
+five minutes each after the expensive stage had already succeeded.
+
+**Warnings carry through all five stages** (`extraction`/`feature_engineering`/`validation`/
+`rules`/`ml`), de-duplicated by (origin, code, message) so a warning propagated by every stage
+collapses to one entry **with its original origin**. Every stage's own list is read as a
+fallback, so a single propagation regression anywhere cannot erase upstream warnings.
+
+### Live end-to-end verification (real ai-service, real Gemini, 2026-08-30)
+
+`analyze -> 200`, `status: processed`, version 1, confidence 0.99, **all five stages ok**,
+features `[hba1c, age, bmi, heart_disease, smoking_history, gender]`, `validFeatureCount: 6`,
+`rejectedFeatureCount: 0`, **`ruleDecisionCount: 5`, `mlDecisionCount: 1`, `highestRisk: High`,
+`conditionsFlagged: [Diabetes]`**. `hypertension` **correctly ABSENT** from features, from
+`validation.valid` and from `validation.rejected` — the tri-state survives all four extra hops.
+
+**Test counts:** `backend/` **450 passing + 3 opt-in live** (9 suites). All 430 pre-existing
+tests still pass; 20 added.
+
+---
+
+## 6h. Integration audit — Modules 4–10 · 2026-08-30 · VERDICT: PASS
+
+Independent auditor, read-only, `ai-service/` confirmed byte-identical afterwards.
+**No defect found in the "silently corrupts data across a boundary" class.**
+
+### Conversion factors — INDEPENDENTLY VERIFIED (this was the top risk)
+
+Every factor recomputed from IUPAC atomic weights, not taken from the file's stated basis.
+All 9 **MATCH**: glucose ×18.0156 (exact) · creatinine ×0.011312 (exact) ·
+haemoglobin ×1.61145 (exact) · vitamin D ×0.400641 (1.5 ppm) · B12 ×1.35537 (13 ppm) ·
+cholesterol ×38.6654 (26 ppm) · triglycerides ×88.57 (280 ppm, the universal clinical
+convention). Largest residual is 0.04 mg/dL at the 150 mg/dL triglyceride decision point.
+
+**The HbA1c affine transform has exactly ONE arithmetic site** — `UnitConversion.apply()`
+= `value*factor + offset`, called once from `feature_engineer.py:283`. There is **no
+ratio-only path anywhere** to regress into. A ratio would give 4.391 % for 48 mmol/mol;
+the pipeline gives 6.54304 %.
+
+### Also verified end-to-end
+
+- **Warning propagation:** a canary planted in Module 4's `warnings[]` survives
+  4→5→6→7→8 and 4→5→6→9/10 with `{stage, module}` origins intact at every hop.
+- **Tri-state:** absent `hypertension` never reads as `False` anywhere in the chain.
+  `ABSENT` refuses `bool()`, `float()`, `int()`, `len()`, `+`, `<`.
+- **Unit-confusion magnitudes** all still rejected: HbA1c 48 (IFCC), Hb 142 (g/L),
+  creatinine 884 (µmol/L).
+- **Module 6 bounds are now clinically checked** (closing the earlier debt): a
+  maximum-abnormality patient (HbA1c 14.9, glucose 485, creatinine 7.2, Hb 5.9, TG 1500)
+  had **every value accepted** and correctly tagged `clinically_extreme`.
+- **PHI in logs:** 609 bytes logged across all routes plus error paths — **zero PHI**.
+- **Module 10 metrics reproduce bit-for-bit** from the committed artifact; the metrics JSON
+  is sha256-bound to the shipped joblib.
+- **Fusion readiness:** every rule and predictor sources its condition string from
+  `conditions.py` constants. No rule/predictor pair would fail to group.
+
+### Correction to a claim previously recorded here
+
+`validation_rules.py` claimed an unconverted mmol/L **cholesterol** (3–8) falls *inside*
+the plausible band. **It does not** — `possible_low` is 20.0, so it is rejected as
+implausibly low. The argument for unconditional `canonical_unit: false` rejection still
+holds, but the real examples are **vitamin D** (25–250 nmol/L inside 0–400 ng/mL) and
+**blood glucose** (5.5–30 mmol/L inside 5–3000 mg/dL). Comment corrected in the file.
+
+### Three requirements carried into the Module 15/16 brief
+
+1. **Group by `(condition, source)` in Module 15; de-duplicate `sources`, union evidence
+   and recommendations in Module 16.** The rule engine legitimately emits MORE THAN ONE
+   decision per condition from the same source (HbA1c rule *and* glucose rule both fire for
+   `Diabetes`). That is correct — the unit of a rule decision is one **rule**, not one
+   condition, which is what makes per-rule traceability possible. But naive fusion yields
+   `sources = ["Clinical Rule Engine", "Clinical Rule Engine"]`, double-weights the
+   condition in Module 19, and shows two contradictory dashboard cards. **Fix upstream of
+   fusion, not inside Module 8.**
+2. **Add a condition-vocabulary validator to `ClinicalDecision`.** `condition="diabetes
+   mellitus"` is currently accepted; nothing enforces the canonical list. Every in-repo
+   producer is clean, but Modules 15/16 will add producers. Cheap now, invasive later.
+3. **Give Module 20 the rejected-feature join.** When Module 6 rejects a value, Module 8's
+   evidence says *"this value was not available in the submitted report"* — factually wrong;
+   it WAS there and was refused. The rejection reason does reach `all_warnings`; it is just
+   not joined to the evidence item.
+
+### Lower-severity, recorded not fixed
+
+- **`Heart Disease` means two things.** The composite rule fires on a *risk-factor count*;
+  Module 11 will emit *disease likelihood*. Fusing them under one condition conflates burden
+  with probability. Fix in Module 16/17 by surfacing the band label, not just the status.
+- **Safety-scanner patterns are thinner than the docstring claims** — misses "diagnosis is
+  X", drug names not on its list, dosages without numerals, and "you do not need to see a
+  doctor". **Not live today** (176 user-facing strings from a maximum-abnormality run were
+  scanned: zero unsafe outputs, and the structural defence holds), but **harden before the
+  Module 23/24 LLM layer runs prose through `scan_text`**.
+- `ClinicalDecision(source_kind=CLINICAL_RULE, confidence=0.0)` is accepted; the live rule
+  engine always emits `None`.
+
+---
+
+## 6i. Modules 11, 12, 15, 16 — built 2026-08-30, NOT independently audited
+
+### Module 11 — Heart Disease · trained, but WEAK. Read this before quoting it.
+
+ROC-AUC **0.697** · PR-AUC 0.684 · accuracy **0.592 vs 0.500 baseline** (n=13,988, ~50/50).
+At threshold 0.673: precision 0.747, **recall 0.277**, F1 0.404.
+5-fold CV ROC-AUC 0.6960 ± 0.0051 — **the weakness is stable, not split-luck.**
+
+It flags fewer than 3 in 10 true positives and the Low band holds only 12% of the cohort, so
+**it almost never rules anything out**. Treat it as a coarse indicator to be fused with Module
+8's risk-factor tally, never as a heart-disease predictor.
+
+**Why it is weak — a data gap, not a modelling failure.** `ap_hi`/`ap_lo` (blood pressure)
+dominate this dataset, but **Module 2 does not collect BP**, `feature_catalog.py` has no such
+feature and Module 4 does not extract it. Training on BP would mean median-imputing the top
+input for every real patient and publishing metrics for a model that never actually runs.
+The cost was **measured, not hidden**: a BP-inclusive reference model scores **0.800 vs the
+shipped 0.697**, recorded in the artifact with `shipped: false`.
+
+Other decisions: **gender 1 = female, 2 = male**, inferred from an 8.6 cm mean height gap and a
+12-fold smoking difference both pointing the same way. Cholesterol mg/dL → ordinal band by NCEP
+ATP III (`<200→1`, `200–239→2`, `≥240→3`), column named `cholesterol_band` so it can never be
+confused with Module 5's mg/dL `cholesterol`. Cleaning removed **60 of 70,000 rows**.
+`gluc` deliberately unused — worth +0.003 AUC and its fasting/random basis is undocumented.
+
+### Module 12 — Kidney Disease · excellent numbers, small dataset
+
+ROC-AUC **0.998** · PR-AUC 0.999 · accuracy **0.970 vs 0.630 baseline** (n=100).
+5-fold CV ROC-AUC 0.9957 ± 0.0040.
+
+**The numbers are near-perfect because the dataset makes it easy**, not because the model
+generalises: 399 rows, single-centre UCI, where creatinine and haemoglobin separate the classes
+almost cleanly. The test split is 100 patients — one error moves recall ~1.6 points. **Read the
+sufficiency skip, not the accuracy, as this module's contribution.**
+
+**Sufficiency: `required = (creatinine, hemoglobin)`.** All 30 feature subsets were measured;
+the pair alone gives 0.9860 CV ROC-AUC vs 0.9957 for all five, so the other three are a 0.010
+refinement and are optional — a predictor that skips too eagerly is not safer, only silent.
+
+**Creatinine is required on CLINICAL grounds, not statistical ones**, and the builder said so
+plainly: blanking it costs only 0.0073. It is the analyte that *defines* renal function, and
+haemoglobin only substitutes because anaemia of CKD is near-universal in this cohort. Without
+creatinine this is an anaemia signal wearing a kidney label — which in a screening population
+fails quietly in the dangerous direction.
+
+**Malformed CKD row DROPPED, not repaired.** Row 369's whole tail is shifted (`appet`=`no`,
+`pe`=`good` — both outside their domains). Repairing means guessing whether that patient had
+CKD, i.e. fabricating training data. 399 rows used. Missingness is imputed **inside the
+pipeline**; no rows dropped for missing values.
+
+**Thresholds deviate from Module 10's deliberately.** Module 10's 0.90-precision rule is
+satisfied here at threshold 0.11 — before the model commits — which would put 79% of the cohort
+in INDICATED. Both cut-offs are therefore sensitivity guarantees instead.
+
+### Modules 15/16 — Decision Engine and Fusion
+
+**Status fusion rule:** a fused decision is `INSUFFICIENT_DATA` **only when no contributing
+decision actually assessed** the condition; otherwise status is the most severe among those
+that *did* assess. This excludes two opposite failures at once: an abstention hiding a real
+`Indicated/High` finding, and an empty assessed set presenting as assessed. The abstention is
+recorded four ways, including a warning that reaches Module 17's validation warnings.
+
+**Confidence fusion:** the maximum over contributors that actually produced a probability.
+`None` is **absent from the maximum** — never read as 0.0, never able to suppress another
+source's real number. `0.0` **is** a value and does take part.
+
+**Heart Disease semantic hazard handled.** Not renamed (that would break fusion). Each
+contribution carries `assessment_basis` (`risk_factor_count` / `threshold_comparison` /
+`model_probability` / `not_assessed`); when a risk-factor burden sits beside a different kind of
+claim the fused decision sets `basis_conflict=True` and Module 17 should render them side by
+side. Threshold-vs-model is deliberately **not** flagged — those are two methods answering one
+question, and flagging it would caveat everything until the caveat stopped being read.
+
+**Verified cross-agent interaction:** the Diabetes predictor predates the `assessment_basis`
+convention and leaves it `None` when it skips. Fusion derives `not_assessed` from the **status**
+rather than a metadata default, so the unstamped skip is still labelled correctly. Checked
+directly.
+
+**Condition-vocabulary validator added to `ClinicalDecision`** — a non-canonical condition
+string is now rejected at construction, closing the §6h latent gap. Import ordering verified
+across seven orders in fresh interpreters, plus a negative control proving the harness can fail.
+
+### Known gaps carried forward
+
+- `summary.overall_status` is **`null` when nothing was assessed**. Spec Module 18 names three
+  outcomes but not that fourth case, and "no abnormal findings ⇒ Healthy" is vacuously true for
+  a report whose every test was unreadable. **Module 17 must read it with `any_assessed`.**
+- The **rejected-feature join for Module 20** (§6h item 3) is still not implemented.
+- **Safety-scanner patterns still need hardening before Modules 23/24** run LLM prose through
+  `scan_text`.
+- Heart joblib is **21.6 MB** — fine to load, worth knowing before it goes into an image.
+- RF `predict_proba` with `n_jobs=-1` can differ in the last float bit between calls; tests
+  assert the band exactly and the probability to 1e-12.
+
+---
+
+## 6j. Modules 21–26 — RAG, Knowledge Base, LLM, Safety, Terminology, Guidance
+
+### Module 22 — Knowledge Base
+62 documents / 377 paragraphs / 243 chunks in `app/data/knowledge_documents/`. Vocabulary
+aligns **byte-for-byte** with `feature_catalog.FEATURES` and `conditions.CONDITIONS`, both
+directions, enforced at import. Every document carries its `basis`. An import-time scanner
+rejects unsafe content — four planted unsafe documents were all refused.
+
+### Module 21 — RAG
+`Documents → chunk → TF-IDF → index → query → similarity`. The index is a **committed
+artifact** built by `knowledge/build_index.py`; `--check` verifies the committed copy matches
+a fresh build. Never built at import or request time.
+
+**TF-IDF was shipped, and the agent MEASURED that this is the weaker choice and said so.**
+all-MiniLM-L6-v2 scores R@1 0.967 vs TF-IDF 0.733. TF-IDF was chosen anyway: PyTorch is
+~2.5 GB, needs a first-use download against the offline-test requirement, and failed to
+install on the Windows 260-char path limit.
+
+**The consequence is a SAFETY property, not a quality one:** TF-IDF cannot distinguish a
+medical question the corpus covers from one it does not — uncovered terms score 0.141–0.271
+and covered ones 0.121–0.27, **fully overlapping**, so no similarity floor separates them.
+That is why free text is now anchored to the catalogue first (see 6k, D7).
+
+### Module 23 — LLM explanation
+Architecture is literally `findings + retrieved knowledge -> LLM -> Module 24 -> approved`.
+`explanation` is assigned in exactly ONE place, from `guarded_generation().approved_text`.
+Raw model output is never stored on the object at all. Four independent proofs exist,
+including a test that reads the source file for a second assignment.
+
+Five outcomes, all HTTP 200: `generated`, `withheld_by_safety`, `not_grounded`,
+`model_unavailable`, `unknown_subject`. Every non-generated one carries `safe_fallback()`.
+
+**`gemini-3.6-flash` is a THINKING model** — reasoning tokens are spent before any prose is
+emitted. The token cap had to be raised to 4096 with `thinking_level="low"`; a 700-token cap
+produced `MODEL_RESPONSE_TRUNCATED` on **every** live call. **No offline test could have
+found this** — a mocked client has no thinking budget. That is the argument for keeping the
+opt-in live tests.
+
+### Module 25 — Terminology
+**Does not retrieve on free text at all.** Exact mapping only: canonical name →
+`feature_catalog.lookup_test_name` (the same synonym index Module 5 uses) → a curated alias
+table. No similarity, no nearest match, no fallback. TSH / ferritin / WBC / ALT / PSA / CRP
+are refused with **zero retriever calls and zero model calls**.
+
+**Honest gap: SGPT is named in the spec but refused**, because the corpus has no
+liver-enzyme document. Published in `known_gaps` on `GET /api/v1/explain/terms`. Adding one
+liver document fixes it.
+
+### Module 26 — Lifestyle guidance
+**Serves catalogue text and calls no model.** The property that has held across this whole
+project is that recommendation text has no free-text entry point; adding a generator to the
+module most likely to drift into treatment advice would crack that for no gain.
+`EDUCATIONAL_CODES` is computed at import and is the complete reachable set through every
+entry point. A hole was found and closed during the build: `SEEK_PROMPT_MEDICAL_ADVICE` (a
+HIGH-risk-tier sentence) was initially servable as "general guidance".
+
+---
+
+## 6k. Module 24 audit — verdict FAIL — and the eight fixes · 2026-09-04
+
+An independent audit rated **Module 24 FAIL** and the **Module 1 to 26 flow FAIL**, proving
+it end to end rather than in the abstract. `explain_feature(...)` with CRLF-wrapped model
+prose returned `verdict=approve`, **zero violations**, and this text to a patient:
+
+> "Your HbA1c result is 6.8 percent. You have diabetes. There is no need to see a doctor
+> about this result; the report is enough. A qualified healthcare professional wrote these
+> reference ranges."
+
+**All eight defects are now fixed**, with 66 regression tests in
+`tests/test_safety_audit_fixes.py`, each verified to fail against the pre-fix code.
+
+### D1 — CRITICAL and ARCHITECTURAL. The positive controls did not backstop the blocklist.
+The design claimed positive controls covered what the blocklist missed. Measured, they did
+not. **"Your kidneys are failing."**, **"Your results are completely fine and nothing is
+wrong."** and **"You do not have diabetes."** were all APPROVED. Two causes:
+
+1. **Hedging only fires on an INTERPRETIVE VERB** (means / indicates / suggests), so the
+   most direct clinical assertions in English were invisible to it.
+2. **`MISSING_PROFESSIONAL_REFERRAL` is `required` severity** — it appends framing and
+   APPROVES; it cannot reject. It was also satisfied by the mere SUBSTRING "qualified
+   healthcare professional", which in the sample above sat in a sentence that was not a
+   referral at all.
+
+**Fix:** new rule `assertion.clinical_state` using `UNHEDGED_INTERPRETIVE_CLAIM` (already
+PROHIBITED). Second-person anchored, so "A normal HbA1c is below 5.7%" passes and "You are
+normal" does not. Covers organ-state assertions, blanket reassurance, and negative
+diagnoses. **False reassurance is treated as seriously as false alarm** — this project
+refuses everywhere else to let an unassessed condition read as reassuring.
+
+### D2 — separators and punctuation split banned phrases
+Newline, CRLF, tab, double space, comma, parenthetical and quoted emphasis all escaped,
+because the rules contained a single LITERAL SPACE. **Fix:** `_GAP = r"\W{1,4}"` applied via
+a `_phrase()` helper in `policy.py`. None of these are adversarial — wrapped prose and
+parentheticals are ordinary LLM output, so this class WILL occur in production.
+
+### D3 — the carve-out rejected the platform's OWN mandated disclaimers
+Eight hand-enumerated fixed-width lookbehinds excused eight phrasings and REFUSED every
+other correct English disclaimer — "never a diagnosis", "not any kind of diagnosis", "No
+diagnosis is offered here", even "not  a diagnosis" with two spaces. Since the code is
+PROHIBITED, each refused the WHOLE generation, so the patient got the fallback BECAUSE the
+model disclaimed properly. The retry then quoted the span back, teaching the model to DROP
+the disclaimer. **Fix:** `_drop_disclaimed_diagnoses` — a sentence-clamped negation filter,
+scoped to hits whose matched text IS `diagnos*`. Widening the pattern also caught "the
+diagnosis is X", a known miss before.
+
+### D4 — invisible characters
+Zero-width and soft hyphen were DELETED, so `you<ZWSP>have` became `youhave` and matched
+nothing — deletion CREATED the escape. But deletion is required for the opposite case
+(`met<ZWSP>formin` -> `metformin`). **Fix:** map format characters to a space AND run a
+second `_compacted_pass` with them removed, unioning the results. Only PROHIBITED findings
+are taken from the second pass, because spans there do not index the caller's text and a
+prohibited violation never redacts.
+
+### D5 — false claims in comments, including ones the assistant wrote
+`_normalise` claimed the three scanners were "fixed in all three so they cannot drift apart"
+(**never reconciled — the drift is exactly why the validator was the weakest of the three**)
+and that spans "index correctly into the caller's original string" (**false — NFKC is not
+length-preserving**). Both corrected. **Reconciling the three scanners is still NOT done.**
+
+### D6 — Module 25's refusal echoed injected text back
+`explain_term("there is no need to see a doctor")` returned that phrase verbatim. The rule
+fired, but `_drop_disclaimed_replacements` discarded it: the template's own words "does not
+hold" sit in the 60-character window before the echo slot, so **the carve-out was disarmed
+BY CONSTRUCTION for every echo**. **Fix:** validate the bare echo FIRST, where the
+template's negator cannot reach it.
+
+### D7 — free-text retrieval returned confidently wrong grounding
+"my ALT and AST liver enzymes are high" -> `term_ldl_hdl`; "C reactive protein CRP" ->
+`lab_hemoglobin`; and worst, "what does a raised HbA1c mean" -> `cond_elevated_hemoglobin`
+as its TOP chunk — a query the corpus DOES cover, returning a different analyte.
+**Fix:** `_anchor_free_text()` in `app/rag/retriever.py` resolves free text to canonical
+features/conditions EXACTLY (same synonym index Module 5 uses) and then retrieves the
+reliable way. Anchors to nothing means returns nothing. Now "what does a raised HbA1c mean"
+returns `lab_hba1c`.
+
+### D8 — numeric grounding defeated by writing the number out
+"nine point nine percent" was approved. Spec Module 23 asks for PLAIN LANGUAGE, so a
+spelled-out number is NORMAL output — the control was blind in the register it was written
+for. **Fix:** word-form numbers are parsed and checked against the same allowlist.
+**Two over-corrections had to be walked back**, both of which made Module 24 reject the
+platform's own curated corpus and silently withhold correct explanations: "one of the two
+main types" read as two fabricated values, and "one unit either side" tripped because "unit"
+was in the units list. Final rule: a spelled number counts only when it is a decimal, a
+compound, or next to an **unambiguous clinical unit**.
+
+### Verified NOT broken by any of the above
+Zero false positives across **20 catalogue recommendations and 377 KB paragraphs**. A safety
+layer that refuses its own text sends every patient the fallback.
+
+### Still open, low severity
+- Homoglyph (Cyrillic lookalike) and combining-mark folding — deliberately out of scope; the
+  endpoint is service-key gated and Gemini does not emit lookalikes. Published in
+  `SAFETY_POLICY["limitations"]`, the same posture as the acknowledged `digoxin` gap.
+- The three scanners are still not reconciled into one rule table.
+
+---
+
+## 6l. Live end-to-end verification · 2026-09-04
+
+Ran the real chain: register -> login -> profile -> upload -> analyze, with the backend
+driving `ai-service` over HTTP against real Gemini.
+
+**The backend now calls EIGHT stages:**
+
+```
+extract -> engineer -> validate -> [ rules || predict || report ] -> explain -> guidance
+```
+
+`/api/v1/decisions/fuse` is deliberately NOT called: `report/generate` runs fusion
+internally and returns it verbatim, so a second call would create a second source of truth
+that a non-deterministic RF tie-break could make disagree. The standalone rules and ML calls
+ARE kept, because `report/generate` CONTAINS engine failures inside an HTTP 200 — without
+them the backend could not report "the ML stage failed", and per-rule traceability is
+unrecoverable from the fused view.
+
+**A real defect was found and fixed by this run.** First attempt:
+
+```
+"explanation": {"ok": false, "errorCode": "AI_SERVICE_TIMEOUT", "durationMs": 120049}
+"status": "partial"
+```
+
+`explain_report` made **up to 6 SEQUENTIAL LLM calls**, one per lab value, at roughly 25s
+each on a thinking model — about 150s, past the 120s stage timeout. **Fix:** parallelised
+with order preserved. After: `status: processed`, explanation ok in **40s**, with real
+Gemini prose **approved by Module 24 on the first attempt, zero violations**.
+
+**Concurrency is 2, and that number was measured.** At 4 the free-tier key returned
+`MODEL_RATE_LIMITED` — a timeout traded for a 429. Tunable via `AI_EXPLANATION_CONCURRENCY`.
+The failure is graceful either way: a rate-limited generation yields no text, Module 24
+rejects the empty string as `UNANALYSABLE_INPUT` (**fail-closed working as designed**), and
+that feature falls back to catalogue guidance while the others still explain.
+
+**Also confirmed live:** Module 12's kidney predictor returned `Insufficient Data` with
+`risk: null`; Module 19 ranked the unassessed condition ABOVE every settled normal finding;
+and warnings arrived from stages only reachable at the end (`fusion`, `report`).
+
+---
+
+## 6m. Modules 27–32 — built 2026-09-04. NO TESTS, NO AUDIT.
+
+Built in four waves, one agent per module, on the user's instruction to build without
+testing ("we will test later everything"). **Nothing in this section has been independently
+verified.** Two waves were interrupted mid-build by session rate limits; the surviving work
+was inspected and completed by the orchestrating session, which is itself a self-report.
+
+`ai-service/` now serves **46 OpenAPI paths**, up from 38. Five new routers were added to
+`app/main.py`; its module docstring was updated each time so it no longer claims 27–32 are
+deliberately absent.
+
+### Placement decisions (made once, applied throughout)
+
+- **Module 27 is in `backend/`.** The spec calls it "the frontend dashboard"; there is no
+  frontend, so it was built as **the backend read-model a dashboard renders** — a pure
+  projection of the stored Module 17/19/20/23/26 output. It calls no model and computes no
+  new clinical judgement.
+- **Modules 28/29/30/32 compute in `ai-service/`, but the HISTORY lives in `backend/`.**
+  Canonical names, units, reference ranges and polarity all live in the Python service, and
+  comparing values across reports without that normalisation is exactly the "silently
+  corrupts data across a boundary" class §6h exists to catch. The ai-service holds no
+  database (Module 7's repository is in-memory and process-local), so the backend assembles
+  history from Mongo — `Report.chronoDate` is indexed on `{user, chronoDate}` for precisely
+  this — and POSTs snapshots in. Each of these endpoints is therefore a **pure function of
+  its request**.
+- **`TimelineReportInput` (Module 28) is the ONE snapshot shape** crossing that boundary.
+  Modules 29, 30 and 32 all reuse it rather than inventing a second way to pass a report's
+  features.
+
+### Module 27 — Health Dashboard · `backend/`
+
+`GET /api/v1/reports/:id/dashboard`. New: `src/services/dashboardService.js` (pure
+functions, no I/O), `src/controllers/dashboardController.js`.
+
+Loads only `clinicalReport + patientExplanation + lifestyleGuidance` — narrower than
+`ANALYSIS_PROJECTION`, because Modules 17–20 already folded what the cards need into the
+report. 404 when `analysis.version === 0` or the report is absent.
+
+- **Keys are camelCase**, converted from the ai-service's snake_case, matching the backend's
+  own `toPublicJSON` / `toAnalysisJSON` view convention. Values pass through verbatim.
+- **It does not re-derive overall status** — it calls the exported
+  `analysisService.summariseReport`, so there is no second place that can disagree about
+  whether a report was assessed. Verified: `overall.status: 'Fine'` (unknown vocabulary)
+  with `any_assessed: true` degrades to `status: null`, `statusLabel: 'Not Assessed'`.
+- A fourth laboratory state, `unavailable`, is a join the agent invented — but only where
+  Module 20 already wrote an availability reason. `document.missing_features` alone creates
+  no card, because it carries no reason and one would have had to be guessed. A **rejected**
+  value is never downgraded into an **unavailable** one.
+- Module 23 branching is on the `generated_explanation_available` boolean, never on the
+  string's presence.
+
+**Untested through Express, auth, or real Mongo.** The ownership path is copied from
+`analysisController` and has not been exercised against user B / admin / clinician.
+
+### Module 28 — Trends · `ai-service/`
+
+`POST /api/v1/timeline/trends` · `GET /api/v1/timeline/policy`.
+`app/data/trend_polarity.py` (729 lines) · `app/schemas/timeline.py` (708) ·
+`app/services/trend_analyzer.py` (1,091) · `app/api/routes_timeline.py`.
+
+- **Polarity is declared per feature in a reviewable table**, never inferred. 14 features; a
+  feature with no declared polarity reports direction only, with
+  `CLINICAL_DIRECTION_UNKNOWN`. Rising vitamin D and rising creatinine are not the same
+  event and the table is what knows that.
+- **Stability is a reference change value (RCV)**, not a round percentage.
+- `outcome` is the field to branch on, **never `trend`**. Fewer than two usable readings is
+  `INSUFFICIENT_DATA` with `trend: null` — **never `stable`**. Missing readings are `gaps[]`
+  carrying their reason; nothing is interpolated or imputed.
+- Deterministic and model-free; same request in, same trends out. Its `_self_check()` runs
+  at import and passes.
+- **The agent building this was killed by a rate limit before writing its router.** The
+  router was written by the orchestrating session, matching `routes_repository.py`.
+
+### Module 29 — Smart Report Comparison · `ai-service/`
+
+`POST /api/v1/comparison/reports` · `GET /api/v1/comparison/policy`.
+`app/schemas/comparison.py` · `app/services/report_comparator.py` ·
+`app/api/routes_comparison.py`.
+
+- **No second polarity or stability table.** The improved/worsened/unchanged decision is
+  Module 28's `analyse_feature()` over a two-report series. Its refusal vocabulary is
+  **derived from Module 28's `OUTCOME_VALUES` at import, not retyped**, so the two cannot
+  drift. Grep confirms `POLARITY`, `STABILITY`, `direction_of_harm` appear nowhere in it.
+- Two axes, kept separate: **change** (`improved`/`worsened`/`unchanged`) and **abnormality
+  transition** (`newly_abnormal`/`newly_normal`/`remained_*`). A single `category` collapses
+  them by a documented precedence.
+- **`newly_abnormal` requires abnormality to be KNOWN ON BOTH SIDES.**
+  `AbnormalityState.abnormal` is tri-state with a `basis` and a reason code, and a validator
+  makes "not_determinable with a non-null answer" structurally impossible. An unknown
+  baseline gives `NOT_DETERMINABLE` — never `newly_abnormal`, never `unchanged`. Getting
+  this wrong invents an alarming finding, so it was deliberately made strict.
+- Censored values (`<x` / `>x`) answer only where the conclusion holds across the whole
+  censored interval.
+- **Its only change to Module 28** was appending public aliases to existing private helpers.
+  Module 28's self-check still passes.
+
+**The most debatable call, flagged by its own author:** when a report's printed flag
+disagrees with its printed reference range, **the range wins**, the flag is kept, and
+`flag_disagrees_with_range` plus warnings fire. The strict alternative is
+`NOT_DETERMINABLE`. Reasoning: labs often flag against a sex-specific range they do not
+print, so this is two concrete signals rather than an absence. Single change point in
+`_abnormality`.
+
+Abnormality is computed **per report against that report's own units**, so a parameter that
+refused on the change axis for `UNIT_MISMATCH` can still yield a valid `newly_abnormal`.
+
+### Module 30 — Health Progress Analysis · `ai-service/`
+
+`POST /api/v1/progress/score` · `GET /api/v1/progress/policy`.
+`app/data/progress_scoring.py` (the reviewable table) · `app/schemas/progress.py` ·
+`app/services/progress_analyzer.py` · `app/api/routes_progress.py`.
+
+Scores **Module 29's finished `category`**. It never calls `polarity_for()`, never reads a
+stability band, and **does no arithmetic on any patient value** beyond a weighted mean of
+table lookups. No third table exists.
+
+- **Scale 0–100, `higher_is_better`, stated as a mandatory response field**, not
+  documentation. Category anchors: `newly_normal` 100 · `improved` 75 · `unchanged` 50 ·
+  `worsened` 25 · `newly_abnormal` 0.
+- **The equal spacing is enforced at import, not merely claimed.** `_self_check()` computes
+  the four steps and raises if they differ, on the stated grounds that the *order* is
+  defensible (it is Module 29's documented precedence) but no *spacing* is — nobody here can
+  say `newly_abnormal` is 3.2× as bad as `worsened`, so no such ratio is asserted.
+- **Weights are equal (1.0) across the 9 trendable features, and the table says why**: there
+  is no defensible basis on this project for ranking one canonical parameter above another,
+  and an invented hierarchy inside a score would reach a reader as clinical fact. The 5
+  non-trendable features carry weight 0.0 **as an exclusion, not a low importance**, so the
+  table is total and the decision is visible rather than inferred from an omission.
+  `_self_check()` fails if a feature with declared polarity ever gets weight 0 (a silent
+  drop), or a non-trendable one a non-zero weight.
+- **Band boundaries at 20/40/60/80 are derived, not round numbers**: they are the partition
+  giving each of the five anchors its own band with no anchor on an interior boundary, so
+  "everything worsened" can never share a label with "everything was unchanged". Asserted at
+  import. Score is rounded to 1 dp **before** the band is chosen, so number and band cannot
+  disagree.
+- **Coverage floor of 3 contributing parameters**, on the stated rule that *no single
+  parameter may be a majority of the score* — at n=1 one parameter is the whole score, at
+  n=2 it is half. Below the floor: `INSUFFICIENT_COVERAGE`, `score: null`, `band: null`, and
+  the contributions found are still returned. The floor is deliberately low because only 8
+  of 14 canonical features are numerically trendable and only 7 carry a declared polarity.
+- `outcome` is the field to branch on: `SCORE_COMPUTED` | `NO_PAIR` | `NOTHING_ASSESSED` |
+  `INSUFFICIENT_COVERAGE`. A validator enforces score+band non-null **only** for
+  `SCORE_COMPUTED`. `ExcludedParameter` **has no `points`/`weight` field at all**,
+  structurally, the way `TimelineGap` has no `value`.
+- No option can lower the floor, change a weight, or move a band — a caller cannot talk the
+  service into a friendlier score.
+
+**Two calls to review:** (1) there is **no magnitude multiplier** — the spec lists "relative
+changes", which are honoured only through the RCV band applied upstream and by surfacing
+`percent_change` per contribution; adding a curve would have been the forbidden third table.
+(2) The **score is logged** via `safe_meta`, judged a derived unitless non-invertible
+statistic rather than a medical value. Reject if the project's line is stricter.
+
+### Module 31 — Population Context · `ai-service/`
+
+`POST /api/v1/population/context` · `GET /api/v1/population/policy`.
+`app/population/{__init__,policy,tables}.py` · `app/schemas/population.py` ·
+`app/services/population_context.py` · `app/api/routes_population.py` ·
+`datasets/population/` (raw + build script + distributions + PROVENANCE.md).
+
+**The data is real.** Survey-weighted percentiles built from **NHANES microdata** (CDC/NCHS)
+downloaded as `.xpt` with SHA-256 recorded, weighted with `WTMEC2YR`, pregnant participants
+excluded, adults 20+.
+
+| Feature | Table unit | Cohorts | Analytic n | Smallest cell |
+|---|---|---|---|---|
+| `hba1c` | `%` | 14 | 4,971 | 178 |
+| `hemoglobin` | `g/dl` | 14 | 4,981 | 178 |
+| `creatinine` | `mg/dl` | 14 | 4,869 | 174 |
+| `cholesterol` | `mg/dl` | 14 | 4,890 | 175 |
+| `bmi` | `kg/m2` | 14 | 5,120 | 171 |
+| `vitamin_d` | **`nmol/l`** | 14 | 4,936 | 176 |
+| `vitamin_b12` | `pg/ml` | 14 | 5,255 | 149 |
+
+Cohorts are male/female × 20-29…70-79 + 80+. Zero dropped cells. Cycle J (2017–2018) except
+vitamin B12, cycle H (2013–2014).
+
+**Independently reproduced:** re-running `build_population_tables.py --check` to a scratch
+directory produced all 7 tables **byte-identical**. Cross-checked against published NCHS
+output: BMI vs Series 3 No. 46, worst diff 1.60 kg/m² over 117 comparisons; high-total-
+cholesterol prevalence vs DB363 within 0.8–1.3 pp.
+
+- **The no-value guarantee is STRUCTURAL.** Every answer field lives inside a nested
+  `comparison` object that is *absent* when `available` is false, and `comparison` carries no
+  reason field. An unavailable entry is physically incapable of holding a percentile.
+- **No interpolated percentile exists** — `band` has no single-percentile field to populate.
+  The value is bracketed between two published cut-points with `bisect_right`, and the
+  reported value is the same rounded number that was bracketed, so a reader can re-derive the
+  band by hand from the response's own grid.
+- **No unmatched cohort, ever.** An all-adults distribution is never substituted for a
+  missing age or sex, because haemoglobin and creatinine differ so much by sex that an
+  unmatched percentile is a different claim wearing the same words.
+- **`other` / `prefer_not_to_say` / absent gender ⇒ `SEX_COHORT_NOT_AVAILABLE`.** A stated
+  gender is never coerced into a binary category to force a lookup — the §6a pattern.
+- Age below the table minimum ⇒ `AGE_BELOW_ADULT_TABLE`, called out separately because
+  scoring a child against an adult table is a clinical error deserving its own code.
+- **Vitamin D is the only unit mismatch** (table nmol/L, canonical ng/mL). The **table is
+  never rescaled**; the patient's value converts into the table's unit through the audited
+  `unit_conversions` row.
+- **`blood_glucose` and `triglycerides` are deliberately excluded**, not missing: fasting
+  status is not recorded anywhere in the pipeline, and comparing a random glucose against a
+  fasting population "would produce a percentile that looks precise and is wrong". Recorded
+  in `EXCLUDED_FEATURES` with the reasoning.
+- **The catalogue-completeness guard works and was proven.**
+  `tables._check_catalogue_cover()` fails at import if a canonical feature has neither a
+  table nor an `EXCLUDED_FEATURES` entry; the agent injected a fake feature and confirmed the
+  failure. Guards raise `PopulationTableError`, not `assert`, because `python -O` strips
+  asserts.
+- Copy carries no risk word, no normal/abnormal judgement and no recommendation. Module 8
+  owns "is this in range"; Module 31 owns only "how common is this".
+
+**Dead paths today:** `AGE_OUTSIDE_TABLE_RANGE` and `COHORT_TOO_SMALL_TO_PUBLISH` are
+implemented but **unreachable** — the bands are contiguous from 20 with an open top band and
+no cell was dropped. They exist for future tables. Do not assume they are covered.
+
+**One edit to a pre-existing file:** `policy.py` gained `REASON_MESSAGES` (pure addition),
+because the 11 request-dependent reason codes had no patient-facing wording and putting it in
+the service would have split copy across two layers. `tables.py` asserts at import that every
+reason code has wording and there are no orphans.
+
+### Module 32 — Doctor-Friendly Clinical Summary · `ai-service/`
+
+`POST /api/v1/doctor-summary/generate` · `GET /api/v1/doctor-summary/policy`.
+`app/schemas/doctor_summary.py` (1,360 lines) · `app/services/doctor_summary.py` (1,765) ·
+`app/api/routes_doctor_summary.py`.
+
+**It assembles; it does not generate.** No LLM call, no free prose — templated section text
+only. **Verified structurally:** the service imports no `gemini_client`, no `gemini_text`, no
+`app.services.explanation`. The `explanation` identifiers in it are Module 20's *fixed*
+evidence-line explanations, not model output.
+
+The reasoning is on the record and should not be relitigated: Module 26 serves catalogue text
+and calls no model because recommendation text has no free-text entry point on this project,
+and the §6k audit rated the whole 1→26 flow FAIL when free prose reached a patient with a
+fabricated diagnosis in it. **A clinician-facing document is a higher-stakes surface, not a
+lower one.**
+
+Sections degrade explicitly rather than silently: `SECTION_NO_HISTORY`,
+`SECTION_SINGLE_REPORT`, `SECTION_ANALYSIS_REFUSED`, `SECTION_RETRIEVAL_UNAVAILABLE`,
+`SECTION_NOTHING_TO_GROUND`, `SECTION_NO_MATCH`, `SECTION_DISABLED`. Trends and comparison
+are optional sections — with one report they are **absent with a stated reason**, never
+rendered as "stable". Its `_self_check()` runs the Module 24 safety scanner over every
+template at import and passes.
+
+**The agent building this was killed by a rate limit during its end-to-end smoke run**, after
+all three files were written. So: it imports, its self-check passes, its router mounts — and
+**its assembly paths have never been run against a real report.**
+
+### The backend longitudinal layer · `backend/`
+
+The Node side that makes 28/29/30/32 reachable by a client. New:
+`src/services/historyService.js` (the shared assembler), `src/controllers/timelineController.js`,
+`src/controllers/doctorSummaryController.js`, `src/routes/timelineRoutes.js`,
+`src/middleware/timelineValidators.js`. Changed: `aiServiceClient.js` (4 `PATHS`, 4 `STAGES`,
+4 methods through the existing `postJson`), `config/env.js` (four **per-stage** timeouts, each
+its own env var — never a shared default, per that file's own rule — plus a `config.history`
+block), `rateLimiter.js`, `routes/index.js`, `reportRoutes.js`.
+
+| URL | Query | `data` |
+|---|---|---|
+| `GET /api/v1/timeline/trends` | — | `{history, trends}` |
+| `GET /api/v1/timeline/comparison` | `baseline`,`comparison` (both-or-neither) | `{history, requestedPair, comparison}` |
+| `GET /api/v1/timeline/progress` | same | `{history, requestedPair, progress}` |
+| `GET /api/v1/reports/:id/doctor-summary` | same | `{report, history, requestedPair, doctorSummary}` |
+
+**The inclusion rule — read this before changing it.** A report enters a timeline iff
+`analysis.version > 0` **AND** `featureValidation` is stored. **`status` is deliberately not
+consulted**, and the reasoning matters:
+
+- `partial` is *included* when validation succeeded — rules or ML failing says nothing about
+  whether the readings were good — and *excluded* by the same test when validation was the
+  stage that failed.
+- `failed` may be *included*: the failure path writes only status bookkeeping and never
+  touches stored payloads or `version`, so a report that analysed successfully and then
+  failed a later re-run still holds a real Module 6 verdict. Each included report's `status`
+  is returned so this stays visible rather than surprising.
+- A report whose every reading was rejected **is** sent, because Module 28 renders it as a
+  `TimelineGap` with reasons — which beats it vanishing from the timeline silently.
+
+Exclusion codes: `NOT_ANALYSED`, `NO_VALIDATED_FEATURES`. `history` reports `considered`,
+`included`, `excludedCount` and the excluded rows, so **a short timeline is distinguishable
+from a patient with little history** — the failure mode this accounting exists to prevent.
+
+**Cap `HISTORY_MAX_REPORTS`, default 50**, clamped to `[2, 500]` (the ai-service's own
+`max_length`). The window is the **most recent** 50, sorted `{chronoDate:-1,_id:-1}` — the
+index's declared direction, so the scan stays index-covered — then reversed to oldest-first.
+`cap+1` rows are fetched so `truncated` is **proven, not inferred**. Projection is
+`user chronoDate status analysis.version +featureValidation` only; the other seven
+`select:false` payloads are never read (doctor-summary adds `+clinicalReport`).
+
+**Ownership.** `ownerScopedFilter` + `assertCanAccess` on every query, **no `allowRoles`
+grant anywhere**, and every loaded row re-checked though the query was already scoped. A
+named `?baseline=` / `?comparison=` id goes through `resolveNamedPair`, which re-loads it
+owner-scoped and `assertCanAccess`es it **before it can reach a request body** — another
+patient's id yields the identical 404 a random id yields; an owner naming their own
+*unanalysed* report yields **422 `REPORT_NOT_IN_HISTORY`**, and no message echoes the
+submitted id.
+
+**Judgement calls:**
+1. **The ai-service is called even with 0 or 1 reports.** Short-circuiting would create a
+   second definition of "not enough history" in the backend; the refusal codes
+   (`INSUFFICIENT_DATA`, `NO_PAIR`, `NOTHING_ASSESSED`, `INSUFFICIENT_COVERAGE`) pass through
+   untouched instead.
+2. **Timeline endpoints return 200, not 404, for an empty history** — a patient's timeline
+   exists whether or not anything is on it, and the refusal *is* the answer. Doctor-summary
+   does 404 without a `clinicalReport`, matching `/report` and `/dashboard`.
+3. **A new `historyLimiter` (60 / 15 min), not `analysisLimiter`.** These fan out over up to
+   50 reports *and* make an outbound call — 1:1 inbound→outbound amplification, unlike
+   `/dashboard`, which reads one document and calls nothing. But `analysisLimiter` is 20 per
+   window and sized for LLM quota: drawing a trend screen must not lock a patient out of
+   analysing an upload.
+4. `sequence` is not sent — the `_id` tie-break and the service's `report_id` tie-break are
+   the same ordering, and an array-index `sequence` would make the answer depend on
+   serialisation order.
+5. Four queries per history request (2 counts, 2 finds), accepted to report `considered` and
+   `excluded` exactly.
+
+**CONTRACT MISMATCH FOUND, NOT PATCHED.** `report_comparator._select_pair` raises
+`BadRequestError` (**HTTP 400**, `COMPARISON_REPORT_NOT_FOUND`) when a named ref is not among
+the supplied reports, but `mapAxiosError` maps unclassified 4xx to **502
+`AI_SERVICE_REJECTED_REQUEST`** ("contract mismatch") — an accurate description of a bug and
+a poor one of a user naming a report they have not analysed. Neither side was changed: the
+backend pre-checks and returns 422 first, so the 400 is unreachable **in practice**. Decide
+whether `mapAxiosError` should learn about 400.
+
+**Verified by running:** app loads and all four URLs register; the four Python request models
+(`TimelineTrendsRequest`, `ReportComparisonRequest`, `HealthProgressRequest`,
+`DoctorSummaryRequest`) accept payloads built through the real Module 5→6 chain and wrapped
+exactly as `historyService` wraps them; 2 reports → `TREND_CLASSIFIED/worsening`; 1 → 
+`INSUFFICIENT_DATA` with `trend=None`; 0 and 1 → `NO_PAIR` with `score=None`; all four
+responses scanned against `assertStorableKeys` for `$`/`.` keys — none. `historyService`
+against in-memory Mongo: cap honoured, `truncated` exact, oldest-first, inclusion/exclusion
+codes correct, no cross-user leak, `role:'admin'` does not widen, missing identity throws,
+other-user id → 404, own-not-in-history → 422. Validators through a live express app with no
+`mongo-sanitize`/`hpp` present: `?baseline=a&baseline=b` → 422 and `?baseline[$ne]=` → 422,
+**proving `.isString().bail()` is doing the work itself** rather than leaning on a sanitiser.
+
+**Not verified:** the 476-test jest suite was not run, so there is no evidence about
+regressions. No live HTTP call was made between the two services — the contract check ran the
+Python models in-process, not over the wire.
+
+### What the whole wave has NOT had
+
+No tests written. No test suite run — the existing 3,352 are unproven against this code. No
+independent audit. No live end-to-end run. `tests/test_auth.py`'s recursive route walk has
+not been run against the five new routers.
+
+---
+
+## 6n. End-to-end audit of Modules 1–32, and the fixes · 2026-09-04
+
+The user asked for the whole system to be checked end to end and defects fixed. Three
+passes ran: **both suites re-run**, an **independent read-only contract audit**, and a
+**live end-to-end run against real Gemini** with three analysed reports. Six defects were
+found. Five are fixed; one is deferred with a stated reason.
+
+### Suites, re-run after the 27–32 wave and again after every fix
+
+`backend/` **476 passed** / 3 skipped / 0 failures · `ai-service/` **2,878 passed** / 6
+skipped / 0 failures (2,876 at baseline, +2 from the D7 regression test). `tests/test_auth.py`'s recursive route walk **runs clean over all
+five new routers** — the §0 item that recorded it as unproven is closed.
+
+### D1 (CRITICAL, FIXED) — the Module 5 unit bug reached the patient-facing LLM
+
+`feature_engineer.py` converted a value into the canonical unit but copied
+`reference_low`/`reference_high` through **in the report's printed unit**. Its blast radius
+was wider than §0 recorded: MEMORY named Modules 27/29/32, but **Module 23 — the LLM
+prompt — was on the list and nobody had noticed.** The literal text sent to Gemini for a
+report printing `Creatinine 88.4 umol/L (62 - 106)` was:
+
+```
+The reader's validated value: 0.9999808 mg/dl
+Reference interval printed on the report: 62 to 106
+```
+
+**And Module 24 could not catch it.** `explanation._permitted` whitelists
+`reference_low`/`reference_high` as permitted numbers, so the number-grounding control —
+the one thing designed to stop a fabricated number — *approved* prose quoting a range 60x
+off. The control was never wrong; its input was.
+
+**Fixed at the lowest layer** (§11), in `feature_engineer._reference_bounds`: the interval
+is carried through **the same audited `UnitConversion` that was applied to the value**.
+Notable properties of the fix:
+- **The arithmetic is affine, not a bare multiply.** `canonical = raw * factor + offset`,
+  and `offset` is non-zero for HbA1c IFCC (the NGSP master equation), so `conversion.apply`
+  is used. No second factor table was introduced.
+- **Monotonicity is checked.** A non-positive or non-finite factor/offset, or a bound that
+  converts to a non-finite number, is REFUSED — both bounds come back `None` with a note
+  and a warning. An interval that cannot be carried is **absent, never left in the printed
+  unit and never approximated**. `reference_range_raw` still preserves the printed text.
+- `provenance.reference_unit` and `provenance.reference_converted` record what happened,
+  and a note is added.
+
+**Verified live:** the record is now `value 0.9999808 mg/dl | bounds 0.701344 – 1.199072
+mg/dl | converted=True`, and the value sits inside its own range. The prompt line now reads
+`The reference interval for this parameter, in the same unit as the value above: 0.701344
+to 1.199072`.
+
+**The double-conversion risk was the real danger of this fix, and it is closed.**
+`report_comparator._reference_interval` (Module 29) short-circuits on
+`provenance.reference_converted` and returns already-converted bounds untouched; Module 32
+**calls that same function** rather than carrying its own path, so there is exactly one
+conversion site and one guard. The per-consumer workarounds were deliberately LEFT IN
+PLACE — they are now belt-and-braces on a correct source, which is the pattern that
+survives on this project.
+
+### D2 (HIGH, FIXED) — Module 32 was dead on 100% of calls
+
+`GET /reports/:id/doctor-summary` returned 502 every time. `doctor_summary.py` was the only
+file in the service passing `module=` through `safe_meta`, and **`module` is a reserved
+`LogRecord` attribute** — CPython's `makeRecord` raises `KeyError` from inside `_log`,
+*before* handlers, so logging's swallow-errors protection never applies. All four call
+sites were affected, **three of them inside `except` blocks written to make failures
+degrade gracefully** — so the degradation paths failed harder than the happy path.
+
+**Fixed at the layer where it cannot recur:** `_SafeLogger` in `app/core/logging.py`
+re-keys colliding `extra` keys (`module` → `meta_module`) instead of raising, installed via
+`get_logger()`, which is the sole path to a logger (25 uses, zero direct
+`logging.getLogger`). Colliding keys are **re-keyed, never dropped** — losing the tag
+silently would trade a loud failure for a quiet one. The four call sites were also moved to
+the project's one convention, because `_SafeLogger` alone would have turned a crash into
+silently metadata-free logs under the configured formatter.
+
+**§6m's "its assembly paths have never been run" was exactly right.** No offline test could
+have found this: the failure is in the logging call, and the suite's assertions never
+exercised those four lines.
+
+### D3 (HIGH, FIXED) — a partial assessment printed to the patient as "Healthy"
+
+Module 18 emits **five** `status_label` values; the fifth, `Healthy (partial assessment)`,
+exists *precisely because* a partial clean result was otherwise byte-identical to a full
+one. The backend **never read `status_label` at all** — `analysisService` re-derived a
+label from the three-value `status`. Demonstrated: service says `Healthy (partial
+assessment)`, dashboard printed **`Healthy`**. `complete: false` survived, but the headline
+word on the card did not. **This was the exact D4 defect Module 18 was amended to fix,
+reintroduced one hop later.**
+
+**Fixed:** the backend now carries `overall.status_label` through, with the defensive
+behaviour intact. Proven across four cases:
+
+| service `status_label` | backend label | note |
+|---|---|---|
+| `Healthy (partial assessment)` | `Healthy (partial assessment)` | was `Healthy` |
+| `Healthy` | `Healthy` | unchanged |
+| `Not Assessed` | `Not Assessed` | unchanged |
+| `Totally Fine` (unknown) | **`Not Assessed`** + `STATUS_LABEL_UNRECOGNISED` | fails safe |
+
+An unrecognised label degrades toward *not assessed*, **never toward a clean bill**.
+
+### D4 (HIGH, FIXED) — a comment asserting a guarantee the code did not make
+
+`analysisService.js` claimed the service's `status_label` "is checked against ours and a
+disagreement is recorded as a warning-worthy fact rather than silently preferred".
+**`status_label` appeared nowhere in the file.** Had the check existed, D3 would have
+surfaced as a warning instead of shipping. The check now genuinely exists
+(`statusLabelDisagreement` / `statusLabelWarnings`) — the comment was made true rather than
+deleted. This is the **fourth** false-comment finding on this project; §11's "a comment
+asserting a guarantee is not a guarantee" keeps earning its place.
+
+Two stale claims in `dashboardService.js` that the label vocabulary is four-valued were
+also corrected — the producer declares five.
+
+### D5 (MEDIUM, FIXED) — Module 31 was unreachable by any client
+
+The NHANES tables were live in the service with no way to consume them: no `PATHS` entry,
+no controller, no route. Now wired as
+**`GET /api/v1/reports/:id/population-context`** — authenticated, owner-scoped,
+404-before-403, no `allowRoles` grant, behind `historyLimiter` (it makes an outbound call,
+unlike `/dashboard`; but not `analysisLimiter`, whose budget is sized for LLM quota that
+Module 31 never spends).
+
+**Age and gender come from the authenticated user's own Module 2 profile, never from a
+query parameter** — a caller who could name the cohort could score a value against an
+arbitrary population and read the percentile as their own. **A refusal is a 200**: no age,
+or a gender with no published stratum, returns `available: false` with a reason code and
+reviewed copy, passed through verbatim. That is the answer Module 31 was built to give.
+
+### D6 (LOW, FIXED) — `historyService` JSDoc declared a returned field that did not exist
+
+An `excluded[]` key documented in `@returns` and absent from the return: a caller trusting
+it reads `undefined` and renders "nothing was excluded" — absence quietly becoming a
+reassuring value.
+
+### D7 (HIGH, **FIXED 2026-09-04** — was deferred, then applied on the user's word)
+
+**The ai-service blocks its own event loop.** Every route handler is `async def` and
+**nowhere in `app/` is `run_in_threadpool`/`to_thread` used**, so `load_document` (pymupdf)
+and the synchronous google-genai call run *on the loop*. Measured during the live run:
+`/api/v1/health` went from <10 ms idle to **2.5 s → 4.7 s → a 30 s timeout** during a
+single extraction. With one worker and the documented ~61-minute worst case, **one
+pathological upload can make the whole service unavailable for an hour** — including the
+backend's readiness probe and every fast Module 6/8/28–32 endpoint that needs no model.
+
+**FIXED.** `run_in_threadpool` in `app/api/routes_ocr.py` (both `load_document` and
+`service.extract`) and in all three `app/api/routes_explain.py` handlers — the explanation
+stage calls Gemini through the same blocking client and held the loop for 40s on the live
+run. Nothing about the work changes: same inputs, same calls, same order, same result. Only
+the thread changes.
+
+**IT WAS DEFERRED FIRST BECAUSE IT COULD NOT BE PROVEN, AND THE PROOF TURNED OUT TO BE THE
+HARD PART.** The first verification attempt PASSED AGAINST THE PRE-FIX CODE TOO, i.e. it
+proved nothing. The reason is worth remembering: **timing each probe individually cannot
+detect a blocked loop**, because when the loop is blocked `asyncio.sleep` cannot resume
+either, so the probe's own clock starts only after the block has already ended and every
+probe looks fast in both worlds. What separates the two cases is WHEN a probe completes on
+one absolute clock. Re-measured that way:
+
+| | /health probes served during a 3s extraction |
+|---|---|
+| pre-fix (on the loop) | **0 of 4** — all completed at t=+3.02s or later |
+| fixed | **4 of 4** — completed at +0.43, +0.85, +1.26, +1.68s |
+
+The request-id `ContextVar` was confirmed to reach the worker thread
+(`anyio.to_thread.run_sync` copies the context), so extraction log lines keep their
+correlation id.
+
+**A PERMANENT REGRESSION TEST NOW GUARDS THIS:**
+`ai-service/tests/test_event_loop_not_blocked.py`, 2 tests. It is the only test in the
+suite that runs the real ASGI app on a real event loop with two requests overlapping —
+**every other test drives `TestClient`, which is synchronous and can never have a second
+request in flight, so none of them can catch this class of defect.** Per project
+convention the test was verified to genuinely FAIL against the reverted pre-fix code
+(`only 0 of 4 /health probes completed while a 1.5s extraction was in flight`) before being
+kept. Suite after: **2,878 passed / 6 skipped / 0 failures** (2,884 collected, +2).
+
+### Also corrected
+
+The live-test assertion recorded in §0 as a known issue: **MEMORY had it backwards.**
+`liveIntegration.test.js` holds an *allow-list* that omitted `explanation`, and two objects
+had been conflated. The stored report's `warnings_by_stage` genuinely cannot carry an
+explanation entry (Module 17 runs before Module 23) — that part was right. But the
+assertion actually checks `analysis.warnings`, the **backend's** cross-stage list assembled
+*after* all eight stages, and `analysisService.js` appends Module 23's warnings there
+deliberately. The live run produced two real explanation-stage warnings when a generation
+was rate-limited, so **the assertion would have failed on this run**; earlier runs passed
+only because that stage had always fully succeeded. The allow-list was **extended, not
+weakened** — `guidance` was deliberately not added, since Module 26 pushes no warnings and
+an unreachable value in an allow-list only weakens it.
+
+### What the live run confirmed working
+
+Full §16 flow against real Gemini: register → profile → 4 uploads → 3 full analyses (8
+stages `ok`, 194 s / 126 s / 112 s; the 4th hit `MODEL_RATE_LIMITED`). **M28**
+`TREND_CLASSIFIED / worsening` on HbA1c 6.1→6.4→6.8 (the spec's own example), with
+`blood_glucose` correctly `CLINICAL_DIRECTION_UNKNOWN`. **M29** `newly_abnormal` on
+cholesterol crossing "< 200", `newly_normal` on vitamin D. **M30** `SCORE_COMPUTED` 41.7,
+6 contributing / 5 excluded with reasons. **M31** matched `male_40_49` with NHANES
+provenance. **M32** assembled after the D2 fix.
+
+**Every absence case held.** One report: all features `INSUFFICIENT_DATA`, `trend: null`,
+progress `NO_PAIR` with `score: null`. Zero analysed reports: 404, not an empty clean bill.
+Nothing rendered as "Healthy", "stable" or `0` where the truth was "we could not tell", and
+the tri-state `hypertension` stayed absent through all eight hops.
+
+### Still not verified
+
+- **Modules 27–32 still have no tests of their own.** Both suites are green, but they are
+  green because nothing tests the new code — the 3,352 assertions cover Modules 1–26.
+- The Module 32 `SECTION_SINGLE_REPORT` path (the live attempt hit quota) and the
+  "readings extracted then all rejected" case (the 4th PDF failed at OCR on quota).
+- No live HTTP was exercised for the new backend population route.
+- Modules 21–26 have still never been audited as a group.
+
+---
+
+## 6o. Tests for Modules 27–32 · 2026-09-04/05 · +911 tests, and one real defect found
+
+Modules 27–32 shipped with no tests. §6n's end-to-end audit found seven defects in exactly
+that blind spot, so the tests were written next, four agents in parallel, one per module
+group. **They found a genuine patient-safety defect on their first run** — see D8 below.
+
+| Suite | Before | After | New |
+|---|---|---|---|
+| `backend/` | 476 passing | **617 passing** / 3 skipped / 0 failures | **+141** |
+| `ai-service/` | 2,878 passing | **3,649 passing** / 7 skipped / 0 failures | **+770** |
+| **Total** | 3,354 | **4,266** | **+911** |
+
+### Files
+
+`ai-service/tests/`: `test_trend_analyzer.py`, `test_timeline_endpoint.py`,
+`test_report_comparator.py`, `trend_payloads.py` (28/29) · `test_progress_analyzer.py`,
+`test_doctor_summary.py` (30/32) · `test_population_tables.py`,
+`test_population_context.py`, `test_population_endpoint.py` (31).
+`backend/tests/`: `dashboard.test.js` (27), `timeline.test.js`, `history.test.js`.
+
+Nothing under `app/` or `src/` was modified by the test-writing agents, and no existing
+test file was touched. `conftest.py` and `setup.js` were deliberately left alone so three
+agents could share `tests/` without colliding.
+
+### D8 (HIGH, FOUND BY THESE TESTS, FIXED) — the heart model's caveat could never fire
+
+**Module 11 flags ~27% of true positives at its operating threshold**, so an unflagged
+heart result from it rules NOTHING out. `ModelLimitations.recall_at_operating_threshold`
+exists to carry that number — its own field description calls it "the single most important
+number on this object" — and it reads it from `thresholds['indicated_recall_achieved']`.
+
+`ml/artifacts/heart_rf_v1.metrics.json` records `indicated_recall_achieved = 0.2678`. But
+`app/ml/heart.py` published only `{'borderline', 'indicated'}`. **The number never left the
+artifact**, `recall_at_operating_threshold` was always `None`, and the caveat "an unflagged
+result rules nothing out" could never fire — for the one model that most needs it. **The
+clinician-facing document quoted a heart-disease probability with no statement of how much
+the model misses**, which is precisely the misleading output Module 32's brief set out to
+prevent.
+
+**Fixed** in `app/ml/heart.py` and `app/ml/kidney.py` (same gap; its recall is 0.984, so the
+caveat correctly does NOT fire there — the caveat is driven by the measured number, not by
+which model is speaking). Module 10's artifact records no such value, and a missing value is
+**omitted rather than sent as null**: absent reads as "not recorded", a null would be a claim
+that there is no recall.
+
+Verified live — the caveat a clinician now actually sees:
+> "At the operating threshold used here, this model flags a minority of the true positive
+> cases in its own held-out data. An unflagged result from this model therefore rules
+> nothing out."
+
+**How the test was handled, and why it is worth copying.** The agent could not modify
+`app/`, so it wrote the test as `@pytest.mark.xfail(strict=True)` with the whole defect in
+the reason string, plus a companion test proving the mechanism works when the number IS
+carried. Once `heart.py` was fixed the strict xfail turned into an XPASS — which strict mode
+reports as a failure, i.e. **the marker announced its own staleness**. The marker was then
+removed and the test kept as a permanent guard. That is the right shape for "found a defect
+I am not allowed to fix".
+
+### What the tests actually guard
+
+- **The absence hazard** (§11) across all six modules: `INSUFFICIENT_DATA` never becoming
+  `stable`, nothing-assessed never becoming a score, gaps never becoming zeros, an
+  unassessed condition never rendering as a clean bill.
+- **Module 29's `newly_abnormal`** — the category most able to invent an alarming finding —
+  including the tri-state `AbnormalityState` and every reason code.
+- **Regression guards for §6n's fixes**: the `status_label` flattening (D3), the
+  reference-range double-conversion (D1), and the reserved-`LogRecord`-key crash that made
+  Module 32 dead on 100% of calls (D2).
+- **Module 27's ownership path**, which §6m had recorded as never exercised against user B /
+  admin / clinician. It now is.
+- **Module 31's structural no-value guarantee**, the catalogue-completeness guard, and table
+  integrity asserted against the shipped NHANES JSON — a table that loses its provenance
+  fails the suite.
+- **Module 30's scoring table invariants**: equal anchor spacing, total weights, bands
+  tiling 0–100 with no anchor on an interior boundary.
+
+### Three tests were broken on arrival and were repaired, not deleted
+
+All three came from an agent killed mid-file by a rate limit, and **all three were test bugs,
+not source defects** — confirmed individually before touching anything:
+1. `test_the_disclaimer_and_scale_wording_ride_on_every_response` asserted a lowercase
+   literal against copy that capitalises for emphasis ("NOT a measure of health"). Matched
+   case-insensitively instead, with a note saying why — asserting the exact casing would fail
+   on a typographic edit while a real removal would still be caught.
+2. `test_the_summary_is_deterministic_apart_from_its_timestamp` excluded only the TOP-LEVEL
+   `generated_at`, while the summary nests sections that stamp their own. **The determinism
+   claim was verified independently first** (masking every ISO timestamp made two builds
+   byte-identical) before the exclusion was made recursive. Report dates are deliberately
+   still compared — masking all timestamps would hide a real ordering bug.
+3. `test_the_low_detection_caveat_does_fire_when_the_recall_is_carried` constructed
+   `MLExplanation` without its required `prediction` field.
+
+---
+
+## 6p. Independent audit of Modules 27–32, and the fixes · 2026-09-05
+
+Three independent auditors — none of which built the code or wrote its tests — audited
+Modules 27–32. Each was told to derive its own checklist from `Project Description.txt`
+BEFORE reading any implementation, and **not to trust the tests**, since the tests and the
+code were written in the same week by agents working from the same brief.
+
+**They found 17 defects.** That is the headline result: the suite was fully green, the
+modules had 911 tests of their own, and an independent pass still found this much. It is
+the fourth time on this project that an audit has found live holes behind a green suite.
+
+### The single most useful thing an auditor said
+
+> "The branch that refuses is tested, the branch that answers on thin evidence is not."
+
+Every audit found the same shape. The tests assert that a refusal happens; almost none ask
+whether an ANSWER was earned. Three concrete instances:
+- `tests/test_report_comparator.py`'s `cholesterol()` fixture defaults **every** cholesterol
+  test to a one-sided `reference_high=200` with no lower bound. Mutating `_outside_interval`
+  to refuse on the unbounded side failed 12 tests — **every one of them a test about
+  something else that merely rode on that fixture.** No test asked what a one-sided interval
+  says about a value below it, which is why D1 shipped green.
+- `tests/test_population_context.py` parametrises "every adult age" as `[20, 20.0, 45, 79,
+  80, 99, 120, 130]` — **all integers**, which is exactly the gap the fractional-age defect
+  lives in.
+- `tests/test_population_context.py` asserts `what_this_means == PER_FEATURE_MEANS.format(…)`
+  — **the implementation's wording against itself**, never asking whether the sentence is
+  true of the band it describes.
+
+### VERIFIED CLEAN — worth as much as the findings
+
+- **Module 31's NHANES data was independently reproduced.** An auditor wrote its own `.xpt`
+  reader, its own analytic filter and its own survey-weighted quantile without reading
+  `build_population_tables.py`, and matched **all 7 tables × 14 cohorts × 11 cut-points to
+  1e-6**, plus every sample count, plus all 11 SHA-256 digests. **The no-synthetic-data rule
+  holds, verified by someone who did not build it.**
+- **The backend security surface held under real attack.** User B, admin and clinician against
+  all six new endpoints and through `?baseline=`: every one 404, byte-identical to a random-id
+  404, same headers and `content-length`. Timing: median 6.85 ms vs 7.34 ms over 200 requests
+  — no oracle. Type confusion (arrays, `[$ne]`, `[$regex]`, `%24`, nested operators,
+  `__proto__`, `constructor[prototype]`, full-width unicode) — all 422, nothing reached Mongo.
+  Rate limiter with rotating `X-Forwarded-For` → 429×8; the Module 1 defect-1 bypass does not
+  exist here because `TRUST_PROXY` defaults to false. **`allowRoles` appears nowhere in code,
+  only in comments.**
+- **There is genuinely ONE polarity table.** No auditor could construct an input where
+  Modules 28, 29 and 30 disagree about a direction.
+- **The CVa/CVi stability inputs, which §6m flagged as unaudited, were audited** against
+  Westgard biological-variation figures. All literature-consistent. That flag is closed.
+- **Module 32 generates no prose** — verified structurally, not by docstring: importing it
+  loads 40 `app.*` modules and **zero** model clients; `google.genai` is never imported.
+- The §6n D1 reference-range fix **could not be made to double-convert** by any auditor.
+- Censored-value logic correct across all eight branches. `newly_abnormal` could not be made
+  to fire on an unknown baseline.
+
+### FIXED
+
+**D1/D2 (HIGH) — a truncated reference interval produced a FALSE claim of normality.**
+`_outside_interval` treated a MISSING bound as "no bound exists" and returned a definite
+`False` (= inside) for any value on the unbounded side. `reference_low`/`reference_high` are
+independently nullable all the way from Module 4's contract, so a printed `13.0 - 17.0` can
+arrive as `high=17.0` alone. Demonstrated: haemoglobin `13.9 → 7.5 g/dL` — **severe anaemia**
+— reported as `remained_normal`, "sat inside the reference interval stated on both reports".
+And the lab's own printed `low` flag was overruled by "the range wins", whose recorded
+reasoning ("two concrete signals rather than an absence") **does not hold on the unbounded
+side, where the range is not a signal at all.**
+
+Fixed by asking Module 28's polarity declaration whether anything is unfavourable on the
+missing side (`harm_declared_beyond`, tri-state), and by letting an inconclusive interval
+**fall through to the printed flag** instead of discarding it. **Module 29 still holds no
+polarity table** — it asks a yes/no question and never looks at a direction, threshold or
+band. A new reason code `ONE_SIDED_INTERVAL_INCONCLUSIVE` keeps this distinct from
+`CENSORED_VALUE_INCONCLUSIVE`: one is uncertainty about the VALUE, the other incompleteness
+of the INTERVAL, and blaming censoring for a one-sided interval would be a fresh false
+statement.
+
+Verified, with the controls that mattered most:
+
+| case | before | after |
+|---|---|---|
+| Hb 13.9→7.5, truncated interval, `low` flag printed | `remained_normal` | **`newly_abnormal`** via printed flag |
+| Creatinine 0.9→6.5, low bound only, no flag | `remained_normal` | **`NOT_DETERMINABLE`** + reason code |
+| Cholesterol `< 200` (**genuinely** one-sided) | `newly_abnormal` | **unchanged** — still settles |
+| Hb with both bounds printed | `newly_abnormal` | **unchanged** |
+
+**D3 (HIGH) — a risk level survived a status degradation: the card printed "Not Assessed"
+beside "Low".** `RISK_VALUES.includes(overall.risk)` is false for an explicit `null`, so the
+code fell through to the top-level `report.overall_risk` and substituted `Low` — directly
+under a comment reading *"No decisions must never become Low."* Worst case: the producer
+wrote `risk: null`, an explicit "there is no risk to state", and it was overridden. Not
+dashboard-local — it also reached the persisted copy, `/analysis` and the listing.
+**The tests written in §6o had already caught this** and pinned it as
+`DEFECT: documents current behaviour`, with an instruction to invert the assertions once
+fixed. That is exactly what happened, and the inversion is what made the fix visible rather
+than silent — the right shape for "found a defect I am not allowed to fix".
+
+**D4 (MEDIUM) — `considered = included + excludedCount` broke the moment the cap engaged.**
+55 eligible + 3 unanalysed returned `considered: 58, included: 50, excludedCount: 3`,
+leaving **five reports in neither bucket**, with `truncated: true` the only hint. Fixed with
+a third term, `droppedByCap`, derived by subtraction so it cannot disagree with the other
+three, plus `excludedListed` so a capped `excluded[]` cannot read as complete. The existing
+test called itself "THE ACCOUNTING IDENTITY" but seeded fewer eligible reports than the cap,
+so truncation never engaged — the new test does engage it and was **verified to fail against
+the two-term version** (`Expected: 2, Received: 0`).
+
+**D5 (MEDIUM-LOW) — an uppercase report id produced a false statement about the caller's own
+analysed report.** `snapshotIds.has(id)` compared the *submitted* string against lowercase
+hex, so the same id in uppercase returned 422 telling the patient to analyse a report that
+was already analysed. Now compares against the id of the document `resolveNamedPair` just
+loaded.
+
+**D6 (LOW) — `assembleHistory`'s JSDoc declared an `excluded[]` it never returned.** A caller
+trusting it read `undefined` and would render "nothing was excluded" — absence quietly
+becoming a reassuring value, in the block built to prevent exactly that.
+
+### FIXED IN THE SECOND PASS
+
+**D7 (HIGH) — the diabetes model's detection numbers never reached the clinician. This was
+D8 for the third model, and the reason recorded for closing D8 was MY OWN FALSE COMMENT.**
+`heart.py`, `kidney.py` and §6o all said "Module 10's artifact does not record it". It
+does: recall 0.7028 and precision 0.9113 at `decision_threshold` 0.7947, IDENTICAL to the
+published `indicated` threshold, plus accuracy 0.9678 against a 0.9118 majority-class
+baseline. They were simply recorded under `metrics.positive_class` rather than under
+`thresholds`. Believing my own comment is why the D8 fix stopped at two models.
+
+**D8 (MEDIUM-HIGH) — `precision_at_operating_threshold` was structurally dead.** The reader
+looked for `indicated_precision_achieved`, a key **no model published**. All three returned
+None while the artifacts held 0.7496 (heart) and 0.9840 (kidney).
+
+Both fixed by **one shared reader**, `app/ml/operating_metrics.py`, used by all three
+predictors — because per-model reasoning about a cross-model question is what caused both
+failures. It prefers the explicit `thresholds.indicated_*_achieved` keys and falls back to
+`metrics.positive_class.*` **only when `metrics.decision_threshold` equals the published
+`indicated` threshold**; when they diverge the numbers describe a different operating point
+and are refused, because a precision measured at 0.5 presented as the precision at 0.795
+would be a fabricated performance claim. An absent figure is **omitted, never null**.
+
+| model | before | after |
+|---|---|---|
+| Diabetes | recall/precision/accuracy/baseline all `None` | 0.7028 / 0.9113 / 0.9678 / 0.9118 |
+| Heart | recall only | 0.2678 / 0.7496 / 0.5918 / 0.5003 |
+| Kidney | recall only | 0.9840 / 0.9840 / 0.97 / 0.63 |
+
+Heart's accuracy 0.5918 against a 0.5003 baseline is the honest "barely better than a coin
+flip" a clinician needs and could not previously see.
+
+Also added `METRICS_OPERATING_POINT_INCOMPLETE`: a record with figures but no operating
+point is no longer allowed to report `metrics_available: True` with no absent code, which
+is exactly the state Module 10 was in with nothing signalling it.
+
+**D9 (LOW) — a skipped model no longer explains a figure it never showed.**
+`model_probability_meaning` was seeded unconditionally, so a model that produced no estimate
+still carried "The figure shown is the model's own estimated likelihood...".
+
+**D10 (MEDIUM-HIGH) — Module 31's copy overstated how many people are below the patient.**
+The band is built with `bisect_right` over cut-points defined as `min{x : P(X <= x) >= p}`,
+so it is a statement about the share AT OR BELOW — but the sentence said "the share who had
+a **lower** {label} than yours". Lab values cluster hard at one decimal, so for men aged
+20-29: HbA1c 5.2 (the modal value) reported 50th-75th when only **40.9%** are strictly
+lower; 4.6 reported 5th-10th when **2.4%** are. The banding arithmetic was correct
+throughout; the sentence had been written for a point percentile and never revised. Now
+reads "the share whose {label} was at or below yours. People whose result equals yours are
+counted in that share."
+
+**Two tests that asserted the implementation against itself were corrected, not deleted.**
+One required the literal word "lower"; the other extracted the label by splitting the
+sentence on `"lower "` and compared the result against that same sentence — circular, and it
+broke with an `IndexError` rather than a useful failure. The label now comes from the
+service's own label source, and the copy test asserts the semantics ("at or below" present,
+"lower than yours" absent).
+
+Suites after this pass: `ai-service` **3,653 passing** / 0 failures (+4) · `backend` **618
+passing** / 0 failures. Regression tests were verified to fail against the unfixed code:
+the operating-point test fails on `Diabetes`, and the accounting test on `Expected: 2,
+Received: 0`.
+
+### FIXED IN THE THIRD PASS
+
+**D11 (HIGH) — a doctor summary could carry trends for a history that did not contain the
+report it describes.** Two live routes: a subject excluded by the backend's own inclusion
+rule, and a subject dropped by the history cap (with `excludedCount: 0`, so nothing named it
+missing). **The backstop went in the ai-service**, at the layer that renders the claim, where
+no caller's accounting bug can route around it: `_subject_missing_from_history` refuses both
+sections with `SUBJECT_NOT_IN_HISTORY` when `report_ref` is not among the snapshots. The
+backend additionally reports `history.subjectInHistory`, and the controller comment claiming
+the inclusion rule guaranteed membership — it did not — was replaced with what the code
+actually does. Verified: subject present → both sections render; subject absent → both refuse
+with the code, **and the clinical findings are untouched** (a missing section never costs the
+document its content).
+
+**D12 (MEDIUM) — Module 30 discarded the warnings that qualify its own score.** Only
+request-level warnings propagated, so `crossed_without_significant_change` was dropped and a
+**0.02 mg/dL** creatinine move (below the declared stability band, across a printed bound)
+swung the score 50.0 → 37.5 and changed the headline band with no caveat anywhere. Per-
+parameter warnings now travel with the score, de-duplicated, in parameter order. The design
+call that a crossing outranks the change axis is Module 29's and was deliberately kept; it
+was the silence that was wrong.
+
+**D13 (MEDIUM) — BMI's adult-only guard fired only when an age was present.** With no `age`
+feature the WHO adult 18.5-24.9 interval was applied silently, so `bmi 15.0 → 17.5` in a
+child read `improving`, while the same series WITH `age=8` was correctly refused. Age-unknown
+became age-adult. Now refused with `NOT_COMPARABLE_AGE_CONTEXT` either way — consistent with
+how the module already refuses glucose for want of a recorded sample timing.
+**A test was asserting the defect**: `mixed_pair()` records no age, so BMI was being scored,
+and the test pinned 7 contributors and 450/7 = 64.3. Corrected to 6 contributors and
+400/6 = 66.7, with BMI's exclusion asserted explicitly and the reasoning recorded in place.
+
+**D14 (MEDIUM) — a fractional age was refused with a false reason.** `age` is typed
+`Optional[float]`, and bands were compared against the raw value, so they were contiguous
+over the integers but not over the reals: `29.5` and `79.9` fell through the cracks and were
+told they "fall outside every group the survey published". Ages are now compared as
+**completed years**, which is how NHANES records them (`RIDAGEYR`) and how the cells were
+cut, so no new assumption is introduced. `19.99` still floors to 19 and is still refused as
+below the adult table. `DroppedCohort.covers` was given the same treatment so the two cannot
+disagree and produce the wrong reason code.
+
+**D15 (LOW) — negative day counts** in prose on an explicitly named reverse-chronological
+pair ("(-152 days apart)"). The signed value stays on the data object, where it correctly
+records the direction the caller asked for; only the rendering takes the absolute value,
+because a separation is a magnitude.
+
+**D16 (LOW) — the policy endpoint published "eight canonical features are numerically
+trendable"; it is nine.** Now **derived** from the tables rather than typed, so it cannot go
+stale the next time the polarity table gains a row — the adjacent `feature_coverage_note`
+was computed and correct the whole time, which was the argument for computing this one too.
+
+**The Module 24 safety scanner caught one of my own fixes.** A new template worded "an
+unknown age is not *treated* as an adult one" matched a `treatment_instruction` pattern and
+failed the import. Reworded to "not assumed to be". The scanner is doing exactly what it
+exists to do, on a string a human would have waved through.
+
+**A reachability test caught another.** `test_every_declared_section_reason_code_is_reachable`
+failed the moment `SUBJECT_NOT_IN_HISTORY` was added to the vocabulary without a scenario
+producing it. That is a test earning its keep; a scenario was added rather than the
+assertion loosened.
+
+Suites after this pass: `ai-service` **3,660 passing** / 0 failures · `backend` **618
+passing** / 0 failures.
+
+### FIXED IN THE FOURTH PASS — ALL 17 AUDIT DEFECTS ARE NOW CLOSED
+
+**D17 (LOW-MEDIUM) — physiologically impossible values received a band.** `hba1c = -3` came
+back `available: true`, "below the 1st percentile"; `hemoglobin = 1e9` came back "at or above
+the 99th". Both statements are true of the published grid and neither makes a clinical claim,
+which is what made them dangerous: they laundered an extraction error into something that
+reads like a measurement.
+
+**D18 (LOW) — the `snapshot` input path bypassed Module 6**, so `hba1c -1.0 → -2.0`
+classified as `improving` while `trend_analyzer.py`'s own docstring asserted a rejected value
+"cannot even reach here" (true of the `validated` path, false of this one).
+
+**Both fixed by borrowing Module 6's OWN bounds** — `validation_rules.rule_for`, the same
+table Module 6 rejects on — rather than writing a second definition of "physiologically
+possible" that could drift from it (§11). Module 31 refuses with
+`VALUE_NOT_PHYSIOLOGICALLY_PLAUSIBLE`; Module 28 emits `IMPLAUSIBLE_VALUE` gaps instead of
+trend points. The docstring that claimed the guarantee is now true rather than aspirational.
+
+**The bound is compared in the CANONICAL unit, and that detail is load-bearing.** Module 6
+states its band in ng/mL for vitamin D while the NHANES table is nmol/L (~2.5x). Checking an
+already-table-converted number against canonical bounds would reject real readings near the
+top and accept impossible ones, so the conversion direction is asserted by its own test.
+
+**Six existing tests broke, and every one was using an impossible value as a convenient
+probe.** They were repaired rather than the guard weakened:
+- A zero-first-value probe used `cholesterol = 0` (Module 6's floor is 20). Switched to
+  vitamin D, whose possible band genuinely starts at 0.0, so the division-by-zero path is now
+  exercised by a value that could actually arrive.
+- An exhaustive undeclared-polarity test hard-coded `[10.0, 1000.0]` for every feature —
+  1000 g/dL of haemoglobin. The probes are now derived from each feature's own possible band,
+  so the test stays exhaustive over the table AND every probe is a real measurement.
+- Three population band-edge tests probed `values[0] - 5` and `values[-1] + 1`, i.e. negative
+  creatinine. Shared `_just_below` / `_just_above` helpers now step outside the published
+  grid while staying inside the possible band — preserving exactly what those tests were
+  written to check.
+
+One of my own new tests was wrong and was corrected rather than the code: it asserted a
+haemoglobin trend would be `TREND_CLASSIFIED`, but haemoglobin's polarity is deliberately
+UNDECLARED, so `CLINICAL_DIRECTION_UNKNOWN` is the honest answer. The test now asserts what it
+actually cares about — that both readings were USED — because plausibility and direction are
+different questions and conflating them is what the test would otherwise have hidden.
+
+**FINAL STATE: `ai-service` 3,667 passing / 0 failures · `backend` 618 passing / 0 failures.
+All 17 defects from the independent audit of Modules 27–32 are fixed.**
+
+### Formerly open, now closed
+
+~~1. **(LOW-MEDIUM) Physiologically impossible values receive a band.**~~ `hba1c = -3` →
+   "below the 1st percentile"; `hemoglobin = 1e9` → "at or above the 99th". The service
+   checks only `is_finite_number`, and this endpoint takes raw `measurements` rather than a
+   validated snapshot, so Module 6's plausibility bounds are never consulted. The statements
+   are technically true and carry no clinical claim — this is laundering nonsense rather than
+   emitting a wrong number — but a percentile attached to a negative haemoglobin is not
+   something this platform should print. Reuse Module 6's bounds; do not write a second
+   table.
+2. **(LOW) The `snapshot` input path bypasses Module 6.** `TimelineReportInput.snapshot`
+   accepts a `FeatureSnapshot` posted directly with no plausibility check, so
+   `hba1c -1.0 → -2.0` classifies as `improving` — while `trend_analyzer.py`'s own docstring
+   asserts a rejected value "cannot even reach here". Either close the gap or make the
+   comment true; a comment asserting a guarantee the code does not make is itself a defect
+   here.
+
+### PREVIOUSLY OPEN, NOW SUPERSEDED
+
+The following were listed in the first pass and are fixed above: the doctor-summary subject
+(D11), Module 30's dropped warnings (D12), the BMI age guard (D13), the fractional age
+(D14), negative days (D15), the trendable count (D16). ~~1. **(HIGH) A doctor summary can
+carry trends for a history that does not contain the report it describes.**~~ Two triggers: a subject excluded by the inclusion rule, and the cap
+   dropping it (`SUBJECT IN HISTORY? false`, `excludedCount: 0` — nothing names it missing).
+   **The ai-service does not backstop it**: `_trend_section` / `_comparison_section` branch
+   only on `len(history) < 2` and never check `report_ref ∈ history`. The controller comment
+   claims the opposite.
+2. **(MEDIUM) Module 30 discards the warnings that qualify its own score.** Only
+   request-level warnings propagate, so `crossed_without_significant_change` is dropped and a
+   **0.02 mg/dL** creatinine move swings the score 50.0 → 37.5 and changes the headline band
+   with no caveat.
+6. **(MEDIUM) BMI's adult-only guard fires only when an age is present.** No age ⇒ the WHO
+   adult interval is applied silently; `bmi 15.0 → 17.5` in a child reads `improving`.
+7. **(MEDIUM) A fractional age is refused with a false reason.** `age=29.5` →
+   `AGE_OUTSIDE_TABLE_RANGE` "falls outside every group the survey published", though a
+   29.5-year-old is plainly in the published 20–29 cell. **§6m's claim that this code is
+   "implemented but unreachable" is falsified.**
+8. **(LOW-MEDIUM) Physiologically impossible values receive a band** — `hba1c = -3` →
+   "below the 1st percentile". Module 6's plausibility bounds are never consulted.
+6. **(LOW) Module 30's policy endpoint publishes "eight canonical features are numerically
+    trendable"; it is nine.** §6m repeats the same wrong number.
+11. **(LOW) Negative day count** in prose on an explicitly named reverse-chronological pair.
+12. **(LOW) The `snapshot` input path bypasses Module 6**, so `hba1c -1.0 → -2.0` classifies
+    as `improving`, while the module docstring asserts a rejected value "cannot even reach
+    here".
+
+### Corrections to this file
+
+- §6m's "`AGE_OUTSIDE_TABLE_RANGE` is implemented but unreachable" — **false**, see item 7.
+- §6m's "CONTRACT MISMATCH FOUND, NOT PATCHED" (400 → 502) — **stale, it is fixed**; 400 now
+  joins the 422 branch.
+- §6m's claim about duplicated `?baseline=` — wrong; `hpp()` collapses it to the last value
+  before the chain sees it.
+- §6o's "Module 10's artifact does not record it" — **false**, see item 2.
+- §6m's "eight trendable features" — it is nine.
+
+**Six false comments have now been found on this project, three of them written by an
+assistant.** §11's "a comment asserting a guarantee is not a guarantee" is the single
+most repeatedly-vindicated line in this file.
+
+---
+
+## 7. Module 1 → later modules: inherited obligations
+
+**RESOLVED by Module 2:** `ownership.js` is now wired up and enforced, `ownerScopedFilter` throws
+on missing identity, and `allowRoles` denies by default. See §6a.
+
+Still standing:
+
+- Preserve `assertCanAccess`'s **404-before-403** behaviour so a non-owner cannot probe
+  whether another patient's record exists. Module 3 verified this holds for addressable ids.
+- Keep passing no `allowRoles` grant for any medical resource. `OWNER_ONLY` is exported and
+  spread at call sites as intent-declaring belt-and-braces (now identical to the default).
+- `express-mongo-sanitize` works on Express 4 but **is incompatible with Express 5** — a pin
+  to remember on any future upgrade.
+
+---
+
+## 8. Module 4 output contract (BINDING)
+
+Module 5 consumes this, so it is fixed. `POST /api/v1/ocr/extract` (multipart) returns
+`{ success, data: { source, raw_text, pages[], extracted_parameters[], report_metadata,
+extraction_confidence, warnings[] } }`, where each extracted parameter is:
+
+```json
+{ "test_name": "HbA1c", "value_raw": "6.8", "value_numeric": 6.8, "unit": "%",
+  "reference_range_raw": "4.0 - 5.6", "reference_low": 4.0, "reference_high": 5.6,
+  "flag": "high", "page_number": 1, "confidence": 0.94 }
+```
+
+**Contract rules:**
+
+- `test_name` is **exactly as printed on the report**. Module 4 does **not** normalise;
+  canonical mapping (`HbA1c` / `Hb A1c` / `Glycated Hemoglobin` → `hba1c`) is **Module 5's job**.
+- `value_numeric` is `null` for non-numeric results ("Negative", "Trace"); `value_raw` always
+  preserves what was printed.
+- `flag` is `low|normal|high|critical|null`, set **only** when the report says so or the
+  reference range makes it unambiguous. **No clinical inference at the OCR stage.**
+- Everything except `test_name` and `value_raw` is nullable. **Missing information must be
+  `null`, never invented.**
+- Module 4's tests must pass **with no API key and no network** (Gemini mocked), with an
+  opt-in live test for real-integration confirmation.
+
+---
+
+## 9. Conventions any new module must follow
+
+- **CommonJS** in `backend/`; match the existing file layout and naming.
+- Response shapes: `{ success: true, data }` and `{ success: false, error: { code, message } }`.
+- Use the existing `asyncHandler`, `ApiError`, `apiResponse`, and `validate` middleware.
+  Do not introduce a second way to do something that already has one.
+- **Every validator chain starts with `.isString().bail()`** (or the matching type guard)
+  before any sanitizer. This is not style — a missing one caused a live authentication
+  bypass. **Never let an untyped value reach a Mongo query.**
+- Never log file contents, raw report text, medical values, or secrets.
+- Never echo unsanitized user input back in error messages.
+- New modules must not modify Module 1 auth logic, and **all existing tests must keep passing.**
+---
+
+## 10. Suggested next steps
+
+In the order that gives the most value:
+
+0. ~~Apply the D7 fix.~~ **DONE 2026-09-04**, with a regression test that fails against
+   the old code (§6n D7). Still worth watching `/health` during a real Gemini extraction
+   the next time quota allows — the proof used a synthetic 3s block, not a real 190s one.
+1. ~~Write tests for Modules 27-32.~~ **DONE 2026-09-04/05 — +911 tests (§6o).** They
+   found a real patient-safety defect (D8) on their first run.
+2. **AUDIT MODULES 27-32.** They now have tests, but the tests and the code were written in
+   the same week by agents working from the same brief — an independent auditor deriving
+   its own checklist from the spec is still the step that has caught the most here. They are built (§6m) and have *no* tests and *no*
+   audit — roughly 8,000 lines of new code on a project where independent audits have
+   repeatedly found live holes behind a fully green suite. Start with the two things most
+   likely to be wrong: Module 29's abnormality/transition logic (it is the one that can
+   invent an alarming "newly abnormal" finding) and every new router's ownership and auth
+   path. Run `tests/test_auth.py` first — its recursive route walk has never been run
+   against the five new routers.
+2. **Decide the Module 5 reference-range unit bug** (§0 item 4). It is a real defect, it
+   predates this wave, and two modules now carry a workaround for it.
+3. **A frontend.** Spec section 15 asks for React and there is none. Everything is API-only,
+   and Module 27 was built as the read-model a React dashboard would consume.
+4. **Audit Modules 21-26 as a group.** Module 24 was audited alone; 21, 22, 23, 25 and 26
+   have never been independently checked.
+5. **Reconcile the three safety scanners** into one rule table (see 6k, D5).
+6. **Two measured data gaps**, both already quantified:
+   - adding systolic BP to Module 2 is worth ~0.10 ROC-AUC to Module 11;
+   - adding `blood_urea` and `albumin` to `feature_catalog.py` is the biggest available
+     win for Module 12, which can currently use only 5 of the CKD dataset's 24 attributes.
+7. **Add a liver-enzyme KB document** so Module 25 stops refusing SGPT, which the spec names.
+8. **A background job queue for `analyze`.** It still blocks on a slow LLM round trip.
+   Extraction worst case is bounded but large; the explanation stage is now parallel but
+   still synchronous.
+
+## 11. Things that recur — worth knowing before editing
+
+- **Absence must never become a value.** Tri-state booleans (true / false / absent-unknown),
+  `INSUFFICIENT_DATA` may not carry a risk, `RiskLevel.highest([])` returns None not LOW,
+  Module 18 will not say Healthy when nothing was assessed, and Module 7's `ABSENT`
+  sentinel raises on every implicit coercion. This is the single most repeated hazard here.
+- **Guarantees belong at the lowest layer.** A validator-only password cap, a call-site-only
+  ownership flag and a pattern-only safety control all failed the same way; each was fixed
+  by moving the check to where it cannot be bypassed.
+- **A comment asserting a guarantee is not a guarantee.** Three separate audits found false
+  claims in comments on this project, two of them written by the assistant.
+- **Build-agent self-reports are not evidence.** Independent audits repeatedly found live
+  holes behind a fully green suite — including a critical one Module 10 had already
+  passed.

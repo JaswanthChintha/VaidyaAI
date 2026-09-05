@@ -1,0 +1,78 @@
+# ==========================================================================
+# PATIENT DATA AND SECRETS -- these two blocks are the ones that matter
+# ==========================================================================
+#
+# Uploaded laboratory reports are PHI. `UPLOAD_ROOT` defaults to
+# `backend/storage/uploads` and is resolved against the backend directory
+# (see backend/src/config/env.js), but it is configurable, so the common
+# names are all excluded rather than just the default. A report that reaches
+# a commit is in every clone and every backup for good.
+storage/
+uploads/
+**/storage/uploads/
+
+# Report bytes wherever they land, scoped to the directories they land in.
+# NOT a blanket `*.pdf` / `*.png`: `datasets/population/reference/` holds the
+# two published NCHS documents Module 31's tables were cross-checked against,
+# and those are provenance, not patient data.
+**/uploads/**
+**/storage/**
+
+# Real credentials. `.env.example` is committed on purpose -- it documents
+# which variables exist without carrying a single value.
+.env
+.env.*
+!.env.example
+
+# ==========================================================================
+# Dependencies and build products
+# ==========================================================================
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+coverage/
+.mypy_cache/
+.ruff_cache/
+
+# Jest / pytest scratch
+junit*.xml
+*.junit.xml
+
+# ==========================================================================
+# Editor and OS noise
+# ==========================================================================
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# ==========================================================================
+# DELIBERATELY COMMITTED, despite being large or generated
+# ==========================================================================
+#
+# ml/artifacts/*.joblib  (~35 MB total)
+#     The three trained models. They are the artifacts the service LOADS --
+#     nothing retrains at runtime -- and their metrics JSON is the source of
+#     every performance figure a clinician is shown. Excluding them would
+#     leave a clone unable to make a prediction.
+#
+# datasets/population/raw/*.xpt  (~14 MB total)
+#     The NHANES microdata the percentile tables were built from. These are
+#     downloadable, and PROVENANCE.md records a SHA-256 for each, so they
+#     could be re-fetched -- but an independent auditor reproduced all seven
+#     tables from THESE files, and keeping them makes that reproducible
+#     without depending on a CDC URL still resolving years from now.
+#     Verifiable provenance is a core rule of this project, not a nicety.
+#
+# datasets/*/*.csv
+#     The three real ML training datasets, for the same reason.
+#
+# Nothing above is ignored. This block exists so the decision is recorded
+# rather than rediscovered.

@@ -1,0 +1,38 @@
+# --- secrets (medical service: never commit) ---
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# --- never commit real medical documents ---
+samples/
+uploads/
+*.pdf
+*.jpg
+*.jpeg
+*.png
+!tests/**/synthetic_*
+
+# --- python ---
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# --- test / tooling ---
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# --- editors / os ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

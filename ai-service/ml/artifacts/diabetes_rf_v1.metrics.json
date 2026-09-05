@@ -1,0 +1,868 @@
+{
+  "artifact_version": "1.0.0",
+  "model_id": "diabetes_rf",
+  "condition": "Diabetes",
+  "algorithm": "RandomForestClassifier",
+  "source_label": "Random Forest",
+  "trained_at": "2026-08-29T09:31:27.876342+00:00",
+  "python_version": "3.10.11",
+  "sklearn_version": "1.7.2",
+  "numpy_version": "2.2.6",
+  "pandas_version": "2.3.3",
+  "joblib_version": "1.5.3",
+  "hyperparameters": {
+    "n_estimators": 200,
+    "min_samples_leaf": 50,
+    "class_weight": "balanced_subsample",
+    "random_state": 42,
+    "n_jobs": -1
+  },
+  "dataset": {
+    "path": "datasets/raw/diabetes_prediction_dataset.csv",
+    "sha256": "f233fc470e904201f35310d061cb46ca0a6bc7ca5c3e428b769fb4f87f69929b",
+    "rows_raw": 100000,
+    "exact_duplicate_rows_dropped": 3854,
+    "rows_used": 96146,
+    "positives": 8482,
+    "negatives": 87664,
+    "prevalence": 0.08821999875189815,
+    "bmi_median_filled_rows": 21666,
+    "duplicate_policy": "dropped before splitting (see module docstring)",
+    "synthetic_rows": 0,
+    "resampling": "none -- class weights only, no SMOTE, no oversampling",
+    "gender_levels": [
+      "female",
+      "male",
+      "other"
+    ],
+    "smoking_history_levels": [
+      "current",
+      "ever",
+      "former",
+      "never",
+      "no_info",
+      "not_current"
+    ]
+  },
+  "split": {
+    "test_size": 0.2,
+    "validation_size_of_train": 0.2,
+    "stratified": true,
+    "random_state": 42,
+    "deduplicated_before_split": true,
+    "threshold_selected_on": "validation split",
+    "metrics_measured_on": "held-out test split",
+    "shipped_model_fitted_on": "train split (fit + validation)"
+  },
+  "required_features": [
+    "hba1c",
+    "blood_glucose"
+  ],
+  "optional_numeric_features": [
+    "age",
+    "bmi"
+  ],
+  "categorical_features": [
+    "gender",
+    "smoking_history"
+  ],
+  "tri_state_features": [
+    "hypertension",
+    "heart_disease"
+  ],
+  "unknown_category_policy": "OneHotEncoder(handle_unknown='ignore'): an unseen or unsupported category becomes an all-zero block -- 'no category asserted'. It is never replaced by the most frequent category.",
+  "tri_state_policy": "One fitted pipeline per availability pattern. A tri-state value the patient never supplied is not imputed and not encoded as 0: the variant used simply has no such column.",
+  "imbalance_policy": "class_weight='balanced_subsample' on the real rows, plus a validation-tuned decision threshold. No synthetic minority rows (no SMOTE), no oversampling, no augmentation.",
+  "feature_importance_scope": "global_model_level",
+  "feature_importance_caveat": "Mean impurity decrease over the whole training set. It ranks features FOR THE MODEL and must never be presented as the reason an individual prediction came out as it did.",
+  "variants": {
+    "both": {
+      "numeric_features": [
+        "hba1c",
+        "blood_glucose",
+        "age",
+        "bmi",
+        "hypertension",
+        "heart_disease"
+      ],
+      "categorical_features": [
+        "gender",
+        "smoking_history"
+      ],
+      "tri_state_features": [
+        "hypertension",
+        "heart_disease"
+      ],
+      "thresholds": {
+        "indicated": 0.7947513421483547,
+        "borderline": 0.11728518348695766,
+        "f1_optimal": 0.7924982939340058,
+        "f1_optimal_precision": 0.8974836905871388,
+        "f1_optimal_recall": 0.709653647752395,
+        "f1_optimal_f1": 0.7925925925925925,
+        "target_precision_indicated": 0.9,
+        "borderline_minimum_recall": 0.99,
+        "borderline_recall_achieved": 0.9904200442151806,
+        "borderline_precision_achieved": 0.21722967512526264,
+        "validation_prevalence": 0.08820852834113364,
+        "validation_rows": 15384,
+        "criterion_note": "indicated = smallest threshold whose CUMULATIVE precision reaches the target; borderline = largest threshold whose CUMULATIVE recall still meets the sensitivity floor. Both are cumulative (score >= t) quantities. The observed positive rate WITHIN the middle band is reported separately under risk_bands_on_test and is lower -- that band means 'not ruled out', not 'elevated'."
+      },
+      "global_feature_importance": {
+        "hba1c": 0.39748616579354623,
+        "blood_glucose": 0.2856158861168044,
+        "age": 0.16235445524509956,
+        "bmi": 0.07517412927666792,
+        "hypertension": 0.033892101739323714,
+        "smoking_history": 0.022261057856262426,
+        "heart_disease": 0.018678233674609166,
+        "gender": 0.004537970297686673
+      },
+      "metrics": {
+        "decision_threshold": 0.7947513421483547,
+        "roc_auc": 0.9738041629631702,
+        "pr_auc_average_precision": 0.8720551276748538,
+        "positive_class": {
+          "precision": 0.9113149847094801,
+          "recall": 0.7028301886792453,
+          "f1": 0.7936085219707057,
+          "support": 1696
+        },
+        "negative_class": {
+          "precision": 0.9718781386006026,
+          "recall": 0.9933842819664651,
+          "f1": 0.9825135379061372,
+          "support": 17534
+        },
+        "confusion_matrix": {
+          "true_negative": 17418,
+          "false_positive": 116,
+          "false_negative": 504,
+          "true_positive": 1192,
+          "layout": "rows = actual [negative, positive], columns = predicted",
+          "matrix": [
+            [
+              17418,
+              116
+            ],
+            [
+              504,
+              1192
+            ]
+          ]
+        },
+        "accuracy": 0.967758710348414,
+        "majority_class_baseline_accuracy": 0.9118044721788872,
+        "test_prevalence": 0.08819552782111284,
+        "test_rows": 19230,
+        "at_default_threshold_0.5": {
+          "decision_threshold": 0.5,
+          "roc_auc": 0.9738041629631702,
+          "pr_auc_average_precision": 0.8720551276748538,
+          "positive_class": {
+            "precision": 0.4595080983803239,
+            "recall": 0.9033018867924528,
+            "f1": 0.6091451292246521,
+            "support": 1696
+          },
+          "negative_class": {
+            "precision": 0.9896829391041772,
+            "recall": 0.8972282422721569,
+            "f1": 0.9411905474125037,
+            "support": 17534
+          },
+          "confusion_matrix": {
+            "true_negative": 15732,
+            "false_positive": 1802,
+            "false_negative": 164,
+            "true_positive": 1532,
+            "layout": "rows = actual [negative, positive], columns = predicted",
+            "matrix": [
+              [
+                15732,
+                1802
+              ],
+              [
+                164,
+                1532
+              ]
+            ]
+          },
+          "accuracy": 0.8977639105564222,
+          "majority_class_baseline_accuracy": 0.9118044721788872,
+          "test_prevalence": 0.08819552782111284,
+          "test_rows": 19230
+        },
+        "risk_bands_on_test": {
+          "low": {
+            "patients": 11713,
+            "share_of_cohort": 0.6091003640145606,
+            "actual_positives": 12,
+            "observed_positive_rate": 0.0010245026893195594
+          },
+          "medium": {
+            "patients": 6209,
+            "share_of_cohort": 0.32288091523660944,
+            "actual_positives": 492,
+            "observed_positive_rate": 0.07923981317442422
+          },
+          "high": {
+            "patients": 1308,
+            "share_of_cohort": 0.06801872074882995,
+            "actual_positives": 1192,
+            "observed_positive_rate": 0.9113149847094801
+          }
+        },
+        "cross_validation": {
+          "folds": 5,
+          "scheme": "StratifiedKFold(shuffle=True) on the training portion",
+          "note": "scored at sklearn's default 0.5 threshold; the tuned threshold is reported separately. These numbers measure STABILITY across splits, not the deployed operating point.",
+          "f1": {
+            "mean": 0.6269471720993067,
+            "std": 0.0030272236581688804,
+            "per_fold": [
+              0.6274610074149833,
+              0.6313118497843186,
+              0.6281075596144089,
+              0.6220668996505242,
+              0.6257885440322988
+            ]
+          },
+          "precision": {
+            "mean": 0.47742864347803576,
+            "std": 0.004018867940824624,
+            "per_fold": [
+              0.4806110458284371,
+              0.48142414860681115,
+              0.47891682785299805,
+              0.4703661759154398,
+              0.4758250191864927
+            ]
+          },
+          "recall": {
+            "mean": 0.9129103117745437,
+            "std": 0.005130336453020277,
+            "per_fold": [
+              0.9035346097201767,
+              0.9167280766396463,
+              0.9123065585851142,
+              0.918201915991157,
+              0.9137803979366249
+            ]
+          },
+          "roc_auc": {
+            "mean": 0.9755591389048724,
+            "std": 0.0013436310105642995,
+            "per_fold": [
+              0.9744408763695112,
+              0.9767774417465155,
+              0.9734867323460032,
+              0.9763841307032597,
+              0.9767065133590729
+            ]
+          },
+          "average_precision": {
+            "mean": 0.8778001317541889,
+            "std": 0.00603306105296249,
+            "per_fold": [
+              0.8702831047266378,
+              0.880888889108517,
+              0.8708148262611878,
+              0.8845103308054777,
+              0.8825035078691245
+            ]
+          }
+        }
+      }
+    },
+    "hypertension_only": {
+      "numeric_features": [
+        "hba1c",
+        "blood_glucose",
+        "age",
+        "bmi",
+        "hypertension"
+      ],
+      "categorical_features": [
+        "gender",
+        "smoking_history"
+      ],
+      "tri_state_features": [
+        "hypertension"
+      ],
+      "thresholds": {
+        "indicated": 0.7957804159221188,
+        "borderline": 0.115092810277351,
+        "f1_optimal": 0.7910852321737865,
+        "f1_optimal_precision": 0.8941068139963168,
+        "f1_optimal_recall": 0.7155490051584378,
+        "f1_optimal_f1": 0.794924273434302,
+        "target_precision_indicated": 0.9,
+        "borderline_minimum_recall": 0.99,
+        "borderline_recall_achieved": 0.9904200442151806,
+        "borderline_precision_achieved": 0.22437395659432388,
+        "validation_prevalence": 0.08820852834113364,
+        "validation_rows": 15384,
+        "criterion_note": "indicated = smallest threshold whose CUMULATIVE precision reaches the target; borderline = largest threshold whose CUMULATIVE recall still meets the sensitivity floor. Both are cumulative (score >= t) quantities. The observed positive rate WITHIN the middle band is reported separately under risk_bands_on_test and is lower -- that band means 'not ruled out', not 'elevated'."
+      },
+      "global_feature_importance": {
+        "hba1c": 0.4079720209185428,
+        "blood_glucose": 0.2846241602764308,
+        "age": 0.17346230135272195,
+        "bmi": 0.07140990830363793,
+        "hypertension": 0.03194726011970543,
+        "smoking_history": 0.025464420189645447,
+        "gender": 0.005119928839315619
+      },
+      "metrics": {
+        "decision_threshold": 0.7957804159221188,
+        "roc_auc": 0.9739113502661136,
+        "pr_auc_average_precision": 0.8719281387844491,
+        "positive_class": {
+          "precision": 0.9121466768525592,
+          "recall": 0.7040094339622641,
+          "f1": 0.794675540765391,
+          "support": 1696
+        },
+        "negative_class": {
+          "precision": 0.9719881703029964,
+          "recall": 0.9934413140184783,
+          "f1": 0.9825976590043718,
+          "support": 17534
+        },
+        "confusion_matrix": {
+          "true_negative": 17419,
+          "false_positive": 115,
+          "false_negative": 502,
+          "true_positive": 1194,
+          "layout": "rows = actual [negative, positive], columns = predicted",
+          "matrix": [
+            [
+              17419,
+              115
+            ],
+            [
+              502,
+              1194
+            ]
+          ]
+        },
+        "accuracy": 0.9679147165886636,
+        "majority_class_baseline_accuracy": 0.9118044721788872,
+        "test_prevalence": 0.08819552782111284,
+        "test_rows": 19230,
+        "at_default_threshold_0.5": {
+          "decision_threshold": 0.5,
+          "roc_auc": 0.9739113502661136,
+          "pr_auc_average_precision": 0.8719281387844491,
+          "positive_class": {
+            "precision": 0.4569477434679335,
+            "recall": 0.9074292452830188,
+            "f1": 0.6078199052132701,
+            "support": 1696
+          },
+          "negative_class": {
+            "precision": 0.9901021308788299,
+            "recall": 0.8956883768677997,
+            "f1": 0.9405318002155947,
+            "support": 17534
+          },
+          "confusion_matrix": {
+            "true_negative": 15705,
+            "false_positive": 1829,
+            "false_negative": 157,
+            "true_positive": 1539,
+            "layout": "rows = actual [negative, positive], columns = predicted",
+            "matrix": [
+              [
+                15705,
+                1829
+              ],
+              [
+                157,
+                1539
+              ]
+            ]
+          },
+          "accuracy": 0.8967238689547582,
+          "majority_class_baseline_accuracy": 0.9118044721788872,
+          "test_prevalence": 0.08819552782111284,
+          "test_rows": 19230
+        },
+        "risk_bands_on_test": {
+          "low": {
+            "patients": 11870,
+            "share_of_cohort": 0.6172646905876235,
+            "actual_positives": 12,
+            "observed_positive_rate": 0.0010109519797809603
+          },
+          "medium": {
+            "patients": 6051,
+            "share_of_cohort": 0.31466458658346336,
+            "actual_positives": 490,
+            "observed_positive_rate": 0.08097835068583706
+          },
+          "high": {
+            "patients": 1309,
+            "share_of_cohort": 0.06807072282891316,
+            "actual_positives": 1194,
+            "observed_positive_rate": 0.9121466768525592
+          }
+        },
+        "cross_validation": {
+          "folds": 5,
+          "scheme": "StratifiedKFold(shuffle=True) on the training portion",
+          "note": "scored at sklearn's default 0.5 threshold; the tuned threshold is reported separately. These numbers measure STABILITY across splits, not the deployed operating point.",
+          "f1": {
+            "mean": 0.6189094762125769,
+            "std": 0.0022796134889871084,
+            "per_fold": [
+              0.6191198786039454,
+              0.6231884057971014,
+              0.6181909045477262,
+              0.6169792694965449,
+              0.6170689226175665
+            ]
+          },
+          "precision": {
+            "mean": 0.468052422164547,
+            "std": 0.0030487801316932874,
+            "per_fold": [
+              0.4714946070878274,
+              0.47145557655954634,
+              0.4676748582230624,
+              0.46382189239332094,
+              0.4658151765589782
+            ]
+          },
+          "recall": {
+            "mean": 0.9133527891704281,
+            "std": 0.006928387466359311,
+            "per_fold": [
+              0.9013254786450663,
+              0.9189388356669123,
+              0.9115696389093588,
+              0.9211495946941783,
+              0.9137803979366249
+            ]
+          },
+          "roc_auc": {
+            "mean": 0.975552762426205,
+            "std": 0.0012384774288980974,
+            "per_fold": [
+              0.9737511988570773,
+              0.9766608302236052,
+              0.9743653511780048,
+              0.9764014687535235,
+              0.9765849631188147
+            ]
+          },
+          "average_precision": {
+            "mean": 0.8770650054767479,
+            "std": 0.006133755437775088,
+            "per_fold": [
+              0.8669490824654994,
+              0.8796610933896604,
+              0.8733764903984363,
+              0.8838147170566306,
+              0.8815236440735132
+            ]
+          }
+        }
+      }
+    },
+    "heart_disease_only": {
+      "numeric_features": [
+        "hba1c",
+        "blood_glucose",
+        "age",
+        "bmi",
+        "heart_disease"
+      ],
+      "categorical_features": [
+        "gender",
+        "smoking_history"
+      ],
+      "tri_state_features": [
+        "heart_disease"
+      ],
+      "thresholds": {
+        "indicated": 0.7852817228314819,
+        "borderline": 0.11565306506052594,
+        "f1_optimal": 0.7906748635078684,
+        "f1_optimal_precision": 0.9194630872483222,
+        "f1_optimal_recall": 0.7067059690493737,
+        "f1_optimal_f1": 0.7991666666666667,
+        "target_precision_indicated": 0.9,
+        "borderline_minimum_recall": 0.99,
+        "borderline_recall_achieved": 0.9904200442151806,
+        "borderline_precision_achieved": 0.2292732855680655,
+        "validation_prevalence": 0.08820852834113364,
+        "validation_rows": 15384,
+        "criterion_note": "indicated = smallest threshold whose CUMULATIVE precision reaches the target; borderline = largest threshold whose CUMULATIVE recall still meets the sensitivity floor. Both are cumulative (score >= t) quantities. The observed positive rate WITHIN the middle band is reported separately under risk_bands_on_test and is lower -- that band means 'not ruled out', not 'elevated'."
+      },
+      "global_feature_importance": {
+        "hba1c": 0.4071119538075704,
+        "blood_glucose": 0.29160733375212383,
+        "age": 0.17730752042106102,
+        "bmi": 0.07214171984171686,
+        "smoking_history": 0.02683102944697464,
+        "heart_disease": 0.020466471013186643,
+        "gender": 0.004533971717366652
+      },
+      "metrics": {
+        "decision_threshold": 0.7852817228314819,
+        "roc_auc": 0.9737474335576594,
+        "pr_auc_average_precision": 0.871797501867548,
+        "positive_class": {
+          "precision": 0.8956002982848621,
+          "recall": 0.7081367924528302,
+          "f1": 0.7909120842937108,
+          "support": 1696
+        },
+        "negative_class": {
+          "precision": 0.9723293644138856,
+          "recall": 0.9920155127181476,
+          "f1": 0.9820737938627445,
+          "support": 17534
+        },
+        "confusion_matrix": {
+          "true_negative": 17394,
+          "false_positive": 140,
+          "false_negative": 495,
+          "true_positive": 1201,
+          "layout": "rows = actual [negative, positive], columns = predicted",
+          "matrix": [
+            [
+              17394,
+              140
+            ],
+            [
+              495,
+              1201
+            ]
+          ]
+        },
+        "accuracy": 0.9669786791471658,
+        "majority_class_baseline_accuracy": 0.9118044721788872,
+        "test_prevalence": 0.08819552782111284,
+        "test_rows": 19230,
+        "at_default_threshold_0.5": {
+          "decision_threshold": 0.5,
+          "roc_auc": 0.9737474335576594,
+          "pr_auc_average_precision": 0.871797501867548,
+          "positive_class": {
+            "precision": 0.4544113307760401,
+            "recall": 0.9080188679245284,
+            "f1": 0.6057030481809242,
+            "support": 1696
+          },
+          "negative_class": {
+            "precision": 0.9901521368600467,
+            "recall": 0.8945477358275351,
+            "f1": 0.9399250936329588,
+            "support": 17534
+          },
+          "confusion_matrix": {
+            "true_negative": 15685,
+            "false_positive": 1849,
+            "false_negative": 156,
+            "true_positive": 1540,
+            "layout": "rows = actual [negative, positive], columns = predicted",
+            "matrix": [
+              [
+                15685,
+                1849
+              ],
+              [
+                156,
+                1540
+              ]
+            ]
+          },
+          "accuracy": 0.8957358294331773,
+          "majority_class_baseline_accuracy": 0.9118044721788872,
+          "test_prevalence": 0.08819552782111284,
+          "test_rows": 19230
+        },
+        "risk_bands_on_test": {
+          "low": {
+            "patients": 11918,
+            "share_of_cohort": 0.6197607904316172,
+            "actual_positives": 10,
+            "observed_positive_rate": 0.0008390669575432119
+          },
+          "medium": {
+            "patients": 5971,
+            "share_of_cohort": 0.31050442017680707,
+            "actual_positives": 485,
+            "observed_positive_rate": 0.08122592530564395
+          },
+          "high": {
+            "patients": 1341,
+            "share_of_cohort": 0.06973478939157567,
+            "actual_positives": 1201,
+            "observed_positive_rate": 0.8956002982848621
+          }
+        },
+        "cross_validation": {
+          "folds": 5,
+          "scheme": "StratifiedKFold(shuffle=True) on the training portion",
+          "note": "scored at sklearn's default 0.5 threshold; the tuned threshold is reported separately. These numbers measure STABILITY across splits, not the deployed operating point.",
+          "f1": {
+            "mean": 0.619742140910733,
+            "std": 0.0021966542795151768,
+            "per_fold": [
+              0.618603478699269,
+              0.6240885089263264,
+              0.6189516129032258,
+              0.618976651763537,
+              0.6180904522613065
+            ]
+          },
+          "precision": {
+            "mean": 0.4700094723003455,
+            "std": 0.0022242841622707294,
+            "per_fold": [
+              0.47029513223457264,
+              0.47366412213740455,
+              0.47031788586748374,
+              0.4668415136755339,
+              0.4689287075867328
+            ]
+          },
+          "recall": {
+            "mean": 0.9095204812660693,
+            "std": 0.005776485903535705,
+            "per_fold": [
+              0.9035346097201767,
+              0.9145173176123802,
+              0.9049373618275608,
+              0.918201915991157,
+              0.9064112011790715
+            ]
+          },
+          "roc_auc": {
+            "mean": 0.9753725278960188,
+            "std": 0.001046311919413048,
+            "per_fold": [
+              0.9742697498250146,
+              0.9762229919148995,
+              0.9739664709428463,
+              0.976503658170987,
+              0.9758997686263461
+            ]
+          },
+          "average_precision": {
+            "mean": 0.8773365751319655,
+            "std": 0.005711686963085368,
+            "per_fold": [
+              0.8682960549085298,
+              0.8797013972295298,
+              0.8736990080004337,
+              0.884658829563607,
+              0.8803275859577273
+            ]
+          }
+        }
+      }
+    },
+    "neither": {
+      "numeric_features": [
+        "hba1c",
+        "blood_glucose",
+        "age",
+        "bmi"
+      ],
+      "categorical_features": [
+        "gender",
+        "smoking_history"
+      ],
+      "tri_state_features": [],
+      "thresholds": {
+        "indicated": 0.7932221243150029,
+        "borderline": 0.12386553352844284,
+        "f1_optimal": 0.7775760045459476,
+        "f1_optimal_precision": 0.8800721370604148,
+        "f1_optimal_recall": 0.7192336035372144,
+        "f1_optimal_f1": 0.7915652879156528,
+        "target_precision_indicated": 0.9,
+        "borderline_minimum_recall": 0.99,
+        "borderline_recall_achieved": 0.9904200442151806,
+        "borderline_precision_achieved": 0.2448087431693989,
+        "validation_prevalence": 0.08820852834113364,
+        "validation_rows": 15384,
+        "criterion_note": "indicated = smallest threshold whose CUMULATIVE precision reaches the target; borderline = largest threshold whose CUMULATIVE recall still meets the sensitivity floor. Both are cumulative (score >= t) quantities. The observed positive rate WITHIN the middle band is reported separately under risk_bands_on_test and is lower -- that band means 'not ruled out', not 'elevated'."
+      },
+      "global_feature_importance": {
+        "hba1c": 0.4073337298662781,
+        "blood_glucose": 0.29825355456721175,
+        "age": 0.18501171528022817,
+        "bmi": 0.07666079029308351,
+        "smoking_history": 0.027567823729750505,
+        "gender": 0.005172386263447876
+      },
+      "metrics": {
+        "decision_threshold": 0.7932221243150029,
+        "roc_auc": 0.9733748420857805,
+        "pr_auc_average_precision": 0.8712378579816693,
+        "positive_class": {
+          "precision": 0.9218266253869969,
+          "recall": 0.7022405660377359,
+          "f1": 0.7971887550200804,
+          "support": 1696
+        },
+        "negative_class": {
+          "precision": 0.9718474746348534,
+          "recall": 0.9942397627466636,
+          "f1": 0.982916102841678,
+          "support": 17534
+        },
+        "confusion_matrix": {
+          "true_negative": 17433,
+          "false_positive": 101,
+          "false_negative": 505,
+          "true_positive": 1191,
+          "layout": "rows = actual [negative, positive], columns = predicted",
+          "matrix": [
+            [
+              17433,
+              101
+            ],
+            [
+              505,
+              1191
+            ]
+          ]
+        },
+        "accuracy": 0.9684867394695788,
+        "majority_class_baseline_accuracy": 0.9118044721788872,
+        "test_prevalence": 0.08819552782111284,
+        "test_rows": 19230,
+        "at_default_threshold_0.5": {
+          "decision_threshold": 0.5,
+          "roc_auc": 0.9733748420857805,
+          "pr_auc_average_precision": 0.8712378579816693,
+          "positive_class": {
+            "precision": 0.4476356251813171,
+            "recall": 0.9097877358490566,
+            "f1": 0.600038887808672,
+            "support": 1696
+          },
+          "negative_class": {
+            "precision": 0.9903060254704429,
+            "recall": 0.8914109729668074,
+            "f1": 0.9382597472761653,
+            "support": 17534
+          },
+          "confusion_matrix": {
+            "true_negative": 15630,
+            "false_positive": 1904,
+            "false_negative": 153,
+            "true_positive": 1543,
+            "layout": "rows = actual [negative, positive], columns = predicted",
+            "matrix": [
+              [
+                15630,
+                1904
+              ],
+              [
+                153,
+                1543
+              ]
+            ]
+          },
+          "accuracy": 0.8930317212688508,
+          "majority_class_baseline_accuracy": 0.9118044721788872,
+          "test_prevalence": 0.08819552782111284,
+          "test_rows": 19230
+        },
+        "risk_bands_on_test": {
+          "low": {
+            "patients": 12428,
+            "share_of_cohort": 0.6462818512740509,
+            "actual_positives": 19,
+            "observed_positive_rate": 0.0015288059221113615
+          },
+          "medium": {
+            "patients": 5510,
+            "share_of_cohort": 0.28653146125845036,
+            "actual_positives": 486,
+            "observed_positive_rate": 0.0882032667876588
+          },
+          "high": {
+            "patients": 1292,
+            "share_of_cohort": 0.0671866874674987,
+            "actual_positives": 1191,
+            "observed_positive_rate": 0.9218266253869969
+          }
+        },
+        "cross_validation": {
+          "folds": 5,
+          "scheme": "StratifiedKFold(shuffle=True) on the training portion",
+          "note": "scored at sklearn's default 0.5 threshold; the tuned threshold is reported separately. These numbers measure STABILITY across splits, not the deployed operating point.",
+          "f1": {
+            "mean": 0.6094169801270339,
+            "std": 0.0041661392433827585,
+            "per_fold": [
+              0.6161590737477977,
+              0.6081642630163774,
+              0.6105733432613552,
+              0.6032359333494325,
+              0.6089522872602066
+            ]
+          },
+          "precision": {
+            "mean": 0.4578078813110631,
+            "std": 0.006391693768771508,
+            "per_fold": [
+              0.46806883365200763,
+              0.45501097293343085,
+              0.46032934131736525,
+              0.44863505747126436,
+              0.4569952011812477
+            ]
+          },
+          "recall": {
+            "mean": 0.9114367980134643,
+            "std": 0.0068820910175851685,
+            "per_fold": [
+              0.9013254786450663,
+              0.9167280766396463,
+              0.9064112011790715,
+              0.9204126750184229,
+              0.9123065585851142
+            ]
+          },
+          "roc_auc": {
+            "mean": 0.9747992061534241,
+            "std": 0.0010702343875282829,
+            "per_fold": [
+              0.9733052565748398,
+              0.9757352673070256,
+              0.9737845002243964,
+              0.9760054781934089,
+              0.9751655284674499
+            ]
+          },
+          "average_precision": {
+            "mean": 0.8745486125863575,
+            "std": 0.005594511662327207,
+            "per_fold": [
+              0.8650129093770106,
+              0.8777001501365663,
+              0.87222316827656,
+              0.8813827960140033,
+              0.8764240391276469
+            ]
+          }
+        }
+      }
+    }
+  },
+  "model_artifact": {
+    "filename": "diabetes_rf_v1.joblib",
+    "sha256": "f023334e3058a37d35037b4815c65381fe02de7bee836e6941fc270e1f9e7dd4",
+    "bytes": 15134462
+  }
+}

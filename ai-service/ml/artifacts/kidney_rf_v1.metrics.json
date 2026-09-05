@@ -1,0 +1,574 @@
+{
+  "artifact_version": "1.0.0",
+  "model_id": "kidney_rf",
+  "condition": "Kidney Disease",
+  "assessment_kind": "disease_likelihood",
+  "assessment_kind_note": "This model estimates the LIKELIHOOD of chronic kidney disease. Module 8's creatinine rule assesses the same condition string from a threshold on one analyte. The predictor stamps metadata.assessment_kind on every decision so Module 16/17 can fuse them without conflating the two quantities.",
+  "algorithm": "RandomForestClassifier",
+  "source_label": "Random Forest",
+  "trained_at": "2026-08-30T03:38:34.637160+00:00",
+  "python_version": "3.10.11",
+  "sklearn_version": "1.7.2",
+  "numpy_version": "2.2.6",
+  "pandas_version": "2.3.3",
+  "joblib_version": "1.5.3",
+  "hyperparameters": {
+    "n_estimators": 300,
+    "min_samples_leaf": 2,
+    "class_weight": "balanced_subsample",
+    "random_state": 42,
+    "n_jobs": -1
+  },
+  "dataset": {
+    "path": "datasets/raw/chronic_kidney_disease_full.csv",
+    "sha256": "4cdfe028aae5a4541d46a7f2e35ba3f4b953c3d2f9507c63e3afef5ae3a2af3d",
+    "rows_raw": 400,
+    "rows_used": 399,
+    "raw_class_counts": {
+      "ckd": 250,
+      "notckd": 149,
+      "no": 1
+    },
+    "malformed_label_rows_dropped": 1,
+    "malformed_label_policy": "The single row whose class reads 'no' is dropped, not repaired. Its `dm` is empty, its `appet` holds 'no' (domain: good/poor) and its `pe` holds 'good' (domain: no/yes), so the record is structurally shifted, not merely mislabelled. Repairing the label would mean guessing whether the patient had CKD, which is fabricating training data.",
+    "positives": 250,
+    "negatives": 149,
+    "prevalence": 0.6265664160401002,
+    "missing_cells_total_raw": 1013,
+    "missing_cells_in_used_features": {
+      "creatinine": 17,
+      "hemoglobin": 52,
+      "blood_glucose": 44,
+      "age": 9,
+      "hypertension": 2
+    },
+    "missing_value_policy": "Imputed inside the pipeline (median for numerics, most-frequent for categoricals), fitted per fold. No row is dropped for missingness: with 399 rows that would discard most of the file and would bias it towards patients with a complete workup.",
+    "units": {
+      "creatinine": "mg/dl",
+      "hemoglobin": "g/dl",
+      "blood_glucose": "mg/dl (RANDOM glucose, per UCI's documentation)",
+      "age": "years"
+    },
+    "unit_conversion": "none -- UCI's units already match feature_catalog.py",
+    "columns_available_but_unused": [
+      "bp",
+      "sg",
+      "al",
+      "su",
+      "rbc",
+      "pc",
+      "pcc",
+      "ba",
+      "bu",
+      "sod",
+      "pot",
+      "pcv",
+      "wbcc",
+      "rbcc",
+      "dm",
+      "cad",
+      "appet",
+      "pe",
+      "ane"
+    ],
+    "columns_unused_reason": "Real and useful, but absent from app/data/feature_catalog.py, so VaidyaAI cannot supply them at prediction time. Training on them would publish metrics for a model that never runs.",
+    "hypertension_levels": [
+      "no",
+      "yes"
+    ],
+    "synthetic_rows": 0,
+    "resampling": "none -- class weights only, no SMOTE, no oversampling"
+  },
+  "split": {
+    "test_size": 0.25,
+    "stratified": true,
+    "random_state": 42,
+    "threshold_selected_on": "out-of-fold predictions on the training portion",
+    "metrics_measured_on": "held-out test split",
+    "shipped_model_fitted_on": "the whole training portion"
+  },
+  "required_features": [
+    "creatinine",
+    "hemoglobin"
+  ],
+  "optional_numeric_features": [
+    "blood_glucose",
+    "age"
+  ],
+  "tri_state_features": [
+    "hypertension"
+  ],
+  "unknown_category_policy": "OneHotEncoder(handle_unknown='ignore'): an unseen category becomes an all-zero block -- 'no category asserted'. It is never replaced by the most frequent category. In practice the predictor never hands the encoder an unknown: an unanswered hypertension question selects the without_hypertension variant instead.",
+  "tri_state_policy": "One fitted pipeline per hypertension-availability pattern. A hypertension answer the patient never gave is not imputed and NEVER encoded as 'no': the variant used simply has no such column.",
+  "imbalance_policy": "62.7% positive -- mildly imbalanced, so the majority-class baseline accuracy (0.627) is reported next to accuracy. class_weight='balanced_subsample' on the real rows; no synthetic rows, no SMOTE, no oversampling.",
+  "sufficiency_evidence": {
+    "folds": 5,
+    "measured_on": "training portion, cross-validated, ROC-AUC",
+    "subsets": {
+      "creatinine+hemoglobin+blood_glucose+age+hypertension": 0.9957232976683776,
+      "creatinine+hemoglobin+blood_glucose+hypertension": 0.9952532624157339,
+      "creatinine+hemoglobin+blood_glucose": 0.9938431566578021,
+      "creatinine+hemoglobin+blood_glucose+age": 0.9921769491563541,
+      "hemoglobin+blood_glucose+age+hypertension": 0.9917195643740266,
+      "creatinine+hemoglobin+age+hypertension": 0.9912200113573111,
+      "creatinine+hemoglobin+hypertension": 0.9901350226865102,
+      "hemoglobin+blood_glucose+hypertension": 0.9885215254780473,
+      "creatinine+hemoglobin+age": 0.9862461275504755,
+      "creatinine+hemoglobin": 0.9860090015124341,
+      "hemoglobin+hypertension": 0.9823520316655328,
+      "hemoglobin+blood_glucose+age": 0.9822407075267486,
+      "hemoglobin+age+hypertension": 0.9822016316295492,
+      "hemoglobin+blood_glucose": 0.9774228461871484,
+      "hemoglobin": 0.9611003660202744,
+      "creatinine+blood_glucose+hypertension": 0.9609290224278781,
+      "hemoglobin+age": 0.960556676918233,
+      "creatinine+blood_glucose+age+hypertension": 0.9553508678222636,
+      "creatinine+blood_glucose+age": 0.9419961879916112,
+      "creatinine+blood_glucose": 0.9390420220511754,
+      "creatinine+age+hypertension": 0.9297113162673802,
+      "creatinine+hypertension": 0.9294861378957489,
+      "creatinine": 0.9094989570390026,
+      "creatinine+age": 0.9060077083532461,
+      "blood_glucose+age+hypertension": 0.8739727818103106,
+      "blood_glucose+hypertension": 0.8601285287784144,
+      "age+hypertension": 0.8131771515638793,
+      "blood_glucose+age": 0.7705669940795798,
+      "blood_glucose": 0.7379965309599178,
+      "age": 0.5860092826339965
+    },
+    "interpretation": "Read the single-feature rows first. creatinine and hemoglobin are the load-bearing pair; blood_glucose, age and hypertension are helpful but not load-bearing. app/ml/kidney.py therefore REQUIRES creatinine and hemoglobin and treats the other three as optional. NOTE that every row here describes a model REFITTED without the feature -- an honest model that knows it lacks it. The shipped model instead MEDIAN-IMPUTES an absent input, which is strictly worse; see `imputed_at_prediction_time`, which is the number the skip is actually justified by.",
+    "imputed_at_prediction_time": {
+      "measured_on": "held-out test split, shipped pipeline, one input blanked",
+      "all_inputs_present_roc_auc": 0.9982839982839983,
+      "blanked": {
+        "creatinine": {
+          "roc_auc": 0.9909909909909909,
+          "delta": -0.007293007293007414
+        },
+        "hemoglobin": {
+          "roc_auc": 0.9622479622479622,
+          "delta": -0.03603603603603611
+        },
+        "blood_glucose": {
+          "roc_auc": 0.9931359931359931,
+          "delta": -0.005148005148005175
+        },
+        "age": {
+          "roc_auc": 0.9965679965679967,
+          "delta": -0.0017160017160016139
+        },
+        "hypertension": {
+          "roc_auc": 0.9978549978549979,
+          "delta": -0.00042900042900040347
+        }
+      }
+    }
+  },
+  "feature_importance_scope": "global_model_level",
+  "feature_importance_caveat": "Mean impurity decrease over the whole training set. It ranks features FOR THE MODEL and must never be presented as the reason an individual prediction came out as it did.",
+  "honest_read": "The numbers are near-perfect and the dataset is the reason. This is a 399-row, single-centre UCI cohort in which serum creatinine and haemoglobin separate CKD from not-CKD almost cleanly, so a ROC-AUC near 0.99 says the model learned an easy separation, not that it would perform this way on a screening population. The 100-patient test split cannot distinguish 0.97 from 1.00. Treat the cross-validated figures as the honest ones, and treat the sufficiency skip -- not the accuracy -- as this module's contribution.",
+  "variants": {
+    "with_hypertension": {
+      "numeric_features": [
+        "creatinine",
+        "hemoglobin",
+        "blood_glucose",
+        "age"
+      ],
+      "categorical_features": [
+        "hypertension"
+      ],
+      "tri_state_features": [
+        "hypertension"
+      ],
+      "thresholds": {
+        "indicated": 0.41116709792414324,
+        "borderline": 0.17995289951839494,
+        "f1_optimal": 0.38611063427026726,
+        "f1_optimal_precision": 0.9788359788359788,
+        "f1_optimal_recall": 0.9893048128342246,
+        "f1_optimal_f1": 0.9840425531914894,
+        "indicated_minimum_recall": 0.98,
+        "indicated_best_precision_at_that_recall": 0.983957219251337,
+        "module_10_rule_target_precision": 0.9,
+        "module_10_rule_would_give": 0.11162514339430096,
+        "module_10_rule_note": "Recorded to show WHY it was not used: it is satisfied so early on this model's curve that it does not discriminate, and the precision achieved at the cut-off actually chosen is well above it anyway.",
+        "indicated_precision_achieved": 0.983957219251337,
+        "indicated_recall_achieved": 0.983957219251337,
+        "borderline_minimum_recall": 0.99,
+        "borderline_recall_achieved": 0.9946524064171123,
+        "borderline_precision_achieved": 0.9346733668341709,
+        "selection_prevalence": 0.6254180602006689,
+        "selection_rows": 299,
+        "selected_on": "out-of-fold predictions over the training portion",
+        "criterion_note": "indicated = the most precise threshold whose CUMULATIVE recall is still >= indicated_minimum_recall; borderline = the largest threshold whose CUMULATIVE recall is still >= borderline_minimum_recall. Both are cumulative (score >= t) quantities, both read off the measured curve, neither a round number. Chosen out-of-fold because a holdout slice of ~60 patients would make the cut-off noise. Both cut-offs are stated as sensitivity guarantees because a missed case is this condition's dangerous failure; Module 10's precision-floor rule is non-binding on a model this well separated and is recorded rather than applied."
+      },
+      "global_feature_importance": {
+        "hemoglobin": 0.45178607724626746,
+        "creatinine": 0.2546424686183276,
+        "hypertension": 0.1882610959487932,
+        "blood_glucose": 0.06842985236938205,
+        "age": 0.03688050581722959
+      },
+      "metrics": {
+        "decision_threshold": 0.41116709792414324,
+        "roc_auc": 0.9982839982839983,
+        "pr_auc_average_precision": 0.9990523572613125,
+        "positive_class": {
+          "precision": 0.96875,
+          "recall": 0.9841269841269841,
+          "f1": 0.9763779527559056,
+          "support": 63
+        },
+        "negative_class": {
+          "precision": 0.9722222222222222,
+          "recall": 0.9459459459459459,
+          "f1": 0.958904109589041,
+          "support": 37
+        },
+        "confusion_matrix": {
+          "true_negative": 35,
+          "false_positive": 2,
+          "false_negative": 1,
+          "true_positive": 62,
+          "layout": "rows = actual [negative, positive], columns = predicted",
+          "matrix": [
+            [
+              35,
+              2
+            ],
+            [
+              1,
+              62
+            ]
+          ]
+        },
+        "accuracy": 0.97,
+        "majority_class_baseline_accuracy": 0.63,
+        "test_prevalence": 0.63,
+        "test_rows": 100,
+        "small_sample_caveat": "n=100. A single misclassification moves recall by about 1.6 points; treat these figures as indicative and prefer the cross-validated numbers.",
+        "at_default_threshold_0.5": {
+          "decision_threshold": 0.5,
+          "roc_auc": 0.9982839982839983,
+          "pr_auc_average_precision": 0.9990523572613125,
+          "positive_class": {
+            "precision": 0.9841269841269841,
+            "recall": 0.9841269841269841,
+            "f1": 0.9841269841269841,
+            "support": 63
+          },
+          "negative_class": {
+            "precision": 0.972972972972973,
+            "recall": 0.972972972972973,
+            "f1": 0.972972972972973,
+            "support": 37
+          },
+          "confusion_matrix": {
+            "true_negative": 36,
+            "false_positive": 1,
+            "false_negative": 1,
+            "true_positive": 62,
+            "layout": "rows = actual [negative, positive], columns = predicted",
+            "matrix": [
+              [
+                36,
+                1
+              ],
+              [
+                1,
+                62
+              ]
+            ]
+          },
+          "accuracy": 0.98,
+          "majority_class_baseline_accuracy": 0.63,
+          "test_prevalence": 0.63,
+          "test_rows": 100,
+          "small_sample_caveat": "n=100. A single misclassification moves recall by about 1.6 points; treat these figures as indicative and prefer the cross-validated numbers."
+        },
+        "risk_bands_on_test": {
+          "low": {
+            "patients": 35,
+            "share_of_cohort": 0.35,
+            "actual_positives": 1,
+            "observed_positive_rate": 0.02857142857142857
+          },
+          "medium": {
+            "patients": 1,
+            "share_of_cohort": 0.01,
+            "actual_positives": 0,
+            "observed_positive_rate": 0.0
+          },
+          "high": {
+            "patients": 64,
+            "share_of_cohort": 0.64,
+            "actual_positives": 62,
+            "observed_positive_rate": 0.96875
+          }
+        },
+        "cross_validation": {
+          "folds": 5,
+          "scheme": "StratifiedKFold(shuffle=True) on the training portion",
+          "note": "scored at sklearn's default 0.5 threshold; the tuned threshold is reported separately. With 399 rows these cross-validated figures are more trustworthy than the 100-patient test split.",
+          "f1": {
+            "mean": 0.9813285527777236,
+            "std": 0.010583378495781748,
+            "per_fold": [
+              0.972972972972973,
+              0.9736842105263158,
+              0.9736842105263158,
+              0.9863013698630136,
+              1.0
+            ]
+          },
+          "precision": {
+            "mean": 0.9844804318488529,
+            "std": 0.020581956084530506,
+            "per_fold": [
+              1.0,
+              0.9736842105263158,
+              0.9487179487179487,
+              1.0,
+              1.0
+            ]
+          },
+          "recall": {
+            "mean": 0.9788051209103841,
+            "std": 0.019732965159442218,
+            "per_fold": [
+              0.9473684210526315,
+              0.9736842105263158,
+              1.0,
+              0.972972972972973,
+              1.0
+            ]
+          },
+          "roc_auc": {
+            "mean": 0.9957232976683776,
+            "std": 0.004016473755222767,
+            "per_fold": [
+              0.9964114832535885,
+              0.9904306220095693,
+              0.991774383078731,
+              1.0,
+              1.0
+            ]
+          },
+          "average_precision": {
+            "mean": 0.99760811634173,
+            "std": 0.002255779502212098,
+            "per_fold": [
+              0.9980744544287548,
+              0.9950077249246224,
+              0.9949584023552729,
+              1.0,
+              1.0
+            ]
+          }
+        }
+      }
+    },
+    "without_hypertension": {
+      "numeric_features": [
+        "creatinine",
+        "hemoglobin",
+        "blood_glucose",
+        "age"
+      ],
+      "categorical_features": [],
+      "tri_state_features": [],
+      "thresholds": {
+        "indicated": 0.3673979778714104,
+        "borderline": 0.07059243709656346,
+        "f1_optimal": 0.4680219674942396,
+        "f1_optimal_precision": 0.9838709677419355,
+        "f1_optimal_recall": 0.9786096256684492,
+        "f1_optimal_f1": 0.9812332439678285,
+        "indicated_minimum_recall": 0.98,
+        "indicated_best_precision_at_that_recall": 0.968421052631579,
+        "module_10_rule_target_precision": 0.9,
+        "module_10_rule_would_give": 0.14203316224312845,
+        "module_10_rule_note": "Recorded to show WHY it was not used: it is satisfied so early on this model's curve that it does not discriminate, and the precision achieved at the cut-off actually chosen is well above it anyway.",
+        "indicated_precision_achieved": 0.968421052631579,
+        "indicated_recall_achieved": 0.983957219251337,
+        "borderline_minimum_recall": 0.99,
+        "borderline_recall_achieved": 0.9946524064171123,
+        "borderline_precision_achieved": 0.8416289592760181,
+        "selection_prevalence": 0.6254180602006689,
+        "selection_rows": 299,
+        "selected_on": "out-of-fold predictions over the training portion",
+        "criterion_note": "indicated = the most precise threshold whose CUMULATIVE recall is still >= indicated_minimum_recall; borderline = the largest threshold whose CUMULATIVE recall is still >= borderline_minimum_recall. Both are cumulative (score >= t) quantities, both read off the measured curve, neither a round number. Chosen out-of-fold because a holdout slice of ~60 patients would make the cut-off noise. Both cut-offs are stated as sensitivity guarantees because a missed case is this condition's dangerous failure; Module 10's precision-floor rule is non-binding on a model this well separated and is recorded rather than applied."
+      },
+      "global_feature_importance": {
+        "hemoglobin": 0.552038050617886,
+        "creatinine": 0.31705862610559016,
+        "blood_glucose": 0.09689536627742178,
+        "age": 0.03400795699910208
+      },
+      "metrics": {
+        "decision_threshold": 0.3673979778714104,
+        "roc_auc": 0.9987129987129988,
+        "pr_auc_average_precision": 0.9992784992784993,
+        "positive_class": {
+          "precision": 0.96875,
+          "recall": 0.9841269841269841,
+          "f1": 0.9763779527559056,
+          "support": 63
+        },
+        "negative_class": {
+          "precision": 0.9722222222222222,
+          "recall": 0.9459459459459459,
+          "f1": 0.958904109589041,
+          "support": 37
+        },
+        "confusion_matrix": {
+          "true_negative": 35,
+          "false_positive": 2,
+          "false_negative": 1,
+          "true_positive": 62,
+          "layout": "rows = actual [negative, positive], columns = predicted",
+          "matrix": [
+            [
+              35,
+              2
+            ],
+            [
+              1,
+              62
+            ]
+          ]
+        },
+        "accuracy": 0.97,
+        "majority_class_baseline_accuracy": 0.63,
+        "test_prevalence": 0.63,
+        "test_rows": 100,
+        "small_sample_caveat": "n=100. A single misclassification moves recall by about 1.6 points; treat these figures as indicative and prefer the cross-validated numbers.",
+        "at_default_threshold_0.5": {
+          "decision_threshold": 0.5,
+          "roc_auc": 0.9987129987129988,
+          "pr_auc_average_precision": 0.9992784992784993,
+          "positive_class": {
+            "precision": 0.9841269841269841,
+            "recall": 0.9841269841269841,
+            "f1": 0.9841269841269841,
+            "support": 63
+          },
+          "negative_class": {
+            "precision": 0.972972972972973,
+            "recall": 0.972972972972973,
+            "f1": 0.972972972972973,
+            "support": 37
+          },
+          "confusion_matrix": {
+            "true_negative": 36,
+            "false_positive": 1,
+            "false_negative": 1,
+            "true_positive": 62,
+            "layout": "rows = actual [negative, positive], columns = predicted",
+            "matrix": [
+              [
+                36,
+                1
+              ],
+              [
+                1,
+                62
+              ]
+            ]
+          },
+          "accuracy": 0.98,
+          "majority_class_baseline_accuracy": 0.63,
+          "test_prevalence": 0.63,
+          "test_rows": 100,
+          "small_sample_caveat": "n=100. A single misclassification moves recall by about 1.6 points; treat these figures as indicative and prefer the cross-validated numbers."
+        },
+        "risk_bands_on_test": {
+          "low": {
+            "patients": 32,
+            "share_of_cohort": 0.32,
+            "actual_positives": 0,
+            "observed_positive_rate": 0.0
+          },
+          "medium": {
+            "patients": 4,
+            "share_of_cohort": 0.04,
+            "actual_positives": 1,
+            "observed_positive_rate": 0.25
+          },
+          "high": {
+            "patients": 64,
+            "share_of_cohort": 0.64,
+            "actual_positives": 62,
+            "observed_positive_rate": 0.96875
+          }
+        },
+        "cross_validation": {
+          "folds": 5,
+          "scheme": "StratifiedKFold(shuffle=True) on the training portion",
+          "note": "scored at sklearn's default 0.5 threshold; the tuned threshold is reported separately. With 399 rows these cross-validated figures are more trustworthy than the 100-patient test split.",
+          "f1": {
+            "mean": 0.9785888267503264,
+            "std": 0.006302618135162382,
+            "per_fold": [
+              0.972972972972973,
+              0.9736842105263158,
+              0.9736842105263158,
+              0.9863013698630136,
+              0.9863013698630136
+            ]
+          },
+          "precision": {
+            "mean": 0.9844804318488529,
+            "std": 0.020581956084530506,
+            "per_fold": [
+              1.0,
+              0.9736842105263158,
+              0.9487179487179487,
+              1.0,
+              1.0
+            ]
+          },
+          "recall": {
+            "mean": 0.9733997155049787,
+            "std": 0.01664721347178129,
+            "per_fold": [
+              0.9473684210526315,
+              0.9736842105263158,
+              1.0,
+              0.972972972972973,
+              0.972972972972973
+            ]
+          },
+          "roc_auc": {
+            "mean": 0.9921769491563541,
+            "std": 0.004343638510905647,
+            "per_fold": [
+              0.992822966507177,
+              0.9880382775119617,
+              0.9882491186839012,
+              0.991774383078731,
+              1.0
+            ]
+          },
+          "average_precision": {
+            "mean": 0.995730406423626,
+            "std": 0.0024779416353813834,
+            "per_fold": [
+              0.9962475037041809,
+              0.9940195826321323,
+              0.9926847000815707,
+              0.9957002457002457,
+              1.0
+            ]
+          }
+        }
+      }
+    }
+  },
+  "model_artifact": {
+    "filename": "kidney_rf_v1.joblib",
+    "sha256": "91b4b19dc20521f61989478705b08ac201e4ba09e9707ef348cdb630e3d76721",
+    "bytes": 472700
+  }
+}
