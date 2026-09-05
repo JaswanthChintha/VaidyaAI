@@ -76,3 +76,6 @@ Thumbs.db
 #
 # Nothing above is ignored. This block exists so the decision is recorded
 # rather than rediscovered.
+
+# Vite build output
+frontend/dist/

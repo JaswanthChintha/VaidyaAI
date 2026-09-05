@@ -1,0 +1,105 @@
+/* Plain CSS, no framework. The app is small and the absence states need to be
+   visually distinct from real values -- that is the only strong requirement
+   the design has. */
+:root {
+  --ink: #16202b;
+  --muted: #5b6b7c;
+  --line: #d9e0e7;
+  --bg: #f6f8fa;
+  --card: #ffffff;
+  --accent: #1a6a8f;
+  --danger: #a3242c;
+  --absent: #6b7785;
+  --low: #2e7d4f;
+  --medium: #b06a12;
+  --high: #a3242c;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+}
+
+.app { min-height: 100vh; display: flex; flex-direction: column; }
+
+main { flex: 1; width: min(880px, 92vw); margin: 24px auto; }
+
+h1, h2, h3 { line-height: 1.25; }
+
+.nav {
+  display: flex; align-items: center; gap: 16px;
+  padding: 12px 24px; background: var(--card); border-bottom: 1px solid var(--line);
+}
+.nav__brand { font-weight: 700; color: var(--accent); }
+.nav__spacer { flex: 1; }
+.nav__user { color: var(--muted); font-size: 14px; }
+.nav a { color: var(--ink); text-decoration: none; }
+.nav a:hover { text-decoration: underline; }
+
+.card {
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+  padding: 20px; margin-bottom: 16px;
+}
+
+label { display: block; margin-bottom: 14px; font-weight: 600; }
+input, select {
+  display: block; width: 100%; margin-top: 6px; padding: 9px 10px;
+  border: 1px solid var(--line); border-radius: 7px; font: inherit; font-weight: 400;
+}
+
+button {
+  font: inherit; padding: 9px 16px; border-radius: 7px; border: 1px solid var(--accent);
+  background: var(--accent); color: #fff; cursor: pointer;
+}
+button:disabled { opacity: .6; cursor: default; }
+button.link {
+  background: none; border: none; color: var(--accent); padding: 4px 0;
+  text-decoration: underline;
+}
+
+.hint { color: var(--muted); font-size: 14px; font-weight: 400; margin: 4px 0 0; }
+.error { color: var(--danger); font-weight: 600; }
+.ok { color: var(--low); font-weight: 600; }
+.loading, .empty { color: var(--muted); }
+
+/* ---- absence, made visually distinct from a value ---------------------- */
+.absent { color: var(--absent); font-style: italic; }
+.absent__reason { display: block; font-size: 13px; font-style: normal; }
+.value { font-variant-numeric: tabular-nums; font-weight: 600; }
+
+.risk { font-weight: 700; }
+.risk--low { color: var(--low); }
+.risk--medium { color: var(--medium); }
+.risk--high { color: var(--high); }
+
+.section { margin-bottom: 20px; }
+.section__absent { color: var(--absent); font-style: italic; }
+.section__code {
+  display: inline-block; margin-left: 8px; padding: 1px 6px; border-radius: 4px;
+  background: var(--bg); border: 1px solid var(--line); font-size: 12px; font-style: normal;
+}
+
+.tristate { border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 14px; }
+.tristate legend { font-weight: 600; padding: 0 6px; }
+.tristate__option { display: block; font-weight: 400; margin-bottom: 4px; }
+.tristate__option input { display: inline; width: auto; margin-right: 8px; }
+
+.auth { width: min(440px, 92vw); }
+.auth__tagline { color: var(--muted); }
+
+.report__head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.report__meta, .report__note { color: var(--muted); font-size: 14px; }
+.report-list { list-style: none; padding: 0; }
+.status { font-size: 13px; color: var(--muted); }
+.status--failed { color: var(--danger); }
+.status--partial { color: var(--medium); }
+.status--processed { color: var(--low); }
+
+.disclaimer {
+  padding: 16px 24px; background: var(--card); border-top: 1px solid var(--line);
+  color: var(--muted); font-size: 14px; text-align: center;
+}
