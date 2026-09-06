@@ -157,8 +157,8 @@ from app.schemas.decisions import (
 )
 from app.schemas.fusion import BASIS_MODEL_PROBABILITY, BASIS_NOT_ASSESSED
 
-HEART_MODEL_FILE = "heart_rf_v1.joblib"
-HEART_METRICS_FILE = "heart_rf_v1.metrics.json"
+HEART_MODEL_FILE = "heart_rf_v2.joblib"
+HEART_METRICS_FILE = "heart_rf_v2.metrics.json"
 
 #: THE key that stops Module 16 conflating a risk-factor tally with a
 #: probability. See the module docstring.
@@ -762,12 +762,24 @@ class HeartPredictor(Predictor):
                     "majority_class_baseline_accuracy"
                 ),
                 "positive_class": metrics.get("positive_class"),
-                "artifact": "ml/artifacts/heart_rf_v1.metrics.json",
+                "artifact": "ml/artifacts/heart_rf_v2.metrics.json",
+                # THIS STRING IS SCANNED BEFORE IT REACHES A CLINICIAN.
+                # `doctor_summary` runs `scan_text` over the artifact's honest
+                # read and WITHHOLDS the whole note if anything trips, so a
+                # careless phrase does not get flagged -- it deletes the
+                # model's own statement of its limits from the document that
+                # most needs it. An earlier draft said "SELF-REPORTED physician
+                # diagnosis", which the Module 24 scanner correctly reads as a
+                # diagnostic assertion; the fact is kept, the phrasing is not.
                 "honest_read": (
-                    "A WEAK discriminator. The dataset's dominant predictors "
-                    "are systolic and diastolic blood pressure, which VaidyaAI "
-                    "does not collect; excluding them costs about 0.10 "
-                    "ROC-AUC. Read this as a coarse indicator."
+                    "A COARSE discriminator: held-out ROC-AUC about 0.84 at a "
+                    "realistic 9% prevalence. Precision at the Indicated "
+                    "cut-off is about 0.37, so most patients it flags will NOT "
+                    "have heart disease -- a high score is a reason to discuss "
+                    "testing with a clinician, never a finding. It learned from "
+                    "what respondents said a doctor had told them, so it misses "
+                    "people not yet identified. Blood pressure, the strongest "
+                    "known predictor, is still not collected by VaidyaAI."
                 ),
             },
         }

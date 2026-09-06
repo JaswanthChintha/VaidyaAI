@@ -27,9 +27,12 @@ clinician-facing document cannot be allowed to lose:
    `any_assessed: false` is not "Healthy"; unassessed conditions render as
    open questions; and with one report the trend and comparison sections are
    ABSENT WITH A STATED REASON, never "stable".
-3. **Every model estimate travels with that model's recorded limits.** Module
-   11 (heart) is a weak discriminator at ROC-AUC 0.697. A probability quoted
-   to a clinician without that caveat is actively misleading.
+3. **Every model estimate travels with that model's recorded limits.** A
+   probability quoted to a clinician without them is actively misleading. The
+   limits are read from whichever artifact is loaded and the caveats are
+   selected by the measured number, so this holds across retraining -- Module
+   11 was a weak discriminator at ROC-AUC 0.697 on cardio_train and is a coarse
+   one above 0.83 on NHANES, and neither figure is written into a test.
 4. **A log line can never take down a request.** The §6n D2 regression test.
 """
 
@@ -817,9 +820,11 @@ def test_a_probability_is_never_shown_without_the_models_recorded_performance():
         ), condition
 
 
-def test_the_heart_model_carries_its_weak_discrimination_caveat():
-    """Module 11 is a WEAK discriminator: ROC-AUC 0.697 against a 0.75
-    cut-off, because the dataset's dominant predictors are blood pressures
+def test_the_heart_model_caveat_is_selected_by_its_measured_number():
+    """The caveat must be SELECTED BY THE NUMBER, not remembered for one model.
+
+    Originally written when Module 11 scored ROC-AUC 0.697 against a 0.75
+    cut-off, because that dataset's dominant predictors were blood pressures
     this platform does not collect (MEMORY.md §6i). A clinician-facing
     document quoting its probability without saying so is actively
     misleading, and the caveat must be SELECTED BY THE NUMBER rather than
@@ -830,15 +835,35 @@ def test_the_heart_model_carries_its_weak_discrimination_caveat():
     assert heart is not None, "the abnormal panel must reach the heart model"
 
     limits = heart.limitations
-    assert limits.roc_auc is not None and limits.roc_auc < WEAK_DISCRIMINATION_ROC_AUC
-    assert round(limits.roc_auc, 3) == 0.697
-    assert any(
+    assert limits.roc_auc is not None
+
+    # BOTH BRANCHES, because "selected by the number" is the claim.
+    #
+    # This previously pinned `round(roc_auc, 3) == 0.697` and demanded the words
+    # "WEAK discriminator" -- which is remembering one model, the exact thing
+    # the docstring says must not happen. When Module 11 was retrained the
+    # selection mechanism kept working perfectly and this failed anyway. Below
+    # the cut-off the caveat MUST appear; at or above it, it must NOT, because
+    # a caveat that fires regardless of the number tells a clinician nothing.
+    weak_caveat_present = any(
         "discrimination on held-out data is weak" in caveat
         for caveat in limits.caveats
     )
-    # The artifact's own honest read travels with it, carried as data.
-    assert limits.author_note.state == "CLEAN"
-    assert limits.author_note.text and "WEAK discriminator" in limits.author_note.text
+    if limits.roc_auc < WEAK_DISCRIMINATION_ROC_AUC:
+        assert weak_caveat_present, limits.caveats
+    else:
+        assert not weak_caveat_present, limits.caveats
+        # Not weak is still not diagnostic; the section must still say something.
+        assert limits.caveats
+
+    # The artifact's own honest read travels with it, carried as data. A
+    # WITHHELD state here is not cosmetic: it means the note tripped the safety
+    # scan and the clinician silently lost the model's statement of its limits.
+    assert limits.author_note.state == "CLEAN", limits.author_note.patterns
+    assert limits.author_note.text
+    assert any(
+        word in limits.author_note.text for word in ("WEAK", "COARSE")
+    ), limits.author_note.text
 
 
 def test_a_strong_model_does_not_pick_up_the_weak_discrimination_caveat():

@@ -6,7 +6,7 @@
   "assessment_kind_note": "Estimates the LIKELIHOOD of diagnosed cardiac disease. Module 8's RULE_HEART_DISEASE_RISK_FACTORS emits the same condition string from a RISK-FACTOR COUNT. Both are legitimate and they are not the same quantity; the predictor stamps metadata.assessment_kind on every decision so Modules 16/17 can fuse them without conflating burden with probability.",
   "algorithm": "RandomForestClassifier",
   "source_label": "Random Forest",
-  "trained_at": "2026-09-06T05:52:06.364558+00:00",
+  "trained_at": "2026-09-06T09:14:43.165349+00:00",
   "python_version": "3.10.11",
   "sklearn_version": "1.7.2",
   "numpy_version": "2.2.6",
@@ -17,13 +17,34 @@
     "min_samples_leaf": 25,
     "class_weight": "balanced_subsample",
     "random_state": 42,
-    "imputation": "median (SimpleImputer), fitted on train only"
+    "n_jobs": -1
   },
   "dataset": {
     "path": "datasets/raw/nhanes_cvd_2017_2023.csv",
-    "source": "CDC NHANES 2017-2023, via Kaggle ahiduzzaman28/nhanes-cvd-raw-data-2017-23",
-    "license": "CC BY-SA 4.0",
+    "source": "CDC NHANES 2017-2023. Outcome, age, BMI and cholesterol from the Kaggle extract ahiduzzaman28/nhanes-cvd-raw-data-2017-23; sex and smoking joined on SEQN from CDC's own P_DEMO/DEMO_L and P_SMQ/SMQ_L files.",
+    "license": "CC BY-SA 4.0 (extract); CDC NHANES is public domain",
     "sha256": "baad1fc7f52d9d7011cf27b5be329fc2ff2ed950b0acdc5aa05c48691a230e13",
+    "joined_files": {
+      "P_DEMO.xpt": {
+        "sha256": "2e46c6c26bf77cd8989f64011ace12cbf42c0f3e03414eb59acc5328c8f87913",
+        "bytes": 3614720
+      },
+      "DEMO_L.xpt": {
+        "sha256": "ca4374a158b493b8b0163e1388da21d57a18d1b9cecff2aa4e2fa2bec494fe23",
+        "bytes": 2582160
+      },
+      "P_SMQ.xpt": {
+        "sha256": "29b7f6c59ab570c042c866312f0eb4329009e85fadbda6f9427a8bf31ecb3a3f",
+        "bytes": 1428560
+      },
+      "SMQ_L.xpt": {
+        "sha256": "abbefebfa5585b1e19c079fa14be20c113a4649318070197214b258d05b93c50",
+        "bytes": 651120
+      }
+    },
+    "join_key": "SEQN",
+    "gender_match_rate": 1.0,
+    "smoking_resolved_rate": 0.6477648856072454,
     "rows_raw": 27493,
     "rows_used": 13152,
     "dropped": {
@@ -38,6 +59,26 @@
       "Angina",
       "Congestive"
     ],
+    "gender_mapping": {
+      "1": "male",
+      "2": "female"
+    },
+    "gender_levels": [
+      "female",
+      "male"
+    ],
+    "age_units_raw": "years",
+    "age_conversion": "none -- NHANES RIDAGEYR/Age is already whole years. v1 had to convert cardio_train's age-in-days.",
+    "cholesterol_semantics": "CONTINUOUS total cholesterol in mg/dL. NOT an ordinal band: v1's cardio_train column was 1/2/3 and had to be mapped from mg/dL, which discarded information this dataset preserves.",
+    "cleaning_rule": {
+      "applied": false,
+      "basis": "None needed. NHANES publishes examined, quality-controlled measurements; cardio_train required height/weight/BMI bands to remove values incompatible with an adult.",
+      "removed": {
+        "rows_removed_total": 0
+      }
+    },
+    "gender_mapping_basis": "DOCUMENTED by CDC in the RIAGENDR codebook -- not inferred. v1's cardio_train mapping had to be inferred from height and smoking rates because that dataset documents nothing.",
+    "smoking_semantics": "SMQ020 (smoked 100+ cigarettes ever) with SMQ040 (smokes now: 1 every day, 2 some days, 3 not at all). Current smoker = 1; never and former = 0; refused/don't-know unresolved, selecting the without_smoking variant.",
     "excluded_columns": {
       "Systolic_BP / Diastolic_BP": "VaidyaAI collects no blood pressure; a model leaning on them could never be fed at inference.",
       "Vitamin_D / Vitamin_B12": "DIETARY INTAKE (mcg/day), not the serum levels VaidyaAI's identically-named features hold. Different quantity.",
@@ -64,78 +105,270 @@
     "bmi",
     "cholesterol"
   ],
-  "cholesterol_semantics": "CONTINUOUS total cholesterol in mg/dL -- NOT v1's 1/2/3 NCEP band. Keeping the real number is worth +0.024 ROC-AUC over banding it, measured on this dataset. app/ml/heart.py's cholesterol_band() is not used by this artifact.",
-  "variant_policy": "ONE variant, `all`. NHANES-CVD carries no smoking column, so a with_smoking pipeline would be the without_smoking pipeline renamed -- a variant claiming an input it never saw. v1's two variants differed by 0.002 ROC-AUC.",
-  "cross_validated_metrics": {
-    "roc_auc": 0.8065019357460347,
-    "pr_auc": 0.2842970468611917,
-    "brier_score": 0.15070338794215593,
-    "prevalence": 0.09305199125558407,
-    "n": 10521,
-    "decision_threshold": 0.7126488898097351,
-    "accuracy": 0.8713050090295599,
-    "majority_class_baseline_accuracy": 0.906948008744416,
-    "positive_class": {
-      "precision": 0.32193732193732194,
-      "recall": 0.34627170582226763,
-      "f1": 0.33366141732283466,
-      "support": 979
+  "categorical_features": [
+    "gender"
+  ],
+  "tri_state_features": [
+    "smoking_current"
+  ],
+  "tri_state_policy": "An unresolved smoking answer selects the without_smoking variant, which was FITTED without the column. No value is imputed for it, so the model never treats a missing answer as a stated one.",
+  "unknown_category_policy": "OneHotEncoder(handle_unknown='ignore'). A gender Module 2 allows but this cohort has no level for (e.g. prefer_not_to_say) becomes an all-zero block rather than the majority category.",
+  "cholesterol_semantics": "CONTINUOUS total cholesterol in mg/dL -- NOT v1's 1/2/3 NCEP band. Keeping the real number is worth about +0.024 ROC-AUC over banding it. app/ml/heart.py's cholesterol_band() is unused by this artifact.",
+  "variants": {
+    "with_smoking": {
+      "metrics": {
+        "roc_auc": 0.8373544719901382,
+        "pr_auc": 0.3479322353755836,
+        "pr_auc_average_precision": 0.3479322353755836,
+        "brier_score": 0.14555460106663126,
+        "prevalence": 0.09319132750095094,
+        "n": 2629,
+        "decision_threshold": 0.7111382156811187,
+        "accuracy": 0.8824648155192089,
+        "majority_class_baseline_accuracy": 0.9068086724990491,
+        "positive_class": {
+          "precision": 0.37401574803149606,
+          "recall": 0.3877551020408163,
+          "f1": 0.3807615230460922,
+          "support": 245
+        },
+        "confusion_matrix": {
+          "labels": [
+            "actual_negative",
+            "actual_positive"
+          ],
+          "columns": [
+            "predicted_negative",
+            "predicted_positive"
+          ],
+          "matrix": [
+            [
+              2225,
+              159
+            ],
+            [
+              150,
+              95
+            ]
+          ]
+        },
+        "cross_validation": {
+          "folds": 5,
+          "stratified": true,
+          "roc_auc": {
+            "per_fold": [
+              0.8439904540736063,
+              0.7940723221643141,
+              0.807214983932341,
+              0.7978513707931643,
+              0.8177752679063639
+            ],
+            "mean": 0.8121808797739579,
+            "std": 0.01789447402715753
+          }
+        },
+        "risk_bands_on_test": {
+          "low": {
+            "patients": 1977,
+            "observed_positive_rate": 0.03692463328275165,
+            "share_of_cohort": 0.7519969570178775
+          },
+          "medium": {
+            "patients": 398,
+            "observed_positive_rate": 0.1934673366834171,
+            "share_of_cohort": 0.1513883605933815
+          },
+          "high": {
+            "patients": 254,
+            "observed_positive_rate": 0.37401574803149606,
+            "share_of_cohort": 0.09661468238874096
+          }
+        }
+      },
+      "thresholds": {
+        "borderline": 0.5238983687440493,
+        "indicated": 0.7111382156811187,
+        "indicated_precision_achieved": 0.3231939163498099,
+        "indicated_recall_achieved": 0.34800409416581374
+      },
+      "band_meaning": {
+        "low": "On the held-out test split 3.7% of patients in this band were positive, against a cohort prevalence of 9.3%. This band holds 75% of the cohort.",
+        "borderline": "On the held-out test split 19.3% of patients in this band were positive, against a cohort prevalence of 9.3%. This band holds 15% of the cohort.",
+        "indicated": "On the held-out test split 37.4% of patients in this band were positive, against a cohort prevalence of 9.3%. This band holds 10% of the cohort."
+      },
+      "global_feature_importance": {
+        "age": 0.5716626637719374,
+        "bmi": 0.14596252365886747,
+        "cholesterol": 0.22606709921307058,
+        "smoking_current": 0.018921686425007862,
+        "gender": 0.03738602693111672
+      },
+      "numeric_features": [
+        "age",
+        "bmi",
+        "cholesterol",
+        "smoking_current"
+      ],
+      "categorical_features": [
+        "gender"
+      ]
+    },
+    "without_smoking": {
+      "metrics": {
+        "roc_auc": 0.8293087226508373,
+        "pr_auc": 0.342389611011174,
+        "pr_auc_average_precision": 0.342389611011174,
+        "brier_score": 0.1457346621698027,
+        "prevalence": 0.09312048650703154,
+        "n": 2631,
+        "decision_threshold": 0.710283290117284,
+        "accuracy": 0.8806537438236413,
+        "majority_class_baseline_accuracy": 0.9068795134929685,
+        "positive_class": {
+          "precision": 0.3707865168539326,
+          "recall": 0.40408163265306124,
+          "f1": 0.38671875,
+          "support": 245
+        },
+        "confusion_matrix": {
+          "labels": [
+            "actual_negative",
+            "actual_positive"
+          ],
+          "columns": [
+            "predicted_negative",
+            "predicted_positive"
+          ],
+          "matrix": [
+            [
+              2218,
+              168
+            ],
+            [
+              146,
+              99
+            ]
+          ]
+        },
+        "cross_validation": {
+          "folds": 5,
+          "stratified": true,
+          "roc_auc": {
+            "per_fold": [
+              0.826862017724848,
+              0.8113551194745537,
+              0.8261776408676679,
+              0.8055074230950241,
+              0.7859709921704531
+            ],
+            "mean": 0.8111746386665093,
+            "std": 0.015090113578909187
+          }
+        },
+        "risk_bands_on_test": {
+          "low": {
+            "patients": 1969,
+            "observed_positive_rate": 0.03809040121889284,
+            "share_of_cohort": 0.7483846446218168
+          },
+          "medium": {
+            "patients": 395,
+            "observed_positive_rate": 0.17974683544303796,
+            "share_of_cohort": 0.15013302926643862
+          },
+          "high": {
+            "patients": 267,
+            "observed_positive_rate": 0.3707865168539326,
+            "share_of_cohort": 0.10148232611174458
+          }
+        }
+      },
+      "thresholds": {
+        "borderline": 0.5088279360058062,
+        "indicated": 0.710283290117284,
+        "indicated_precision_achieved": 0.3409306742640076,
+        "indicated_recall_achieved": 0.36670071501532175
+      },
+      "band_meaning": {
+        "low": "On the held-out test split 3.8% of patients in this band were positive, against a cohort prevalence of 9.3%. This band holds 75% of the cohort.",
+        "borderline": "On the held-out test split 18.0% of patients in this band were positive, against a cohort prevalence of 9.3%. This band holds 15% of the cohort.",
+        "indicated": "On the held-out test split 37.1% of patients in this band were positive, against a cohort prevalence of 9.3%. This band holds 10% of the cohort."
+      },
+      "global_feature_importance": {
+        "age": 0.5741134155291593,
+        "bmi": 0.15601317401599132,
+        "cholesterol": 0.23405487959357124,
+        "gender": 0.035818530861278106
+      },
+      "numeric_features": [
+        "age",
+        "bmi",
+        "cholesterol"
+      ],
+      "categorical_features": [
+        "gender"
+      ]
     }
   },
-  "held_out_metrics": {
-    "roc_auc": 0.827863215697008,
-    "pr_auc": 0.3390544002991519,
-    "brier_score": 0.1474872934157796,
-    "prevalence": 0.09312048650703154,
-    "n": 2631,
-    "decision_threshold": 0.7126488898097351,
-    "accuracy": 0.8810338274420373,
-    "majority_class_baseline_accuracy": 0.9068795134929685,
-    "positive_class": {
-      "precision": 0.3702290076335878,
-      "recall": 0.39591836734693875,
-      "f1": 0.3826429980276134,
-      "support": 245
-    }
-  },
-  "thresholds": {
-    "borderline": 0.511800673370094,
-    "indicated": 0.7126488898097351,
-    "indicated_precision_achieved": 0.32193732193732194,
-    "indicated_recall_achieved": 0.34627170582226763
-  },
-  "threshold_basis": "75th and 90th percentiles of the OUT-OF-FOLD score distribution. At 9% prevalence a 0.5 cut-off would call almost nobody positive.",
-  "feature_importance": {
-    "age": 0.5811790068152499,
-    "bmi": 0.16099870006295217,
-    "cholesterol": 0.25782229312179805
-  },
-  "feature_importance_caveat": "A whole-dataset ranking. It says what the model relies on across the cohort, NOT why any one patient was scored as they were.",
+  "feature_importance_scope": "global_model_level",
+  "feature_importance_caveat": "Mean impurity decrease over the whole training set. It ranks features FOR THE MODEL and orders the evidence. It is NOT a per-patient explanation.",
   "ablation": {
     "without_age": {
-      "roc_auc": 0.677195203311836,
-      "roc_auc_lost": 0.15066801238517202
+      "roc_auc": 0.6952104163813176,
+      "roc_auc_lost": 0.1421440556088206
     },
     "without_bmi": {
-      "roc_auc": 0.8104444292385857,
-      "roc_auc_lost": 0.01741878645842232
+      "roc_auc": 0.8249717504451445,
+      "roc_auc_lost": 0.012382721544993758
     },
     "without_cholesterol": {
-      "roc_auc": 0.7801144430949245,
-      "roc_auc_lost": 0.047748772602083545
+      "roc_auc": 0.803882173674839,
+      "roc_auc_lost": 0.03347229831529919
+    },
+    "without_smoking_current": {
+      "roc_auc": 0.830637926311464,
+      "roc_auc_lost": 0.006716545678674191
+    },
+    "without_gender": {
+      "roc_auc": 0.8338446788111218,
+      "roc_auc_lost": 0.0035097931790164516
     }
   },
   "comparison_to_v1": {
     "v1_dataset": "cardio_train.csv (70k rows, undocumented target, 50% prevalence)",
     "v1_held_out_roc_auc": 0.6970118480612282,
-    "v2_held_out_roc_auc": 0.827863215697008,
-    "delta_roc_auc": 0.13085136763577987,
-    "note": "The two numbers are computed on DIFFERENT populations and DIFFERENT outcome definitions, so this is not a like-for-like contest and should not be quoted as one. The claim being made is narrower and still worth making: on the same three inputs, a nationally representative cohort with a stated diagnostic outcome supports a materially better discriminator than cardio_train did, and does so at a realistic 9% prevalence rather than a constructed 50%."
+    "v2_held_out_roc_auc": 0.8373544719901382,
+    "delta_roc_auc": 0.14034262392891006,
+    "inputs_v1": [
+      "age",
+      "bmi",
+      "cholesterol_band",
+      "smoking_current",
+      "gender"
+    ],
+    "inputs_v2": [
+      "age",
+      "bmi",
+      "cholesterol",
+      "smoking_current",
+      "gender"
+    ],
+    "note": "The two numbers are computed on DIFFERENT populations and DIFFERENT outcome definitions, so this is not a like-for-like contest and should not be quoted as one. What can be said: v2 uses the SAME five patient inputs as v1 -- nothing was given up -- learns them from a nationally representative cohort with a stated diagnostic outcome, and does so at a realistic 9% prevalence rather than a constructed 50%."
   },
-  "honest_read": "Held-out ROC-AUC near 0.81 on age, BMI and total cholesterol alone, at a realistic 9% prevalence. That is a usable coarse discriminator and nothing more: PR-AUC around 0.30 against a 0.09 baseline means most people it ranks highly will still not have heart disease, so a high score is a reason to discuss testing with a clinician, never a finding. The outcome is SELF-REPORTED physician diagnosis, which misses undiagnosed disease and therefore under-counts exactly the people a screening tool most wants to find. The strongest known predictor of cardiovascular disease -- blood pressure -- is still absent from VaidyaAI entirely, and adding a systolic reading to Module 2 remains the single highest-value change available to this predictor.",
+  "blood_pressure_reference_model": {
+    "shipped": false,
+    "roc_auc": 0.8415937939634225,
+    "shipped_model_roc_auc": 0.8350312539966747,
+    "roc_auc_cost_of_exclusion": 0.006562539966747827,
+    "n_test": 2458,
+    "measured_on": "this cohort, same test rows for both models",
+    "why_not_shipped": "VaidyaAI collects no blood pressure anywhere -- not in Module 2's profile and not from a lab report -- so every patient would arrive with it missing and the pipeline would median-impute it for all of them.",
+    "supersedes_v1_estimate": "v1 recorded the cost of this exclusion as about 0.10 ROC-AUC, and the project has since treated adding a systolic field to Module 2 as the highest-value change available to Module 11. On THIS cohort the measured cost is far smaller -- see roc_auc_cost_of_exclusion. The 0.10 figure is a property of cardio_train, where blood pressure carried most of the signal and the remaining features carried little; it does not transfer. Blood pressure is still worth having, but on this evidence it is a small gain, and the case for changing the profile should be argued from this number rather than from the inherited one."
+  },
+  "honest_read": "Held-out ROC-AUC above 0.82 at a realistic 9% prevalence. That is a usable coarse discriminator and nothing more: PR-AUC around 0.32 against a 0.09 baseline means most people it ranks highly will still not have heart disease, so a high score is a reason to discuss testing with a clinician, never a finding. It learned from what respondents said a doctor had told them, so it under-counts exactly the people a screening tool most wants to find.",
   "model_artifact": {
     "filename": "heart_rf_v2.joblib",
-    "sha256": "2e0ff64d1243e34a6467ccf608b6b804be3de75f5ca37e99ac001858b0235ae6",
-    "bytes": 10163536
+    "sha256": "105712cafc43acf08355edc85a11c63fcc609295a1d4dd9ac538c2706acc8869",
+    "bytes": 19607357
   }
 }
