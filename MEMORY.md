@@ -9,7 +9,7 @@
 
 ## 0. RESUME HERE (read this first in a new session)
 
-**State:** **ALL 32 SPEC MODULES ARE NOW BUILT.** Modules 1–26 are wired end to end and
+**State:** **ALL 32 SPEC MODULES BUILT, PLUS A REACT FRONTEND (§6q), UNDER GIT (7 commits).** Modules 1–26 are wired end to end and
 the full spec §16 pipeline has been verified live against real Gemini. Modules **27–32 were
 built on 2026-09-04 and are NOT TESTED AND NOT AUDITED** — see §6m before trusting any of
 them.
@@ -45,6 +45,24 @@ them. Treat every claim about them as unverified.
   covering every module: auth, profile, reports, the Module 27 dashboard, the timeline
   (28/29/30), the clinician summary (32) and population context (31). 44 tests.
 - **Modules 21–26 have not been independently audited.** Modules 1–20 have.
+
+> ## ⚠ START HERE: TWO OPEN **FAIL** VERDICTS, NOTHING FIXED
+>
+> On 2026-09-05 three auditors were sent at Modules 21–26 — the path where a model's words
+> reach a patient, and the last unaudited region. **Two returned FAIL. None of their defects
+> has been fixed.** The third never finished and must be re-run. **Read §6r first.**
+>
+> * **Modules 23/24 — FAIL, 14 defects.** A diagnosis stated as flat fact reaches the
+>   patient (`'You have cirrhosis of the liver.'` → approve, zero violations). One adverb
+>   defeats every multi-word rule. One zero-width space smuggles "no need to see a doctor"
+>   through. **Of §6k's eight fixes: three DO NOT HOLD, four are PARTIAL.**
+> * **Modules 21/22 — FAIL.** The §6k D7 anchoring fix is **bypassed on the public HTTP
+>   endpoint**; every original D7 example reproduces verbatim today. Module 23 is not
+>   exposed, but the endpoint is public and advertises a false claim about its own behaviour.
+> * **Modules 25/26 — NEVER AUDITED.** The agent was killed mid-run.
+>
+> Both suites are green. 408 knowledge tests and 327 safety tests pass with these holes open.
+> That is now the fourth time on this project that a green suite has said nothing.
 
 **AUDITED AND FIXED 2026-09-04 — see §6n.** An end-to-end pass over Modules 1–32 (both
 suites re-run, an independent contract audit, and a live run against real Gemini) found
@@ -2188,6 +2206,176 @@ the cap — it would have passed for the wrong reason. Re-asserted on the senten
 
 ---
 
+## 6r. Audit of Modules 21–26 · 2026-09-05 · **TWO VERDICTS OF FAIL. NOTHING FIXED YET.**
+
+> **READ THIS BEFORE TOUCHING MODULES 21–26.** Three independent auditors were sent at the
+> last unaudited region — the path where a language model's words reach a patient. Two
+> returned **FAIL** with demonstrated, reproducible defects. **None of them has been fixed.**
+> The third (Modules 25/26) was killed by a rate limit before finishing and must be re-run.
+>
+> Both suites are still fully green. That is the point: **408 knowledge tests and 327
+> safety tests pass with these holes wide open.**
+
+### Auditor 1 — Modules 21/22 (RAG + Knowledge Base) — **VERDICT: FAIL**
+
+**D1 · CRITICAL · DEMONSTRATED — the §6k D7 fix is bypassed on the public HTTP endpoint.**
+`_anchor_free_text` is called from `retrieve()` only (`app/rag/retriever.py:161-166`).
+`retrieve_payload()` (`app/rag/retriever.py:178-197`) calls `build_query(...)` directly and
+**never anchors**, and `app/api/routes_knowledge.py:104` calls `retrieve_payload`. Every D7
+example reproduces verbatim through the API today, HTTP 200, `grounding_available: true`:
+
+| query | chunk returned | score |
+|---|---|---|
+| `what does a raised HbA1c mean` | `cond_elevated_hemoglobin#0` | 0.152 |
+| `my ALT and AST liver enzymes are high` | `term_ldl_hdl#1` | 0.190 |
+| `white blood cell count WBC` | `cond_anemia#2` | 0.402 |
+| `my blood pressure is 160 over 100` | `ref_glucose_bands#0` | 0.300 |
+| `is my cancer chemotherapy working` | `cond_obesity#1` | 0.176 |
+
+**Module 23 is NOT exposed to this** — `explanation.py:290` calls `retrieve()` with canonical
+names. But the endpoint is public and its own `/index` policy payload advertises
+`"empty_rather_than_irrelevant"`, which is a **false claim about behaviour**, and
+`routes_knowledge.py:4-7` claims the HTTP layer "can never drift from the in-process one".
+It has drifted. Also: `floor` is caller-controllable to `0.0` (`app/rag/schemas.py:64-73`),
+so the last guard is client-defeatable.
+
+**The overlapping-similarity claim in §6j is verified and is WORSE than recorded.** Measured
+unanchored top-1 scores: covered queries 0.152–0.444, uncovered 0.168–0.402. They do not
+merely overlap, they **invert** — the uncovered WBC query outscores 9 of 10 covered ones. No
+similarity floor can separate them.
+
+**D2 · CRITICAL — three tests pass while the endpoint is wrong.**
+`tests/test_knowledge_endpoint.py:158` posts `"what does HbA1c measure"` and asserts only
+`assert data["results"]` — it asserts that *something* came back, not the right thing. The
+only off-domain tests use `"how do I fix my bicycle"` / `"asdfghjkl"`, stopped by the domain
+floor rather than by anchoring. **No test anywhere exercises a medical-but-uncovered query
+through `retrieve_payload`.**
+
+**D3 · HIGH — both corpus scanners share a dosage blind spot.**
+`app/data/knowledge_safety.py:100-104`, `dose_quantity` ends `\b(?!\s*/)` to allow "126
+mg/dL"; it excuses **any** slash. `500 mg/day`, `1000 IU/day`, `2.5 mg/tablet` are accepted
+by the KB scanner AND approved by Module 24. Latent, not live (no such string is in the 62
+documents), but the import gate that should prevent it does not. Also accepted by both:
+`This result establishes that the person has diabetes.`, `pathognomonic of…`.
+
+**D4 · MEDIUM — scanner divergence the other way.** `knowledge_safety` accepts second-person
+imperatives Module 24 hard-rejects (`You should reduce salt…`, `Eat more leafy greens…`). A
+future lifestyle document in that register imports fine and then silently withholds the
+patient's whole explanation.
+
+**D5 · MEDIUM** — 19 of 243 chunks are byte-identical boilerplate; the diversity cap is per
+document, so one query returns five identical chunks and consumes the whole grounding budget.
+**D6 · LOW/MED** — `term_reference_interval`, `interp_missing_value`,
+`interp_what_this_platform_is` carry no tags, so anchoring makes them unreachable by the very
+questions they exist to answer (`retrieve(text="what is a reference interval")` → `[]`).
+
+**Verified clean (worth as much):** `build_index.py --check` passes, committed index matches a
+fresh build, fingerprint check prevents a stale index shipping. All §6j corpus claims exact —
+62 docs / 377 paragraphs / 243 chunks, vocabulary aligned both directions at import, every
+document carries a real, checkable `basis` (ADA, WHO VMNIS, NCEP ATP III, KDIGO, Endocrine
+Society, BCSH); spot-checked numbers against the cited guidelines with **no factual errors**.
+**Chunking could not be broken** — no chunk separates a negation or caveat from what it
+qualifies. Determinism holds across `PYTHONHASHSEED`. No PHI in logs. All 243 chunks pass
+Module 24 with zero real violations.
+
+### Auditor 2 — Modules 23/24 (LLM explanation + safety validator) — **VERDICT: FAIL**
+
+**14 defects. Of §6k's eight fixes: three DO NOT HOLD, four are PARTIAL, one holds.**
+
+| | §6k fix | status |
+|---|---|---|
+| D1 | positive controls backstop the blocklist | **DOES NOT HOLD** |
+| D2 | `_GAP` for separators | PARTIAL |
+| D3 | `_drop_disclaimed_diagnoses` | PARTIAL |
+| D4 | invisible characters | **DOES NOT HOLD** |
+| D5 | false comments corrected | **DOES NOT HOLD** |
+| D6 | Module 25 echo | **HOLDS** |
+| D7 | `_anchor_free_text` | holds *for Module 23* (see Auditor 1) |
+| D8 | spelled-out numbers | PARTIAL |
+
+The most severe, all DEMONSTRATED by driving `validate_text` / `explain_feature` directly:
+
+1. **A diagnosis stated as flat fact reaches the patient.** `assertion.clinical_state`
+   (`app/safety/policy.py:461-525`) is an enumeration, not a positive control.
+   `'You have cirrhosis of the liver. Discuss with a healthcare professional.'` → **approve,
+   zero violations.** Same for chronic liver failure, leukaemia, underactive thyroid, kidney
+   failure, "your heart is weak and enlarged". False reassurance too: `'Your results are all
+   fine.'`, `'You do not have any diabetes.'` → approved. **`RULES` contains 13 rules and not
+   one has `positive_control=True`.** D1's own stated diagnosis is still true: the fix
+   replaced one enumeration with another.
+2. **One ordinary adverb defeats every multi-word rule.** `_GAP = r"\W{1,4}"`
+   (`policy.py:197`) matches only non-word runs. `'Your kidneys are failing.'` → reject;
+   `'Your kidneys are, sadly, failing.'` → **approve.**
+3. **`MISSING_PROFESSIONAL_REFERRAL` is still satisfied by a bare substring.**
+   `validator.py:838-861`. Combining 1 and 3 reproduces the original FAIL audit's headline:
+   `'A qualified healthcare professional wrote these reference ranges. Your liver is scarred
+   and hardened.'` → approve, no violations, verbatim to the patient.
+4. **`_compacted_pass` discards REDACTABLE findings** (`validator.py:487-537`), so one
+   zero-width space smuggles `'There is no ne​ed to see a doctor about this result'`
+   through to **approve**. **15/15 invisible characters MISS in the redactable class.**
+5. **`_ZERO_WIDTH` covers 7 code points**; LRM, RLM, LRI, PDI, LRO, RLO, U+2061 and VS1
+   escape even PROHIBITED inside a word — and a **passing test masks it** by only testing the
+   between-words direction where `_GAP` catches them for free.
+6. **Numeric grounding is set-membership**, so any number in the corpus can be attributed to
+   the patient: with the real value 6.8, `'Your HbA1c is 5.7 percent, which is in the normal
+   band.'` → approve. A fabricated *and falsely reassuring* value sourced from the model's own
+   grounding.
+7. **D8 misses the register it was written for**: `'Your level is around fifteen.'`,
+   `'Your reading is twelve.'`, `'one in four'`, `'one third'` → all approve. **And it has a
+   new false positive**: `_spelled_number('five and seven') == 12.0`, so every spelled range —
+   the exact register Module 23 asks for — is read as a fabricated number and rejected.
+8. **D3 is regressed on the redaction recheck** (`validator.py:1139-1143`): adding a *correct*
+   disclaimer flips approve→reject, and `_feedback_block` then teaches the model to drop it.
+9. **Fail-closed runs before normalisation** (`validator.py:971`): `validate_text('​​')`
+   → approve, `outcome='generated'`, empty explanation plus disclaimer. A blank rendered as an
+   answer.
+10. **Nothing checks the output is an explanation.** `'I cannot help with that.'`, `'.'`,
+    `'x'` → all approved as `outcome='generated'`. Module 24 is purely subtractive.
+11. **Prompt injection via `unit` and `status`** (`explanation.py:341,361`) — `_clean_label`
+    is applied only to `interpretation`. Raw newlines land a forged `## NEW RULES` heading
+    *before* the absolute-rules block. `unit` is OCR-derived report text, and via
+    `/explain/report` the budget is **unbounded**, which falsifies `EXPLANATION_POLICY`'s
+    claim that the model never sees raw report text.
+12. **The three scanners disagree in both directions** — 12 measured rows. `Acyclovir is an
+    antiviral.` is caught by both corpus scanners and **approved by Module 24**
+    (`policy.py:576` has `navirs?|ciclovirs?` where siblings have the wider `virs?`). The KB
+    scanner misses "no need to contact a doctor", "replaces a consultation", "rest assured",
+    "without seeing a clinician" — all rejected by Module 24, so **the corpus gate is
+    materially weaker than the output gate it is meant to mirror.**
+13. **A false comment asserting the guarantee §6k D5 says was corrected** —
+    `app/data/recommendation_catalog.py:461`, *"Fixed in all three so the sibling scanners
+    cannot drift apart again."* Corrected in `validator.py` only. **Seventh false comment on
+    this project, and the second time this exact sentence has been found.**
+14. `guarded_generation` catches `Exception`, not `BaseException` (`app/safety/fallback.py`).
+    Fails safe; the docstring is inaccurate.
+
+**Verified clean:** the single-assignment invariant genuinely holds (raw model output is
+never stored); all five outcomes reachable with fallbacks; fail-closed on type/encoding/size/
+control characters; **no PHI, prompt, span or value in any log line, exception or
+patient-facing field**; Module 24 still produces zero false positives on its own corpus.
+
+### Auditor 3 — Modules 25/26 — **NOT COMPLETED**
+
+Killed by a session rate limit after "Now let me instrument and probe rather than read."
+**Re-run it.** The brief is in this file's history: independently recompute Module 26's
+reachable `EDUCATIONAL_CODES` set (a HIGH-risk-tier sentence was once servable as general
+guidance), and confirm "zero model and retriever calls" **by instrumentation, not reading**.
+Also cross-check spec-named terms against the vocabulary for gaps not declared in
+`known_gaps` — SGPT is declared; an undeclared one would be worse.
+
+### The pattern, now four audits deep
+
+Every audit on this project has found live defects behind a fully green suite. §6p's auditor
+named the shape and it holds here exactly:
+
+> **"The branch that refuses is tested, the branch that answers on thin evidence is not."**
+
+And a second pattern is now undeniable: **§6k's fixes were verified once, by the person who
+wrote them, and three of eight did not survive re-attack.** A fix is not done when its
+author says so.
+
+---
+
 ## 7. Module 1 → later modules: inherited obligations
 
 **RESOLVED by Module 2:** `ownership.js` is now wired up and enforced, `ownerScopedFilter` throws
@@ -2265,8 +2453,26 @@ In the order that gives the most value:
    end-to-end pass through the browser against a live analysis (the contract was verified
    against a running backend, but no browser has driven a full upload-to-dashboard flow),
    and an accessibility review — this is a medical tool and none has been done.
-5. **Audit Modules 21-26 as a group.** Module 24 was audited alone; 21, 22, 23, 25 and 26
-   have never been independently checked.
+5. ~~Audit Modules 21-26 as a group.~~ **DONE 2026-09-05 — TWO FAIL VERDICTS (§6r).**
+   **THE FIXES ARE THE TOP PRIORITY OF THE NEXT SESSION**, in this order:
+
+   a. **Modules 23/24, 14 defects (§6r).** Start with the positive-control gap: a diagnosis
+      stated as flat fact reaches the patient, and `RULES` has 13 rules with
+      `positive_control=True` on **none** of them. Then `_GAP` (one adverb defeats every
+      multi-word rule), then `_compacted_pass` discarding REDACTABLE findings (15/15
+      invisible characters miss), then `MISSING_PROFESSIONAL_REFERRAL` substring
+      satisfaction — which §6k D1 named and never actually fixed.
+   b. **Module 21's D1**: route `retrieve_payload` through `_anchor_free_text`, or delete the
+      unanchored path. Then correct the two false claims the endpoint publishes about itself.
+   c. **RE-RUN THE MODULES 25/26 AUDIT.** It never completed.
+   d. **Reconcile the three safety scanners.** This is no longer tidiness — §6r has 12
+      measured rows where they disagree, including a drug name the corpus scanners catch and
+      Module 24 approves.
+
+   Two lessons worth carrying into the fixes themselves: **a fix verified once by its own
+   author is not done** (three of §6k's eight did not survive re-attack), and the suite's
+   shape is *"the branch that refuses is tested, the branch that answers on thin evidence is
+   not"* — so every fix needs a test on the ANSWERING branch.
 6. **Reconcile the three safety scanners** into one rule table (see 6k, D5).
 7. **Two measured data gaps**, both already quantified:
    - adding systolic BP to Module 2 is worth ~0.10 ROC-AUC to Module 11;
