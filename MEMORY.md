@@ -3,23 +3,33 @@
 > Living context file for the VaidyaAI build. Keep this in the project folder so the
 > project's history, decisions, and state survive independently of any chat session.
 >
-> **Last updated:** 2026-09-04 · **Modules 1–26 built** · Modules 27–32 not started
+> **Last updated:** 2026-09-06 · **All 32 modules + frontend built** · Run end to end for the
+> first time on 2026-09-06 (§6t), Module 11 retrained (§6s)
 
 ---
 
 ## 0. RESUME HERE (read this first in a new session)
 
-**State:** **ALL 32 SPEC MODULES BUILT, PLUS A REACT FRONTEND (§6q), UNDER GIT (7 commits).** Modules 1–26 are wired end to end and
-the full spec §16 pipeline has been verified live against real Gemini. Modules **27–32 were
-built on 2026-09-04 and are NOT TESTED AND NOT AUDITED** — see §6m before trusting any of
-them.
+**State:** **ALL 32 SPEC MODULES BUILT, PLUS A REACT FRONTEND (§6q), UNDER GIT.** Modules 1–26
+are wired end to end and the full spec §16 pipeline has been verified live against real Gemini.
+
+**On 2026-09-06 the whole application was started and driven through a browser for the first
+time** — see §6t. Three defects only reachable by running it were found and fixed, including
+one that made **report upload impossible for every file**. A green suite had said nothing
+about any of them. That is the fifth time on this project.
 
 | | Tests |
 |---|---|
 | `backend/` (Node/Express) | **618** passing + 3 opt-in live |
-| `ai-service/` (Python/FastAPI) | **3,667** passing + 7 skipped |
+| `ai-service/` (Python/FastAPI) | **3,676** passing + 7 skipped |
 | `frontend/` (React/Vitest) | **44** passing |
-| **Total** | **4,329** (incl. 44 frontend) |
+| **Total** | **4,338** (incl. 44 frontend) |
+
+> **THE ai-service SUITE ONLY PASSES WHEN NO `.env` EXISTS.** A real `AI_SERVICE_API_KEY`
+> makes the endpoint tests receive 401 instead of 200, so ~30 fail. Nothing is wrong with the
+> code; the tests are not isolated from the ambient dotenv. Move `.env` aside to run them, and
+> fix `conftest.py` when you get a chance — a suite whose meaning depends on a gitignored file
+> is a suite that will mislead someone.
 
 Modules 27–32 now HAVE tests — **+911 written 2026-09-04/05** (see §6o). They found a real
 patient-safety defect on their first run.
@@ -191,11 +201,18 @@ build-agent self-reports are never taken at face value.
 
 ### Open items
 
-- **No Kaggle credentials and no Kaggle MCP** (the registry has no Kaggle connector).
-  Datasets were sourced from verified public mirrors instead. Not currently blocking.
-- **Module 11's model is weak (ROC-AUC 0.697) and the cause is a DATA GAP, not modelling.**
-  Adding a systolic blood-pressure field to Module 2 is worth **~0.10 ROC-AUC** — measured,
-  not estimated. Highest-value change available to Module 11.
+- ~~**No Kaggle credentials and no Kaggle MCP**~~ **RESOLVED 2026-09-06.** A Kaggle MCP
+  server is connected and authenticated; datasets can be searched and downloaded directly.
+- ~~**Module 11's model is weak (ROC-AUC 0.697)**~~ **RETRAINED 2026-09-06 — see §6s.**
+  Held-out ROC-AUC is now **0.837** (`with_smoking`) / 0.829 (`without_smoking`) on CDC
+  NHANES 2017–2023, using the *same five inputs* v1 used. `heart_rf_v2` is shipped and
+  loaded by `app/ml/heart.py`.
+- **THE ~0.10 BLOOD-PRESSURE FIGURE WAS WRONG.** It is a property of `cardio_train`, not of
+  the task, and it does not transfer. Re-measured on NHANES — reference model fitted and
+  scored on the *same test rows*, not inherited — adding blood pressure is worth
+  **+0.0066 ROC-AUC**, not +0.10. Adding a systolic field to Module 2 is therefore **no
+  longer the highest-value change available to Module 11**; it is a small gain. Argue that
+  profile change from +0.0066, and do not re-quote the old number.
 - **Module 12 can only use 5 of the CKD dataset's 24 attributes** because
   `feature_catalog.py` has no entry for them. Adding `blood_urea` and `albumin` is likely the
   single biggest quality win available to Module 12.
@@ -818,7 +835,15 @@ holds, but the real examples are **vitamin D** (25–250 nmol/L inside 0–400 n
 
 ## 6i. Modules 11, 12, 15, 16 — built 2026-08-30, NOT independently audited
 
-### Module 11 — Heart Disease · trained, but WEAK. Read this before quoting it.
+### Module 11 — Heart Disease · **SUPERSEDED 2026-09-06 by v2, see §6s.**
+
+> **Everything in this subsection describes `heart_rf_v1` (cardio_train), which is no longer
+> loaded.** It is kept because the v1 numbers are still quoted in older sections and because
+> the reasoning below is the reasoning that v2 disproved. For the shipped model read §6s.
+> In particular the "0.800 vs 0.697" blood-pressure comparison below is a cardio_train fact:
+> the same measurement on NHANES gives +0.0066, not +0.10.
+
+### Module 11 (v1, HISTORICAL) — Heart Disease · trained, but WEAK.
 
 ROC-AUC **0.697** · PR-AUC 0.684 · accuracy **0.592 vs 0.500 baseline** (n=13,988, ~50/50).
 At threshold 0.673: precision 0.747, **recall 0.277**, F1 0.404.
@@ -2376,6 +2401,159 @@ author says so.
 
 ---
 
+## 6s. Module 11 retrained on NHANES · 2026-09-06 · **0.697 → 0.837, SHIPPED**
+
+`heart_rf_v2` is loaded by `app/ml/heart.py`. v1 is kept on disk, unloaded.
+
+| | v1 (`cardio_train`) | v2 (NHANES 2017–2023) |
+|---|---|---|
+| Held-out ROC-AUC `with_smoking` | 0.6970 | **0.8374** |
+| Held-out ROC-AUC `without_smoking` | 0.6949 | **0.8293** |
+| PR-AUC | — | 0.348 (baseline 0.093) |
+| Prevalence | 50% (constructed) | **9.3% (a real screening rate)** |
+| Outcome | undocumented | physician-diagnosed CHD / MI / angina / CHF |
+| Inputs | age, bmi, cholesterol_band, smoking, gender | age, bmi, **cholesterol (mg/dL)**, smoking, gender |
+| Rows | 69,940 | 13,152 adults |
+
+Trainer: `ml/train_heart_nhanes.py`. Dataset: `datasets/raw/nhanes_cvd_2017_2023.csv`
+(Kaggle `ahiduzzaman28/nhanes-cvd-raw-data-2017-23`), with sex and smoking joined on `SEQN`
+from CDC's own `P_DEMO`/`DEMO_L` and `P_SMQ`/`SMQ_L` in `datasets/population/raw/`.
+
+**The prevalence change may matter more than the AUC.** A model fitted at 50% positive emits
+probabilities calibrated to a world where every second person has heart disease. v2's
+probabilities are calibrated to a population that looks like a real one.
+
+**Why the join was necessary.** The Kaggle extract has no sex and no smoking column. A first
+attempt shipped three inputs where v1 used five — better ranking bought by discarding two
+answers Module 2 already collects, which is a trade, not an improvement. Joining them back
+costs nothing and gains a little: age+bmi+chol 0.8110 → +sex 0.8159 → +smoking 0.8207 (CV).
+Sex matched 100% of rows; smoking resolves for 65%, and an unresolved answer still selects
+the `without_smoking` variant rather than having a value imputed.
+
+### THE ~0.10 BLOOD-PRESSURE FIGURE IS WRONG. Stop quoting it.
+
+This project has treated "add systolic BP to Module 2" as Module 11's highest-value change,
+on the strength of a measured 0.10 ROC-AUC gap. NHANES publishes blood pressure, so v2
+fitted the reference model and scored it **on the same test rows** instead of inheriting the
+number:
+
+> **BP-inclusive 0.8416 vs shipped 0.8350 → cost of exclusion +0.0066.**
+
+0.10 is a property of `cardio_train`, where BP carried most of the signal and the remaining
+features carried little. It does not transfer. BP is still worth having; it is a small gain.
+
+### Two things deliberately NOT used
+
+* **`Vitamin_D` / `Vitamin_B12` in that dataset are DIETARY INTAKE** (medians 3.3 and 3.2
+  mcg/day), not the serum levels VaidyaAI's identically-named features hold (~20–50 ng/mL,
+  ~200–900 pg/mL). Same word, different quantity. Wiring them together would have produced
+  a stronger-looking model built on a unit confusion — the class of bug §6n D1 already cost
+  this project once.
+* **A 12k-row NHANES CKD set was rejected**, not used. All 5,607 rows staged `Unknown` are
+  labelled `ckd_present = 1` — 67% of its positives are unknowns counted as disease. See
+  §10's eGFR note for why its clean alternative target is circular.
+
+### Two safety regressions introduced while doing this, both caught by the suite
+
+1. Generated band prose said *"% of patients in this band had a diagnosis"*. That string is
+   rendered into the **patient-facing report** and the Module 24 scanner correctly flags it
+   as a diagnostic assertion. v1's *"were positive"* was already right.
+2. The artifact's `honest_read` said *"SELF-REPORTED physician diagnosis"*, which trips the
+   same scanner. The consequence is worse than a flag: `doctor_summary` **withholds the whole
+   note**, so a clinician silently loses the model's own statement of its limits. Reworded,
+   fact intact.
+
+**Both were introduced by the change and caught by existing tests.** That is the first time
+on this project the suite has caught a live safety defect rather than missing one.
+
+### A design fix that outlives the artifact
+
+`app/ml/heart.py` hard-coded facts belonging to whichever artifact is loaded — the band prose
+(*"21.1% positive against a cohort prevalence of 50.0%"*), the threshold procedure, and the
+NCEP band mapping. Those are cardio_train's numbers, and pointing the file at any other
+artifact left them rendering **unchanged and now false beside a patient's result**. They are
+read from the artifact now (`threshold_basis`, `band_meaning`), with v1's text as fallback,
+and the cholesterol-band block is emitted only when the model actually consumes a band.
+
+`model_artifact` must be `{filename, sha256, bytes}`, not a bare filename — writing a string
+leaves every prediction stamped `artifact_integrity_verified: false`, silently downgrading a
+shipped integrity check to nothing. That was also introduced and fixed here.
+
+### 20 tests rewritten, none deleted
+
+Each had frozen a cardio_train fact as an invariant: `rows_raw == 70000`, age in days,
+cholesterol as a 1/2/3 band, gender *inferred* rather than documented, a 1.5× precision-lift
+procedure, `roc_auc < 0.8`, HIGH_RISK reaching INDICATED. The clearest case is
+`test_the_heart_model_carries_its_weak_discrimination_caveat`, whose own docstring said the
+caveat *"must be SELECTED BY THE NUMBER rather than remembered for this one model"* — and
+which then pinned `0.697`. The selection mechanism kept working perfectly and the test failed
+anyway. They now assert both branches, or read the expected value from the loaded artifact.
+
+**Lesson, and it is the same one as §6n D1 and the band prose above:** a number that belongs
+to a dataset must live in the artifact, never in code and never in an assertion.
+
+`ai-service` 3,676 passed / 7 skipped · `frontend` 44 passed · commits `1cd15c9`, `fcd32fd`.
+
+---
+
+## 6t. First real run · 2026-09-06 · three defects a green suite never saw
+
+The application was started and driven through a browser for the first time. Everything below
+was invisible to 4,300 passing tests.
+
+### D1 — CRITICAL: report upload was broken for EVERY file
+
+The client sent the multipart part as `report`; the backend accepts only `file`
+(`upload.single(FIELD_NAME)`, `FIELD_NAME = 'file'`). Multer rejected every upload as
+`LIMIT_UNEXPECTED_FILE`, surfacing as *"Unexpected file upload. Send exactly one file in the
+`file` field"* — wording that blames the user for sending several files when they sent one.
+**No report could ever be uploaded through the UI.** Fixed in `frontend/src/pages/Reports.jsx`;
+`file` is the contract every backend upload test attaches. **No frontend test covered upload at
+all** — zero hits for `FormData` in `frontend/tests/`.
+
+### D2 — every intake refusal read the same
+
+`mapAxiosError` collapsed all 400/422 responses into *"The analysis service could not process
+this report"*, discarding an explanation the ai-service had already produced. A 13-page report
+over a 10-page limit — fixable by the patient in seconds — was indistinguishable from a corrupt
+file. The backend now reads the service's stable error **code** and picks one of its own
+messages for the actionable cases (`TOO_MANY_PAGES`, `FILE_TOO_LARGE`, `ENCRYPTED_PDF`, …).
+The response **body** is still never echoed, so the guarantee that nothing quoting report
+content reaches a patient holds.
+
+### D3 — the dashboard went blank exactly when it had something to say
+
+`dashboard.warnings` is an array of `{stage, module, message}` objects; four screens rendered
+each one directly as a React child. React throws `Objects are not valid as a React child` and,
+with no error boundary, **unmounts the whole page**. The block is guarded by
+`warnings?.length`, so it only ever fired when the analysis had warnings — which is precisely
+when it is telling a patient their report was read incompletely. Fixed with one shared
+`WarningList` in `frontend/src/components/Absent.jsx`, used by Dashboard, DoctorSummary and
+both Timeline sites. The 44 frontend tests only exercised the empty-warnings path.
+
+### Also learned while running it
+
+* **Gemini free tier is 20 requests/day PER MODEL** (`GenerateRequestsPerDayPerProjectPerModel`).
+  One 13-page report exhausts it — extraction is one call per page, plus one per feature in the
+  explanation stage. The quota is **per model**, so `gemini-3.5-flash` and the lite variants
+  each carry their own untouched allowance. The client now **falls back across models on 429**
+  (`GEMINI_FALLBACK_MODELS`), and only on 429: a deterministic 4xx fails identically everywhere,
+  and a provider safety block is an ANSWER that must never be shopped around until one model
+  complies. Concurrency does NOT help here — the ceiling is request count, not wall-clock.
+* **`GEMINI_TIMEOUT_SECONDS=45` (the README's recommendation) drops pages.** Real per-page
+  latency runs to 38.6s, so 45s sits inside the normal distribution; three pages of a 13-page
+  report were skipped with `MODEL_TIMEOUT`. The shipped default of 120 is right.
+* **`ai-service/.env.example` cannot be used as shipped.** `CORS_ALLOW_ORIGINS=` (empty) makes
+  pydantic-settings JSON-decode fail before the `_split_origins` validator runs, so the service
+  refuses to start. Same trap as any `List[str]` settings field — `train_heart_nhanes.py`
+  avoids it by using a plain string. Not yet fixed in the example file.
+* **Mongo Atlas needs the non-SRV connection string on this machine.** Node's resolver is
+  configured with DNS server `127.0.0.1` where nothing listens, so `dns.resolveSrv` fails with
+  `ECONNREFUSED` and any `mongodb+srv://` URI dies at startup. Ordinary A-record lookups go
+  through the OS resolver and work. The standard multi-host form is in `backend/.env`.
+
+---
+
 ## 7. Module 1 → later modules: inherited obligations
 
 **RESOLVED by Module 2:** `ownership.js` is now wired up and enforced, `ownerScopedFilter` throws
@@ -2474,10 +2652,17 @@ In the order that gives the most value:
    shape is *"the branch that refuses is tested, the branch that answers on thin evidence is
    not"* — so every fix needs a test on the ANSWERING branch.
 6. **Reconcile the three safety scanners** into one rule table (see 6k, D5).
-7. **Two measured data gaps**, both already quantified:
-   - adding systolic BP to Module 2 is worth ~0.10 ROC-AUC to Module 11;
+7. **One measured data gap left** (the other was re-measured and shrank):
+   - ~~adding systolic BP to Module 2 is worth ~0.10 ROC-AUC to Module 11~~ **FALSE.**
+     Re-measured on NHANES: **+0.0066**. See §6s. Not a priority.
    - adding `blood_urea` and `albumin` to `feature_catalog.py` is the biggest available
      win for Module 12, which can currently use only 5 of the CKD dataset's 24 attributes.
+   - **NEW — compute eGFR instead of learning it.** CKD-EPI is a deterministic function of
+     creatinine, age and gender, all three of which VaidyaAI already has. Verified against
+     an NHANES CKD set: recomputing CKD-EPI from those columns reproduces the published
+     eGFR at correlation **1.00000**, median difference **0.00 mL/min**. Any ML model of
+     eGFR<60 is re-deriving a formula — that is why such a model scores 0.9995 and why the
+     score is meaningless. If Module 12 wants staging, put the formula in the rule engine.
 8. **Add a liver-enzyme KB document** so Module 25 stops refusing SGPT, which the spec names.
 9. **A background job queue for `analyze`.** It still blocks on a slow LLM round trip.
    Extraction worst case is bounded but large; the explanation stage is now parallel but
