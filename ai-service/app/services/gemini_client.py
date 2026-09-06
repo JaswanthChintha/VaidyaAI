@@ -14,8 +14,9 @@ from __future__ import annotations
 
 import json
 import random
+import threading
 import time
-from typing import Any, Optional
+from typing import Any, Dict, List, Optional
 
 from google import genai
 from google.genai import errors as genai_errors
@@ -53,6 +54,15 @@ _TIMEOUT_NAMES = {
 }
 
 
+# Models known to be out of quota, as {model_name: monotonic time it may be
+# retried}. PROCESS-WIDE ON PURPOSE. A client is built per request, so
+# per-instance state would forget the exhaustion between pages and spend one
+# doomed request per page rediscovering it. The free tier's cap is daily, so
+# what is learned on page 1 is still true on page 13.
+_MODEL_COOLDOWN: Dict[str, float] = {}
+_COOLDOWN_LOCK = threading.Lock()
+
+
 class GeminiClient:
     """Wraps a `genai.Client` and exposes one method: extract a page."""
 
@@ -60,6 +70,46 @@ class GeminiClient:
         self._settings = settings
         self._client = client
         self._model = settings.gemini_model
+
+    # -- model fallback ------------------------------------------------------
+
+    @staticmethod
+    def _in_cooldown(model: str) -> bool:
+        with _COOLDOWN_LOCK:
+            until = _MODEL_COOLDOWN.get(model)
+            if until is None:
+                return False
+            if time.monotonic() >= until:
+                del _MODEL_COOLDOWN[model]
+                return False
+            return True
+
+    def _mark_exhausted(self, model: str) -> None:
+        """Record that `model` answered 429, so later calls skip it."""
+        with _COOLDOWN_LOCK:
+            _MODEL_COOLDOWN[model] = (
+                time.monotonic() + self._settings.gemini_model_cooldown_seconds
+            )
+        logger.warning(
+            "gemini_model_exhausted %s",
+            safe_meta(
+                model=model,
+                cooldown_seconds=self._settings.gemini_model_cooldown_seconds,
+            ),
+        )
+
+    def _model_chain(self) -> List[str]:
+        """Models to try, in order, skipping any known to be out of quota.
+
+        NEVER RETURNS EMPTY. If every model is cooling down the primary is
+        returned anyway, so the caller still makes a real request and still
+        gets a real 429 to report -- rather than this layer inventing a
+        failure the provider never gave, or the pipeline silently doing
+        nothing. A cooldown is an optimisation, not a source of truth.
+        """
+        chain = [self._model] + self._settings.fallback_model_list
+        usable = [m for m in chain if not self._in_cooldown(m)]
+        return usable or [self._model]
 
     # -- client construction -------------------------------------------------
 
@@ -277,6 +327,48 @@ class GeminiClient:
             genai_types.Part.from_text(text=prompt),
         ]
 
+        # TRY EACH MODEL IN TURN, but ONLY on quota exhaustion. A 429 is the
+        # one failure a sibling model can actually fix: the free tier meters
+        # per model per day, so the key is not spent even when this model is.
+        # Every other failure is either deterministic (a bad request fails
+        # identically everywhere) or already handled by the retry loop below,
+        # and re-running it on three more models would just spend three more
+        # requests to reach the same answer.
+        rate_limit_error: Optional[ModelError] = None
+        chain = self._model_chain()
+
+        for position, model in enumerate(chain):
+            try:
+                return self._extract_page_with(
+                    client,
+                    model,
+                    contents,
+                    config,
+                    fell_back=position > 0,
+                    more_models=position < len(chain) - 1,
+                )
+            except ModelRateLimitedError as exc:
+                self._mark_exhausted(model)
+                rate_limit_error = exc
+                continue
+
+        # Every model in the chain is out of quota. Report the provider's own
+        # answer, not a synthesised one.
+        raise rate_limit_error or self._to_service_error(
+            RuntimeError("no model available")
+        )
+
+    def _extract_page_with(
+        self,
+        client: Any,
+        model: str,
+        contents: Any,
+        config: Any,
+        *,
+        fell_back: bool,
+        more_models: bool,
+    ) -> dict:
+        """One model's full retry loop. Raises on every failure path."""
         attempts = max(1, self._settings.gemini_max_retries)
         last_error: Optional[BaseException] = None
 
@@ -284,7 +376,7 @@ class GeminiClient:
             started = time.monotonic()
             try:
                 response = client.models.generate_content(
-                    model=self._model, contents=contents, config=config
+                    model=model, contents=contents, config=config
                 )
                 text = self._extract_text(response)
                 parsed = self._parse_json(text)
@@ -293,6 +385,11 @@ class GeminiClient:
                     safe_meta(
                         attempt=attempt,
                         duration_ms=int((time.monotonic() - started) * 1000),
+                        # WHICH MODEL READ THIS PAGE. A report whose pages were
+                        # read by different models is a fact a reader of these
+                        # logs needs; silently substituting one is not.
+                        model=model,
+                        fell_back=fell_back or None,
                     ),
                 )
                 return parsed
@@ -309,6 +406,16 @@ class GeminiClient:
                 last_error = exc
 
             except Exception as exc:  # noqa: BLE001 - classified below
+                # A 429 WITH SOMEWHERE ELSE TO GO IS NOT WORTH RETRYING HERE.
+                # The free tier's cap is per model per day, so sleeping a
+                # second and asking the same model again cannot succeed -- it
+                # just spends another of the twenty requests this key gets.
+                # Hand straight back to the chain, which has an untouched
+                # model waiting. When nothing else is left the original
+                # backoff still applies, because then the only hope IS that
+                # this was a short per-minute limit rather than the daily cap.
+                if more_models and self._status_of(exc) == 429:
+                    raise self._to_service_error(exc) from exc
                 if not self._is_retryable(exc) or attempt >= attempts:
                     raise self._to_service_error(exc) from exc
                 last_error = exc
@@ -323,6 +430,7 @@ class GeminiClient:
                     attempt=attempt,
                     error_type=type(last_error).__name__ if last_error else None,
                     delay_seconds=round(delay, 2),
+                    model=model,
                 ),
             )
             time.sleep(delay)

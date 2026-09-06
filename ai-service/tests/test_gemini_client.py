@@ -14,6 +14,7 @@ import pytest
 
 from app.config import Settings
 from app.core.errors import (
+    ServiceError,
     ErrorCode,
     ModelError,
     ModelNotConfiguredError,
@@ -281,13 +282,46 @@ def test_builtin_timeout_error_is_classified(settings):
         call(client)
 
 
-def test_rate_limit_is_classified_and_retried(settings):
+def test_rate_limit_walks_the_model_chain_then_reports(settings):
+    """A 429 everywhere still raises 429 -- after trying every model once.
+
+    REPLACES an older assertion that a 429 cost exactly `gemini_max_retries`
+    requests against the ONE configured model. That is no longer the policy:
+    Google meters the free tier per model per day, so a sibling model is the
+    only thing that can actually clear a 429, and retrying the exhausted one
+    just spends another of the twenty requests the key gets. So each model in
+    the chain is tried ONCE and abandoned, and only the LAST one -- where a
+    short per-minute limit is the only remaining hope -- gets the retries.
+    """
     client, sdk = build(settings, [FakeAPIError(429)])
     with pytest.raises(ModelRateLimitedError) as exc:
         call(client)
     assert exc.value.code == ErrorCode.MODEL_RATE_LIMITED
     assert exc.value.status_code == 429
-    assert sdk.models.calls == settings.gemini_max_retries
+
+    fallbacks = len(settings.fallback_model_list)
+    # One doomed request per fallback, plus the full retry budget on the last.
+    assert sdk.models.calls == fallbacks + settings.gemini_max_retries
+
+
+def test_rate_limited_primary_falls_back_to_a_working_model(settings):
+    """The point of the chain: an exhausted primary must not fail the request."""
+    client, sdk = build(settings, [FakeAPIError(429), make_response(GOOD_JSON)])
+    assert call(client)["parameters"][0]["test_name"] == "HbA1c"
+    # Exactly two: the primary's single 429, then the fallback's success.
+    assert sdk.models.calls == 2
+
+
+def test_a_deterministic_4xx_does_not_shop_around_the_chain(settings):
+    """Only quota exhaustion may cross models.
+
+    A 400 fails identically on every model, so walking the chain would spend
+    a request per model to reach the same answer.
+    """
+    client, sdk = build(settings, [FakeAPIError(400)])
+    with pytest.raises(ServiceError):
+        call(client)
+    assert sdk.models.calls == 1
 
 
 def test_transient_error_then_success(settings):

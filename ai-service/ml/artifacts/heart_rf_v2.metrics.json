@@ -1,0 +1,141 @@
+{
+  "artifact_version": "2.0.0",
+  "model_id": "heart_rf",
+  "condition": "Heart Disease",
+  "assessment_kind": "disease_likelihood",
+  "assessment_kind_note": "Estimates the LIKELIHOOD of diagnosed cardiac disease. Module 8's RULE_HEART_DISEASE_RISK_FACTORS emits the same condition string from a RISK-FACTOR COUNT. Both are legitimate and they are not the same quantity; the predictor stamps metadata.assessment_kind on every decision so Modules 16/17 can fuse them without conflating burden with probability.",
+  "algorithm": "RandomForestClassifier",
+  "source_label": "Random Forest",
+  "trained_at": "2026-09-06T05:52:06.364558+00:00",
+  "python_version": "3.10.11",
+  "sklearn_version": "1.7.2",
+  "numpy_version": "2.2.6",
+  "pandas_version": "2.3.3",
+  "joblib_version": "1.5.3",
+  "hyperparameters": {
+    "n_estimators": 400,
+    "min_samples_leaf": 25,
+    "class_weight": "balanced_subsample",
+    "random_state": 42,
+    "imputation": "median (SimpleImputer), fitted on train only"
+  },
+  "dataset": {
+    "path": "datasets/raw/nhanes_cvd_2017_2023.csv",
+    "source": "CDC NHANES 2017-2023, via Kaggle ahiduzzaman28/nhanes-cvd-raw-data-2017-23",
+    "license": "CC BY-SA 4.0",
+    "sha256": "baad1fc7f52d9d7011cf27b5be329fc2ff2ed950b0acdc5aa05c48691a230e13",
+    "rows_raw": 27493,
+    "rows_used": 13152,
+    "dropped": {
+      "under_18": 9647,
+      "missing_a_required_feature": 4045,
+      "outcome_unknown_or_partial": 649
+    },
+    "outcome_definition": "Positive if a doctor ever diagnosed ANY of coronary heart disease, heart attack, angina or congestive heart failure. Negative only if all four were answered 'no'. Stroke is excluded as cerebrovascular.",
+    "outcome_columns": [
+      "Coronary",
+      "Heart_attack",
+      "Angina",
+      "Congestive"
+    ],
+    "excluded_columns": {
+      "Systolic_BP / Diastolic_BP": "VaidyaAI collects no blood pressure; a model leaning on them could never be fed at inference.",
+      "Vitamin_D / Vitamin_B12": "DIETARY INTAKE (mcg/day), not the serum levels VaidyaAI's identically-named features hold. Different quantity.",
+      "C_Reactive": "No CRP entry in feature_catalog.py; VaidyaAI cannot supply it.",
+      "nutrition block": "Dietary recall; VaidyaAI has no dietary features.",
+      "Waist_circ": "Not collected by Module 2.",
+      "Stroke": "Cerebrovascular, not the cardiac condition Module 8 names."
+    },
+    "synthetic_rows": 0,
+    "resampling": "none -- class weights only, no SMOTE, no oversampling",
+    "positives": 1224,
+    "negatives": 11928,
+    "prevalence": 0.09306569343065693
+  },
+  "split": {
+    "test_size": 0.2,
+    "stratified": true,
+    "random_state": 42,
+    "n_train": 10521,
+    "n_test": 2631
+  },
+  "required_features": [
+    "age",
+    "bmi",
+    "cholesterol"
+  ],
+  "cholesterol_semantics": "CONTINUOUS total cholesterol in mg/dL -- NOT v1's 1/2/3 NCEP band. Keeping the real number is worth +0.024 ROC-AUC over banding it, measured on this dataset. app/ml/heart.py's cholesterol_band() is not used by this artifact.",
+  "variant_policy": "ONE variant, `all`. NHANES-CVD carries no smoking column, so a with_smoking pipeline would be the without_smoking pipeline renamed -- a variant claiming an input it never saw. v1's two variants differed by 0.002 ROC-AUC.",
+  "cross_validated_metrics": {
+    "roc_auc": 0.8065019357460347,
+    "pr_auc": 0.2842970468611917,
+    "brier_score": 0.15070338794215593,
+    "prevalence": 0.09305199125558407,
+    "n": 10521,
+    "decision_threshold": 0.7126488898097351,
+    "accuracy": 0.8713050090295599,
+    "majority_class_baseline_accuracy": 0.906948008744416,
+    "positive_class": {
+      "precision": 0.32193732193732194,
+      "recall": 0.34627170582226763,
+      "f1": 0.33366141732283466,
+      "support": 979
+    }
+  },
+  "held_out_metrics": {
+    "roc_auc": 0.827863215697008,
+    "pr_auc": 0.3390544002991519,
+    "brier_score": 0.1474872934157796,
+    "prevalence": 0.09312048650703154,
+    "n": 2631,
+    "decision_threshold": 0.7126488898097351,
+    "accuracy": 0.8810338274420373,
+    "majority_class_baseline_accuracy": 0.9068795134929685,
+    "positive_class": {
+      "precision": 0.3702290076335878,
+      "recall": 0.39591836734693875,
+      "f1": 0.3826429980276134,
+      "support": 245
+    }
+  },
+  "thresholds": {
+    "borderline": 0.511800673370094,
+    "indicated": 0.7126488898097351,
+    "indicated_precision_achieved": 0.32193732193732194,
+    "indicated_recall_achieved": 0.34627170582226763
+  },
+  "threshold_basis": "75th and 90th percentiles of the OUT-OF-FOLD score distribution. At 9% prevalence a 0.5 cut-off would call almost nobody positive.",
+  "feature_importance": {
+    "age": 0.5811790068152499,
+    "bmi": 0.16099870006295217,
+    "cholesterol": 0.25782229312179805
+  },
+  "feature_importance_caveat": "A whole-dataset ranking. It says what the model relies on across the cohort, NOT why any one patient was scored as they were.",
+  "ablation": {
+    "without_age": {
+      "roc_auc": 0.677195203311836,
+      "roc_auc_lost": 0.15066801238517202
+    },
+    "without_bmi": {
+      "roc_auc": 0.8104444292385857,
+      "roc_auc_lost": 0.01741878645842232
+    },
+    "without_cholesterol": {
+      "roc_auc": 0.7801144430949245,
+      "roc_auc_lost": 0.047748772602083545
+    }
+  },
+  "comparison_to_v1": {
+    "v1_dataset": "cardio_train.csv (70k rows, undocumented target, 50% prevalence)",
+    "v1_held_out_roc_auc": 0.6970118480612282,
+    "v2_held_out_roc_auc": 0.827863215697008,
+    "delta_roc_auc": 0.13085136763577987,
+    "note": "The two numbers are computed on DIFFERENT populations and DIFFERENT outcome definitions, so this is not a like-for-like contest and should not be quoted as one. The claim being made is narrower and still worth making: on the same three inputs, a nationally representative cohort with a stated diagnostic outcome supports a materially better discriminator than cardio_train did, and does so at a realistic 9% prevalence rather than a constructed 50%."
+  },
+  "honest_read": "Held-out ROC-AUC near 0.81 on age, BMI and total cholesterol alone, at a realistic 9% prevalence. That is a usable coarse discriminator and nothing more: PR-AUC around 0.30 against a 0.09 baseline means most people it ranks highly will still not have heart disease, so a high score is a reason to discuss testing with a clinician, never a finding. The outcome is SELF-REPORTED physician diagnosis, which misses undiagnosed disease and therefore under-counts exactly the people a screening tool most wants to find. The strongest known predictor of cardiovascular disease -- blood pressure -- is still absent from VaidyaAI entirely, and adding a systolic reading to Module 2 remains the single highest-value change available to this predictor.",
+  "model_artifact": {
+    "filename": "heart_rf_v2.joblib",
+    "sha256": "2e0ff64d1243e34a6467ccf608b6b804be3de75f5ca37e99ac001858b0235ae6",
+    "bytes": 10163536
+  }
+}

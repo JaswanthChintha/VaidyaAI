@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
-import { Absent, Value } from '../components/Absent';
+import { Absent, Value, WarningList } from '../components/Absent';
 import { isPresent } from '../lib/absence';
 
 /**
@@ -209,11 +209,7 @@ function Comparison({ data }) {
 
       {data?.summary?.headline ? <p>{data.summary.headline}</p> : null}
       {data?.warnings?.length ? (
-        <ul className="warnings">
-          {data.warnings.map((warning, index) => (
-            <li key={index}>{warning}</li>
-          ))}
-        </ul>
+        <WarningList warnings={data.warnings} />
       ) : null}
     </section>
   );
@@ -270,11 +266,7 @@ function Progress({ data }) {
       ) : null}
 
       {data?.warnings?.length ? (
-        <ul className="warnings">
-          {data.warnings.map((warning, index) => (
-            <li key={index}>{warning}</li>
-          ))}
-        </ul>
+        <WarningList warnings={data.warnings} />
       ) : null}
 
       {data?.what_this_is_not ? (

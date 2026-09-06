@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
-import { Absent, Section, Value } from '../components/Absent';
+import { Absent, Section, Value, WarningList } from '../components/Absent';
 import { isPresent } from '../lib/absence';
 
 /**
@@ -267,11 +267,7 @@ export default function DoctorSummary() {
       {summary?.warnings?.length ? (
         <>
           <h2>Notes</h2>
-          <ul className="warnings">
-            {summary.warnings.map((warning, index) => (
-              <li key={index}>{warning}</li>
-            ))}
-          </ul>
+          <WarningList warnings={summary.warnings} />
         </>
       ) : null}
 

@@ -278,7 +278,21 @@ SMOKING_UNKNOWN_REASON: Dict[str, str] = {
 
 TRI_STATE_SMOKING = "smoking_history"
 
-#: smoking known? -> artifact variant name.
+#: THE v2 ARTIFACT SHIPS ONE PIPELINE, so both answers select it.
+#:
+#: v1 was trained on cardio_train, which carried a smoking column, and shipped
+#: `with_smoking` / `without_smoking` so a patient who had answered the question
+#: was scored by a model that had actually seen it. v2 is trained on NHANES-CVD,
+#: which has no smoking column at all. Keeping two names here would advertise a
+#: choice the artifact cannot honour: both would resolve to the same fitted
+#: pipeline, and a decision stamped `with_smoking` would claim an input the
+#: model never saw. v1's two variants differed by 0.002 ROC-AUC.
+#:
+#: The MAP IS KEPT rather than deleted because the tri-state smoking answer is
+#: still read, still normalised, and still recorded in the decision trace -- as
+#: `not_asserted`, which is the truth: the patient may well have answered, and
+#: this model does not use it. Restoring real variants means changing only this
+#: table and retraining on a cohort that has the column.
 VARIANT_BY_AVAILABILITY: Dict[bool, str] = {
     True: "with_smoking",
     False: "without_smoking",
@@ -614,14 +628,25 @@ class HeartPredictor(Predictor):
             ),
             "variant": variant_name,
             "variant_reason": (
-                "chosen by whether the patient's smoking history determines "
-                f"CURRENT smoking: smoking_history={smoking_token or 'not recorded'}"
-                + (
-                    ""
-                    if current is not None
-                    else " (does not determine current smoking, so the variant "
-                    "fitted WITHOUT a smoking column was used -- no value was "
-                    "assumed)"
+                (
+                    "chosen by whether the patient's smoking history determines "
+                    f"CURRENT smoking: smoking_history={smoking_token or 'not recorded'}"
+                    + (
+                        ""
+                        if current is not None
+                        else " (does not determine current smoking, so the "
+                        "variant fitted WITHOUT a smoking column was used -- no "
+                        "value was assumed)"
+                    )
+                )
+                if len(bundle.pipelines) > 1
+                # ONE pipeline means there was no choice to make, and saying a
+                # smoking answer selected it would credit an input this
+                # artifact never saw.
+                else (
+                    "this artifact ships a single pipeline, so no variant "
+                    "selection took place; smoking history was not an input to "
+                    "it"
                 )
             ),
             "probability_positive": probability,
@@ -655,24 +680,45 @@ class HeartPredictor(Predictor):
                 # model published.
                 **achieved,
             },
-            "threshold_basis": (
+            # HOW THE CUT-OFFS WERE CHOSEN IS THE ARTIFACT'S FACT, NOT THIS
+            # FILE'S. It was hard-coded here and described v1's
+            # precision/recall-curve procedure; v2 chooses percentiles of the
+            # out-of-fold distribution, so the sentence became false the moment
+            # the artifact changed -- while still being reported on every
+            # decision. Anything that varies per artifact is now read FROM the
+            # artifact, with a fallback that claims nothing.
+            "threshold_basis": spec.get(
+                "threshold_basis",
+                # v1's procedure, correct for the cardio_train artifact. A newer
+                # artifact that chooses its cut-offs differently publishes its
+                # own `threshold_basis` and overrides this.
                 "indicated = smallest out-of-fold threshold whose cumulative "
                 "precision reaches 1.5x the cohort base rate; borderline = "
                 "largest out-of-fold threshold holding 0.95 cumulative recall. "
                 "Neither is a round number; both are read off the measured "
-                "precision-recall curve."
+                "precision-recall curve.",
             ),
             "risk_band": band_name,
-            "band_meaning": _BAND_MEANING[band_name],
-            "cholesterol_band_mapping": {
-                "cutoffs_mg_dl": list(CHOLESTEROL_BAND_CUTOFFS),
-                "basis": (
-                    "NCEP ATP III total cholesterol: <200 desirable, 200-239 "
-                    "borderline high, >=240 high. The training dataset's "
-                    "cholesterol column is an ORDINAL BAND (1/2/3), not mg/dL."
-                ),
-                "band": trace.get("cholesterol", {}).get("band"),
-            },
+            "band_meaning": _band_meaning(spec, band_name),
+            # Only meaningful when the model actually consumes a BAND. v2 is
+            # trained on continuous mg/dL, so emitting the NCEP mapping would
+            # describe a transformation that did not happen.
+            **(
+                {
+                    "cholesterol_band_mapping": {
+                        "cutoffs_mg_dl": list(CHOLESTEROL_BAND_CUTOFFS),
+                        "basis": (
+                            "NCEP ATP III total cholesterol: <200 desirable, "
+                            "200-239 borderline high, >=240 high. This "
+                            "artifact's cholesterol column is an ORDINAL BAND "
+                            "(1/2/3), not mg/dL."
+                        ),
+                        "band": trace.get("cholesterol", {}).get("band"),
+                    }
+                }
+                if "cholesterol_band" in spec.get("numeric_features", ())
+                else {}
+            ),
             "features_observed": sorted(
                 n for n, t in trace.items() if t["status"] in ("observed", "banded")
             ),
@@ -866,6 +912,26 @@ class HeartPredictor(Predictor):
 # helpers
 # --------------------------------------------------------------------------
 
+def _band_meaning(spec, band_name: str) -> str:
+    """What this band means FOR THE LOADED ARTIFACT.
+
+    Prefers the figures the artifact measured on its own held-out split. The
+    module-level `_BAND_MEANING` below is v1's text and quotes cardio_train's
+    50% prevalence; using it for any other artifact states a false rate beside
+    a patient's result, which is exactly how it went stale when v2 landed.
+    """
+    recorded = spec.get("band_meaning") if hasattr(spec, "get") else None
+    if isinstance(recorded, dict):
+        text = recorded.get(band_name)
+        if isinstance(text, str) and text:
+            return text
+    return _BAND_MEANING.get(
+        band_name, "this artifact records no meaning for this band"
+    )
+
+
+#: v1 ONLY. Kept as the fallback for the cardio_train artifact; every figure in
+#: it is that dataset's. A new artifact must publish its own `band_meaning`.
 _BAND_MEANING = {
     "low": (
         "Below the sensitivity-derived cut-off. On the held-out test split "

@@ -91,3 +91,58 @@ export function Section({ status, title, children }) {
     </section>
   );
 }
+
+/**
+ * One list of analysis warnings, whatever shape the producing module used.
+ *
+ * WHY THIS IS NOT `warnings.map(w => <li>{w}</li>)`.
+ *
+ * The pipeline emits warnings in two shapes and both reach a screen. Module 27
+ * and Module 32 carry the ORIGIN with the text -- `{ stage, module, message }`
+ * -- because "which stage noticed this" is exactly what makes a warning
+ * actionable ("extraction could not read page 5" is a different problem from
+ * "the rule engine had no threshold for this feature"). Modules 28/30/31 emit
+ * flat sentences, having no stage to attribute.
+ *
+ * Rendering the object form directly throws `Objects are not valid as a React
+ * child` and takes the WHOLE PAGE down with it -- and it does so only when
+ * there is something to warn about, so the screen works right up until the
+ * moment it has something important to say. That is the worst possible failure
+ * mode for this particular list: these are the notes that tell a patient their
+ * report was read incompletely.
+ *
+ * So the shape is normalised here, once, and the stage is shown when present
+ * rather than discarded.
+ */
+export function WarningList({ warnings, className = 'warnings' }) {
+  const items = Array.isArray(warnings) ? warnings : [];
+  if (!items.length) return null;
+
+  return (
+    <ul className={className}>
+      {items.map((warning, index) => {
+        // A plain sentence: nothing to attribute, render as-is.
+        if (typeof warning === 'string') return <li key={index}>{warning}</li>;
+
+        // Anything else is treated as the tagged form. `message` is the only
+        // field required to be useful; a warning that somehow carries neither
+        // a message nor a string body is still listed rather than silently
+        // dropped, because a missing warning is worse than an ugly one.
+        const message =
+          warning && typeof warning === 'object' && typeof warning.message === 'string'
+            ? warning.message
+            : 'An unlabelled warning was recorded for this report.';
+        const stage = warning && typeof warning === 'object' ? warning.stage : null;
+
+        return (
+          <li key={index}>
+            {typeof stage === 'string' && stage ? (
+              <span className="warning__stage">{stage}: </span>
+            ) : null}
+            {message}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}

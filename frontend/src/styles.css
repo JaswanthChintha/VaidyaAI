@@ -143,3 +143,6 @@ button.link {
 .population__band { font-size: 18px; margin: 4px 0; }
 .dashboard__links { margin: 8px 0 16px; }
 .doctor-summary h1, .population h1 { margin-bottom: 4px; }
+
+/* Which pipeline stage raised a warning, shown before its text. */
+.warning__stage { color: var(--muted); font-weight: 600; }

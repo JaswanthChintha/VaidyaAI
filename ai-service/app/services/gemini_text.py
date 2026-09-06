@@ -36,7 +36,7 @@ from typing import Optional
 from google.genai import types as genai_types
 
 from app.config import Settings
-from app.core.errors import ErrorCode, ModelError
+from app.core.errors import ErrorCode, ModelError, ModelRateLimitedError
 from app.core.logging import get_logger, safe_meta
 from app.prompts.explanation_prompt import SYSTEM_INSTRUCTION
 from app.services.gemini_client import GeminiClient
@@ -116,6 +116,45 @@ class GeminiTextClient(GeminiClient):
             config = genai_types.GenerateContentConfig(**config_kwargs)
         contents = [genai_types.Part.from_text(text=prompt)]
 
+        # Same quota-only fallback as Module 4's extraction path, and for the
+        # same reason: the free tier meters per model per day, so a 429 here
+        # says this model is spent, not that the key is. Every other failure
+        # is left exactly as it was -- in particular a provider safety block
+        # is an ANSWER, and shopping it around models until one complies is
+        # precisely what a safety layer must never do.
+        rate_limit_error: Optional[ModelError] = None
+
+        chain = self._model_chain()
+        for position, model in enumerate(chain):
+            try:
+                return self._generate_text_with(
+                    client,
+                    model,
+                    contents,
+                    config,
+                    fell_back=position > 0,
+                    more_models=position < len(chain) - 1,
+                )
+            except ModelRateLimitedError as exc:
+                self._mark_exhausted(model)
+                rate_limit_error = exc
+                continue
+
+        raise rate_limit_error or self._to_service_error(
+            RuntimeError("no model available")
+        )
+
+    def _generate_text_with(
+        self,
+        client: object,
+        model: str,
+        contents: object,
+        config: object,
+        *,
+        fell_back: bool,
+        more_models: bool,
+    ) -> str:
+        """One model's full retry loop. Raises on every failure path."""
         attempts = max(1, self._settings.gemini_max_retries)
         last_error: Optional[BaseException] = None
 
@@ -123,7 +162,7 @@ class GeminiTextClient(GeminiClient):
             started = time.monotonic()
             try:
                 response = client.models.generate_content(
-                    model=self._model, contents=contents, config=config
+                    model=model, contents=contents, config=config
                 )
                 text = self._extract_text(response)
                 logger.info(
@@ -133,6 +172,8 @@ class GeminiTextClient(GeminiClient):
                         chars=len(text),
                         duration_ms=int((time.monotonic() - started) * 1000),
                         module=23,
+                        model=model,
+                        fell_back=fell_back or None,
                     ),
                 )
                 return text
@@ -148,6 +189,12 @@ class GeminiTextClient(GeminiClient):
                 last_error = exc
 
             except Exception as exc:  # noqa: BLE001 -- classified by the parent
+                # See Module 4's extraction path: a 429 with another model
+                # still available is handed straight back to the chain rather
+                # than retried here, because a per-model daily cap cannot clear
+                # in a one-second backoff and the retry costs a real request.
+                if more_models and self._status_of(exc) == 429:
+                    raise self._to_service_error(exc) from exc
                 if not self._is_retryable(exc) or attempt >= attempts:
                     raise self._to_service_error(exc) from exc
                 last_error = exc
@@ -163,6 +210,7 @@ class GeminiTextClient(GeminiClient):
                     error_type=type(last_error).__name__ if last_error else None,
                     delay_seconds=round(delay, 2),
                     module=23,
+                    model=model,
                 ),
             )
             time.sleep(delay)

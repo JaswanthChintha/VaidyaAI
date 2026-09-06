@@ -33,6 +33,25 @@ class Settings(BaseSettings):
     # swapped without a code change.
     gemini_api_key: SecretStr = Field(default=SecretStr(""))
     gemini_model: str = "gemini-3.6-flash"
+    # Models to fall back to when the primary is OUT OF QUOTA, in order.
+    #
+    # Google's free tier meters `generate_content` PER MODEL PER DAY (the
+    # quota id is literally GenerateRequestsPerDayPerProjectPerModel-FreeTier),
+    # so an exhausted model does not mean an exhausted key: a sibling model on
+    # the same key still has its own untouched allowance. Without this list a
+    # free-tier key stops the whole pipeline after ~20 requests even though
+    # several models remain usable.
+    #
+    # A PLAIN STRING, split by `fallback_model_list`, NOT a `List[str]`.
+    # pydantic-settings JSON-decodes complex types in the dotenv source BEFORE
+    # any validator runs, so a `List[str]` field blows up on an empty or
+    # comma-separated value -- the same trap that `cors_allow_origins` sets.
+    gemini_fallback_models: str = "gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite"
+    # How long an exhausted model is skipped before being tried again. The free
+    # tier's cap is DAILY, so a short cooldown just wastes a request rediscovering
+    # the same 429; 30 minutes keeps a transient per-minute limit recoverable
+    # within one session without re-probing a dead model on every page.
+    gemini_model_cooldown_seconds: float = 1800.0
     gemini_timeout_seconds: float = 120.0
     gemini_max_retries: int = 3
     gemini_retry_base_delay_seconds: float = 1.0
@@ -94,6 +113,22 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return [o.strip() for o in v.split(",") if o.strip()]
         return v
+
+    @property
+    def fallback_model_list(self) -> List[str]:
+        """`gemini_fallback_models` as a list, primary removed, order kept.
+
+        Deduplicated because a repeated model would be tried twice and spend
+        two requests proving the same quota is gone.
+        """
+        seen = {self.gemini_model}
+        out: List[str] = []
+        for name in self.gemini_fallback_models.split(","):
+            name = name.strip()
+            if name and name not in seen:
+                seen.add(name)
+                out.append(name)
+        return out
 
     @property
     def has_api_key(self) -> bool:

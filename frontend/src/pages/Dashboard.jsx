@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
-import { Absent, Risk, Value } from '../components/Absent';
+import { Absent, Risk, Value, WarningList } from '../components/Absent';
 import { isPresent } from '../lib/absence';
 
 /**
@@ -323,11 +323,7 @@ export default function Dashboard() {
       {dashboard.warnings?.length ? (
         <>
           <h2>Notes from the analysis</h2>
-          <ul className="warnings">
-            {dashboard.warnings.map((warning, index) => (
-              <li key={index}>{warning}</li>
-            ))}
-          </ul>
+          <WarningList warnings={dashboard.warnings} />
         </>
       ) : null}
     </main>

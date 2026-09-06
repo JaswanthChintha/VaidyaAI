@@ -73,10 +73,15 @@ def test_it_is_the_existing_client_with_one_extra_method():
             original, "__func__", original
         ), name
     assert "generate_text" in GeminiTextClient.__dict__
+    # The guarantee is about the PUBLIC surface: the text client adds prose
+    # generation and nothing else, so it cannot quietly grow a second way to
+    # talk to the model. Private helpers are implementation -- `generate_text`
+    # is split into a per-model attempt so the shared model-fallback chain can
+    # drive it, which is the parent's transport being reused, not bypassed.
     added = {
         name
         for name in GeminiTextClient.__dict__
-        if not name.startswith("__")
+        if not name.startswith("_")
     }
     assert added == {"generate_text"}, added
 
