@@ -285,6 +285,51 @@ function logFailure(stage, requestId, detail) {
  *
  * @returns {{ error: ApiError, retryable: boolean, detail: string }}
  */
+/**
+ * User-actionable refusals from the ai-service, keyed by ITS stable error code.
+ *
+ * WHY THIS EXISTS. A 400/422 from the ai-service is always the caller's
+ * problem and is usually FIXABLE BY THE PATIENT - a report with too many
+ * pages, a password-protected PDF, a scan with no readable page. Collapsing
+ * every one of them into "could not process this report" tells the user
+ * nothing they can act on, and sends them to a maintainer for something they
+ * could have fixed themselves in ten seconds.
+ *
+ * These are OUR OWN strings, not the ai-service's response body. The body is
+ * still never echoed: only the stable `code` is read, and it selects a message
+ * written here. That keeps the existing guarantee (nothing from the service's
+ * body, which could quote report content, reaches the patient) while still
+ * naming the cause.
+ *
+ * An unknown code falls back to the generic message below, so a new code on
+ * the Python side degrades to today's behaviour rather than breaking.
+ */
+const INTAKE_REFUSAL_MESSAGES = Object.freeze({
+  TOO_MANY_PAGES:
+    'This report has more pages than the analysis service accepts. Split it into smaller files and upload them separately.',
+  FILE_TOO_LARGE:
+    'This report is too large for the analysis service. Upload a smaller or lower-resolution file.',
+  ENCRYPTED_PDF:
+    'This PDF is password-protected. Remove the password and upload it again.',
+  CORRUPT_FILE:
+    'This file could not be opened. It may be damaged - try re-downloading or re-exporting it.',
+  UNSUPPORTED_FILE_TYPE:
+    'This file type is not supported. Upload a PDF, JPEG or PNG.',
+  NO_RENDERABLE_PAGES:
+    'No readable pages were found in this file. Check that it is not blank.',
+  NO_FILE: 'No file reached the analysis service. Upload the report again.',
+});
+
+/**
+ * The ai-service's stable error code from a refusal envelope
+ * (`{ success: false, error: { code, message } }`), or null. Only the code is
+ * read - never the message.
+ */
+function aiServiceErrorCode(response) {
+  const code = response && response.data && response.data.error && response.data.error.code;
+  return typeof code === 'string' ? code : null;
+}
+
 function mapAxiosError(err, stage) {
   const response = err && err.response;
 
@@ -321,13 +366,17 @@ function mapAxiosError(err, stage) {
     // format, when in fact they agree perfectly and the request content was
     // refused; it also reports a caller-fixable problem as a server fault.
     if (status === 400 || status === 422) {
+      // Name the cause when the service gave us a code we recognise. See
+      // INTAKE_REFUSAL_MESSAGES above for why the body itself is still unread.
+      const serviceCode = aiServiceErrorCode(response);
+      const specific = serviceCode && INTAKE_REFUSAL_MESSAGES[serviceCode];
       return {
         retryable: false,
-        detail,
+        detail: serviceCode ? `${detail} code=${serviceCode}` : detail,
         error: new ApiError(
           422,
           'AI_SERVICE_REJECTED_INPUT',
-          'The analysis service could not process this report'
+          specific || 'The analysis service could not process this report'
         ),
       };
     }

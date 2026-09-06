@@ -23,6 +23,8 @@ export default function SignIn() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  // { message, code } | null. The CODE is kept so the form can offer the
+  // right next step without the SERVER having to say what went wrong.
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -42,7 +44,7 @@ export default function SignIn() {
     } catch (err) {
       // The backend's messages are fixed strings written to be shown; they
       // never echo input and never disclose whether an account exists.
-      setError(err.message);
+      setError({ message: err.message, code: err.code });
     } finally {
       setBusy(false);
     }
@@ -105,7 +107,42 @@ export default function SignIn() {
 
         {error ? (
           <p className="error" role="alert">
-            {error}
+            {error.message}
+          </p>
+        ) : null}
+
+        {/*
+          WHY THIS IS A SEPARATE HINT AND NOT A BETTER ERROR MESSAGE.
+
+          "No account exists for this email" would be the clearest possible
+          copy, and we deliberately do not say it. Saying it turns the login
+          form into an oracle: anyone could type an address and learn whether
+          that person holds a VaidyaAI account -- which, for a service that
+          exists to interpret someone's medical results, discloses something
+          about their health situation to a stranger. The backend refuses to
+          leak it (`authController.login` returns one message and takes one
+          code path whether the email is unknown or the password is wrong),
+          so the client must not reconstruct it either.
+
+          What a user who mistyped and a user who never registered BOTH need
+          is the same thing: a way forward. Offering that unconditionally on
+          a failed sign-in helps the second user without telling the first
+          one anything about the first.
+        */}
+        {error && error.code === 'INVALID_CREDENTIALS' && !registering ? (
+          <p className="hint">
+            If you have not signed up yet,{' '}
+            <button
+              type="button"
+              className="link"
+              onClick={() => {
+                setMode('register');
+                setError(null);
+              }}
+            >
+              create an account
+            </button>
+            .
           </p>
         ) : null}
 

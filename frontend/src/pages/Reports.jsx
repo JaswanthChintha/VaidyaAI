@@ -50,7 +50,11 @@ export default function Reports() {
     if (!input.files?.length) return;
 
     const form = new FormData();
-    form.append('report', input.files[0]);
+    // The multipart part MUST be named `file` -- that is the backend's
+    // contract (`upload.single('file')` in src/middleware/upload.js). Any
+    // other name is rejected by multer as LIMIT_UNEXPECTED_FILE, which
+    // surfaces to the user as "Unexpected file upload".
+    form.append('file', input.files[0]);
     const reportDate = event.target.elements.reportDate.value;
     // The date PRINTED on the report, not today. Uploading three years of
     // history in one sitting would otherwise produce a timeline in which
