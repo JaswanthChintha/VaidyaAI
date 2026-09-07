@@ -3,8 +3,9 @@
 > Living context file for the VaidyaAI build. Keep this in the project folder so the
 > project's history, decisions, and state survive independently of any chat session.
 >
-> **Last updated:** 2026-09-06 · **All 32 modules + frontend built** · Run end to end for the
-> first time on 2026-09-06 (§6t), Module 11 retrained (§6s)
+> **Last updated:** 2026-09-07 · **All 32 modules + frontend built** · Module 11 retrained
+> (§6s) · first real run (§6t) · Module 27 rewritten for patients (§6u) · **one feature
+> left unfinished (§6v)**
 
 ---
 
@@ -21,9 +22,36 @@ about any of them. That is the fifth time on this project.
 | | Tests |
 |---|---|
 | `backend/` (Node/Express) | **618** passing + 3 opt-in live |
-| `ai-service/` (Python/FastAPI) | **3,676** passing + 7 skipped |
+| `ai-service/` (Python/FastAPI) | **3,690** passing + 7 skipped |
 | `frontend/` (React/Vitest) | **44** passing |
-| **Total** | **4,338** (incl. 44 frontend) |
+| **Total** | **4,352** — all green as of 2026-09-07 |
+
+> ### ▶ PICK UP HERE: ONE FEATURE IS HALF-BUILT (§6v)
+>
+> `parameter_glossary` describes laboratory tests this platform does not assess
+> (LDL, urea, potassium…) using Gemini, from the test NAME only, with no patient
+> data in the prompt. **The Python module, its route and the backend pipeline
+> stage are done and tested. The dashboard does not render it yet.**
+>
+> Three steps, in order:
+> 1. `dashboardService.buildUnanalysedSection` → merge `report.parameterGlossary`
+>    into `unanalysed.items` by test name; add `+parameterGlossary` to
+>    `DASHBOARD_PROJECTION`.
+> 2. `Dashboard.jsx` → the `Unanalysed` component shows each description under
+>    its test.
+> 3. Re-analyse a report to populate it (the stage runs only during `analyze`).
+>
+> Read §6v before touching it — it records a safety defect where an empty
+> `permitted_numbers` turns the numeric control OFF rather than forbidding all
+> numbers, which let an invented reference range through.
+
+**Working state:** run the three services with the commands in §6t; MongoDB now
+points at **Atlas** (`backend/.env`, standard non-SRV connection string — this
+machine's Node DNS resolver cannot do SRV lookups). Five synthetic one-page test
+reports with known expected outcomes live in `backend/storage/samples/generated/`
+with an `expected.json`; regenerate with
+`ai-service/.venv/Scripts/python.exe tools/make_test_reports.py`.
+`04-exactly-on-the-boundary.pdf` is the one most likely to find a real bug.
 
 > **THE ai-service SUITE ONLY PASSES WHEN NO `.env` EXISTS.** A real `AI_SERVICE_API_KEY`
 > makes the endpoint tests receive 401 instead of 200, so ~30 fail. Nothing is wrong with the
@@ -2551,6 +2579,205 @@ both Timeline sites. The 44 frontend tests only exercised the empty-warnings pat
   configured with DNS server `127.0.0.1` where nothing listens, so `dns.resolveSrv` fails with
   `ECONNREFUSED` and any `mongodb+srv://` URI dies at startup. Ordinary A-record lookups go
   through the OS resolver and work. The standard multi-host form is in `backend/.env`.
+
+---
+
+## 6u. Making Module 27 readable by a patient · 2026-09-06/07
+
+Everything in this section is FRONTEND + the two backend fields it needed. The
+pipeline's clinical behaviour is unchanged. All three suites green:
+**ai-service 3,690 · backend 618 · frontend 44.**
+
+### THE ONE THING TO UNDERSTAND FIRST
+
+The dashboard was rendering the pipeline's INTERNAL VOCABULARY at a patient.
+"Based on: Clinical Rule Engine, Random Forest". "Model probability: 0.0089
+(max_of_model_probabilities)". "Not Indicated". "fusion: Heart Disease: the
+analyses contributing to this topic answer different questions...". Every one
+of those is true, and none of them is readable by the person whose blood it is.
+
+The split now enforced: **the patient screen speaks English, the clinician
+summary (Module 32) speaks statistics.** Nothing was deleted — ROC-AUC,
+precision, operating thresholds and the full warning list are all still on the
+clinician view, where the reader knows what they mean.
+
+### What the dashboard shows now, in page order
+
+| Section | What it is |
+|---|---|
+| Overall | unchanged |
+| Worth a closer look | full cards, FLAGGED conditions only |
+| Everything else that was checked | two one-line round-ups, `clear` and `unchecked` kept strictly apart |
+| Your results | lab table; columns appear only if the report can fill them |
+| From your profile | age/BMI/sex/smoking, no laboratory columns |
+| Also on your report, but not assessed here | **NEW** — see below |
+| Topics you could read about | guidance, matched to flagged findings only |
+| Worth knowing about this analysis | warnings, methodology stages filtered out |
+| What these results mean | **NEW** — Module 23's prose, last |
+
+### TWO THINGS THE PIPELINE ALREADY PRODUCED AND THE UI THREW AWAY
+
+1. **Module 23's plain-language explanations were never rendered.** Six
+   paragraphs per report, grounded in retrieved documents, safety-validated,
+   persisted — and invisible. They cost a model call each. Now shown, last on
+   the page, with the trailing "consult a qualified healthcare professional"
+   sentence lifted off each paragraph and stated once for the section (six
+   identical closings made the platform look like it had nothing to say).
+
+2. **63 of 67 extracted parameters were dropped in silence.** A real report is
+   mostly tests this platform does not know. Worse, `document.unmapped_count`
+   read **0** while `fusion.upstream_summary.unmapped_count` read **63** — the
+   dashboard was reading the wrong one of two fields that disagree, so the
+   screen asserted that nothing had been skipped. **The ai-service defect is
+   NOT fixed**: `report_builder` still writes 0. The dashboard now derives the
+   count from the real list instead.
+
+### THE LABORATORY'S OWN FLAGS WERE BEING DISCARDED. This was the worst find.
+
+Module 4 extracts each parameter's printed reference interval AND the lab's own
+high/low marking — including for tests this platform does not assess. Feature
+engineering dropped both along with the parameter. On PK0016 that buried **nine
+results the laboratory itself marked abnormal**, including **Blood Urea 53,
+Blood Urea Nitrogen 24.77 and Potassium 5.2, all high, alongside the raised
+creatinine that DID produce a Kidney Disease card.** The platform flagged the
+condition and silently dropped the evidence corroborating it, off the same page.
+
+Now carried through (`dashboardController` passes `features` + `extraction`,
+`dashboardService.buildUnanalysedSection` joins them) and shown at the top of
+the unassessed section, attributed to the LABORATORY, not to this platform.
+
+### Answering "will it work for unknown parameters?" — NO, and that is deliberate
+
+| | Unknown parameter |
+|---|---|
+| Read off the report | yes |
+| Listed on the dashboard | yes |
+| Lab's own high/low shown | yes, if printed |
+| Condition assessed / risk / ML | **no** |
+| Plain-language description | yes — see 6v |
+
+Making one genuinely assessed needs five pieces in the catalog: feature
+definition, synonyms, validation bounds, clinical thresholds, and a knowledge
+document for grounding. That is per-analyte clinical work. LDL and HDL are the
+obvious first candidates — both are already extracted and already dropped.
+
+### Design rules that came out of the session, all learned from a defect
+
+* **A number that belongs to a dataset must live in the artifact, never in
+  code and never in an assertion.** (§6s' band prose; the same lesson again.)
+  `threshold_basis` and `band_meaning` are read from the artifact now.
+* **Collapse only on positive proof.** Grouping conditions by `flagged` alone
+  meant a card with `status: 'Indicated'` and no `flagged` field fell into
+  "nothing pointed to this" — an indicated finding reported as clear, one
+  missing boolean away. Collapse now requires `Not Indicated` + assessed +
+  not flagged; anything unrecognised keeps a full card.
+* **Unknown provenance must not become a claim.** Splitting lab rows on
+  `source === 'lab_report'` put a row with NO source under "these came from the
+  details you entered" — asserting a measured blood value was typed in by the
+  patient. Only an explicit `patient_profile` moves a row now.
+* **Missing information is not agreement.** The basis-conflict note was
+  suppressed when per-source verdicts were absent, silently dropping a note
+  Module 16 had stamped. Now suppressed only when two or more sources
+  PROVABLY agree.
+* **A safety string is data the safety scanner will read.** Two regressions
+  introduced and caught here: generated band prose saying "had a diagnosis"
+  (flagged as a diagnostic assertion in the patient report), and an artifact
+  `honest_read` saying "SELF-REPORTED physician diagnosis" — which does not
+  merely get flagged, it makes `doctor_summary` WITHHOLD THE WHOLE NOTE, so the
+  clinician silently loses the model's statement of its own limits.
+* **Guidance `becauseOfConditions` is the catalog's topic list, NOT a finding.**
+  Printing it directly rendered "Shown because of: Diabetes, Obesity,
+  Underweight and Heart Disease" under a report with none of them. It is
+  intersected with what was actually flagged now.
+
+### Smaller fixes
+
+* `window.open` after `await` is silently blocked by every popup blocker — the
+  tab must be claimed synchronously inside the click. And `noopener` in the
+  feature string makes `window.open` return **null** by definition, so the
+  handle is lost; `opener` is severed on the handle instead.
+* Report rows: click the name to open the stored PDF, plus an inline-confirm
+  Delete. Both backend routes (`DELETE /reports/:id`, `GET /:id/download`)
+  already existed and had never been wired to the UI.
+* The blob is rebuilt with an ALLOW-LISTED content type (pdf/jpeg/png) before
+  `window.open`, because a `blob:` URL inherits the app's origin and would undo
+  the download route's deliberate `Content-Disposition: attachment`.
+
+---
+
+## 6v. Descriptions for tests this platform does not assess · 2026-09-07 · **UNFINISHED**
+
+`ai-service/app/services/parameter_glossary.py` + 14 tests. **Backend wiring
+done, dashboard rendering NOT done — see "What is left" below.**
+
+### What it does
+
+Asks the model ONE question about a test NAME: *what does this test measure?*
+Then shows the patient's own value beside it, rendered from the extraction.
+
+**Why this is not "letting the LLM interpret unknown parameters"**, which was
+asked for and declined:
+
+1. **The prompt contains no patient data.** Not the value, not the range, not
+   the flag, not age or sex. A test name. So the answer cannot be about the
+   person, and the model is never in a position to interpret anything.
+2. **No number may come back**, enforced locally — see the defect below.
+3. **Every answer passes the Module 24 validator**, same as Module 23.
+4. **Cached by test name** (the answer is identical for every patient) and
+   capped at 8 calls per report. The free tier is 20 calls/day; without the
+   cache this feature is unusable.
+
+Only tests **the laboratory itself flagged abnormal** are described — nine on
+PK0016, not sixty-three. Describing "Urine Colour: Pale Yellow" is what would
+burn the quota.
+
+### THE SAFETY DEFECT WORTH REMEMBERING
+
+The obvious assumption — that an empty `permitted_numbers` forbids all numbers
+— **is wrong and is the opposite of the truth.** In `app/safety/validator.py`:
+
+```
+active = bool(context.grounding_sources) or bool(context.permitted_numbers)
+```
+
+A context supplying NEITHER gets **no numeric control at all**. The first
+version of this module was approved while returning *"A normal level is 3.5 to
+5.1 mmol/L"* — an invented reference range, the single most dangerous output
+this feature could produce. Module 23 never hits it because it always supplies
+grounding.
+
+The rule is enforced locally instead of loosening a shared safety default. It
+then failed twice more, both silently:
+
+* a shell heredoc turned `\b` into `\x08` (a literal **backspace byte**), so the
+  regex could never match and every test of it passed for the wrong reason;
+* without word boundaries, "one" matches inside **bone** and **hormone**, so a
+  correct description of vitamin D or a thyroid test would be discarded.
+
+Tests now assert the patterns fire on known-bad AND stay silent on known-good.
+Do not trust a regex here by reading it.
+
+### What is left (start here in a new session)
+
+1. **Render it.** `Dashboard.jsx` → the `Unanalysed` component already lists
+   lab-flagged results; it needs to read `dashboard.parameterGlossary` and show
+   each description under its test. The backend does NOT yet expose it —
+   `dashboardService.buildUnanalysedSection` must merge
+   `report.parameterGlossary` entries into `unanalysed.items` by test name, and
+   `DASHBOARD_PROJECTION` must add `+parameterGlossary`.
+2. **Re-analyse a report to populate it.** The stage only runs during
+   `POST /reports/:id/analyze`; existing stored reports have no glossary.
+   Costs one model call per new lab-flagged test name, then cached.
+3. **No tests yet for the backend stage** (`labFlaggedUnmappedNames`,
+   the `describeParameters` client call, persistence). The Python module has 14.
+
+### A live bug this nearly shipped
+
+`runDownstreamStages({ features, requestId })` had no `extraction` in scope, and
+the new selector referenced it — an undeclared identifier, so **every analysis
+500'd** and 46 backend tests failed. Fixed by threading `extraction` through.
+The lesson is only that the backend suite catches this class immediately; run it
+after touching `analysisService.js`.
 
 ---
 

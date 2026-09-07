@@ -1325,6 +1325,41 @@ function explanationWarnings(set) {
  * itself. Both lists are capped at the service's `max_length=16`, which is a
  * 422 if exceeded.
  */
+/**
+ * Test names the LABORATORY flagged abnormal that this platform does not assess.
+ *
+ * Joins Module 5's `unmapped` list back to Module 4's extraction, which is the
+ * only place the laboratory's own reference interval and high/low marking
+ * survive. Feature engineering drops both along with the parameter, so without
+ * this join the flags are simply gone.
+ */
+function labFlaggedUnmappedNames(features, extraction) {
+  const unmapped = Array.isArray(features?.unmapped) ? features.unmapped : [];
+  if (!unmapped.length) return [];
+
+  const skipped = new Set(
+    unmapped
+      .map((entry) => (entry && typeof entry.test_name === 'string' ? entry.test_name : null))
+      .filter(Boolean)
+  );
+  if (!skipped.size) return [];
+
+  const parameters = Array.isArray(extraction?.extracted_parameters)
+    ? extraction.extracted_parameters
+    : [];
+
+  const names = [];
+  for (const parameter of parameters) {
+    const name = parameter && typeof parameter.test_name === 'string' ? parameter.test_name : null;
+    if (!name || !skipped.has(name)) continue;
+    const flag = typeof parameter.flag === 'string' ? parameter.flag.toLowerCase() : null;
+    // Only an explicit abnormal marking. A missing flag is not an abnormal
+    // one, and describing every unflagged test is what blows the quota.
+    if (flag && flag !== 'normal' && !names.includes(name)) names.push(name);
+  }
+  return names;
+}
+
 function guidanceInputs(report) {
   if (!report || typeof report !== 'object') return { conditions: [], features: [] };
 
@@ -1575,7 +1610,7 @@ async function openStorage(report) {
  * @returns {Promise<{validation: object|null, rules: object|null, ml: object|null,
  *                    report: object|null, stages: Record<string, object>}>}
  */
-async function runDownstreamStages({ features, requestId }) {
+async function runDownstreamStages({ features, extraction = null, requestId }) {
   const stages = {};
 
   const validationRun = await runStage(() =>
@@ -1649,7 +1684,17 @@ async function runDownstreamStages({ features, requestId }) {
   // future edit cannot pass one where the other belongs.
   const guidanceAsk = guidanceInputs(clinicalReport);
 
-  const [explanationRun, guidanceRun] = await Promise.all([
+  // WHICH SKIPPED TESTS ARE WORTH A DESCRIPTION.
+  //
+  // A report can carry sixty parameters this platform does not assess, and
+  // describing all of them would spend a free-tier day's quota on "Urine
+  // Colour: Pale Yellow". The ones that matter are the ones THE LABORATORY
+  // ITSELF marked outside its own range -- those are the values a reader will
+  // stop on, and the ones a doctor will want raised. Everything else is still
+  // listed on the dashboard, just without a description.
+  const glossaryAsk = labFlaggedUnmappedNames(features, extraction);
+
+  const [explanationRun, guidanceRun, glossaryRun] = await Promise.all([
     runStage(() => aiService.explainReport({ report: clinicalReport, requestId })),
     runStage(() =>
       aiService.lifestyleGuidance({
@@ -1658,9 +1703,17 @@ async function runDownstreamStages({ features, requestId }) {
         requestId,
       })
     ),
+    // Skipped entirely when there is nothing to describe, so a report whose
+    // every parameter is understood costs no extra model call.
+    glossaryAsk.length
+      ? runStage(() =>
+          aiService.describeParameters({ testNames: glossaryAsk, requestId })
+        )
+      : Promise.resolve({ value: null, record: null }),
   ]);
   stages[aiService.STAGES.EXPLANATION] = explanationRun.record;
   stages[aiService.STAGES.GUIDANCE] = guidanceRun.record;
+  if (glossaryRun.record) stages[aiService.STAGES.GLOSSARY] = glossaryRun.record;
 
   return {
     validation,
@@ -1668,6 +1721,7 @@ async function runDownstreamStages({ features, requestId }) {
     ml: mlRun.value,
     report: clinicalReport,
     explanation: explanationRun.value,
+    parameterGlossary: glossaryRun.value,
     guidance: guidanceRun.value,
     stages,
   };
@@ -1735,7 +1789,7 @@ async function runAnalysis({ user, report, requestId }) {
     assertProductiveFeatures(extraction, features);
 
     // Stages 6, 8 and 9/10. None of them can fail the run - see the header.
-    const downstream = await runDownstreamStages({ features, requestId });
+    const downstream = await runDownstreamStages({ features, extraction, requestId });
     const { validation, rules, ml, report: clinicalReport } = downstream;
 
     // MODULE 23'S PAYLOAD IS NORMALISED BEFORE IT IS LOOKED AT AT ALL, so that
@@ -1747,6 +1801,10 @@ async function runAnalysis({ user, report, requestId }) {
     // call sites remembering.
     const explanation = normaliseExplanationSet(downstream.explanation);
     const guidance = normaliseGuidance(downstream.guidance);
+    // Descriptions of tests this platform does not assess. Optional by
+    // design: `null` whenever nothing needed describing or the stage failed,
+    // and `store()` unsets the field rather than persisting an empty shell.
+    const parameterGlossary = downstream.parameterGlossary || null;
 
     const stages = {
       [aiService.STAGES.EXTRACTION]: stageOk(undefined),
@@ -1826,6 +1884,7 @@ async function runAnalysis({ user, report, requestId }) {
     store('clinicalReport', clinicalReport);
     store('patientExplanation', explanation);
     store('lifestyleGuidance', guidance);
+    store('parameterGlossary', parameterGlossary);
     for (const [key, value] of Object.entries({
       ...decisions,
       ...validationCounts,

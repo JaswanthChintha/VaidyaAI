@@ -785,6 +785,77 @@ function buildDocumentQuality(clinicalReport) {
   };
 }
 
+/**
+ * The results this platform did NOT analyse, and why.
+ *
+ * A REAL REPORT IS MOSTLY THINGS THIS TOOL DOES NOT KNOW. PK0016 carries 67
+ * extracted parameters; four map to a feature the pipeline understands. The
+ * other 63 -- HDL cholesterol, the whole urine panel, liver and kidney
+ * measurements from an ultrasound -- were read off the page and then dropped.
+ *
+ * NOTHING TOLD THE PATIENT. `document.unmapped_count` is 0 for that report,
+ * which is not merely missing information but a false statement: the correct
+ * count sits in `fusion.upstream_summary.unmapped_count` and says 63. So a
+ * reader saw four results, an overall verdict, and no indication that
+ * ninety-four percent of their report had been set aside. They would
+ * reasonably conclude the whole document had been assessed and found clear.
+ *
+ * That is the same fourth-case failure this file guards everywhere else --
+ * "we did not look" rendered as "we looked and found nothing" -- so the
+ * skipped values are carried through with the reason each was skipped.
+ */
+function buildUnanalysedSection(engineeredFeatures, extraction) {
+  const unmapped = listOf(objectOf(engineeredFeatures).unmapped);
+  if (!unmapped.length) return { count: 0, labFlaggedCount: 0, items: [] };
+
+  // THE LABORATORY ALREADY DID THE ONE THING THAT NEEDS NO CLINICAL KNOWLEDGE.
+  //
+  // Module 4 extracts each parameter's printed reference interval and the
+  // laboratory's own high/low marking, and then feature engineering discards
+  // both along with the parameter. On one real report that threw away NINE
+  // results the laboratory itself had marked abnormal -- LDL cholesterol,
+  // blood urea, urea nitrogen and potassium among them, the last three
+  // corroborating the raised creatinine that DID produce a Kidney Disease
+  // card. The platform flagged the condition and silently dropped the
+  // supporting evidence off the same page.
+  //
+  // Reuniting them asserts nothing new: the range is the laboratory's, the
+  // marking is the laboratory's, and this file only carries them forward.
+  // That is categorically different from assessing the parameter, which would
+  // need a threshold and a knowledge document this platform does not have.
+  const printed = new Map();
+  for (const entry of listOf(objectOf(extraction).extracted_parameters)) {
+    const row = objectOf(entry);
+    if (stringOrNull(row.test_name)) printed.set(row.test_name, row);
+  }
+
+  const items = unmapped.map((entry) => {
+    const item = objectOf(entry);
+    const source = objectOf(printed.get(item.test_name));
+    const flag = stringOrNull(source.flag);
+    return {
+      testName: stringOrNull(item.test_name),
+      value: asIs(item.value_raw),
+      unit: stringOrNull(item.unit),
+      // The pipeline's own machine reason for skipping it, kept verbatim.
+      reason: stringOrNull(item.reason),
+      pageNumber: numberOrUndefined(item.page_number),
+      // THE LABORATORY'S OWN VERDICT, not this platform's. Named so no reader
+      // of this object can mistake whose judgement it is.
+      labFlag: flag,
+      labFlaggedAbnormal: Boolean(flag) && flag.toLowerCase() !== "normal",
+      labReferenceLow: numberOrUndefined(source.reference_low),
+      labReferenceHigh: numberOrUndefined(source.reference_high),
+    };
+  });
+
+  return {
+    count: items.length,
+    labFlaggedCount: items.filter((item) => item.labFlaggedAbnormal).length,
+    items,
+  };
+}
+
 // --------------------------------------------------------------- assemble ---
 
 /**
@@ -853,7 +924,13 @@ function indexEvidenceLines(clinicalReport) {
  * @param {object|null} params.explanationSet  Module 23, as stored, or null.
  * @param {object|null} params.guidance  Module 26, as stored, or null.
  */
-function buildDashboard({ clinicalReport, explanationSet = null, guidance = null }) {
+function buildDashboard({
+  clinicalReport,
+  explanationSet = null,
+  guidance = null,
+  engineeredFeatures = null,
+  extraction = null,
+}) {
   if (!analysisService.isUsableClinicalReport(clinicalReport)) {
     throw new TypeError('buildDashboard requires a stored clinical report');
   }
@@ -866,6 +943,8 @@ function buildDashboard({ clinicalReport, explanationSet = null, guidance = null
     generatedAt: clinicalReport.generated_at === undefined ? null : clinicalReport.generated_at,
 
     overall: buildOverallCard(clinicalReport),
+    // What the report contained that this tool does not assess.
+    unanalysed: buildUnanalysedSection(engineeredFeatures, extraction),
     conditions: buildConditionCards(clinicalReport),
     laboratory: buildLaboratoryCards(clinicalReport, evidenceLinesByFeature),
     evidence: buildEvidenceSection(clinicalReport),

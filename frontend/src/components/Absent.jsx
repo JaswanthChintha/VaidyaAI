@@ -114,6 +114,27 @@ export function Section({ status, title, children }) {
  * So the shape is normalised here, once, and the stage is shown when present
  * rather than discarded.
  */
+/**
+ * Pipeline stage -> what a patient would call it.
+ *
+ * These names exist for engineers: `extraction`, `validation`, `rules`, `ml`,
+ * `fusion`. Printing them verbatim in front of a warning turns a readable
+ * sentence into "fusion: ...". Anything not in this table is shown WITHOUT a
+ * prefix rather than with a raw one.
+ */
+const STAGE_LABEL = {
+  extraction: 'Reading the report',
+  validation: 'Checking the values',
+  features: 'Checking the values',
+  rules: 'Clinical checks',
+  ml: 'Statistical model',
+  fusion: 'Combining the checks',
+  decision: 'Combining the checks',
+  explanation: 'Writing the explanation',
+  safety: 'Safety review',
+  report: 'Building the report',
+};
+
 export function WarningList({ warnings, className = 'warnings' }) {
   const items = Array.isArray(warnings) ? warnings : [];
   if (!items.length) return null;
@@ -133,11 +154,18 @@ export function WarningList({ warnings, className = 'warnings' }) {
             ? warning.message
             : 'An unlabelled warning was recorded for this report.';
         const stage = warning && typeof warning === 'object' ? warning.stage : null;
+        const stageLabel = STAGE_LABEL[stage];
 
         return (
           <li key={index}>
-            {typeof stage === 'string' && stage ? (
-              <span className="warning__stage">{stage}: </span>
+            {/* The stage is shown ONLY when there is a plain-English name for
+                it. The raw values are pipeline stage names -- "fusion", "ml" --
+                and a patient reading "fusion: Heart Disease: ..." learns
+                nothing except that something internal happened. An unmapped
+                stage is omitted rather than printed raw; a new stage on the
+                Python side degrades to a bare sentence, which is still true. */}
+            {stageLabel ? (
+              <span className="warning__stage">{stageLabel}: </span>
             ) : null}
             {message}
           </li>

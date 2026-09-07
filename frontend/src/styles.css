@@ -60,6 +60,11 @@ button.link {
   background: none; border: none; color: var(--accent); padding: 4px 0;
   text-decoration: underline;
 }
+/* A link-button sitting directly beside a solid one -- "Sign in" next to
+   "Create an account". Without this they touch, and the underline reads as
+   part of the button. Scoped to the adjacent-sibling case so a link-button
+   used inline inside a sentence is not pushed off its own text. */
+button + button.link { margin-left: 16px; }
 
 .hint { color: var(--muted); font-size: 14px; font-weight: 400; margin: 4px 0 0; }
 .error { color: var(--danger); font-weight: 600; }
@@ -117,7 +122,9 @@ button.link {
 .lab-table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
 .lab-table th, .lab-table td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); }
 .lab--rejected { background: #fdf6f6; }
-.lab__printed { font-weight: 400; color: var(--muted); font-size: 13px; }
+/* Our normalised name, under the lab's own wording. Secondary on purpose:
+   the reader matches rows by what is printed on their paper report. */
+.lab__printed { display: block; font-weight: 400; color: var(--muted); font-size: 13px; }
 .lab__range { color: var(--muted); }
 .flag--high, .flag--critical { color: var(--high); font-weight: 700; }
 .flag--low { color: var(--medium); font-weight: 700; }
@@ -146,3 +153,76 @@ button.link {
 
 /* Which pipeline stage raised a warning, shown before its text. */
 .warning__stage { color: var(--muted); font-weight: 600; }
+
+/* Report row: the file name opens the original, and Delete is deliberately
+   quiet until it is armed. A destructive action on medical data should not
+   compete for attention with the action people actually came to take. */
+.report__name { font-weight: 700; font-size: 16px; text-align: left; }
+.report__delete { color: var(--muted); }
+.report__delete:hover { color: var(--danger); }
+.report__confirm { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.report__confirm-text { color: var(--danger); font-size: 14px; font-weight: 600; }
+button.danger { background: var(--danger); border-color: var(--danger); }
+
+/* The measured values behind a condition: name, value, and a note ONLY where a
+   threshold was crossed. Aligned columns so the eye scans down the numbers
+   instead of re-reading the same sentence stem on every row. */
+.measured { margin: 10px 0; }
+.measured__row {
+  display: grid; grid-template-columns: minmax(150px, 1.4fr) auto 1.2fr;
+  gap: 10px; align-items: baseline;
+  padding: 6px 0; border-bottom: 1px solid var(--line);
+}
+.measured__row:last-child { border-bottom: none; }
+.measured__name { color: var(--muted); }
+.measured__value { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.measured__note { margin: 0; color: var(--muted); font-size: 14px; }
+.measured__note--crossed { color: var(--high); font-weight: 600; }
+
+@media (max-width: 560px) {
+  .measured__row { grid-template-columns: 1fr auto; }
+  .measured__note { grid-column: 1 / -1; }
+}
+
+/* Guidance grouped by why it appears. The sub-heading carries the "general,
+   educational" qualifier once, so each bullet does not have to repeat it. */
+.guidance__heading { font-size: 15px; margin: 14px 0 6px; color: var(--muted); font-weight: 600; }
+.guidance__because { color: var(--muted); font-size: 13px; }
+
+/* Module 23's plain-language explanations -- the main thing a patient reads. */
+.explanations { margin-bottom: 8px; }
+.explanation { padding: 16px 20px; }
+.explanation__subject { margin: 0 0 6px; font-size: 16px; color: var(--accent); }
+.explanation__text { margin: 0; }
+
+/* The topics that were checked and were clear, or could not be checked.
+   One line each, never ten cards -- but never merged with each other. */
+.condition__roundup { color: var(--ink); margin: 8px 0; }
+.condition__roundup--unassessed { color: var(--muted); }
+
+/* High / Low / In range, derived from the engine's own threshold crossings. */
+.verdict { font-weight: 700; font-size: 14px; }
+.verdict--high { color: var(--high); }
+.verdict--low { color: var(--medium); }
+.verdict--normal { color: var(--low); }
+
+/* Results the platform read but does not assess. Deliberately prominent: a
+   reader who does not see this concludes the whole report was checked. */
+.unanalysed { border: 1px solid var(--line); border-left: 4px solid var(--medium);
+  background: var(--card); border-radius: 10px; padding: 16px 20px; margin: 16px 0; }
+.unanalysed h2 { margin-top: 0; font-size: 18px; }
+.unanalysed__group { margin: 8px 0; }
+.unanalysed__group summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+.unanalysed__list { columns: 2; column-gap: 24px; margin: 8px 0 0; padding-left: 18px; }
+.unanalysed__list li { break-inside: avoid; margin-bottom: 3px; }
+.unanalysed__value { color: var(--muted); font-variant-numeric: tabular-nums; }
+@media (max-width: 560px) { .unanalysed__list { columns: 1; } }
+
+/* The laboratory's own abnormal markings on tests this tool does not assess.
+   Given real prominence: these were being discarded entirely. */
+.unanalysed__flagged { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 12px; }
+.unanalysed__flagged h3 { margin: 0 0 4px; font-size: 16px; color: var(--high); }
+.unanalysed__list--flagged { columns: 1; padding-left: 18px; }
+.unanalysed__list--flagged li { margin-bottom: 5px; }
+.unanalysed__name { font-weight: 600; }
+.unanalysed__range { color: var(--muted); font-size: 13px; }

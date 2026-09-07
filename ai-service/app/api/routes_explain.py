@@ -5,6 +5,7 @@
     POST /api/v1/explain/term       Module 25 -- explain a medical term
     GET  /api/v1/explain/terms      Module 25 -- what it will answer
     POST /api/v1/explain/guidance   Module 26 -- educational lifestyle guidance
+    POST /api/v1/explain/glossary   describe tests this platform does NOT assess
     GET  /api/v1/explain/policy     what all three do and refuse to do
 
 Thin HTTP wrapper, like `routes_report.py` and `routes_safety.py`. All logic
@@ -56,6 +57,11 @@ from app.services.lifestyle import (
     LifestyleGuidance,
     guidance_policy_document,
     lifestyle_guidance,
+)
+from app.services.parameter_glossary import (
+    MAX_PER_REQUEST as GLOSSARY_MAX_PER_REQUEST,
+    GlossaryData,
+    describe_parameters,
 )
 from app.services.terminology import (
     MAX_TERM_CHARS,
@@ -392,6 +398,40 @@ async def policy() -> dict:
             "never": "LLM output shown directly to a patient",
         },
     }
+
+
+class GlossaryRequest(BaseModel):
+    """Test NAMES only. There is deliberately nowhere to put a patient value.
+
+    The shape is the safety property: a caller cannot send a result even by
+    accident, so the model can never be asked what someone's number means.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    test_names: List[str] = Field(default_factory=list, max_length=64)
+
+
+@router.post(
+    "/glossary",
+    response_model=GlossaryData,
+    summary="Describe laboratory tests this platform does not assess",
+)
+def glossary_endpoint(
+    request: GlossaryRequest,
+    llm: Any = Depends(get_explanation_llm),
+) -> GlossaryData:
+    """What each named test measures -- and nothing about any patient.
+
+    Returns an empty set rather than erroring when no model is configured: an
+    unconfigured key is a service state, and the caller renders the values
+    without descriptions exactly as it does when a description is refused.
+    """
+    if llm is None:
+        return GlossaryData()
+    return describe_parameters(
+        request.test_names, llm, max_calls=GLOSSARY_MAX_PER_REQUEST
+    )
 
 
 __all__ = ["get_explanation_llm", "router"]

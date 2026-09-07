@@ -30,6 +30,11 @@ export default function Reports() {
   const [error, setError] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [uploading, setUploading] = useState(false);
+  // The report whose delete is awaiting confirmation. Deleting a medical
+  // report destroys the file AND its analysis, and there is no undo, so the
+  // confirmation is inline in the row rather than a browser confirm() the
+  // user can dismiss without reading.
+  const [confirmingId, setConfirmingId] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -87,6 +92,29 @@ export default function Reports() {
     }
   }
 
+  async function onOpenFile(report) {
+    setError(null);
+    try {
+      await api.openReportFile(report.id, report.mimeType);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function onDelete(id) {
+    setBusyId(id);
+    setError(null);
+    try {
+      await api.deleteReport(id);
+      setConfirmingId(null);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   if (reports === null && !error) return <p className="loading">Loading your reports…</p>;
 
   return (
@@ -128,7 +156,17 @@ export default function Reports() {
         {(reports || []).map((report) => (
           <li key={report.id} className="card report">
             <div className="report__head">
-              <strong>{report.originalName}</strong>
+              {/* The name opens the ORIGINAL document. A plain <a href> cannot
+                  be used: the download route is owner-scoped and needs the
+                  bearer token, which a link does not send. */}
+              <button
+                type="button"
+                className="link report__name"
+                onClick={() => onOpenFile(report)}
+                title="Open the original file"
+              >
+                {report.originalName}
+              </button>
               <span className={`status status--${report.status}`}>
                 {STATUS_COPY[report.status] || report.status}
               </span>
@@ -158,6 +196,42 @@ export default function Reports() {
                   {busyId === report.id ? 'Analysing… this can take a few minutes' : 'Analyse'}
                 </button>
               ) : null}
+
+              {confirmingId === report.id ? (
+                <span className="report__confirm">
+                  {/* NAMED, not "are you sure?". The whole point of a
+                      confirmation is that the reader can tell WHICH report is
+                      about to go, and what goes with it. */}
+                  <span className="report__confirm-text">
+                    Delete {report.originalName} and its analysis? This cannot
+                    be undone.
+                  </span>
+                  <button
+                    type="button"
+                    className="danger"
+                    onClick={() => onDelete(report.id)}
+                    disabled={busyId === report.id}
+                  >
+                    {busyId === report.id ? 'Deleting…' : 'Delete permanently'}
+                  </button>
+                  <button
+                    type="button"
+                    className="link"
+                    onClick={() => setConfirmingId(null)}
+                    disabled={busyId === report.id}
+                  >
+                    Keep it
+                  </button>
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  className="link report__delete"
+                  onClick={() => setConfirmingId(report.id)}
+                >
+                  Delete
+                </button>
+              )}
             </div>
           </li>
         ))}

@@ -50,7 +50,14 @@ const ownFilter = (req, base = {}) => ownerScopedFilter(req.user, { ...OWNER_ONL
  * largest and most sensitive documents in the collection through the app to
  * render a screen that never shows them.
  */
-const DASHBOARD_PROJECTION = '+clinicalReport +patientExplanation +lifestyleGuidance';
+// `features` carries Module 5's `unmapped` list -- every parameter read off
+// the page that this platform has no feature for. Without it the dashboard
+// cannot tell the reader what it skipped.
+// `extraction` carries each parameter's PRINTED reference interval and the
+// laboratory's own high/low marking -- including for parameters this
+// platform does not assess. Without it those markings are lost.
+const DASHBOARD_PROJECTION =
+  '+clinicalReport +patientExplanation +lifestyleGuidance +features +extraction';
 
 /**
  * GET /reports/:id/dashboard
@@ -97,6 +104,8 @@ const getDashboard = asyncHandler(async (req, res) => {
     // empty list, which would read as "there is nothing to recommend".
     explanationSet: report.patientExplanation === undefined ? null : report.patientExplanation,
     guidance: report.lifestyleGuidance === undefined ? null : report.lifestyleGuidance,
+    engineeredFeatures: report.features === undefined ? null : report.features,
+    extraction: report.extraction === undefined ? null : report.extraction,
   });
 
   return sendSuccess(res, 200, {

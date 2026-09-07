@@ -158,6 +158,101 @@ export async function request(method, path, { body, formData, retry = true } = {
   return parse(response);
 }
 
+/**
+ * The only content types a stored report may be VIEWED as.
+ *
+ * The download route deliberately sends `Content-Disposition: attachment` so a
+ * stored file is never rendered inside the app's origin -- if it were, an
+ * uploaded HTML or SVG file could run script here and read the access token.
+ * Opening a blob in a tab would hand that protection straight back, because a
+ * `blob:` URL inherits the origin that created it.
+ *
+ * So the blob is rebuilt with a type from THIS list and nothing else. A PDF
+ * renders in the browser's sandboxed viewer and an image renders as an image;
+ * neither can execute. Anything else is downloaded instead of opened, which is
+ * exactly the behaviour the server asked for.
+ */
+const VIEWABLE_TYPES = ['application/pdf', 'image/jpeg', 'image/png'];
+
+/**
+ * Fetch a stored report and show it, without ever losing the auth header.
+ *
+ * A plain `<a href>` cannot be used: the route is owner-scoped and needs the
+ * bearer token, which a link does not send.
+ */
+async function openReportFile(id, mimeType) {
+  // OPEN THE TAB FIRST, SYNCHRONOUSLY. This is the whole reason the function
+  // is shaped this way.
+  //
+  // `window.open` is only permitted while the browser still considers itself
+  // inside the user's click. The moment this function awaits the fetch, that
+  // gesture context is gone and every popup blocker silently refuses -- the
+  // call returns null, no tab appears, and nothing is thrown, so the button
+  // looks simply dead. The first version of this did exactly that.
+  //
+  // So a blank tab is claimed while the click is still trusted, and its
+  // location is set once the file arrives.
+  // NOT `noopener` in the feature string: specifying it makes `window.open`
+  // return NULL by definition, and the reference is the thing this whole
+  // arrangement exists to keep. `opener` is severed on the handle instead,
+  // which achieves the same isolation without discarding the tab.
+  const tab = window.open('', '_blank');
+  if (tab) tab.opener = null;
+
+  const fail = (message) => {
+    if (tab && !tab.closed) tab.close();
+    throw new ApiError(0, 'REPORT_FILE_UNAVAILABLE', message);
+  };
+
+  const headers = {};
+  if (ACCESS.token) headers.Authorization = `Bearer ${ACCESS.token}`;
+
+  let response;
+  try {
+    response = await fetch(`/api/v1/reports/${id}/download`, { headers });
+    if (response.status === 401 && getRefreshToken() && (await refreshSession())) {
+      response = await fetch(`/api/v1/reports/${id}/download`, {
+        headers: ACCESS.token ? { Authorization: `Bearer ${ACCESS.token}` } : {},
+      });
+    }
+  } catch {
+    fail('The report file could not be fetched. Check your connection.');
+  }
+
+  if (!response.ok) {
+    // The body is a file, not an envelope, so there is no error code to read.
+    fail(
+      response.status === 404
+        ? 'This report no longer has a stored file.'
+        : 'This report file could not be opened.'
+    );
+  }
+
+  const raw = await response.blob();
+  const declared = (mimeType || raw.type || '').toLowerCase();
+  const safe = VIEWABLE_TYPES.includes(declared);
+  const url = URL.createObjectURL(safe ? new Blob([raw], { type: declared }) : raw);
+
+  if (safe && tab && !tab.closed) {
+    tab.location.href = url;
+  } else {
+    // Either the type is not one we will render, or the popup was blocked
+    // anyway. Saving the file is the honest fallback -- it is also exactly
+    // what the server's `Content-Disposition: attachment` asked for.
+    if (tab && !tab.closed) tab.close();
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `report-${id}`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+
+  // The tab has already read the URL; revoking frees the in-memory copy.
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+
 export const api = {
   register: (payload) => request('POST', '/auth/register', { body: payload }),
   login: (payload) => request('POST', '/auth/login', { body: payload }),
@@ -177,6 +272,8 @@ export const api = {
   listReports: () => request('GET', '/reports'),
   uploadReport: (formData) => request('POST', '/reports', { formData }),
   analyzeReport: (id) => request('POST', `/reports/${id}/analyze`),
+  deleteReport: (id) => request('DELETE', `/reports/${id}`),
+  openReportFile: (id, mimeType) => openReportFile(id, mimeType),
   getDashboard: (id) => request('GET', `/reports/${id}/dashboard`),
   getDoctorSummary: (id) => request('GET', `/reports/${id}/doctor-summary`),
   getPopulationContext: (id) => request('GET', `/reports/${id}/population-context`),

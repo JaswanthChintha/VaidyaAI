@@ -319,6 +319,23 @@ const reportSchema = new mongoose.Schema(
     },
 
     /**
+     * Descriptions of laboratory tests this platform does NOT assess.
+     *
+     * Separate from `patientExplanation` for the same reason `lifestyleGuidance`
+     * is: they are different kinds of statement and one field holding both
+     * would erase which was which. An explanation is about a value that WAS
+     * assessed, grounded in retrieved knowledge and tied to a decision. An
+     * entry here is a definition of a test that was NOT assessed, generated
+     * from the test's NAME with no patient data in the prompt, and it supports
+     * no conclusion at all.
+     */
+    parameterGlossary: {
+      type: mongoose.Schema.Types.Mixed,
+      select: false,
+      default: undefined,
+    },
+
+    /**
      * Warnings from EVERY stage, each tagged with the stage it came from
      * (`extraction` 4, `feature_engineering` 5, `validation` 6, `rules` 8,
      * `ml` 9/10). The FULL list is stored - never only the last stage's.

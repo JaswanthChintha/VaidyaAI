@@ -113,8 +113,13 @@ describe('condition cards', () => {
     });
     renderDashboard();
 
-    expect(await screen.findByText('Kidney Disease')).toBeInTheDocument();
-    expect(screen.getByText('Insufficient Data')).toBeInTheDocument();
+    // An unassessed topic is now summarised in one line rather than given a
+    // full card, so it is matched inside its sentence. The guarantee is
+    // unchanged and is the whole point of this test: it must be reported as
+    // NOT CHECKED, and must never carry a risk level -- "we could not look"
+    // must not be renderable as "we looked and it was fine".
+    expect(await screen.findByText(/Kidney Disease/)).toBeInTheDocument();
+    expect(screen.getByText(/Not enough information to check/i)).toBeInTheDocument();
     expect(screen.queryByText('Low')).not.toBeInTheDocument();
   });
 
@@ -161,7 +166,11 @@ describe('laboratory rows', () => {
     });
     renderDashboard();
 
-    expect(await screen.findByText('Creatinine')).toBeInTheDocument();
+    // Matched loosely: the row is titled by whatever the LAB printed, falling
+    // back to the patient-facing name ("Creatinine (kidney marker)"). Which of
+    // those appears is not the guarantee here -- the guarantee is that the row
+    // is named at all, and that the rejected value never renders as a number.
+    expect(await screen.findByText(/Creatinine/)).toBeInTheDocument();
     expect(screen.queryByText('999 mg/dl')).not.toBeInTheDocument();
     expect(screen.queryByText('0 mg/dl')).not.toBeInTheDocument();
     expect(
@@ -206,7 +215,14 @@ describe('laboratory rows', () => {
     });
     renderDashboard();
 
-    expect(await screen.findByText('No range printed')).toBeInTheDocument();
+    // Said ONCE for the table, not repeated on every row. A report that prints
+    // no ranges used to pay for a whole column of identical "No range printed"
+    // cells, which buried the results it was meant to qualify. The guarantee
+    // is unchanged: the reader must be told, so they understand why nothing is
+    // marked high or low.
+    expect(
+      await screen.findByText(/did not print normal ranges/i)
+    ).toBeInTheDocument();
   });
 });
 

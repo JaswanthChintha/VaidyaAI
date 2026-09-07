@@ -123,6 +123,7 @@ const PATHS = Object.freeze({
   report: '/api/v1/report/generate',
   explain: '/api/v1/explain/report',
   guidance: '/api/v1/explain/guidance',
+  glossary: '/api/v1/explain/glossary',
   timeline: '/api/v1/timeline/trends',
   comparison: '/api/v1/comparison/reports',
   progress: '/api/v1/progress/score',
@@ -160,6 +161,7 @@ const STAGES = Object.freeze({
   // missing stage.
   EXPLANATION: 'explanation',
   GUIDANCE: 'guidance',
+  GLOSSARY: 'glossary',
   // Modules 28, 29, 30 and 32. These four DO have a far-side string to match
   // and they match it exactly: `STAGE_TIMELINE` in app/schemas/timeline.py,
   // `STAGE_COMPARISON` in comparison.py, `STAGE_PROGRESS` in progress.py and
@@ -898,6 +900,31 @@ async function lifestyleGuidance({ conditions, features, requestId }) {
   });
 }
 
+/**
+ * Describe laboratory tests this platform does NOT assess.
+ *
+ * SENDS NAMES AND NOTHING ELSE. No value, no unit, no reference range, no
+ * flag, no profile field. That is not an economy, it is the safety property:
+ * the service can only be asked what a test measures, never what a patient's
+ * number means, so nothing it returns can be an interpretation of this
+ * patient. The endpoint's request model has nowhere to put a value either, so
+ * a future caller cannot add one by accident.
+ *
+ * The reply is cached per test name inside the Python service, so repeated
+ * analytes across reports cost nothing after the first.
+ */
+async function describeParameters({ testNames, requestId }) {
+  return postJson({
+    path: PATHS.glossary,
+    stage: STAGES.GLOSSARY,
+    payload: {
+      test_names: Array.isArray(testNames) ? testNames : [],
+    },
+    requestId,
+    timeoutMs: config.aiService.guidanceTimeoutMs,
+  });
+}
+
 // ------------------------- history: trends / comparison / progress (28-30) ---
 
 /**
@@ -1236,6 +1263,7 @@ module.exports = {
   generateReport,
   explainReport,
   lifestyleGuidance,
+  describeParameters,
   analyseTrends,
   compareReports,
   scoreProgress,
