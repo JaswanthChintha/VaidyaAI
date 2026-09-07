@@ -4,8 +4,9 @@
 > project's history, decisions, and state survive independently of any chat session.
 >
 > **Last updated:** 2026-09-07 · **All 32 modules + frontend built** · Module 11 retrained
-> (§6s) · first real run (§6t) · Module 27 rewritten for patients (§6u) · **one feature
-> left unfinished (§6v)**
+> (§6s) · first real run (§6t) · Module 27 rewritten for patients (§6u) · the parameter
+> glossary finished and live-verified (§6v design, §6w) · **three screens rewritten after
+> a user read them aloud — every defect was in the rendering layer (§6w)**
 
 ---
 
@@ -21,37 +22,73 @@ about any of them. That is the fifth time on this project.
 
 | | Tests |
 |---|---|
-| `backend/` (Node/Express) | **618** passing + 3 opt-in live |
-| `ai-service/` (Python/FastAPI) | **3,690** passing + 7 skipped |
-| `frontend/` (React/Vitest) | **44** passing |
-| **Total** | **4,352** — all green as of 2026-09-07 |
+| `backend/` (Node/Express) | **634** passing + 3 opt-in live |
+| `ai-service/` (Python/FastAPI) | **3,697** passing + 7 skipped |
+| `frontend/` (React/Vitest) | **71** passing |
+| **Total** | **4,402** — all green as of 2026-09-07 (§6w) |
 
-> ### ▶ PICK UP HERE: ONE FEATURE IS HALF-BUILT (§6v)
+> ### ✅ THE HALF-BUILT FEATURE IS FINISHED (§6v design · §6w completion)
 >
 > `parameter_glossary` describes laboratory tests this platform does not assess
 > (LDL, urea, potassium…) using Gemini, from the test NAME only, with no patient
-> data in the prompt. **The Python module, its route and the backend pipeline
-> stage are done and tested. The dashboard does not render it yet.**
+> data in the prompt. **It now renders on the dashboard and has been driven end
+> to end against real Gemini.** Read §6w.
 >
-> Three steps, in order:
-> 1. `dashboardService.buildUnanalysedSection` → merge `report.parameterGlossary`
->    into `unanalysed.items` by test name; add `+parameterGlossary` to
->    `DASHBOARD_PROJECTION`.
-> 2. `Dashboard.jsx` → the `Unanalysed` component shows each description under
->    its test.
-> 3. Re-analyse a report to populate it (the stage runs only during `analyze`).
+> The one thing to carry forward: **the feature was dead on every call and no
+> test said so.** The endpoint returned a bare payload instead of the
+> `{success, data}` envelope, so the backend rejected every 200 as malformed and
+> discarded descriptions it had already generated and safety-validated. The
+> module's 14 tests were excellent and tested the wrong layer — none went
+> through HTTP, and the shared route walk that asserts `success is True` simply
+> never listed this route. **A module can be perfect and unreachable; anything
+> with a route needs one test that goes through the route.** Sixth time a green
+> suite has said nothing here.
 >
-> Read §6v before touching it — it records a safety defect where an empty
-> `permitted_numbers` turns the numeric control OFF rather than forbidding all
-> numbers, which let an invented reference range through.
+> Also read §6v before touching the safety code — it records a real defect: an
+> empty `permitted_numbers` turns the shared validator's numeric control OFF
+> rather than forbidding all numbers, which let an invented reference range
+> through. That rule is enforced locally in `parameter_glossary.py`, not by
+> loosening the shared default.
+
+> ### ▶ THEN THE SCREENS WERE READ ALOUD, AND THAT IS WHERE THE BUGS WERE (§6w)
+>
+> After the glossary shipped, the user drove the running app and reported what
+> they saw. Three screens were rewritten as a result — the patient dashboard's
+> closing summary, and the clinician page twice. **Every defect found was in the
+> RENDERING layer of a pipeline that was producing correct output**, and none
+> was visible from a green suite:
+>
+> * the clinician page read `basis.limitations`; the service writes
+>   `basis.ml.limitations`, so **every model probability was shown with no
+>   ROC-AUC, no recall and no caveat** — the third recurrence of §6o D8 / §6p.
+>   The fixtures hid it by putting the field where the page looked;
+> * a summary said "something in this report is outside its usual range" about
+>   Obesity, which is computed from the height and weight the patient typed in;
+> * `probability 0.9509128032443647` from a model with ROC-AUC 0.697;
+> * ten retrieved reference passages rendered as "This section is not available"
+>   because two payload fields nest `present` differently;
+> * source-file paths and array indices on a page a patient opens.
+>
+> **The lesson, and it is the only one worth carrying:** a green suite plus three
+> mutation rounds plus a live browser check still missed all of it. **A screen
+> nobody has read aloud is untested.**
 
 **Working state:** run the three services with the commands in §6t; MongoDB now
 points at **Atlas** (`backend/.env`, standard non-SRV connection string — this
-machine's Node DNS resolver cannot do SRV lookups). Five synthetic one-page test
-reports with known expected outcomes live in `backend/storage/samples/generated/`
-with an `expected.json`; regenerate with
+machine's Node DNS resolver cannot do SRV lookups). **Six** synthetic one-page
+test reports with known expected outcomes live in
+`backend/storage/samples/generated/` with an `expected.json`; regenerate with
 `ai-service/.venv/Scripts/python.exe tools/make_test_reports.py`.
-`04-exactly-on-the-boundary.pdf` is the one most likely to find a real bug.
+`04-exactly-on-the-boundary.pdf` is the one most likely to find a real bug, and
+`06-lab-flagged-tests-we-do-not-assess.pdf` is the ONLY one carrying tests this
+platform does not assess -- the other five are eight mapped tests each with no
+printed reference intervals, so they cannot exercise the unassessed section or
+the glossary at all (§6w).
+
+**RESTART THE SERVICES BEFORE ANY LIVE CHECK.** Both were running code that
+predated the feature under test on 2026-09-07, and a live run against a stale
+process proves nothing. `curl http://127.0.0.1:8000/openapi.json` and look for
+the route you are about to exercise.
 
 > **THE ai-service SUITE ONLY PASSES WHEN NO `.env` EXISTS.** A real `AI_SERVICE_API_KEY`
 > makes the endpoint tests receive 401 instead of 200, so ~30 fail. Nothing is wrong with the
@@ -2705,7 +2742,7 @@ obvious first candidates — both are already extracted and already dropped.
 
 ---
 
-## 6v. Descriptions for tests this platform does not assess · 2026-09-07 · **UNFINISHED**
+## 6v. Descriptions for tests this platform does not assess · 2026-09-07 · **FINISHED IN §6w**
 
 `ai-service/app/services/parameter_glossary.py` + 14 tests. **Backend wiring
 done, dashboard rendering NOT done — see "What is left" below.**
@@ -2757,7 +2794,7 @@ then failed twice more, both silently:
 Tests now assert the patterns fire on known-bad AND stay silent on known-good.
 Do not trust a regex here by reading it.
 
-### What is left (start here in a new session)
+### What was left — **ALL THREE DONE 2026-09-07, see §6w.** Kept for the reasoning.
 
 1. **Render it.** `Dashboard.jsx` → the `Unanalysed` component already lists
    lab-flagged results; it needs to read `dashboard.parameterGlossary` and show
@@ -2778,6 +2815,580 @@ the new selector referenced it — an undeclared identifier, so **every analysis
 500'd** and 46 backend tests failed. Fixed by threading `extraction` through.
 The lesson is only that the backend suite catches this class immediately; run it
 after touching `analysisService.js`.
+
+---
+
+## 6w. The glossary finished, then three screens rewritten · 2026-09-07
+
+Two halves. **First**, `parameter_glossary` (§6v) was completed and live-verified
+— that is everything down to "Still open". **Second**, and unplanned: the user
+read the running screens and found defect after defect in them, which produced
+the five subsections from "The closing In short summary" onward. Every one of
+those is a RENDERING defect on a correct pipeline. Read them together; the
+pattern only shows up across all five.
+
+The three steps in §6v are done and the feature has been driven end to end
+against real Gemini. All three suites green: **ai-service 3,697 · backend 634 ·
+frontend 50** (+7, +16, +6).
+
+### THE DEFECT THAT MATTERED: THE FEATURE WAS DEAD ON EVERY CALL
+
+`POST /api/v1/explain/glossary` returned a **bare `GlossaryData`** instead of the
+`{success, data}` envelope every other route in `routes_explain.py` returns. The
+backend's `unwrapEnvelope` requires `success === true` and an object `data`, so
+it rejected a perfectly good HTTP 200 as `AI_SERVICE_MALFORMED_RESPONSE`.
+
+The first live run made this visible in the ugliest possible way:
+
+```
+ai-service log :  parameter_glossary {'requested': 3, 'generated': 3, 'withheld': 0}
+stored analysis:  glossary {"ok": false, "errorCode": "AI_SERVICE_MALFORMED_RESPONSE"}
+```
+
+Three descriptions were generated, safety-validated, cached — and thrown away at
+the transport boundary. **The module's 14 tests never went through HTTP**, and
+`test_every_route_answers_with_the_key` in `tests/test_explain_endpoint.py`
+asserts exactly `response.json()["success"] is True` and would have caught it on
+the first run. **The route was simply never added to that file's `ROUTES` list.**
+
+Fixed with a `GlossaryResponse` wrapper, the route added to `ROUTES`, and five
+dedicated HTTP tests. Verified by mutation: reverting the wrapper fails three
+tests, one of them the shared route walk.
+
+> This is the sixth time on this project that a green suite said nothing. The
+> shape here is new and worth naming: **the unit tests were excellent and tested
+> the wrong layer.** A module can be perfect and unreachable. Anything with a
+> route needs one test that goes through the route.
+
+### The three §6v steps, as built
+
+1. **`dashboardService.buildUnanalysedSection`** takes `parameterGlossary` and
+   merges entries into `unanalysed.items` by `test_name`.
+   `DASHBOARD_PROJECTION` gained `+parameterGlossary`; the controller passes
+   `null` (not absent) when the field is missing.
+
+2. **`Dashboard.jsx`** renders each description under its test, in both the
+   lab-flagged list and the collapsed groups.
+
+3. **Populated live.** Report 06 (below) analysed against real Gemini: glossary
+   stage `ok: true`, 14.4s, 2 described / 1 withheld / 1 never asked.
+
+### THREE STATES, NOT TWO — the design decision the whole feature turns on
+
+Only tests **the laboratory itself flagged** are ever described, so most
+unassessed items were never asked about. That is not the same as an entry whose
+description was withheld. Collapsing them would render "nobody asked" as "there
+is nothing to say about this test" — this codebase's standing failure mode in a
+new costume.
+
+| Situation | Item fields | On screen |
+|---|---|---|
+| Never asked (lab did not flag it) | none | nothing |
+| Described | `descriptionAvailable: true` + `description` | the text |
+| Withheld (model silent, or Module 24 refused) | `descriptionAvailable: false` + `descriptionNotice` | the producer's notice |
+
+Section level carries `descriptionsPresent` — whether the stage ran for this
+report at all, which separates "analysed before this feature existed" from
+"described nothing" — plus `describedCount` / `withheldCount` **derived from the
+items**, never from the payload's own counters. (§6u: `document.unmapped_count`
+said 0 on a report with 63 unmapped parameters and the dashboard repeated it.)
+
+Verified by mutation: collapsing never-asked into withheld fails three backend
+tests; ignoring the producer's `available` flag fails one.
+
+### The safety sentence is ON THE SCREEN, not in a comment
+
+> *"Where a description appears below, it explains what the test measures in
+> general. It was written from the name of the test only — your result was not
+> used and is not interpreted here."*
+
+Shown only when at least one description is present. That sentence is the entire
+argument for why this feature is safe, and it sits under a number the laboratory
+flagged abnormal — without it the paragraph invites exactly the reading the
+architecture forbids.
+
+### A NEW FIXTURE, because none of the five could exercise this
+
+**All five reports that already existed carry only the eight tests the platform assesses,
+and none prints a reference interval.** So `unmapped` was empty, the selector
+asked for nothing, and analysing any of them would have proved precisely
+nothing. Added **`06-lab-flagged-tests-we-do-not-assess.pdf`**:
+
+* 02's assessed panel, **value for value**, so the four extra rows are the only
+  difference between the two fixtures — a verdict that differs means an
+  unassessed parameter influenced an assessed decision.
+* Four rows the platform has no feature for, **with printed intervals and the
+  laboratory's own H/L flags**: LDL 160 (H), HDL 44 (in range), Blood Urea 53
+  (H), Potassium 5.2 (H).
+* Urea and potassium are raised while **creatinine, the one renal marker that IS
+  assessed, is 1.1 and correctly produces no kidney finding.** That is the §6u
+  defect's exact shape: corroborating evidence on the same page as the verdict.
+* HDL is in range on purpose — it must be listed and **not** described. A
+  description appearing for it means the selector widened, and a sixty-parameter
+  report would then exhaust a day's quota.
+
+**Printing an interval on an unassessed row does not violate the generator's
+"no reference intervals" rule — it is the same rule.** An interval on an
+assessed test would let a verdict be copied off the page instead of decided by
+the service's own thresholds. An unassessed test has no threshold and reaches no
+verdict, so the laboratory's marking is the only judgement that will ever exist
+for it, and a fixture omitting it cannot exercise the path that carries it.
+
+The generator now also **fails to generate** if the engine assesses a row the
+fixture carries as unassessed — so if `blood_urea` is ever added to
+`feature_catalog.py`, whoever adds it is told that fixture 06 needs a new
+unassessed row, rather than finding out when the section it exercises silently
+empties.
+
+### The live run, in full
+
+`06-...pdf` → upload → analyze (85.5s, every stage ok) → dashboard:
+
+| Test | Value | Lab | What the screen shows |
+|---|---|---|---|
+| LDL Cholesterol, Direct | 160 mg/dL | high | described |
+| HDL Cholesterol | 44 mg/dL | — | listed, no description, nothing implying one was tried |
+| Blood Urea | 53 mg/dL | high | **withheld** — Module 24 rejected it twice, `UNHEDGED_INTERPRETIVE_CLAIM` |
+| Potassium, Serum | 5.2 mmol/L | high | described |
+
+The Blood Urea withholding is the safety layer working, and worth keeping:
+an **earlier cached generation for that same name said blood urea "primarily
+relates to liver function"**, which is clinically wrong — urea is a renal
+marker. Withholding it was the right outcome, reached for a reason
+(unhedged interpretive claim) that is not the reason it was wrong. Do not read
+this as the validator catching a factual error; it does not check facts.
+
+### Smaller things found on the way
+
+* The withheld line initially printed the platform's own sentence **and** the
+  producer's notice, saying the same thing twice. The notice is already a whole
+  patient-readable sentence; ours is now only the fallback for a withheld entry
+  that arrives with no notice — which must still not render as a blank line.
+* `labFlaggedUnmappedNames` is now exported and has 6 tests. It was untested and
+  both its failure modes are expensive: too wide burns a day's quota, too narrow
+  loses the laboratory's own markings.
+* **Windows curl cannot read an MSYS `/c/...` path.** `-F "file=@/c/..."` sends
+  nothing at all and prints nothing — the request never leaves. Use `C:/...`.
+* Both services had to be restarted before any of this worked: the running
+  ai-service predated the glossary route entirely (`/api/v1/explain/glossary`
+  was not in its OpenAPI), and the backend predated the read path. **A live run
+  against a stale process proves nothing** — check `/openapi.json` for the route
+  before believing a live result.
+
+### The closing "In short" summary · added on the user's request
+
+The page had a verdict at the top (`Needs Medical Attention` / `High`) and six
+per-feature paragraphs at the bottom, and **nothing that said the whole report
+in one breath.** A closing `In short` section now does, as the last thing on the
+page — a recap, not a headline, so it is read after the findings rather than
+instead of them.
+
+**IT IS COMPOSED, NEVER GENERATED, AND THAT IS THE WHOLE DESIGN.** "Summarise
+this report for the patient" is one prompt away and would be the most dangerous
+string on this screen: a new patient-facing conclusion with no rule, no
+threshold, no model and no evidence chain, rendered under fourteen findings that
+have all four and looking more authoritative than any of them. Every sentence is
+assembled from a decision some stage already made.
+
+**The counts come from the CARDS, not the counters.** `overall` carries
+`abnormalConditionCount`, but the page groups cards with its own predicate
+(`Not Indicated` + assessed + not flagged; anything unrecognised stays flagged),
+so counter and cards can disagree. The grouped arrays are passed down. A test
+feeds `abnormalConditionCount: 99` and asserts 99 never reaches the screen.
+
+Three paragraphs exist ONLY to stop an absence becoming a negative result, and
+each is separately mutation-tested (deleting any one fails exactly one test):
+topics that could not be checked, tests the laboratory flagged that this
+platform does not assess, and pages that could not be read.
+
+Two defects found while building it, both by the tests:
+
+* **An unrecognised status label rendered an empty `<strong>`.** `STATUS_IN_ENGLISH[label]`
+  yields `undefined`, and `undefined !== null` is true, so the branch meant to
+  say *"this screen has no plain-English wording for that result"* was skipped
+  and the summary said nothing at all about the verdict. `?? null` is
+  load-bearing. **An unknown label never gets a guessed gloss** — a missing
+  gloss is cosmetic, a wrong one is clinical.
+* **A comma inside a test name split it into two tests.** Laboratories print
+  "LDL Cholesterol, Direct" and "Potassium, Serum", so a comma-joined list of
+  three read as five — directly contradicting the "marked 3 results" in the same
+  sentence. The separator is now chosen from the data: semicolons only when a
+  name actually contains a comma.
+
+Four pre-existing overall-card tests had to be **scoped to the card**. They
+asserted page-wide that e.g. `Healthy` appears nowhere, which was right while
+the verdict appeared once and is wrong now that the summary legitimately
+restates it. The guarantee is unchanged and is about that card. **One assertion
+stayed page-wide on purpose:** a missing risk must not become `Low` *anywhere*,
+summary included.
+
+Frontend suite **60** (was 50); **65** after the fixes below.
+
+### Two defects a READER found on a real screen, in one glance
+
+The user opened a report whose every laboratory value was in range and whose
+only flagged topic was Obesity, and asked two questions. Both were right, and
+neither suite had anything to say about either.
+
+**1. "All are shown as in range — then why does the summary say one is out of
+range?"** Obesity is decided by `RULE_OBESITY_BMI` from `bmi`, and BMI is
+computed from the height and weight the patient typed into the profile form.
+Nothing about it was measured in the document. The summary's headline said
+*"Something in this report is outside its usual range"* — **false, and it
+contradicted the in-range table directly above it.**
+
+The lab table already keeps these apart ("Your results" vs "From your
+profile", §6u) and the summary had flattened that distinction back on its very
+first line. Fixed twice over: the status wording now claims no location at all
+("One of the things this tool checked…"), and the provenance is stated
+outright, derived from each evidence line's `sourceStage`.
+
+**Then the SAME mistake one clause further down.** The new sentence ended
+*"…that is why it can be flagged while every laboratory result on the page is
+in range"* — true on the all-clear report it was written for, false on a mixed
+report that also flagged Diabetes from a raised HbA1c. Caught by reading the
+finished sentence on a real mixed report, not by a test. That clause is now
+conditional on the profile findings being the ONLY findings.
+
+`isProfileDerived` returns **false on empty evidence**, deliberately:
+`[].every(...)` is `true`, so without a length check a finding of unknown
+provenance would be announced as coming from the form. Unknown provenance must
+not become a claim in either direction — and the dangerous direction is telling
+a patient a raised blood value was something they typed in.
+
+**2. "Needs Monitoring with risk Low — aren't those contradicting?"** They are
+not. Module 18's rule (`report_builder.overall_status`) is:
+
+```
+No abnormal findings              -> Healthy
+Abnormal findings + no High risk  -> Needs Monitoring     <-- this pairing
+Abnormal finding  + High risk     -> Needs Medical Attention
+```
+
+So the pairing is the DEFINED output for a mild finding. The status and the
+risk are different scales — one says *whether anything was flagged*, the other
+*how serious the worst flagged thing is*.
+
+**THE FIRST FIX WAS WRONG AND THE USER SAID SO.** A paragraph was added
+explaining that the two answer different questions. The user's reply: *"why
+this for a patient — display only what is useful for the patients."* Correct.
+That paragraph is a lecture about two internal fields; a patient cannot act on
+it, and its existence is an admission that the screen is showing something it
+should not.
+
+**The real fix is not to put the reader in front of the pair at all.** Both
+explanatory paragraphs are gone, and so is the summary's
+`Recorded as <label> · overall risk: <risk>` line, which restated the Overall
+card's vocabulary at the foot of the page. The severity is already carried by
+the English sentence — *"worth keeping an eye on and worth raising at your next
+appointment"* against *"should be looked at by a doctor"* — which is the part a
+patient can act on. The labels stay on the Overall card and the clinician
+summary, which is exactly the split §6u established and which this had drifted
+away from.
+
+> Generalisable: **when a screen needs a paragraph explaining why two of its
+> own fields do not contradict each other, the fields are the bug, not the
+> missing paragraph.**
+
+Mutation-tested. Frontend suite **65** (three tests replaced by one asserting the vocabulary stays OFF the patient summary).
+
+> The lesson is not about either bug. It is that **a screen nobody has read
+> aloud is untested.** 60 passing tests, three mutation rounds and a live
+> browser check had all been done, and a reader found two false statements in
+> the first paragraph in under a minute. Every prior entry in this file records
+> a green suite missing something a person then found. This is the first one
+> where the person was the user.
+
+### The clinician summary, read end to end · Module 32's page rewritten
+
+The user asked for the same pass over "Summary for a healthcare professional".
+Reading the rendered page against the payload it serves, **the page was showing
+a fraction of what it had and burying that fraction in repetition.** Every
+finding below is a rendering decision; the pipeline produced all of it
+correctly.
+
+**1. THE MEASURED VALUES WERE NOT ON THE PAGE.** `laboratory.rows` carried all
+eleven — HbA1c 8.4%, glucose 186 mg/dL, cholesterol 268 — and **none was
+rendered.** A clinician was told `RULE_DIABETES_HBA1C` fired and never told
+what the HbA1c was. For a document whose own stated purpose is to be read
+*alongside the original laboratory report*, that is the one omission it cannot
+afford. This was the single worst thing on the page and no test covered it.
+
+**2. TEN RETRIEVED REFERENCE PASSAGES WERE DISCARDED BY A SHAPE BUG.**
+`trends` and `comparison` carry `present` at the top level; `knowledge` and
+`evidence` carry it under `.status`. `<Section status={summary.knowledge}>`
+read `undefined` and printed **"This section is not available"** over a fully
+populated section — an absence asserted to the reader that was not an absence,
+which is this project's signature failure wearing a new hat. Fixed with a
+`statusOf()` accessor that handles both shapes.
+
+**3. A PROBABILITY AT SIXTEEN DECIMAL PLACES** — `probability
+0.9509128032443647` from a model with ROC-AUC 0.697. §6u fixed exactly this on
+the patient dashboard ("a bare 0.0089 reads as precision this model does not
+have") and the clinician page kept it. Now `95%`, with the exact value in the
+element's `title` so nothing is lost.
+
+**4. THE SIGNAL WAS BURIED IN BOILERPLATE.** "This source compared measured
+laboratory values against fixed thresholds" appeared **ten times**, the
+statistical-model sentence three, and seven unflagged topics each got a card
+identical to the six flagged ones. Six findings that mattered sat inside
+thirteen indistinguishable blocks. The per-source sentence is a property of the
+SOURCE, not of the topic, so it is now stated **once** in a legend; flagged
+topics come first; assessed-and-clear collapses to one named line.
+
+**5. NEVER RENDERED AT ALL:** `patient` (age/sex/BMI + what was *not*
+supplied), `data_quality` (pages, confidence, valid/rejected counts, warnings),
+`integrity` (`llm_calls_made: 0` — a claim a clinician is entitled to check),
+and `attribution`.
+
+**6. A WITHHELD TRANSCRIPTION WAS INVISIBLE.** `integrity.transcriptions_withheld: 1`
+at `laboratory_values[4].original_test_name` — the Module 24 scanner refused to
+reproduce the printed name of *Vitamin B12* because it matched `medication_name`.
+A clinician would have seen one row with no printed name, every other row with
+one, and no way to know why. Now stated on the row and in the integrity block.
+
+#### Two faults introduced during the rewrite and caught by reading the result
+
+* **The boilerplate came back one component lower.** Rendering both laboratory
+  columns unconditionally produced **eleven copies** of "The source report
+  printed no reference interval for this parameter" — the exact fault being
+  removed, reintroduced inside `LabRows`. The dashboard had already solved this
+  (§6u: drop a column nothing can fill). Now the columns drop and **the fact is
+  stated once beneath the table** — dropping the column must not drop the fact,
+  or eleven unqualified numbers read as in range.
+* **`printed as "bmi"`, under a caption saying the row was NOT measured in this
+  report.** The ai-service stamps `origin: report_transcription` on
+  profile-derived rows with the feature key as the text, so the page claimed a
+  transcription of something nobody printed. Gated on the same flag the
+  laboratory columns use. **This is an ai-service defect, unfixed at source.**
+  Alongside it, the catalog's `display_name` for `gender` —
+  *"Self-described gender as stored by Module 2."* — was rendering as a table
+  row label; §6u caught that identical string leaking onto the dashboard and it
+  was still leaking here.
+
+#### One earlier decision reversed
+
+The scope statement (`purpose.is_not`) was moved to the foot of the page as
+"eight sentences of negation between the reader and the findings". **Wrong
+move:** its first line reads *"No line **below** asserts that any condition is
+present"*, and at the bottom of the page "below" points at nothing. These are
+the service's own sentences and this file does not get to reword them, so they
+go back where they are true. The real complaint was DUPLICATION — a
+near-identical copy at the foot — and that copy is what went. Set as a list
+rather than a run-on paragraph, which is what made five statements read as a
+wall.
+
+`reason_code` chips (`SINGLE_REPORT_ONLY`) were left alone: shown deliberately
+by `Absent.jsx`, asserted by tests on three separate pages, and changing that
+is a wider decision than this page.
+
+Frontend suite **76**. Four of the fixes mutation-tested (dropping the lab
+table fails 2, restoring the shape bug 1, restoring the raw probability 1,
+repeating the methodology 1).
+
+> The pattern across all three of this session's screens is one thing: **the
+> pipeline's output was fine and the rendering layer was where the lying
+> happened** — by omission (values, passages, withheld transcriptions), by
+> false precision (sixteen digits), by false provenance (`printed as "bmi"`),
+> and by burying six real findings in thirteen identical blocks. None of it was
+> visible from a green suite. All of it was visible from reading the page.
+
+### "This website is used by normal users" — and the CRITICAL defect that found
+
+The user's objection to the clinician page: *"why clinical rule engine and random
+forest, why all these? this website is used by normal users who don't know
+anything about clinical rule engine."*
+
+They are right, and §6u had already ruled on the same words. "Based on: Clinical
+Rule Engine, Random Forest" was removed from the patient dashboard because they
+are **internal component names, useless to the person whose blood it is** — and
+they were moved HERE. **Here turns out to be read by the same person.** The
+document is addressed to a clinician and generated *for the patient to hand
+over*, so the patient reads it first, every time.
+
+What was on a page a patient opens:
+
+```
+Clinical Rule Engine · Random Forest · RULE_OBESITY_BMI · conditions.OBESITY
+app/services/doctor_summary.py · feature_catalog.py · clinical_rules.py
+laboratory_values[4].original_test_name · Module 24 safety scanner
+term-frequency matching · ROC-AUC 0.697 · precision at the operating threshold
+```
+
+**Source-file paths and array indices have no defence at either register.** No
+reader of a medical document is served by a Python module path.
+
+#### THE CRITICAL FIND: every model was rendered with NO limits at all
+
+Chasing the jargon exposed something far worse. **`limitations` lives at
+`basis.ml.limitations`. The page read `basis.limitations`, which is `null` on
+every real response.** So `ModelLimits` returned null and **every model
+probability on this page was shown with no ROC-AUC, no recall, no caveat and no
+author note.**
+
+Including this, from the heart model's own `author_note`, sitting unrendered:
+
+> *"Precision at the Indicated cut-off is about 0.37, so most patients it flags
+> will NOT have heart disease — a high score is a reason to discuss testing with
+> a clinician, never a finding."*
+
+This file's own docstring records this defect being found and fixed **twice**
+(§6o D8, §6p). This is the **third** occurrence, at the render layer.
+
+**The fixtures are why it survived.** `tests/clinical.test.jsx` put
+`limitations` at the basis level — where the page looked — so the test asserting
+"shows a model probability WITH its detection rate, never alone" passed while
+the live page showed the probability alone. **A fixture written against the
+consumer's assumption instead of the producer's output cannot catch the
+consumer's assumption being wrong.** That is a new entry in this project's
+catalogue of green-suite failures, and the most useful one yet.
+
+Now rendered, all of it previously in the payload and unused: the real
+`limitations`, `author_note`, `band_meaning` (*"96.9% of patients in this band
+were positive"* — what the percentage actually means), and `features_missing`
+(*"this model had no value for hypertension, and reached the figure above
+without it"*).
+
+#### The two registers, split by AUDIENCE rather than by page
+
+* **Always visible** — what the check was, in words (`Compared against standard
+  limits`, `Counted risk factors`, `Statistical pattern model`, mapped from the
+  stable `assessment_basis`/`source_kind`, never from the display name); the
+  estimate as a percentage; and **every caveat and author note**, because a
+  model's limits are the thing a reader can be harmed by not seeing. The
+  docstring's rule that caveats are never behind a toggle is unchanged.
+* **Behind "Technical details"** — ROC-AUC, precision, accuracy, baseline, rule
+  identifiers, the incomplete-metrics code, the knowledge passages' provenance
+  line, and the retrieval method. Nothing deleted, still in the DOM, still
+  printable.
+
+`source_report_violation_locations` is rendered **nowhere**: an array path
+locates a field for someone reading a bug report and has no audience on this
+page. The count and the consequence are stated in words.
+
+Reference passages are now grouped **by document**, because two chunks of one
+article rendered as two entries put the identical heading on screen twice and
+read as a duplication bug.
+
+`readableFeature` deliberately does NOT consult `PROFILE_LABEL`: that table is
+for table-row headings, where "Smoking history (reported)" is right, and it is
+wrong mid-sentence — *"this model had no value for Smoking history (reported)"*
+is not English. Two uses that look interchangeable and are not.
+
+**One "ROC-AUC" remains visible**, inside the kidney model author's own caveat
+("a ROC-AUC near 0.99 says the separation was easy, not that this would hold on
+a screening population"). Rewriting an author's safety note to remove a term is
+not a licence this file has.
+
+Frontend suite **77**. Three mutations checked: the wrong `limitations` path,
+caveats behind the toggle, and the author note hidden — each fails a test.
+
+### The clinician page becomes ONE PASSAGE · the user's call, and it was right
+
+*"just a summary for that professional in a simple paragraph based on the
+results... it should be professional... don't mention anything unnecessary like
+this is for this, this is generated by llm."*
+
+The structured document is gone: purpose statement, scope bullets, a card per
+condition, the source legend, "how this document was produced", the ten
+retrieved reference passages, the data-quality block, rule identifiers, the
+metrics table, every source-file path. **Most of that was the page talking about
+ITSELF rather than about the report.** A clinician handed a patient's phone for
+thirty seconds does not read a document that explains its own architecture
+first.
+
+What replaced it is a handover note — subject, values, what was flagged and by
+what, what was not available, one closing line. Professional register: a
+clinician reads `HbA1c 8.4 %` and does not need it translated.
+
+**COMPOSED, NOT GENERATED.** "Summarise these results for a doctor" is one
+prompt away and would be the worst possible use of one — a clinical narrative
+with no rule, no threshold and no evidence chain, in a register that invites
+action. The service also publishes `integrity.llm_calls_made: 0` and
+`model_generated_text_included: false` ABOUT THIS DOCUMENT; generating the prose
+would make both claims false.
+
+#### Four things kept, because cutting them would make the passage lie
+
+1. **WHICH KIND OF CHECK FLAGGED WHAT.** On the live report: creatinine
+   1.1 mg/dL does not cross the kidney rule and the model flagged it anyway.
+   The passage says *"Kidney Disease was flagged by the statistical model only —
+   no measured value crossed a configured threshold for it."* A clinician told
+   "kidney disease flagged" without that is being told something the analysis
+   did not find. Three groups: flagged by both, by threshold only, by model only.
+2. **ONE SENTENCE OF MODEL LIMITATION**, in the model author's own words,
+   wherever a model contributed to a flag.
+3. **EVERY ABSENCE** — fields not supplied, parameters the report lacked, pages
+   unreadable, stages that failed. The rule the codebase is built on, and the
+   one a compressed summary is most likely to drop.
+4. **ONE closing line**, not the ten-sentence scope statement.
+
+#### Three faults found by reading the finished passage
+
+* **A lowercase list opened a sentence** — *". hypertension, heart disease..."*.
+* **The same three fields were named twice** — once as "not supplied" and again
+  as "not present in this report". For hypertension, heart disease and smoking
+  history those lists hold identical names, so the reader saw it, read a
+  paragraph, saw it again. They are different facts, and a field the patient
+  never supplied cannot also be a parameter the report failed to carry, so the
+  second list now excludes anything already named in the first.
+* **A model's caveat appeared under a finding that model DISAGREED with.** The
+  notes were collected from every basis of every flagged topic, so the heart
+  model's four-sentence note printed beside a Heart Disease flag the heart
+  model had returned `Not Indicated` for. A note qualifies an OUTPUT; a model
+  that flagged nothing produced no output this passage reports.
+
+Four properties mutation-tested: collapsing the model-only distinction, dropping
+the no-intervals sentence, dropping the absences paragraph, and letting a
+rejected reading into the values — each fails a test. Frontend suite **71**
+(17 Module 32 tests replaced by 11 written against the passage).
+
+> **The pattern, stated once:** three screens, three rewrites, and every defect
+> was the rendering layer — lying by omission, by false precision, by false
+> provenance, by burial, and finally by talking about itself instead of the
+> patient. The pipeline was correct throughout. **A green suite saw none of it;
+> a person reading the page found all of it.**
+
+### Still open
+
+* **The ai-service stamps `origin: report_transcription` on profile-derived
+  laboratory rows**, with the canonical feature key as the "transcribed" text
+  (`bmi`, `age`, `gender`). Nothing was printed on any report for those. The
+  clinician page now guards against it; the field is still wrong at source.
+* **`feature_catalog`'s `display_name` for `gender` is an internal note** —
+  "Self-described gender as stored by Module 2." — and it reaches any renderer
+  that trusts `display_name`. Two screens now override it locally. It should be
+  fixed in the catalog.
+* **Module 32's payload nests `present` two different ways.** `trends` and
+  `comparison` carry it at the top level; `knowledge` and `evidence` carry it
+  under `.status`. A renderer that assumes one shape silently reports the other
+  as absent, which is exactly what happened to ten reference passages. The
+  frontend now normalises with `statusOf()`; the contract is still inconsistent
+  at source and the next consumer will hit it.
+* **THE FRONTEND FIXTURES ARE NOT VALIDATED AGAINST REAL RESPONSES**, and that
+  is now a demonstrated hazard rather than a theoretical one:
+  `tests/clinical.test.jsx` put `limitations` at `basis.limitations` — where the
+  page wrongly looked — so a test literally named *"shows a model probability
+  WITH its detection rate, never alone"* passed green while the live page showed
+  the probability alone, for three recurrences. **A fixture written against the
+  consumer's assumption instead of the producer's output cannot catch the
+  consumer's assumption being wrong.** Worth generating fixtures from a captured
+  real response, or at minimum diffing the two.
+* **The clinician page no longer renders the retrieved reference passages,
+  `data_quality`, `integrity` or the scope list.** That is a deliberate product
+  decision (§6w, final subsection), not an oversight — the page is a handover
+  passage now. The data is still in the payload; do not re-add it as a "fix"
+  without asking.
+
+* **`app/api/routes_explain.py` was the only place this envelope was missing,
+  but nothing enforces it.** `ROUTES` is a hand-maintained list, so the next
+  route added there can repeat this exactly. A test that walks the router's own
+  routes and asserts every one returns `{success, data}` would close the class;
+  it is not written.
+* The Python module's own 14 tests still do not touch HTTP. That is fine now
+  that the endpoint has its own, but the split is worth keeping in mind.
+* `document.unmapped_count` in `report_builder` **still writes 0** (§6u). The
+  dashboard derives around it. Unfixed at source.
 
 ---
 
