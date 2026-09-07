@@ -1985,6 +1985,11 @@ module.exports = {
   summariseGuidance,
   explanationWarnings,
   guidanceInputs,
+  // Exported to be tested directly: it decides which test names are sent to
+  // the glossary stage, and both of its failure modes are expensive -- too
+  // wide burns a free-tier day's quota, too narrow silently drops the
+  // laboratory's own abnormal markings from the description it deserves.
+  labFlaggedUnmappedNames,
   runDownstreamStages,
   buildProfilePayload,
   loadOwnProfile,

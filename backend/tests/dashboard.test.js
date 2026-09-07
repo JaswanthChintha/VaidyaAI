@@ -927,6 +927,199 @@ describe('Module 27 - GET /reports/:id/dashboard', () => {
     });
   });
 
+  // ====================================== descriptions of skipped tests ======
+  //
+  // The glossary describes tests this platform does NOT assess, generated from
+  // the test NAME alone. The property that makes it safe is negative -- no
+  // patient data goes into the prompt -- and cannot be asserted from here; it
+  // lives in the ai-service's own suite. What CAN be asserted here, and is, is
+  // that the read model keeps three cases apart:
+  //
+  //   never asked   -> no description fields at all
+  //   described     -> descriptionAvailable: true  + description
+  //   withheld      -> descriptionAvailable: false + descriptionNotice
+  //
+  // Only tests the laboratory flagged are ever asked about, so "never asked"
+  // is the common case. Folding it into "withheld" would tell a reader there
+  // is nothing to say about a test nobody enquired about -- this codebase's
+  // standing failure mode, one field away.
+  describe('parameter glossary merged into the unassessed section', () => {
+    const features = {
+      unmapped: [
+        { test_name: 'Potassium', value_raw: '5.2', unit: 'mmol/L', reason: 'no_feature' },
+        { test_name: 'LDL Cholesterol', value_raw: '160', unit: 'mg/dL', reason: 'no_feature' },
+        { test_name: 'Urine Colour', value_raw: 'Pale Yellow', reason: 'no_feature' },
+      ],
+    };
+    const extraction = {
+      extracted_parameters: [
+        { test_name: 'Potassium', flag: 'high', reference_low: 3.5, reference_high: 5.1 },
+        { test_name: 'LDL Cholesterol', flag: 'high', reference_high: 100 },
+        { test_name: 'Urine Colour', flag: null },
+      ],
+    };
+    const glossary = {
+      version: '1.0.0',
+      entries: [
+        {
+          test_name: 'Potassium',
+          description: 'A mineral your body uses for nerve and muscle function.',
+          available: true,
+          notice: null,
+        },
+        {
+          test_name: 'LDL Cholesterol',
+          description: null,
+          available: false,
+          notice: 'The description did not pass safety review.',
+        },
+      ],
+    };
+
+    const unanalysedFrom = (parameterGlossary) =>
+      dashboardService.buildDashboard({
+        clinicalReport: clinicalReport(),
+        engineeredFeatures: features,
+        extraction,
+        parameterGlossary,
+      }).unanalysed;
+
+    const byName = (unanalysed, name) =>
+      unanalysed.items.find((item) => item.testName === name);
+
+    it('attaches a description to the test it belongs to, and to no other', () => {
+      const unanalysed = unanalysedFrom(glossary);
+      const potassium = byName(unanalysed, 'Potassium');
+      expect(potassium.descriptionAvailable).toBe(true);
+      expect(potassium.description).toBe(
+        'A mineral your body uses for nerve and muscle function.'
+      );
+      // The laboratory's own facts are untouched by the merge.
+      expect(potassium.labFlaggedAbnormal).toBe(true);
+      expect(potassium.labReferenceHigh).toBe(5.1);
+    });
+
+    it('reports a WITHHELD description as withheld, never as an absent one', () => {
+      const ldl = byName(unanalysedFrom(glossary), 'LDL Cholesterol');
+      expect(ldl.descriptionAvailable).toBe(false);
+      expect(ldl.descriptionNotice).toBe('The description did not pass safety review.');
+      expect(ldl).not.toHaveProperty('description');
+    });
+
+    it('leaves a test nobody asked about with NO description fields at all', () => {
+      const urine = byName(unanalysedFrom(glossary), 'Urine Colour');
+      expect(urine).not.toHaveProperty('descriptionAvailable');
+      expect(urine).not.toHaveProperty('description');
+      expect(urine).not.toHaveProperty('descriptionNotice');
+    });
+
+    it('distinguishes "the stage never ran" from "it described nothing"', () => {
+      expect(unanalysedFrom(null).descriptionsPresent).toBe(false);
+      expect(unanalysedFrom({ version: '1.0.0', entries: [] }).descriptionsPresent).toBe(true);
+      // And a report with nothing unmapped still answers the question.
+      const empty = dashboardService.buildDashboard({
+        clinicalReport: clinicalReport(),
+        engineeredFeatures: { unmapped: [] },
+        extraction,
+        parameterGlossary: glossary,
+      }).unanalysed;
+      expect(empty.descriptionsPresent).toBe(true);
+      expect(empty.describedCount).toBe(0);
+    });
+
+    it('counts what is on screen, not what the payload claims', () => {
+      // A producer's own counters would say ninety-nine of each. These counts
+      // come from the items, so an entry naming a test that is not on this
+      // report cannot inflate them.
+      const inflated = {
+        ...glossary,
+        generated_count: 99,
+        withheld_count: 99,
+        entries: [
+          ...glossary.entries,
+          { test_name: 'Not On This Report', description: 'x', available: true },
+        ],
+      };
+      const unanalysed = unanalysedFrom(inflated);
+      expect(unanalysed.describedCount).toBe(1);
+      expect(unanalysed.withheldCount).toBe(1);
+      expect(unanalysed.count).toBe(3);
+      expect(unanalysed.items.map((item) => item.testName)).not.toContain('Not On This Report');
+    });
+
+    it('treats a non-string or blank description as no description', () => {
+      for (const description of [42, '', '   ', null, { text: 'nope' }]) {
+        const item = byName(
+          unanalysedFrom({ entries: [{ test_name: 'Potassium', description, available: true }] }),
+          'Potassium'
+        );
+        expect(item.descriptionAvailable).toBe(false);
+        expect(item).not.toHaveProperty('description');
+      }
+    });
+
+    it('withholds when `available` is not true, whatever text came with it', () => {
+      // The producer's flag decides, not the truthiness of the string. An
+      // entry carrying text it did not clear for release must not be shown.
+      const item = byName(
+        unanalysedFrom({
+          entries: [
+            {
+              test_name: 'Potassium',
+              description: 'Text that was not approved.',
+              available: false,
+            },
+          ],
+        }),
+        'Potassium'
+      );
+      expect(item.descriptionAvailable).toBe(false);
+      expect(item).not.toHaveProperty('description');
+    });
+
+    it('survives a malformed glossary without losing the section', () => {
+      for (const bad of [
+        { entries: 'nope' },
+        { entries: [null, 7, { test_name: '' }] },
+        'nope',
+        [],
+      ]) {
+        const unanalysed = unanalysedFrom(bad);
+        expect(unanalysed.count).toBe(3);
+        expect(unanalysed.describedCount).toBe(0);
+      }
+    });
+
+    it('reaches the HTTP response, which is what the projection is for', async () => {
+      const alice = await makeUser('alice.glossary@example.com');
+      const id = await seedAnalysed(alice.id, {
+        features,
+        extraction,
+        parameterGlossary: glossary,
+      });
+
+      const res = await getDashboard(alice.token, id);
+      expect(res.status).toBe(200);
+      const unanalysed = res.body.data.dashboard.unanalysed;
+      expect(unanalysed.descriptionsPresent).toBe(true);
+      expect(unanalysed.items.find((item) => item.testName === 'Potassium').description).toMatch(
+        /nerve and muscle/
+      );
+    });
+
+    it('a report analysed before the stage existed says so, and still renders', async () => {
+      const alice = await makeUser('alice.noglossary@example.com');
+      const id = await seedAnalysed(alice.id, { features, extraction });
+
+      const res = await getDashboard(alice.token, id);
+      expect(res.status).toBe(200);
+      const unanalysed = res.body.data.dashboard.unanalysed;
+      expect(unanalysed.descriptionsPresent).toBe(false);
+      expect(unanalysed.count).toBe(3);
+      expect(unanalysed.items.every((item) => !('descriptionAvailable' in item))).toBe(true);
+    });
+  });
+
   // ================================================= projection discipline ===
   describe('the route reads only what it needs', () => {
     it('does not read the extraction, the features or either decision payload', async () => {

@@ -804,9 +804,21 @@ function buildDocumentQuality(clinicalReport) {
  * "we did not look" rendered as "we looked and found nothing" -- so the
  * skipped values are carried through with the reason each was skipped.
  */
-function buildUnanalysedSection(engineeredFeatures, extraction) {
+function buildUnanalysedSection(engineeredFeatures, extraction, parameterGlossary) {
+  const glossary = parameterGlossary === null || parameterGlossary === undefined
+    ? null
+    : objectOf(parameterGlossary);
   const unmapped = listOf(objectOf(engineeredFeatures).unmapped);
-  if (!unmapped.length) return { count: 0, labFlaggedCount: 0, items: [] };
+  if (!unmapped.length) {
+    return {
+      count: 0,
+      labFlaggedCount: 0,
+      descriptionsPresent: glossary !== null,
+      describedCount: 0,
+      withheldCount: 0,
+      items: [],
+    };
+  }
 
   // THE LABORATORY ALREADY DID THE ONE THING THAT NEEDS NO CLINICAL KNOWLEDGE.
   //
@@ -829,11 +841,50 @@ function buildUnanalysedSection(engineeredFeatures, extraction) {
     if (stringOrNull(row.test_name)) printed.set(row.test_name, row);
   }
 
+  // WHAT THE TEST MEASURES -- AND NOTHING ABOUT THIS PATIENT.
+  //
+  // Module 27b (`ai-service/app/services/parameter_glossary.py`) asks the model
+  // one question per test NAME: what does this test measure. The prompt carries
+  // no value, no unit, no reference range, no laboratory flag and no profile
+  // field, so the answer cannot be about the person whose report this is. It is
+  // merged in HERE, next to the value the extraction printed, precisely because
+  // the two come from different places: the fact is the laboratory's and the
+  // description is a definition of the test in general.
+  //
+  // THREE STATES, NOT TWO, and the third is the one that matters. Only tests
+  // the laboratory itself marked abnormal are ever described (a sixty-parameter
+  // report would otherwise spend a free-tier day on "Urine Colour"), so MOST
+  // items here have no entry at all and were never asked about. That is not the
+  // same as an entry whose description was withheld because the model did not
+  // answer or the safety validator refused it. Collapsing the two would let
+  // "we did not ask" render as "there is nothing to say about this", which is
+  // this file's standing failure mode in a new costume.
+  const described = new Map();
+  for (const entry of listOf(glossary && glossary.entries)) {
+    const row = objectOf(entry);
+    const name = stringOrNull(row.test_name);
+    if (name !== null && !described.has(name)) described.set(name, row);
+  }
+
   const items = unmapped.map((entry) => {
     const item = objectOf(entry);
     const source = objectOf(printed.get(item.test_name));
     const flag = stringOrNull(source.flag);
+    // `undefined` when this test was never asked about, so the two absent
+    // cases stay distinguishable all the way to the renderer.
+    const glossaryEntry = described.get(item.test_name);
+    const descriptionFields = {};
+    if (glossaryEntry !== undefined) {
+      // `available` is the producer's own flag and is what decides this, NOT
+      // the truthiness of the text. A withheld entry still carries its notice.
+      const description = stringOrNull(glossaryEntry.description);
+      const available = glossaryEntry.available === true && description !== null;
+      descriptionFields.descriptionAvailable = available;
+      if (available) descriptionFields.description = description;
+      else descriptionFields.descriptionNotice = stringOrNull(glossaryEntry.notice);
+    }
     return {
+      ...descriptionFields,
       testName: stringOrNull(item.test_name),
       value: asIs(item.value_raw),
       unit: stringOrNull(item.unit),
@@ -852,6 +903,17 @@ function buildUnanalysedSection(engineeredFeatures, extraction) {
   return {
     count: items.length,
     labFlaggedCount: items.filter((item) => item.labFlaggedAbnormal).length,
+    // Whether the glossary stage ran for this report at all. A report analysed
+    // before the stage existed has no glossary, which is not the same as a
+    // glossary that described nothing -- and only this flag can tell a reader
+    // which of the two they are looking at.
+    descriptionsPresent: glossary !== null,
+    // DERIVED FROM THE ITEMS ON SCREEN, not from the payload's own counters.
+    // `document.unmapped_count` said 0 on a report with 63 unmapped parameters
+    // and the dashboard repeated it; a count that does not come from the list
+    // it claims to count is a statement waiting to be wrong.
+    describedCount: items.filter((item) => item.descriptionAvailable === true).length,
+    withheldCount: items.filter((item) => item.descriptionAvailable === false).length,
     items,
   };
 }
@@ -923,6 +985,8 @@ function indexEvidenceLines(clinicalReport) {
  * @param {object} params.clinicalReport  Modules 17-20, as stored.
  * @param {object|null} params.explanationSet  Module 23, as stored, or null.
  * @param {object|null} params.guidance  Module 26, as stored, or null.
+ * @param {object|null} params.parameterGlossary  Descriptions of tests this
+ *   platform does not assess, as stored, or null when the stage never ran.
  */
 function buildDashboard({
   clinicalReport,
@@ -930,6 +994,7 @@ function buildDashboard({
   guidance = null,
   engineeredFeatures = null,
   extraction = null,
+  parameterGlossary = null,
 }) {
   if (!analysisService.isUsableClinicalReport(clinicalReport)) {
     throw new TypeError('buildDashboard requires a stored clinical report');
@@ -944,7 +1009,7 @@ function buildDashboard({
 
     overall: buildOverallCard(clinicalReport),
     // What the report contained that this tool does not assess.
-    unanalysed: buildUnanalysedSection(engineeredFeatures, extraction),
+    unanalysed: buildUnanalysedSection(engineeredFeatures, extraction, parameterGlossary),
     conditions: buildConditionCards(clinicalReport),
     laboratory: buildLaboratoryCards(clinicalReport, evidenceLinesByFeature),
     evidence: buildEvidenceSection(clinicalReport),

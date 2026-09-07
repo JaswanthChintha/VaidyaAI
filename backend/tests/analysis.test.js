@@ -777,6 +777,92 @@ const getExplanation = (token, id) =>
 
 // --- suite ------------------------------------------------------------------
 
+describe('labFlaggedUnmappedNames - which skipped tests get described', () => {
+  // THIS SELECTOR SPENDS MONEY AND CAN LOSE EVIDENCE. Too wide and one report
+  // exhausts a twenty-call-a-day quota on "Urine Colour: Pale Yellow"; too
+  // narrow and a result the laboratory itself marked abnormal is listed with
+  // no indication of what the test even measures. Both directions are asserted.
+  const { labFlaggedUnmappedNames } = analysisService;
+
+  const features = (names) => ({ unmapped: names.map((test_name) => ({ test_name })) });
+  const extraction = (rows) => ({ extracted_parameters: rows });
+
+  it('asks about a test the laboratory flagged and this platform skipped', () => {
+    expect(
+      labFlaggedUnmappedNames(
+        features(['Potassium']),
+        extraction([{ test_name: 'Potassium', flag: 'high' }])
+      )
+    ).toEqual(['Potassium']);
+  });
+
+  it('does NOT ask about an unflagged test, whatever else it carries', () => {
+    // The quota case. `flag: null` and a missing flag are both "the laboratory
+    // said nothing", and neither is an abnormal marking.
+    expect(
+      labFlaggedUnmappedNames(
+        features(['Urine Colour', 'Urine Clarity']),
+        extraction([
+          { test_name: 'Urine Colour', flag: null, value_raw: 'Pale Yellow' },
+          { test_name: 'Urine Clarity', reference_low: 1, reference_high: 2 },
+        ])
+      )
+    ).toEqual([]);
+  });
+
+  it('does not ask about a test this platform DID assess', () => {
+    // Not in `unmapped`, so it has a card of its own and a real explanation.
+    expect(
+      labFlaggedUnmappedNames(
+        features(['Potassium']),
+        extraction([
+          { test_name: 'HbA1c', flag: 'high' },
+          { test_name: 'Potassium', flag: 'high' },
+        ])
+      )
+    ).toEqual(['Potassium']);
+  });
+
+  it('treats every non-normal marking as abnormal, in any casing', () => {
+    expect(
+      labFlaggedUnmappedNames(
+        features(['A', 'B', 'C', 'D']),
+        extraction([
+          { test_name: 'A', flag: 'HIGH' },
+          { test_name: 'B', flag: 'Low' },
+          { test_name: 'C', flag: 'critical' },
+          { test_name: 'D', flag: 'Normal' },
+        ])
+      )
+    ).toEqual(['A', 'B', 'C']);
+  });
+
+  it('never repeats a name, even when the report prints it twice', () => {
+    expect(
+      labFlaggedUnmappedNames(
+        features(['Potassium']),
+        extraction([
+          { test_name: 'Potassium', flag: 'high', page_number: 1 },
+          { test_name: 'Potassium', flag: 'high', page_number: 3 },
+        ])
+      )
+    ).toEqual(['Potassium']);
+  });
+
+  it('returns an empty list rather than throwing on missing or malformed input', () => {
+    for (const [f, e] of [
+      [null, null],
+      [undefined, undefined],
+      [{}, {}],
+      [{ unmapped: 'nope' }, { extracted_parameters: 'nope' }],
+      [features(['A']), null],
+      [{ unmapped: [null, 7, {}] }, extraction([null, 7, {}])],
+    ]) {
+      expect(labFlaggedUnmappedNames(f, e)).toEqual([]);
+    }
+  });
+});
+
 describe('Modules 4+5 - analysis orchestration', () => {
   const originalRetries = config.aiService.retries;
   let consoleWarn;

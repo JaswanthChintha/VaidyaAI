@@ -56,8 +56,13 @@ const ownFilter = (req, base = {}) => ownerScopedFilter(req.user, { ...OWNER_ONL
 // `extraction` carries each parameter's PRINTED reference interval and the
 // laboratory's own high/low marking -- including for parameters this
 // platform does not assess. Without it those markings are lost.
+// `parameterGlossary` carries one plain-language description per test the
+// LABORATORY flagged and this platform does not assess. It is generated from
+// the test NAME alone -- no value, range or flag is ever sent -- so it says
+// what the test measures and nothing about this patient. Without it the
+// unassessed section lists names a reader has no way to interpret.
 const DASHBOARD_PROJECTION =
-  '+clinicalReport +patientExplanation +lifestyleGuidance +features +extraction';
+  '+clinicalReport +patientExplanation +lifestyleGuidance +features +extraction +parameterGlossary';
 
 /**
  * GET /reports/:id/dashboard
@@ -106,6 +111,11 @@ const getDashboard = asyncHandler(async (req, res) => {
     guidance: report.lifestyleGuidance === undefined ? null : report.lifestyleGuidance,
     engineeredFeatures: report.features === undefined ? null : report.features,
     extraction: report.extraction === undefined ? null : report.extraction,
+    // `null`, not absent, for the same reason as the two above: a report
+    // analysed before this stage existed has no glossary, and that is a
+    // different fact from a glossary that described nothing.
+    parameterGlossary:
+      report.parameterGlossary === undefined ? null : report.parameterGlossary,
   });
 
   return sendSuccess(res, 200, {
