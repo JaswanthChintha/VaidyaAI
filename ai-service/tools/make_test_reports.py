@@ -32,7 +32,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import pymupdf
 
@@ -61,6 +61,22 @@ SYNTHETIC_BANNER = (
 #: lab's wording to a feature is Module 4's job and these fixtures exercise it.
 Row = Tuple[str, str, str]
 
+#: One row for a test this platform does NOT assess:
+#: (printed name, value, unit, printed reference interval, printed flag).
+#:
+#: THESE ROWS DO PRINT AN INTERVAL AND A FLAG, and that is not a contradiction
+#: of the rule above -- it is the same rule. An interval on an ASSESSED test
+#: would let the verdict be copied off the page instead of decided by the
+#: service's own thresholds. An interval on an UNASSESSED test cannot do that,
+#: because the service has no threshold for it and reaches no verdict at all.
+#: The laboratory's own marking is the ONLY judgement that will ever exist for
+#: these rows, so a fixture that omits it cannot exercise the path that carries
+#: it -- and MEMORY.md section 6u records that path being silently dropped on a
+#: real report, burying nine results the laboratory itself had flagged.
+#:
+#: The flag is "H", "L" or "" exactly as a laboratory prints it.
+UnassessedRow = Tuple[str, str, str, str, str]
+
 
 class Report:
     def __init__(
@@ -74,6 +90,8 @@ class Report:
         features: Dict[str, Tuple[float, str]],
         expect: Dict[str, str],
         note: str,
+        unassessed: Optional[List[UnassessedRow]] = None,
+        expect_described: Optional[List[str]] = None,
     ) -> None:
         self.slug = slug
         self.title = title
@@ -87,6 +105,15 @@ class Report:
         #: condition -> expected DecisionStatus value, written by hand.
         self.expect = expect
         self.note = note
+        #: Rows the pipeline will read, list, and NOT assess. They exist so the
+        #: unassessed section of the dashboard has something real in it.
+        self.unassessed = list(unassessed or [])
+        #: The printed names that MUST come back with a description. Only
+        #: laboratory-flagged rows are ever asked about -- describing every
+        #: unassessed test is what exhausts a free-tier day's quota -- so this
+        #: is the flagged subset, written by hand for the same reason `expect`
+        #: is: a list derived from the selector cannot catch the selector.
+        self.expect_described = list(expect_described or [])
 
 
 REPORTS: List[Report] = [
@@ -291,6 +318,81 @@ REPORTS: List[Report] = [
         note="Same values as 02 in SI units. Verdicts MUST be identical to 02; "
         "any difference is a unit-conversion defect.",
     ),
+    Report(
+        slug="06-lab-flagged-tests-we-do-not-assess",
+        title="Lipid and Renal Panel (extended)",
+        patient="Devendra Bhatt",
+        age=58,
+        sex="male",
+        rows=[
+            ("HbA1C (Glycosylated Haemoglobin)", "8.4", "%"),
+            ("Fasting Blood Sugar", "186", "mg/dL"),
+            ("Total Cholesterol", "268", "mg/dL"),
+            ("Triglyceride", "320", "mg/dL"),
+            ("Serum Creatinine", "1.1", "mg/dL"),
+            ("Haemoglobin", "14.8", "g/dL"),
+            ("25-Hydroxy Vitamin D", "34", "ng/mL"),
+            ("Vitamin B-12 (Cyanocobalamin)", "420", "pg/mL"),
+        ],
+        # THE FOUR ROWS THIS PLATFORM CANNOT ASSESS, AND THE POINT OF THIS
+        # FIXTURE. There is no feature definition, no threshold and no
+        # knowledge document for any of them, so the pipeline will read them,
+        # list them, and reach no verdict -- exactly as it should. What it must
+        # NOT do is lose the laboratory's own marking on the way, which is what
+        # MEMORY.md section 6u found it doing on a real report.
+        #
+        # Blood urea and potassium are chosen deliberately: both are raised
+        # here while serum creatinine, the ONE renal marker this platform does
+        # assess, is 1.1 and correctly produces no kidney finding. That is the
+        # real shape of the defect -- corroborating evidence sitting on the
+        # same page as a verdict, dropped in silence.
+        unassessed=[
+            ("LDL Cholesterol, Direct", "160", "mg/dL", "< 100", "H"),
+            ("HDL Cholesterol", "44", "mg/dL", "> 40", ""),
+            ("Blood Urea", "53", "mg/dL", "15 - 40", "H"),
+            ("Potassium, Serum", "5.2", "mmol/L", "3.5 - 5.1", "H"),
+        ],
+        # Only the flagged three. HDL is in range, so nothing asks about it and
+        # nothing describes it -- if a description appears for HDL, the
+        # selector has widened and a sixty-parameter report will exhaust a
+        # day's quota on results nobody needs explained.
+        expect_described=[
+            "LDL Cholesterol, Direct",
+            "Blood Urea",
+            "Potassium, Serum",
+        ],
+        features={
+            "hba1c": (8.4, "%"),
+            "blood_glucose": (186.0, "mg/dl"),
+            "cholesterol": (268.0, "mg/dl"),
+            "triglycerides": (320.0, "mg/dl"),
+            "creatinine": (1.1, "mg/dl"),
+            "hemoglobin": (14.8, "g/dl"),
+            "vitamin_d": (34.0, "ng/ml"),
+            "vitamin_b12": (420.0, "pg/ml"),
+        },
+        expect={
+            # The assessed panel is 02's, value for value, so the four extra
+            # rows are the ONLY difference between the two fixtures. If a
+            # verdict here differs from 02, an unassessed parameter has
+            # influenced an assessed decision -- which it must never do.
+            "Diabetes": "Indicated",
+            "High Cholesterol": "Indicated",
+            "High Triglycerides": "Indicated",
+            "Kidney Disease": "Not Indicated",
+            "Anemia": "Not Indicated",
+            "Vitamin D Deficiency": "Not Indicated",
+            "Vitamin B12 Deficiency": "Not Indicated",
+        },
+        note="THE FIXTURE FOR THE UNASSESSED SECTION. 02's assessed panel plus "
+        "four tests this platform has no feature for, three of them marked "
+        "abnormal BY THE LABORATORY. Blood urea and potassium are raised while "
+        "creatinine -- the only renal marker that IS assessed -- is normal, so "
+        "the dashboard must show the laboratory's markings without claiming to "
+        "have assessed them, and must not let them change any verdict. The "
+        "three flagged rows must each carry a plain-language description of "
+        "what the test measures; the in-range HDL row must carry none.",
+    ),
 ]
 
 
@@ -359,21 +461,47 @@ def render(report: Report) -> Path:
          colour=(0.05, 0.25, 0.42))
     y += 16
 
-    cols = (LEFT, LEFT + 280, LEFT + 390)
+    # The interval and flag columns exist only on a page that has something to
+    # put in them. A blank "REF. INTERVAL" heading over eight empty
+    # cells would tell a reader the laboratory printed no range for any test,
+    # which on these fixtures happens to be true but is not what an empty
+    # column means anywhere else.
+    cols = (
+        (LEFT, LEFT + 230, LEFT + 300, LEFT + 380, LEFT + 470)
+        if report.unassessed
+        else (LEFT, LEFT + 280, LEFT + 390, 0, 0)
+    )
     text(cols[0], y, "TEST", size=7.8, bold=True, colour=(0.35, 0.39, 0.45))
     text(cols[1], y, "RESULT", size=7.8, bold=True, colour=(0.35, 0.39, 0.45))
     text(cols[2], y, "UNITS", size=7.8, bold=True, colour=(0.35, 0.39, 0.45))
+    if report.unassessed:
+        text(cols[3], y, "REF. INTERVAL", size=7.8, bold=True,
+             colour=(0.35, 0.39, 0.45))
+        text(cols[4], y, "FLAG", size=7.8, bold=True, colour=(0.35, 0.39, 0.45))
     y += 6
     _line(page, y, colour=(0.35, 0.39, 0.45), width=0.9)
     y += 16
 
-    for name, value, unit in report.rows:
+    def _row(name, value, unit, interval="", flag=""):
+        nonlocal y
         text(cols[0], y, name, size=9.4)
         text(cols[1], y, value, size=9.4, bold=True)
         text(cols[2], y, unit, size=9.4)
+        if interval:
+            text(cols[3], y, interval, size=9.0, colour=(0.35, 0.39, 0.45))
+        if flag:
+            # Printed in the laboratory's own convention, and in the colour a
+            # laboratory uses, because that is what extraction has to read.
+            text(cols[4], y, flag, size=9.4, bold=True, colour=(0.65, 0.12, 0.12))
         y += 11
         _line(page, y - 3, colour=(0.90, 0.92, 0.94), width=0.5)
         y += 8
+
+    for name, value, unit in report.rows:
+        _row(name, value, unit)
+
+    for name, value, unit, interval, flag in report.unassessed:
+        _row(name, value, unit, interval, flag)
 
     y += 8
     text(LEFT, y, "— END OF REPORT —", size=8.4, bold=True,
@@ -410,7 +538,7 @@ def render(report: Report) -> Path:
 # --------------------------------------------------------------------------
 
 
-def engine_verdicts(report: Report) -> Dict[str, str]:
+def engine_verdicts(report: Report) -> Tuple[Dict[str, str], List[str]]:
     """Run the shipped pipeline over this report's PRINTED rows.
 
     The rows are fed in as Module 4 extraction output -- printed test name,
@@ -437,6 +565,26 @@ def engine_verdicts(report: Report) -> Dict[str, str]:
         }
         for printed_name, printed_value, printed_unit in report.rows
     ]
+    # THE UNASSESSED ROWS GO IN TOO, and that is the assertion. They are on the
+    # page, so extraction will hand them over, and the engine must reach the
+    # same verdicts it reaches without them. A fixture that fed the engine only
+    # the rows it understands could not catch an unassessed parameter leaking
+    # into an assessed decision -- which is precisely what 06 exists to rule
+    # out, and why its `expect` is 02's, value for value.
+    parameters += [
+        {
+            "test_name": printed_name,
+            "value_raw": printed_value,
+            "value_numeric": float(printed_value),
+            "unit": printed_unit,
+            "reference_range_raw": printed_interval or None,
+            "flag": {"H": "high", "L": "low"}.get(printed_flag),
+            "page_number": 1,
+            "confidence": 0.99,
+        }
+        for printed_name, printed_value, printed_unit, printed_interval, printed_flag
+        in report.unassessed
+    ]
     profile = {"age": report.age, "gender": report.sex}
 
     engineered = engineer_features(parameters, profile)
@@ -451,7 +599,19 @@ def engine_verdicts(report: Report) -> Dict[str, str]:
         # Diabetes). The strongest verdict is the one the dashboard shows.
         if rank.get(status, 0) >= rank.get(out.get(condition, ""), 0):
             out[condition] = status
-    return out
+
+    # WHICH ROWS THE ENGINE SET ASIDE, so a fixture claiming to carry
+    # unassessed tests cannot quietly stop doing so. If a feature definition is
+    # ever added for one of these analytes -- LDL is the obvious candidate --
+    # this list shrinks, generation fails, and whoever added it is told that
+    # fixture 06 now needs a different unassessed row rather than finding out
+    # when the dashboard section it exercises silently empties.
+    skipped = [
+        name for name in (
+            getattr(item, "test_name", None) for item in engineered.unmapped
+        ) if isinstance(name, str) and name
+    ]
+    return out, skipped
 
 
 def main() -> int:
@@ -469,7 +629,7 @@ def main() -> int:
     failures: List[str] = []
     for report in REPORTS:
         path = render(report)
-        actual = engine_verdicts(report)
+        actual, skipped = engine_verdicts(report)
 
         mismatches = {
             condition: {"expected": expected, "engine_said": actual.get(condition)}
@@ -479,7 +639,20 @@ def main() -> int:
         if mismatches:
             failures.append(f"{report.slug}: {mismatches}")
 
-        manifest["reports"].append({
+        # A FIXTURE THAT STOPS TESTING WHAT IT CLAIMS MUST SAY SO. If a feature
+        # definition is added for one of these analytes the row becomes
+        # assessed, this fixture's unassessed section quietly empties, and
+        # nothing else would notice.
+        not_skipped = [
+            name for name, _v, _u, _i, _f in report.unassessed if name not in skipped
+        ]
+        if not_skipped:
+            failures.append(
+                f"{report.slug}: the engine ASSESSED {not_skipped}, which this "
+                "fixture carries as unassessed rows"
+            )
+
+        entry = {
             "file": path.name,
             "title": report.title,
             "patient": report.patient,
@@ -491,9 +664,37 @@ def main() -> int:
             },
             "reference_intervals_printed": False,
             "expect": report.expect,
-        })
+        }
+        if report.unassessed:
+            # Kept under its own key rather than merged into `printed_values`:
+            # these rows are on the same page but they are a different kind of
+            # thing, and one dictionary holding both would erase which was
+            # which -- the reader could no longer tell what the platform
+            # assessed from what it only listed.
+            entry["unassessed_tests"] = {
+                name: {
+                    "printed": f"{value} {unit}",
+                    "reference_interval_printed": interval or None,
+                    "laboratory_flag": {"H": "high", "L": "low"}.get(flag),
+                }
+                for name, value, unit, interval, flag in report.unassessed
+            }
+            entry["expect_unassessed"] = (
+                "Listed under 'Also on your report, but not assessed here'. The "
+                "laboratory's own flag and range are shown and attributed to "
+                "the laboratory; NO condition, risk or verdict may be derived "
+                "from any of them."
+            )
+            entry["expect_described"] = report.expect_described
+        manifest["reports"].append(entry)
         flag = "MISMATCH" if mismatches else "ok"
-        print(f"  {path.name:34s} {len(report.rows)} tests  engine agrees: {flag}")
+        extra = (
+            f" + {len(report.unassessed)} unassessed" if report.unassessed else ""
+        )
+        print(
+            f"  {path.name:40s} {len(report.rows)} tests{extra}  "
+            f"engine agrees: {flag}"
+        )
 
     (OUT_DIR / "expected.json").write_text(
         json.dumps(manifest, indent=2), encoding="utf-8"

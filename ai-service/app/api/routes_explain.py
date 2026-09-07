@@ -412,15 +412,38 @@ class GlossaryRequest(BaseModel):
     test_names: List[str] = Field(default_factory=list, max_length=64)
 
 
+class GlossaryResponse(BaseModel):
+    """The same `{success, data}` envelope every other endpoint here returns.
+
+    THIS WRAPPER WAS MISSING AND THE FEATURE WAS DEAD ON EVERY CALL. The route
+    returned a bare `GlossaryData`, so the backend's `unwrapEnvelope` -- which
+    requires `success === true` and an object `data` -- rejected a perfectly
+    good 200 as `AI_SERVICE_MALFORMED_RESPONSE`. The descriptions were
+    generated, safety-validated, cached, and thrown away at the transport
+    boundary; the ai-service log said "generated: 3" while the analysis
+    recorded the stage as failed.
+
+    Nothing caught it because the module's 14 tests never went through HTTP.
+    The endpoint tests added alongside this do, and assert the envelope
+    itself rather than only the payload inside it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    success: bool = True
+    data: GlossaryData
+
+
 @router.post(
     "/glossary",
-    response_model=GlossaryData,
+    response_model=GlossaryResponse,
+    response_model_exclude_none=False,
     summary="Describe laboratory tests this platform does not assess",
 )
 def glossary_endpoint(
     request: GlossaryRequest,
     llm: Any = Depends(get_explanation_llm),
-) -> GlossaryData:
+) -> GlossaryResponse:
     """What each named test measures -- and nothing about any patient.
 
     Returns an empty set rather than erroring when no model is configured: an
@@ -428,9 +451,11 @@ def glossary_endpoint(
     without descriptions exactly as it does when a description is refused.
     """
     if llm is None:
-        return GlossaryData()
-    return describe_parameters(
-        request.test_names, llm, max_calls=GLOSSARY_MAX_PER_REQUEST
+        return GlossaryResponse(data=GlossaryData())
+    return GlossaryResponse(
+        data=describe_parameters(
+            request.test_names, llm, max_calls=GLOSSARY_MAX_PER_REQUEST
+        )
     )
 
 

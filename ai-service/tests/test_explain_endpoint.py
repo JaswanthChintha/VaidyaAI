@@ -93,6 +93,14 @@ ROUTES = [
     ("get", "/api/v1/explain/terms", None),
     ("post", "/api/v1/explain/guidance", {"conditions": ["Diabetes"]}),
     ("get", "/api/v1/explain/policy", None),
+    # ADDING THIS LINE IS THE WHOLE FIX FOR A FEATURE THAT WAS DEAD ON EVERY
+    # CALL. `/glossary` shipped returning a bare payload instead of the
+    # `{success, data}` envelope, so the backend rejected every 200 as
+    # malformed and threw away descriptions it had already generated and
+    # safety-validated. `test_every_route_answers_with_the_key` asserts
+    # `success is True` and would have caught it on the first run -- the route
+    # was simply never listed here.
+    ("post", "/api/v1/explain/glossary", {"test_names": ["Blood Urea"]}),
 ]
 
 
@@ -364,6 +372,94 @@ def test_the_policy_route_publishes_all_three_modules(explain_client):
     assert data["lifestyle_guidance"]["module"] == 26
     assert data["never"] == "LLM output shown directly to a patient"
     assert data["lifestyle_guidance"]["uses_llm"] is False
+
+
+# --------------------------------------------------------------------------
+# The glossary over HTTP
+# --------------------------------------------------------------------------
+#
+# The module itself has its own suite. These are about the TRANSPORT, which is
+# where it was broken: the descriptions were generated, validated and cached,
+# and then discarded by the backend because the reply was not in the envelope
+# every other route here uses.
+
+
+def test_the_glossary_answers_inside_the_standard_envelope(explain_client):
+    response = explain_client.post(
+        "/api/v1/explain/glossary",
+        json={"test_names": ["Blood Urea"]},
+        headers=HEADERS,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    # The two properties the backend's `unwrapEnvelope` requires, asserted
+    # separately from the payload so a future change to either is visible.
+    assert body["success"] is True
+    assert isinstance(body["data"], dict)
+    assert body["data"]["entries"][0]["test_name"] == "Blood Urea"
+
+
+def test_the_glossary_answers_with_no_model_configured(client_factory):
+    """An unconfigured key is a service state, not an error.
+
+    The caller renders the values with no description, exactly as it does when
+    a description is refused -- and it must be able to tell the difference,
+    which is why `entries` is empty rather than carrying placeholder text.
+    """
+    client = client_factory(None)
+    response = client.post(
+        "/api/v1/explain/glossary",
+        json={"test_names": ["Blood Urea"]},
+        headers=HEADERS,
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["entries"] == []
+    assert data["generated_count"] == 0
+
+
+def test_the_glossary_request_has_nowhere_to_put_a_patient_value(explain_client):
+    """The safety property is the SHAPE, so it is asserted at the shape.
+
+    A caller cannot send a value, a unit, a reference range or a flag even by
+    accident: the request model forbids extra fields, so the model can never be
+    asked what a particular person's number means.
+    """
+    response = explain_client.post(
+        "/api/v1/explain/glossary",
+        json={"test_names": ["Potassium"], "value": 5.2, "unit": "mmol/L"},
+        headers=HEADERS,
+    )
+    assert response.status_code == 422
+
+
+def test_the_glossary_sends_no_patient_data_to_the_model(client_factory):
+    """What actually reaches the model is the test name and nothing else."""
+    llm = FakeTextClient(_APPROVABLE)
+    client = client_factory(llm)
+    client.post(
+        "/api/v1/explain/glossary",
+        json={"test_names": ["Potassium, Serum"]},
+        headers=HEADERS,
+    )
+
+    assert llm.prompts, "the route did not call the model at all"
+    prompt = "\n".join(llm.prompts)
+    assert "Potassium, Serum" in prompt
+    # This patient's actual result, from fixture 06. None of it can be in the
+    # prompt, because none of it was ever sent to this route -- and the request
+    # model has nowhere to put it even if a caller tried.
+    for forbidden in ("5.2", "mmol/L", "3.5 - 5.1"):
+        assert forbidden not in prompt
+
+
+def test_an_oversized_name_list_is_rejected_by_the_schema(explain_client):
+    response = explain_client.post(
+        "/api/v1/explain/glossary",
+        json={"test_names": [f"Test {index}" for index in range(65)]},
+        headers=HEADERS,
+    )
+    assert response.status_code == 422
 
 
 # --------------------------------------------------------------------------
