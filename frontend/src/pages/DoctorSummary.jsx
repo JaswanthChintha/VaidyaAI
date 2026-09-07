@@ -1,159 +1,128 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { api, ApiError } from '../lib/api';
-import { Absent, Section, Value, WarningList } from '../components/Absent';
+import { api } from '../lib/api';
 import { isPresent } from '../lib/absence';
 
 /**
- * Module 32 -- the summary a patient hands to a clinician.
+ * Module 32 -- the summary a patient hands to a clinician, as ONE PASSAGE.
  *
  * ==========================================================================
- * A CLINICIAN MAY ACT ON THIS PAGE
+ * WHAT THIS PAGE IS NOW, AND WHY
  * ==========================================================================
  *
- * That makes it a HIGHER-stakes surface than the patient dashboard, not a
- * lower one, and it changes what the rendering rules have to protect:
+ * It was a structured document: purpose statement, scope bullets, a card per
+ * condition, a source legend, retrieved reference passages, a data-quality
+ * block, a provenance block. Every part was accurate and the whole was
+ * unreadable -- and most of it was the page talking about ITSELF rather than
+ * about the report. A clinician handed a patient's phone for thirty seconds
+ * does not read a document that explains its own architecture first.
  *
- *   EVERY MODEL ESTIMATE TRAVELS WITH THAT MODEL'S LIMITS. Module 11 has
- *   ROC-AUC 0.697 and flags about 27% of true positives at its operating
- *   threshold -- an unflagged heart result from it rules NOTHING out. A
- *   probability shown without that is actively misleading, and this was a
- *   real defect twice: the recall never left the metrics artifact (6o D8),
- *   and then the fix was applied to two models out of three (6p). So the
- *   caveats are rendered with the probability, in the same block, never
- *   behind a toggle.
+ * So it is a handover note. Values, what was flagged and on what basis, what
+ * was not available, one line to close. The register is professional: a
+ * clinician reads `HbA1c 8.4 %` and does not need it translated.
  *
- *   `metrics_absent_code` IS SHOWN. A record with figures but no operating
- *   point is not a complete record, and a clinician reading ROC-AUC alone
- *   would reasonably assume the missing numbers were unremarkable.
+ * ==========================================================================
+ * THE PASSAGE IS COMPOSED. NO LANGUAGE MODEL WRITES IT.
+ * ==========================================================================
  *
- *   TRENDS AND COMPARISON ARE OPTIONAL SECTIONS. With one report they are
- *   absent WITH A STATED REASON. If the report this summary describes is not
- *   in the history behind it, the service refuses both with
- *   SUBJECT_NOT_IN_HISTORY rather than attributing another report's trend to
- *   this one -- and that refusal must reach the page, not be swallowed.
+ * "Summarise these results for a doctor" is one prompt away and would be the
+ * worst possible use of one: a clinical narrative with no rule, no threshold
+ * and no evidence chain behind it, in a register that invites action. The
+ * service also publishes `integrity.llm_calls_made: 0` and
+ * `model_generated_text_included: false` ABOUT THIS VERY DOCUMENT, so
+ * generating the prose here would make both of those claims false. Every
+ * sentence below is assembled from a decision some stage already made.
  *
- * The document generates no prose. Everything below is assembled from
- * already-validated structures, and every sentence originates in a reviewed
- * template on the service side.
+ * ==========================================================================
+ * WHAT WAS CUT, AND THE FOUR THINGS THAT WERE NOT
+ * ==========================================================================
+ *
+ * Cut: the scope bullets, the source legend, "how this document was
+ * produced", the retrieved reference passages, rule identifiers, ROC-AUC and
+ * the rest of the metrics table, and every source-file path. None of it told
+ * a clinician anything about this patient.
+ *
+ * KEPT, because removing them would make the passage lie by omission:
+ *
+ *   1. WHICH KIND OF CHECK FLAGGED WHAT. A topic flagged by a threshold
+ *      comparison and a topic flagged only by a statistical model are not the
+ *      same claim, and on one real report they differ: creatinine 1.1 mg/dL
+ *      does NOT cross the kidney rule and the model flagged it anyway. A
+ *      clinician told "kidney disease flagged" without that is being told
+ *      something the analysis did not find.
+ *
+ *   2. ONE SENTENCE OF MODEL LIMITATION wherever a model contributed to a
+ *      flag. The heart model's own author note reads "most patients it flags
+ *      will NOT have heart disease -- a high score is a reason to discuss
+ *      testing with a clinician, never a finding." A probability printed
+ *      without that has been found and re-found on this project three times.
+ *
+ *   3. WHAT WAS NOT AVAILABLE. Fields not supplied, parameters the report did
+ *      not carry, pages that could not be read. Absence is not a negative
+ *      result -- the rule the whole codebase is built on, and the one a
+ *      compressed summary is most likely to drop.
+ *
+ *   4. ONE CLOSING LINE. Not the ten-sentence scope statement; one line
+ *      saying this is not a diagnosis and the original report is the record.
  */
 
-function ModelLimits({ limits }) {
-  if (!limits) return null;
+/* ------------------------------------------------------------------ utils */
 
-  return (
-    <div className="limits">
-      {limits.metrics_available === true ? (
-        <ul className="limits__figures">
-          {isPresent(limits.roc_auc) ? <li>ROC-AUC {limits.roc_auc}</li> : null}
-          <li>
-            Detection at the operating threshold:{' '}
-            <Value
-              value={limits.recall_at_operating_threshold}
-              reason="Not recorded for this model."
-            />
-          </li>
-          <li>
-            Precision at that threshold:{' '}
-            <Value
-              value={limits.precision_at_operating_threshold}
-              reason="Not recorded for this model."
-            />
-          </li>
-          {isPresent(limits.accuracy) ? (
-            <li>
-              Accuracy {limits.accuracy}
-              {isPresent(limits.baseline_accuracy)
-                ? ` against a majority-class baseline of ${limits.baseline_accuracy}`
-                : ''}
-            </li>
-          ) : null}
-        </ul>
-      ) : (
-        <Absent
-          label="No performance figures"
-          reason="No recorded performance accompanied this model's output."
-        />
-      )}
+/** Join without merging names that contain their own commas. */
+const nameList = (names) =>
+  names.join(names.some((name) => String(name).includes(',')) ? '; ' : ', ');
 
-      {/* A partial record must not read as a complete one. */}
-      {isPresent(limits.metrics_absent_code) ? (
-        <p className="caveat">
-          Incomplete performance record: <code>{limits.metrics_absent_code}</code>
-        </p>
-      ) : null}
+const humanFeature = (key) => String(key).replace(/_/g, ' ');
 
-      {limits.caveats?.length ? (
-        <ul className="limits__caveats">
-          {limits.caveats.map((caveat, index) => (
-            <li key={index}>{caveat}</li>
-          ))}
-        </ul>
-      ) : null}
-    </div>
-  );
+/** First letter capitalised, for a list that opens a sentence. */
+const sentenceCase = (text) =>
+  text.length ? text[0].toUpperCase() + text.slice(1) : text;
+
+/** `2026-09-07T04:00:14Z` -> `7 September 2026`, or null if unparseable. */
+function readableDate(value) {
+  if (typeof value !== 'string' || value === '') return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
 }
 
-function Assessment({ assessment }) {
-  const assessed = assessment.assessed !== false;
-
-  return (
-    <li className="card assessment">
-      <div className="condition__head">
-        <strong>{assessment.condition}</strong>
-        <span>{assessment.status}</span>
-      </div>
-
-      {assessment.reading_note ? (
-        <p className="hint">{assessment.reading_note}</p>
-      ) : null}
-
-      {/* Module 16 stamps the basis so a risk-factor tally and a model
-          probability are shown separately rather than averaged. */}
-      {assessment.basis_conflict === true && assessment.basis_note ? (
-        <p className="caveat">{assessment.basis_note}</p>
-      ) : null}
-
-      {assessment.bases?.length ? (
-        <div className="bases">
-          {assessment.bases.map((basis, index) => (
-            <div key={index} className="basis">
-              <p className="basis__head">
-                <strong>{basis.source || basis.assessment_basis}</strong>
-                {isPresent(basis.status) ? ` — ${basis.status}` : ''}
-              </p>
-              {basis.what_this_source_answered ? (
-                <p className="hint">{basis.what_this_source_answered}</p>
-              ) : null}
-              {basis.rule?.rule_ids?.length ? (
-                <p className="hint">Rules: {basis.rule.rule_ids.join(', ')}</p>
-              ) : null}
-              {basis.ml ? (
-                <>
-                  <p className="hint">
-                    {basis.ml.model_name}
-                    {isPresent(basis.ml.probability)
-                      ? ` — probability ${basis.ml.probability}`
-                      : ''}
-                  </p>
-                  <ModelLimits limits={basis.limitations} />
-                </>
-              ) : null}
-            </div>
-          ))}
-        </div>
-      ) : (
-        <Absent
-          reason={
-            assessed
-              ? 'No contributing source was recorded for this assessment.'
-              : 'This condition was not assessed.'
-          }
-        />
-      )}
-    </li>
-  );
+/**
+ * The name a clinician will find on the paper report, falling back to ours.
+ *
+ * They are reading this beside the original, so matching on the printed
+ * wording is what they actually do. A row whose transcription the safety
+ * scanner withheld has no printed text and falls back silently -- the value
+ * is what matters and it is unaffected.
+ */
+function parameterName(row) {
+  const printed = row.provenance?.original_test_name;
+  if (row.provenance?.source === 'lab_report' && isPresent(printed?.text)) {
+    return printed.text;
+  }
+  return row.display_name || row.feature;
 }
+
+/**
+ * Which kinds of source flagged this topic.
+ *
+ * A `Not Indicated` from one source beside an `Indicated` from another is the
+ * single most informative thing on this page, so the two are counted
+ * separately rather than collapsed into "flagged".
+ */
+function flaggingKinds(assessment) {
+  const kinds = new Set();
+  for (const basis of assessment.bases || []) {
+    if (basis.status === 'Not Indicated' || basis.assessed === false) continue;
+    kinds.add(basis.source_kind === 'machine_learning' ? 'model' : 'rule');
+  }
+  return kinds;
+}
+
+/* -------------------------------------------------------------------- page */
 
 export default function DoctorSummary() {
   const { id } = useParams();
@@ -178,8 +147,81 @@ export default function DoctorSummary() {
   if (error) return <p className="error" role="alert">{error}</p>;
   if (!data) return <p className="loading">Preparing the clinical summary…</p>;
 
-  const summary = data.doctorSummary;
-  const history = data.history;
+  const summary = data.doctorSummary || {};
+  const patient = summary.patient || {};
+  const laboratory = summary.laboratory || {};
+  const quality = summary.data_quality || {};
+  const rows = laboratory.rows || [];
+  const assessments = summary.assessments || [];
+
+  // ---- subject line -------------------------------------------------------
+  const context = [];
+  if (isPresent(patient.age)) context.push(`${patient.age}-year-old`);
+  if (isPresent(patient.gender)) context.push(String(patient.gender));
+  const subject = context.join(' ');
+  const notSupplied = ['hypertension', 'heart_disease', 'smoking_history'].filter(
+    (key) => !isPresent(patient[key])
+  );
+
+  // ---- values -------------------------------------------------------------
+  const measured = rows.filter(
+    (row) => row.provenance?.source !== 'patient_profile' && row.usable !== false
+  );
+  const rejected = rows.filter((row) => row.usable === false);
+  const anyInterval = measured.some(
+    (row) => isPresent(row.reference_low) || isPresent(row.reference_high)
+  );
+  const labFlagged = measured.filter((row) => isPresent(row.printed_flag));
+
+  // ---- findings, split by WHAT flagged them -------------------------------
+  const abnormal = new Set(summary.abnormal_findings || []);
+  const flagged = assessments.filter(
+    (a) => abnormal.has(a.condition) || (a.assessed !== false && a.status !== 'Not Indicated')
+  );
+  const byBoth = [];
+  const byRule = [];
+  const byModel = [];
+  for (const assessment of flagged) {
+    const kinds = flaggingKinds(assessment);
+    const entry = `${assessment.condition}${
+      isPresent(assessment.status) && assessment.status !== 'Indicated'
+        ? ` (${String(assessment.status).toLowerCase()})`
+        : ''
+    }`;
+    if (kinds.has('rule') && kinds.has('model')) byBoth.push(entry);
+    else if (kinds.has('model')) byModel.push(entry);
+    else byRule.push(entry);
+  }
+  const clear = assessments.filter((a) => !flagged.includes(a));
+
+  // The model's own statement of its limits, deduplicated -- one sentence per
+  // distinct note, however many topics a model contributed to.
+  // ONLY FROM A MODEL THAT ACTUALLY FLAGGED. A note qualifies an output, and
+  // a model that returned `Not Indicated` produced no output this passage
+  // reports -- its caveat would sit under findings it did not make. On one
+  // real report that printed the heart model's four-sentence note beside a
+  // Heart Disease flag the heart model had DISAGREED with.
+  const modelNotes = [];
+  for (const assessment of flagged) {
+    for (const basis of assessment.bases || []) {
+      if (basis.status === 'Not Indicated' || basis.assessed === false) continue;
+      const note = basis.ml?.limitations?.author_note?.text;
+      if (isPresent(note) && !modelNotes.includes(note)) modelNotes.push(note);
+    }
+  }
+
+  // THE SAME THREE FIELDS WERE BEING NAMED TWICE -- once as "not supplied"
+  // and again as "not present in this report". For hypertension, heart
+  // disease and smoking history those are the same three names, so a reader
+  // saw the list, read a paragraph, and saw it again. They are different
+  // facts and only one of them needs saying: a field the patient never
+  // supplied cannot also be a parameter the report failed to carry.
+  const alsoMissing = (laboratory.features_not_present || []).filter(
+    (key) => !notSupplied.includes(key)
+  );
+
+  const unreadable = quality.pages_unreadable || [];
+  const reportDate = readableDate(summary.attribution?.report_date);
 
   return (
     <main className="doctor-summary">
@@ -189,89 +231,145 @@ export default function DoctorSummary() {
 
       <h1>Summary for a healthcare professional</h1>
 
-      {summary?.purpose?.is_not?.length ? (
-        <p className="hint">{summary.purpose.is_not.join(' ')}</p>
-      ) : null}
-
-      {/* The report this summary describes must be IN the history behind it.
-          When it is not, the service refuses the trend and comparison
-          sections and this states why rather than leaving a silent gap. */}
-      {history && history.subjectInHistory === false ? (
-        <p className="caveat">
-          This report is not among the reports used for the trend and
-          comparison sections below, so those sections were withheld.
-        </p>
-      ) : null}
-
-      <section className="card">
-        <h2>Overall</h2>
+      <article className="passage">
+        {/* Subject, context, and what the analysis did not have. */}
         <p>
-          <strong>{summary?.overall?.status_label || 'Not assessed'}</strong>
+          {subject ? `${subject}. ` : ''}
+          {isPresent(patient.bmi) ? `BMI ${patient.bmi} kg/m². ` : ''}
+          Single laboratory report
+          {isPresent(quality.page_count)
+            ? `, ${quality.page_count} page${quality.page_count === 1 ? '' : 's'}`
+            : ''}
+          {reportDate ? `, analysed ${reportDate}` : ''}.
+          {notSupplied.length
+            ? ` ${sentenceCase(nameList(notSupplied.map(humanFeature)))} ${
+                notSupplied.length === 1 ? 'was' : 'were'
+              } not supplied and unavailable to the analysis.`
+            : ''}
         </p>
-        {summary?.overall?.assessment_reading ? (
-          <p>{summary.overall.assessment_reading}</p>
-        ) : null}
-        {summary?.overall?.clean_bill_of_health === false ? (
-          <p className="caveat">
-            This is not a clean bill of health. An absent assessment is not a
-            normal result.
+
+        {/* The values, in the wording printed on the report they came from. */}
+        {measured.length ? (
+          <p>
+            <strong>Reported values.</strong>{' '}
+            {measured
+              .map((row) => {
+                const value = `${row.value}${isPresent(row.unit) ? ` ${row.unit}` : ''}`;
+                const flag = isPresent(row.printed_flag)
+                  ? ` (${row.printed_flag}, per the reporting laboratory)`
+                  : '';
+                return `${parameterName(row)} ${value}${flag}`;
+              })
+              .join('; ')}
+            .
+            {/* AN ABSENT INTERVAL IS NOT AN UNREMARKABLE ONE, and this is the
+                one sentence that stops eight bare numbers reading as in range. */}
+            {!anyInterval
+              ? ' The source report printed no reference intervals, so no value here is placed relative to a range.'
+              : ''}
+            {anyInterval && !labFlagged.length
+              ? ' The reporting laboratory marked none of these outside its own intervals.'
+              : ''}
           </p>
         ) : null}
-      </section>
 
-      <h2>Assessments</h2>
-      {summary?.assessments?.length ? (
-        <ul className="assessment-list">
-          {summary.assessments.map((assessment) => (
-            <Assessment key={assessment.condition} assessment={assessment} />
-          ))}
-        </ul>
-      ) : (
-        <p className="empty">No conditions were assessed.</p>
-      )}
+        {rejected.length ? (
+          <p>
+            <strong>Not used.</strong> {nameList(rejected.map(parameterName))} did
+            not pass validation and {rejected.length === 1 ? 'was' : 'were'}{' '}
+            excluded from the analysis below.
+          </p>
+        ) : null}
 
-      {summary?.unassessed_conditions?.length ? (
-        <p className="caveat">
-          Not assessed: {summary.unassessed_conditions.join(', ')}. These are
-          open questions, not negative results.
+        {/* WHAT WAS FLAGGED, AND BY WHAT. The three groups are the point of
+            this paragraph: a threshold crossing and a model estimate are
+            different claims, and one real report contains one of each. */}
+        {flagged.length ? (
+          <p>
+            <strong>Flagged.</strong>{' '}
+            {byBoth.length
+              ? `Threshold comparison and the statistical model both flagged ${nameList(
+                  byBoth
+                )}. `
+              : ''}
+            {byRule.length
+              ? `Threshold comparison against the platform's configured cut-offs flagged ${nameList(
+                  byRule
+                )}. `
+              : ''}
+            {byModel.length
+              ? `${nameList(byModel)} ${
+                  byModel.length === 1 ? 'was' : 'were'
+                } flagged by the statistical model only — no measured value crossed a configured threshold for ${
+                  byModel.length === 1 ? 'it' : 'them'
+                }. `
+              : ''}
+          </p>
+        ) : (
+          <p>
+            <strong>Flagged.</strong> No topic crossed a configured threshold and
+            no model flagged one.
+          </p>
+        )}
+
+        {/* ONE SENTENCE OF MODEL LIMITATION, in the model author's own words.
+            Found missing from this page three separate times. */}
+        {byBoth.length + byModel.length > 0 ? (
+          <p>
+            <strong>On the model output.</strong> A model estimate is a
+            likelihood derived from patterns in training data, not a
+            measurement, and it is not a statement that a condition is present.
+            {modelNotes.length ? ` ${modelNotes.join(' ')}` : ''}
+          </p>
+        ) : null}
+
+        {/* Assessed and not flagged, named -- a clinician needs to know which
+            topics were covered, and "not flagged" is not "ruled out". */}
+        {clear.length ? (
+          <p>
+            <strong>Assessed, not flagged.</strong>{' '}
+            {nameList(clear.map((a) => a.condition))}. Each was compared against
+            the platform&rsquo;s configured thresholds and none was crossed.
+          </p>
+        ) : null}
+
+        {/* ABSENCE, WHICH A COMPRESSED SUMMARY IS MOST LIKELY TO DROP. */}
+        {summary.unassessed_conditions?.length ||
+        alsoMissing.length ||
+        unreadable.length ||
+        quality.partial_document === true ||
+        quality.sources_failed?.length ? (
+          <p>
+            <strong>Not assessed.</strong>{' '}
+            {summary.unassessed_conditions?.length
+              ? `${nameList(
+                  summary.unassessed_conditions
+                )} could not be assessed; the required inputs were not available. `
+              : ''}
+            {alsoMissing.length
+              ? `${sentenceCase(nameList(alsoMissing.map(humanFeature)))} ${
+                  alsoMissing.length === 1 ? 'was' : 'were'
+                } not present in this report. `
+              : ''}
+            {unreadable.length || quality.partial_document === true
+              ? `Part of the document could not be read${
+                  unreadable.length
+                    ? ` (page${unreadable.length === 1 ? '' : 's'} ${unreadable.join(', ')})`
+                    : ''
+                }, so a parameter missing above may be missing from the reading rather than from the report. `
+              : ''}
+            {quality.sources_failed?.length
+              ? `${nameList(quality.sources_failed)} did not complete. `
+              : ''}
+            None of this is a negative finding.
+          </p>
+        ) : null}
+
+        <p className="passage__close">
+          Not a diagnosis and not a clinical conclusion. The original laboratory
+          report remains the primary record.
         </p>
-      ) : null}
-
-      <Section status={summary?.trends} title="Trends">
-        <p className="hint">
-          {summary?.trend_data?.summary
-            ? `${summary.trend_data.summary.improving} improving, ${summary.trend_data.summary.worsening} worsening, ${summary.trend_data.summary.stable} stable.`
-            : null}
-        </p>
-      </Section>
-
-      <Section status={summary?.comparison} title="Comparison with a previous report">
-        <p className="hint">
-          {summary?.comparison_data?.summary?.headline || null}
-        </p>
-      </Section>
-
-      <Section status={summary?.knowledge} title="Retrieved reference information">
-        <ul>
-          {(summary?.knowledge?.references || []).map((reference, index) => (
-            <li key={index}>
-              {reference.title || reference.doc_id}
-              {reference.last_reviewed ? (
-                <span className="hint"> (reviewed {reference.last_reviewed})</span>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      </Section>
-
-      {summary?.warnings?.length ? (
-        <>
-          <h2>Notes</h2>
-          <WarningList warnings={summary.warnings} />
-        </>
-      ) : null}
-
-      {summary?.disclaimer ? <p className="hint">{summary.disclaimer}</p> : null}
+      </article>
     </main>
   );
 }

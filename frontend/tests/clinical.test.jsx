@@ -47,122 +47,243 @@ beforeEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('Module 32 -- the clinician summary', () => {
-  it('shows a model probability WITH its detection rate, never alone', async () => {
-    // Module 11 flags ~27% of true positives. A probability quoted without
-    // that is actively misleading, and it was a real defect twice.
-    await mountSummary({
-      overall: { status_label: 'Attention Needed', clean_bill_of_health: false },
-      assessments: [
+describe('Module 32 -- the clinician summary, as one passage', () => {
+  // The page is a handover note now, so every assertion is about the PASSAGE:
+  // what it says, and what it must never leave out under compression. A
+  // summary's failure mode is omission, and the four things below are the ones
+  // whose omission would make it lie.
+  const passage = () => document.querySelector('.passage').textContent;
+
+  const REPORT = {
+    overall: { status_label: 'Needs Medical Attention', clean_bill_of_health: false },
+    attribution: { report_date: '2026-09-07T04:00:14.776000Z' },
+    patient: { age: 58, gender: 'male', bmi: 26.42, hypertension: null, heart_disease: null, smoking_history: null },
+    data_quality: { page_count: 1, pages_unreadable: [], partial_document: false },
+    laboratory: {
+      total: 2,
+      features_not_present: ['smoking_history'],
+      rows: [
         {
-          condition: 'Heart Disease',
-          status: 'Indicated',
-          assessed: true,
-          bases: [
-            {
-              source: 'Heart model',
-              status: 'Indicated',
-              ml: { model_name: 'Random Forest', probability: 0.71 },
-              limitations: {
-                metrics_available: true,
-                roc_auc: 0.697,
-                recall_at_operating_threshold: 0.2678,
-                precision_at_operating_threshold: 0.7496,
-                accuracy: 0.5918,
-                baseline_accuracy: 0.5003,
-                caveats: [
-                  'At the operating threshold used here, this model flags a minority of the true positive cases. An unflagged result from this model therefore rules nothing out.',
-                ],
-              },
-            },
-          ],
+          feature: 'hba1c',
+          display_name: 'Glycated haemoglobin, NGSP %',
+          value: 8.4,
+          unit: '%',
+          usable: true,
+          provenance: {
+            source: 'lab_report',
+            original_test_name: { text: 'HbA1C (Glycosylated Haemoglobin)', state: 'CLEAN' },
+          },
+        },
+        {
+          feature: 'creatinine',
+          display_name: 'Serum creatinine',
+          value: 1.1,
+          unit: 'mg/dl',
+          usable: true,
+          provenance: { source: 'lab_report', original_test_name: { text: 'Serum Creatinine', state: 'CLEAN' } },
+        },
+        {
+          feature: 'bmi',
+          display_name: 'Self-described gender as stored by Module 2.',
+          value: 26.42,
+          unit: 'kg/m2',
+          usable: true,
+          provenance: { source: 'patient_profile' },
         },
       ],
-    });
-
-    expect(await screen.findByText(/probability 0.71/)).toBeInTheDocument();
-    expect(screen.getByText(/rules nothing out/)).toBeInTheDocument();
-    expect(screen.getByText('0.2678')).toBeInTheDocument();
-    expect(screen.getByText('0.7496')).toBeInTheDocument();
-  });
-
-  it('states an incomplete performance record rather than letting it read as complete', async () => {
-    // Figures present, operating point absent. A clinician reading ROC-AUC
-    // alone would assume the missing numbers were unremarkable.
-    await mountSummary({
-      overall: { status_label: 'Attention Needed' },
-      assessments: [
-        {
-          condition: 'Diabetes',
-          status: 'Indicated',
-          assessed: true,
-          bases: [
-            {
-              source: 'Diabetes model',
-              ml: { model_name: 'Random Forest', probability: 0.8 },
-              limitations: {
-                metrics_available: true,
-                metrics_absent_code: 'METRICS_OPERATING_POINT_INCOMPLETE',
-                roc_auc: 0.94,
-                recall_at_operating_threshold: null,
-                precision_at_operating_threshold: null,
-                caveats: [],
-              },
-            },
-          ],
-        },
-      ],
-    });
-
-    expect(
-      await screen.findByText('METRICS_OPERATING_POINT_INCOMPLETE')
-    ).toBeInTheDocument();
-    // The missing numbers are stated as missing, not omitted silently.
-    expect(
-      screen.getAllByText('Not recorded for this model.').length
-    ).toBeGreaterThan(0);
-  });
-
-  it('renders a withheld trend section with its reason, never as stability', async () => {
-    await mountSummary({
-      overall: { status_label: 'Attention Needed' },
-      assessments: [],
-      trends: {
-        present: false,
-        reason_code: 'SUBJECT_NOT_IN_HISTORY',
-        reason:
-          'The report this summary describes is not among the reports supplied as its history, so no trend is shown. This is not a finding of stability.',
+    },
+    abnormal_findings: ['Diabetes', 'Kidney Disease'],
+    assessments: [
+      {
+        condition: 'Diabetes',
+        status: 'Indicated',
+        assessed: true,
+        bases: [
+          { source_kind: 'clinical_rule', status: 'Indicated', rule: { rule_ids: ['RULE_DIABETES_HBA1C'] } },
+        ],
       },
-    });
+      {
+        // THE CASE THAT MATTERS. The rule did NOT fire; the model did.
+        condition: 'Kidney Disease',
+        status: 'Indicated',
+        assessed: true,
+        bases: [
+          { source_kind: 'clinical_rule', status: 'Not Indicated', rule: { rule_ids: ['RULE_KIDNEY_CREATININE'] } },
+          {
+            source_kind: 'machine_learning',
+            status: 'Indicated',
+            ml: {
+              model_name: 'Random Forest',
+              probability: 0.7,
+              limitations: {
+                roc_auc: 0.9987,
+                author_note: { text: 'A ROC-AUC near 0.99 says the separation was easy, not that this would hold on a screening population.' },
+              },
+            },
+          },
+        ],
+      },
+      { condition: 'Anemia', status: 'Not Indicated', assessed: true, bases: [] },
+    ],
+    unassessed_conditions: [],
+  };
 
-    expect(await screen.findByText(/not a finding of stability/)).toBeInTheDocument();
-    expect(screen.getByText('SUBJECT_NOT_IN_HISTORY')).toBeInTheDocument();
+  it('gives the values, in the wording printed on the source report', async () => {
+    await mountSummary(REPORT);
+    await screen.findByText(/Reported values/);
+    // A clinician reads this beside the paper, so it matches on the paper's
+    // wording -- not on the catalog's internal display name.
+    expect(passage()).toMatch(/HbA1C \(Glycosylated Haemoglobin\) 8\.4 %/);
+    expect(passage()).toMatch(/Serum Creatinine 1\.1 mg\/dl/);
   });
 
-  it('says so when the report is not in its own history', async () => {
-    await mountSummary(
-      { overall: { status_label: 'Attention Needed' }, assessments: [] },
-      { subjectInHistory: false }
+  it('never lets bare numbers read as in range', async () => {
+    // Eight values and no intervals is the common case, and without this one
+    // sentence the list reads as a normal panel.
+    await mountSummary(REPORT);
+    await screen.findByText(/Reported values/);
+    expect(passage()).toMatch(/printed no reference intervals/);
+    expect(passage()).toMatch(/no value here is placed relative to a range/);
+  });
+
+  it('SAYS WHEN ONLY THE MODEL FLAGGED SOMETHING', async () => {
+    // The single most important thing this passage carries. Creatinine 1.1
+    // does not cross the kidney rule; the model flagged it anyway. A clinician
+    // told "kidney disease flagged" without that is being told something the
+    // analysis did not find.
+    await mountSummary(REPORT);
+    await screen.findByText(/Flagged/);
+    expect(passage()).toMatch(
+      /Kidney Disease was flagged by the statistical model only/
     );
-
-    expect(
-      await screen.findByText(/not among the reports used for the trend/)
-    ).toBeInTheDocument();
+    expect(passage()).toMatch(/no measured value crossed a configured threshold/);
+    // And a rule-flagged topic is not described that way.
+    expect(passage()).toMatch(/configured cut-offs flagged Diabetes/);
   });
 
-  it('never renders an absent assessment as a clean bill', async () => {
-    await mountSummary({
-      overall: {
-        status_label: 'Not Assessed',
-        clean_bill_of_health: false,
-        assessment_reading: 'Nothing could be assessed from this report.',
-      },
-      assessments: [],
-      unassessed_conditions: ['Diabetes', 'Kidney Disease'],
-    });
+  it('carries one sentence of model limitation, in the author own words', async () => {
+    // Found missing from this page three separate times (6o D8, 6p, and the
+    // `basis.ml.limitations` path bug).
+    await mountSummary(REPORT);
+    await screen.findByText(/Flagged/);
+    expect(passage()).toMatch(/not a measurement/);
+    expect(passage()).toMatch(/says the separation was easy/);
+  });
 
-    expect(await screen.findByText(/not a clean bill of health/)).toBeInTheDocument();
-    expect(screen.getByText(/open questions, not negative results/)).toBeInTheDocument();
+  it('omits the model paragraph entirely when no model flagged anything', async () => {
+    await mountSummary({
+      ...REPORT,
+      abnormal_findings: ['Diabetes'],
+      assessments: [REPORT.assessments[0], REPORT.assessments[2]],
+    });
+    await screen.findByText(/Flagged/);
+    expect(passage()).not.toMatch(/statistical model only/);
+    expect(passage()).not.toMatch(/On the model output/);
+  });
+
+  it('names what was assessed and not flagged, without calling it ruled out', async () => {
+    await mountSummary(REPORT);
+    await screen.findByText(/Assessed, not flagged/);
+    expect(passage()).toMatch(/Anemia/);
+    expect(passage()).toMatch(/none was crossed/);
+  });
+
+  it('NEVER DROPS AN ABSENCE UNDER COMPRESSION', async () => {
+    // The rule the whole codebase is built on, and the one a summary is most
+    // likely to lose. Three separate absences, all in the payload.
+    await mountSummary({
+      ...REPORT,
+      unassessed_conditions: ['Vitamin D Deficiency'],
+      data_quality: { page_count: 3, pages_unreadable: [2], partial_document: true, sources_failed: [] },
+    });
+    await screen.findByText(/Not assessed/);
+    // Profile fields that were never supplied. Said once, in sentence case.
+    expect(passage()).toMatch(/Hypertension, heart disease, smoking history were not supplied/);
+    // A condition with no inputs.
+    expect(passage()).toMatch(/Vitamin D Deficiency could not be assessed/);
+    // NOT repeated as "not present in this report": for these three the two
+    // lists hold the same names, and a field the patient never supplied
+    // cannot also be a parameter the report failed to carry.
+    expect(passage()).not.toMatch(/not present in this report/);
+    // A page that could not be read.
+    expect(passage()).toMatch(/Part of the document could not be read \(page 2\)/);
+    expect(passage()).toMatch(/None of this is a negative finding/);
+  });
+
+  it('names a parameter the report lacked that the patient DID supply', async () => {
+    // The other half of the pair above: `features_not_present` that is not
+    // simply a restatement of the unsupplied profile fields must still be
+    // named, or a real gap in the report goes unmentioned.
+    await mountSummary({
+      ...REPORT,
+      patient: { ...REPORT.patient, hypertension: false, heart_disease: false, smoking_history: 'never' },
+      laboratory: { ...REPORT.laboratory, features_not_present: ['vitamin_b12'] },
+    });
+    await screen.findByText(/Not assessed/);
+    expect(passage()).toMatch(/Vitamin b12 was not present in this report/);
+    expect(passage()).not.toMatch(/were not supplied/);
+  });
+
+  it('closes on one line, not a scope statement', async () => {
+    await mountSummary(REPORT);
+    await screen.findByText(/Not a diagnosis/);
+    expect(passage()).toMatch(/original laboratory report remains the primary record/);
+    // The page no longer explains itself: no legend, no provenance block, no
+    // reference appendix, no source-file paths.
+    for (const noise of [
+      'Clinical Rule Engine',
+      'Random Forest',
+      'RULE_',
+      'app/services',
+      'What each source answers',
+      'How this document was produced',
+      'Reference material consulted',
+      'Technical details',
+    ]) {
+      expect(passage()).not.toContain(noise);
+    }
+    // The metrics TABLE is gone. "ROC-AUC" is not on the forbidden list
+    // because it survives inside the model author's own caveat, and rewriting
+    // an author's safety note to strip a term is not a licence this page has.
+    expect(passage()).not.toMatch(/Detection at the operating threshold/);
+    expect(passage()).not.toMatch(/Precision at that threshold/);
+    expect(passage()).not.toMatch(/majority-class baseline/);
+  });
+
+  it('says so plainly when nothing was flagged', async () => {
+    await mountSummary({
+      ...REPORT,
+      abnormal_findings: [],
+      assessments: [REPORT.assessments[2]],
+    });
+    await screen.findByText(/Flagged/);
+    expect(passage()).toMatch(/No topic crossed a configured threshold/);
+    // And that is still not a clean bill: the absences paragraph stands.
+    expect(passage()).toMatch(/not supplied/);
+  });
+
+  it('excludes a rejected reading from the values and says it was excluded', async () => {
+    await mountSummary({
+      ...REPORT,
+      laboratory: {
+        ...REPORT.laboratory,
+        rows: [
+          ...REPORT.laboratory.rows,
+          {
+            feature: 'vitamin_d',
+            display_name: 'Vitamin D',
+            value: 9999,
+            unit: 'ng/ml',
+            usable: false,
+            provenance: { source: 'lab_report', original_test_name: { text: 'Vitamin D', state: 'CLEAN' } },
+          },
+        ],
+      },
+    });
+    await screen.findByText(/Reported values/);
+    // A rejected reading must never appear among the results as a number.
+    expect(passage()).not.toMatch(/9999/);
+    expect(passage()).toMatch(/Vitamin D did not pass validation/);
   });
 });
 

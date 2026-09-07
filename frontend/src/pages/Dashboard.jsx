@@ -473,9 +473,45 @@ const SKIP_REASON = {
  * Only the second is true, and only the second lets someone know they still
  * need a person to look at the rest.
  */
+/**
+ * What a test measures — never what this reader's result means.
+ *
+ * THREE STATES, AND THE SILENT ONE IS DELIBERATE. Only tests the laboratory
+ * itself marked abnormal are ever described, so an item with no description
+ * fields was never asked about and gets nothing rendered: inventing a line for
+ * it would say "there is nothing to tell you about this test" when the truth is
+ * that nobody asked. An item whose description was WITHHELD — the model did not
+ * answer, or the safety validator refused what it said — is different, and says
+ * so out loud, because a blank space there would read as an absence of content
+ * rather than a suppression of it.
+ */
+function ParameterDescription({ item }) {
+  if (item.descriptionAvailable === true) {
+    return <p className="unanalysed__description">{item.description}</p>;
+  }
+  if (item.descriptionAvailable === false) {
+    // THE PRODUCER'S NOTICE IS ALREADY A WHOLE SENTENCE, written for a patient
+    // and chosen to fit the reason. Prefixing it with a sentence of our own
+    // said the same thing twice on screen. Ours is the fallback for a withheld
+    // entry that arrived with no notice at all, which must still not render as
+    // a blank line.
+    return (
+      <p className="unanalysed__description unanalysed__description--withheld">
+        {isPresent(item.descriptionNotice)
+          ? item.descriptionNotice
+          : 'No description of this test was produced. The value shown for it comes from your report and is unaffected.'}
+      </p>
+    );
+  }
+  return null;
+}
+
 function Unanalysed({ unanalysed }) {
   const items = unanalysed?.items || [];
   if (!items.length) return null;
+  // Branch on the count derived from the items themselves, so the sentence
+  // explaining the descriptions appears only when there are descriptions.
+  const anyDescribed = items.some((item) => item.descriptionAvailable === true);
 
   const labFlagged = items.filter((item) => item.labFlaggedAbnormal === true);
   const rest = items.filter((item) => item.labFlaggedAbnormal !== true);
@@ -508,6 +544,20 @@ function Unanalysed({ unanalysed }) {
           is not the same as being normal.
         </strong>
       </p>
+
+      {/* THE WHOLE SAFETY STORY OF THE DESCRIPTIONS, NEXT TO THE TEXT IT IS
+          ABOUT. Each description was generated from the test's NAME alone —
+          no value, unit, reference range, laboratory flag or profile detail
+          was sent — so it cannot be, and must not be read as, a statement
+          about this reader's result. That sentence is the reason the feature
+          is safe to ship, and it belongs on screen rather than in a comment. */}
+      {anyDescribed ? (
+        <p className="hint">
+          Where a description appears below, it explains what the test measures
+          in general. It was written from the name of the test only — your
+          result was not used and is not interpreted here.
+        </p>
+      ) : null}
 
       {/* THE LABORATORY'S OWN MARKINGS, WHICH COST NOTHING TO HONOUR.
           Module 4 already read each parameter's printed range and the lab's
@@ -542,6 +592,7 @@ function Unanalysed({ unanalysed }) {
                 {range(item) ? (
                   <span className="unanalysed__range"> (range {range(item)})</span>
                 ) : null}
+                <ParameterDescription item={item} />
               </li>
             ))}
           </ul>
@@ -564,11 +615,327 @@ function Unanalysed({ unanalysed }) {
                     {isPresent(item.unit) ? ` ${item.unit}` : ''}
                   </span>
                 ) : null}
+                <ParameterDescription item={item} />
               </li>
             ))}
           </ul>
         </details>
       ))}
+    </section>
+  );
+}
+
+/**
+ * The whole report, in one place, in English -- COMPOSED, NEVER GENERATED.
+ *
+ * ==========================================================================
+ * WHY THIS IS NOT A MODEL CALL, WHICH IS THE OBVIOUS WAY TO BUILD IT
+ * ==========================================================================
+ *
+ * "Summarise this report for the patient" is one prompt away and it would be
+ * the single most dangerous string on this screen. A generated overall summary
+ * is a new patient-facing conclusion with no rule, no threshold, no model and
+ * no evidence chain behind it -- rendered underneath fourteen findings that
+ * have all four, and indistinguishable from them. It could also contradict the
+ * cards above it while looking more authoritative than any of them, because it
+ * is the part a reader will actually read.
+ *
+ * So every sentence below is assembled from a decision some stage already
+ * made and this file only puts into words. Nothing here can say anything the
+ * page above does not already say.
+ *
+ * THE COUNTS COME FROM THE CARDS ON SCREEN, NOT FROM THE COUNTERS. `overall`
+ * carries `abnormalConditionCount` and it would be the easy thing to print --
+ * but the page groups cards with its own predicate (`Not Indicated` + assessed
+ * + not flagged, and anything unrecognised stays flagged), so a counter and
+ * the cards can disagree. A summary that says six while five cards are shown
+ * is worse than no summary, and MEMORY.md section 6u records this project
+ * printing `unmapped_count: 0` over a list of sixty-three. So the already
+ * grouped arrays are passed in and counted here.
+ *
+ * WHAT IT MUST NEVER DO is the failure this whole codebase is built against:
+ * report an absence as a negative result. Three separate paragraphs exist
+ * only to prevent that -- the topics that could not be checked, the tests the
+ * laboratory flagged that this platform does not assess at all, and the pages
+ * that could not be read. Any of them being silently dropped turns "we did not
+ * look" into "we looked and found nothing".
+ */
+
+/**
+ * Module 18's five labels, in the words a patient uses.
+ *
+ * AN UNRECOGNISED LABEL GETS NO SENTENCE. If Module 18 ever grows a sixth
+ * value, guessing at its meaning here would put a fabricated conclusion under
+ * a real one; the label is shown as it stands instead, and the reader is told
+ * plainly that this screen has no plain-English wording for it. A missing
+ * gloss is a cosmetic problem. A wrong one is a clinical problem.
+ */
+/*
+ * NOTE THE ABSENCE OF THE WORDS "IN THIS REPORT". The first version of this
+ * table said "Something in this report is outside its usual range", and on a
+ * report whose every laboratory value was in range and whose only finding was
+ * Obesity, that sentence was FALSE: Obesity is decided from BMI, BMI is
+ * computed from the height and weight the patient typed into the profile form,
+ * and nothing about it was measured in the document. A reader looking at a
+ * table of in-range results and a summary claiming their report was out of
+ * range has been handed a contradiction the page created itself.
+ *
+ * The lab table already keeps the two apart -- "Your results" and "From your
+ * profile" are separate sections for exactly this reason -- and the summary
+ * had flattened that distinction back. So the wording claims no location, and
+ * the source of a flagged finding is stated explicitly below where it is known.
+ */
+const STATUS_IN_ENGLISH = {
+  Healthy: 'Nothing this tool checked was outside its usual range.',
+  'Healthy (partial assessment)':
+    'Nothing this tool was able to check was outside its usual range — but it could not check everything, so this is not a clean bill of health.',
+  'Needs Monitoring':
+    'One of the things this tool checked was outside its usual range. It is worth keeping an eye on and worth raising at your next appointment.',
+  'Needs Medical Attention':
+    'One of the things this tool checked was outside its usual range by enough that it should be looked at by a doctor.',
+  'Not Assessed':
+    'This report could not be assessed. That is not a result — it means no finding was reached either way.',
+};
+
+/**
+ * Was every value behind this finding typed in rather than measured?
+ *
+ * BMI drives Obesity and Underweight, and BMI comes from the profile form. A
+ * finding resting entirely on it is a finding about what the patient told us,
+ * not about their blood, and saying otherwise invents a measurement.
+ *
+ * NO EVIDENCE MEANS NO CLAIM. An empty `lines` array returns false, so a
+ * finding whose provenance is unknown is never labelled as coming from the
+ * profile -- unknown provenance must not become a statement, in either
+ * direction. `every` over an empty array is `true`, which is why the length
+ * check is here and not an oversight.
+ */
+function isProfileDerived(evidence) {
+  const lines = evidence?.lines || [];
+  if (!lines.length) return false;
+  return lines.every((line) => line.sourceStage === 'patient_profile');
+}
+
+/**
+ * Join names into prose WITHOUT merging them into each other.
+ *
+ * A laboratory prints "LDL Cholesterol, Direct" and "Potassium, Serum", so a
+ * comma-joined list of three tests read as five: *"LDL Cholesterol, Direct,
+ * Blood Urea, Potassium, Serum"*. On a line that begins "your laboratory
+ * marked 3 results outside its own range" the count and the list then
+ * contradict each other, and the reader cannot tell which names are real.
+ *
+ * The separator is chosen from the data rather than assumed: a semicolon only
+ * where a name actually contains a comma, so the ordinary case still reads as
+ * ordinary English.
+ */
+const nameList = (names) =>
+  names.join(names.some((name) => String(name).includes(',')) ? '; ' : ', ');
+
+const listOfNames = (cards) => nameList(cards.map((card) => card.condition));
+
+function InShort({ dashboard, flaggedCards, clearCards, unassessedCards }) {
+  const overall = dashboard.overall;
+  if (!overall) return null;
+
+  const label = isPresent(overall.statusLabel) ? overall.statusLabel : null;
+  // `?? null` is load-bearing. A bare lookup yields `undefined` for an
+  // unrecognised label, `undefined !== null` is true, and the headline then
+  // rendered an EMPTY `<strong>` -- the summary silently said nothing about
+  // the verdict instead of falling through to the wording below. Found by the
+  // test for exactly that case.
+  const inEnglish =
+    label === null ? null : STATUS_IN_ENGLISH[label] ?? null;
+
+  const checked = flaggedCards.length + clearCards.length;
+  const unanalysed = dashboard.unanalysed || {};
+  const labFlagged = (unanalysed.items || []).filter(
+    (item) => item.labFlaggedAbnormal === true
+  );
+  // The skipped results the laboratory did NOT mark. Counted off the same
+  // items list rather than from `unanalysed.count` alone, so the two
+  // paragraphs about skipped tests can never overlap or double-count.
+  const unflagged = (unanalysed.items || []).length - labFlagged.length;
+  const unreadable = dashboard.document?.pagesUnreadable || [];
+
+  // WHICH FLAGGED FINDINGS CAME FROM THE FORM RATHER THAN THE REPORT.
+  // Obesity and Underweight rest entirely on BMI, which is computed from the
+  // height and weight the patient entered. Without this, a report whose every
+  // laboratory value is in range can carry a summary saying something is out
+  // of range, and nothing on the page explains where it came from.
+  const evidenceFor = new Map(
+    (dashboard.evidence?.conditions || []).map((item) => [item.condition, item])
+  );
+  const fromProfile = flaggedCards.filter((card) =>
+    isProfileDerived(evidenceFor.get(card.condition))
+  );
+
+  return (
+    <section className="card in-short">
+      <h2>In short</h2>
+
+      {/* THE HEADLINE, and the only place on this page that puts Module 18's
+          verdict into a sentence. The label itself is kept beside it: the
+          sentence is this screen's wording, the label is the pipeline's, and
+          a reader comparing this section with the card at the top must be
+          able to see they are the same verdict. */}
+      <p className="in-short__headline">
+        {inEnglish !== null ? (
+          <strong>{inEnglish}</strong>
+        ) : label !== null ? (
+          <>
+            <strong>This report was assessed as “{label}”.</strong> This screen
+            has no plain-English wording for that result, so it is shown exactly
+            as the analysis recorded it.
+          </>
+        ) : (
+          <Absent
+            label="No overall result"
+            reason="No overall status was established for this report, so there is nothing to summarise here."
+          />
+        )}
+      </p>
+
+      {/* NO "Recorded as Needs Monitoring · overall risk: Low" LINE HERE.
+          It restated two internal labels the card at the top of the page
+          already shows, and restating them is what made them look like a
+          contradiction in the first place: a reader asked why something
+          "needs monitoring" if the risk is "low". Those two words come from
+          different scales, and the honest fix on a PATIENT screen is not a
+          paragraph reconciling them -- it is not to put the reader in front of
+          the pair at all. The sentence above already carries the severity
+          ("worth keeping an eye on" against "should be looked at by a
+          doctor"), which is the part a patient can act on. The vocabulary
+          lives on the Overall card and on the clinician summary, which is the
+          split section 6u established. */}
+
+      {/* WHAT WAS CHECKED AND WHAT CAME BACK. Counted off the cards above. */}
+      {checked > 0 ? (
+        <p>
+          This tool checked <strong>{checked}</strong> topic
+          {checked === 1 ? '' : 's'} against a fixed set of thresholds.{' '}
+          {flaggedCards.length ? (
+            <>
+              <strong>
+                {flaggedCards.length} need
+                {flaggedCards.length === 1 ? 's' : ''} a closer look
+              </strong>
+              : {listOfNames(flaggedCards)}.
+              {clearCards.length
+                ? ` The other ${clearCards.length} showed nothing: ${listOfNames(
+                    clearCards
+                  )}.`
+                : ''}
+            </>
+          ) : (
+            <>
+              None of them showed anything outside its usual range
+              {clearCards.length ? `: ${listOfNames(clearCards)}` : ''}.
+            </>
+          )}
+        </p>
+      ) : null}
+
+      {/* WHERE A FLAGGED FINDING ACTUALLY CAME FROM. Only stated where it is
+          known and where it is the whole of the finding -- a mixed finding
+          rests partly on measurements and saying "not from your report" about
+          it would be its own false claim. */}
+      {fromProfile.length ? (
+        <p className="hint">
+          {nameList(fromProfile.map((card) => card.condition))}{' '}
+          {fromProfile.length === 1 ? 'comes' : 'come'} from the details you
+          entered — your height, weight, age and the answers you gave — not
+          from anything measured in this report.
+          {/* THE SECOND SENTENCE IS ONLY TRUE WHEN THE PROFILE FINDINGS ARE
+              THE ONLY FINDINGS. On a report that also flagged Diabetes from a
+              raised HbA1c, "while every laboratory result on the page is in
+              range" is false -- the same mistake as the locative this
+              paragraph exists to fix, one clause further down. Caught by
+              reading the sentence on a real mixed report. */}
+          {fromProfile.length === flaggedCards.length ? (
+            <>
+              {' '}
+              That is why{' '}
+              {fromProfile.length === 1 ? 'it can be flagged' : 'they can be flagged'}{' '}
+              while every laboratory result on the page is in range.
+            </>
+          ) : null}
+        </p>
+      ) : null}
+
+      {/* ABSENCE #1: topics that could not be checked at all. */}
+      {unassessedCards.length ? (
+        <p className="caveat">
+          <strong>
+            {unassessedCards.length} topic
+            {unassessedCards.length === 1 ? '' : 's'} could not be checked
+          </strong>{' '}
+          — {listOfNames(unassessedCards)}. Your report did not contain the
+          tests needed. Each of those is an open question, not a clear result.
+        </p>
+      ) : null}
+
+      {/* ABSENCE #2: the laboratory's own flags on tests never assessed here.
+          These are results a reader will stop on and a doctor will want
+          raised, and they sit outside every count above -- so leaving them
+          out of the summary would let the reader think the flagged topics
+          were the whole story. */}
+      {labFlagged.length ? (
+        <p className="caveat">
+          <strong>
+            Your laboratory marked {labFlagged.length} further result
+            {labFlagged.length === 1 ? '' : 's'} outside its own range
+          </strong>{' '}
+          — {nameList(labFlagged.map((item) => item.testName))}. This tool does
+          not check {labFlagged.length === 1 ? 'that test' : 'those tests'} at
+          all, so nothing above takes {labFlagged.length === 1 ? 'it' : 'them'}{' '}
+          into account. That is your laboratory&rsquo;s judgement, not this
+          tool&rsquo;s, and it is worth raising.
+        </p>
+      ) : null}
+
+      {unflagged > 0 ? (
+        <p className="hint">
+          {unflagged === 1
+            ? 'One further result on your report was read but not assessed, and your laboratory did not mark it as abnormal.'
+            : `A further ${unflagged} results on your report were read but not assessed, and your laboratory did not mark them as abnormal.`}{' '}
+          Not checked is not the same as normal.
+        </p>
+      ) : null}
+
+      {/* ABSENCE #3: the document itself. A test missing from the analysis
+          because its page could not be read is not a test that was absent
+          from the report, and only this says which. */}
+      {unreadable.length || dashboard.document?.partialDocument === true ? (
+        <p className="caveat">
+          <strong>Part of this document could not be read</strong>
+          {unreadable.length
+            ? ` (page${unreadable.length === 1 ? '' : 's'} ${unreadable.join(', ')})`
+            : ''}
+          . A test missing from this analysis may be missing from the reading
+          rather than absent from your report.
+        </p>
+      ) : null}
+
+      {overall.sourcesFailed?.length ? (
+        <p className="caveat">
+          Some stages of the analysis did not complete:{' '}
+          {overall.sourcesFailed.join(', ')}. What they would have contributed
+          is missing from everything above.
+        </p>
+      ) : null}
+
+      {/* THE CLOSING LINE IS NOT OPTIONAL and is deliberately not conditional
+          on anything having been flagged: a reader whose report came back
+          clear is exactly the reader most likely to treat this page as a
+          medical opinion. It states what this is and what to do, and it
+          recommends no treatment, no test and no action beyond seeing someone
+          qualified. */}
+      <p className="in-short__closing">
+        This is health education and decision support. It is not a diagnosis,
+        and it is not a substitute for advice from a qualified healthcare
+        professional. Take this report — and anything marked above — to one.
+      </p>
     </section>
   );
 }
@@ -1176,6 +1543,23 @@ export default function Dashboard() {
           care about, so it sits at the end rather than pushing the findings
           below the fold. */}
       <Explanations explanations={recommendations.explanations} />
+
+      {/* THE LAST THING ON THE PAGE, and the only place the whole report is
+          said in one breath. It comes after the detail rather than before it
+          because it is a recap, not a headline -- the card at the top already
+          carries the verdict, and a summary that appeared first would be read
+          INSTEAD OF the findings rather than after them.
+
+          The grouped card arrays are handed down rather than recomputed, so
+          the sentence "5 need a closer look" is counting the same five cards
+          the reader just scrolled past. Two independent counts of one thing
+          is two things to get wrong. */}
+      <InShort
+        dashboard={dashboard}
+        flaggedCards={flaggedCards}
+        clearCards={clearCards}
+        unassessedCards={unassessedCards}
+      />
     </main>
   );
 }

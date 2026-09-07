@@ -226,3 +226,69 @@ button.danger { background: var(--danger); border-color: var(--danger); }
 .unanalysed__list--flagged li { margin-bottom: 5px; }
 .unanalysed__name { font-weight: 600; }
 .unanalysed__range { color: var(--muted); font-size: 13px; }
+
+/* What the test measures, generated from its NAME alone. Set apart from the
+   value beside it -- the number is the laboratory's measurement of this
+   patient, the sentence is a definition of the test in general, and the two
+   must not read as one statement. */
+.unanalysed__description { margin: 2px 0 0; font-size: 13px; line-height: 1.5; color: var(--muted); }
+.unanalysed__description--withheld { font-style: italic; }
+
+/* "In short" -- the whole report in one place, at the foot of the page.
+   Given a heavier top border than an ordinary card because it closes the
+   page rather than continuing it. */
+.in-short { border-top: 3px solid var(--accent); margin-top: 28px; }
+.in-short__headline { font-size: 17px; line-height: 1.5; margin: 0 0 6px; }
+.in-short__meta { color: var(--muted); font-size: 14px; margin: 0 0 14px; }
+.in-short p { line-height: 1.6; }
+/* The closing line is set apart from the findings above it: it is a statement
+   about what this whole page is, not another finding. */
+.in-short__closing {
+  margin: 16px 0 0; padding-top: 14px; border-top: 1px solid var(--line);
+  color: var(--muted); font-size: 14px;
+}
+
+/* ---- clinician summary ------------------------------------------------- */
+/* A key/value block for context a clinician scans rather than reads. */
+.kv { margin: 8px 0 0; }
+.kv__row { display: grid; grid-template-columns: minmax(120px, 200px) 1fr; gap: 12px; padding: 5px 0; border-bottom: 1px solid var(--line); }
+.kv__row:last-child { border-bottom: none; }
+.kv dt { font-weight: 600; color: var(--muted); }
+.kv dd { margin: 0; }
+
+/* A model probability. Rounded on screen; the exact value is in the title. */
+.prob { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* Said once, not per row: what each kind of source answers. */
+.legend { background: var(--bg); }
+.legend h3 { margin: 0 0 4px; font-size: 15px; }
+
+/* Assessed and not flagged, in one line instead of one card each. */
+.roundup { padding: 10px 14px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
+
+.refs { list-style: none; padding: 0; }
+.refs li { border-left: 3px solid var(--line); padding-left: 12px; margin-bottom: 14px; }
+.refs li p { margin: 4px 0 0; }
+
+.scope ul { padding-left: 18px; color: var(--muted); font-size: 14px; }
+/* The scope statement, at the top. A list rather than a run-on paragraph:
+   five statements set as one block of prose read as a wall to scroll past. */
+.scope-list { padding-left: 18px; margin: 4px 0 18px; color: var(--muted); font-size: 14px; }
+.scope-list li { margin-bottom: 4px; }
+.scope li { margin-bottom: 5px; }
+.integrity { background: var(--bg); }
+
+/* Figures, identifiers and provenance a normal reader does not need, one
+   click away rather than deleted. Never holds a caveat -- see DoctorSummary. */
+.tech { margin-top: 6px; }
+.tech > summary { cursor: pointer; color: var(--accent); font-size: 13px; }
+.tech__body { padding: 6px 0 2px 12px; border-left: 2px solid var(--line); margin-top: 6px; }
+.tech__body ul { margin: 0; }
+
+/* The clinician summary as one passage. Set for reading, not scanning: a
+   measured line length and real paragraph spacing. */
+.passage { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 22px 26px; }
+.passage p { margin: 0 0 14px; line-height: 1.65; max-width: 68ch; }
+.passage p:last-child { margin-bottom: 0; }
+.passage strong { color: var(--ink); }
+.passage__close { padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
