@@ -121,6 +121,46 @@ def _anchor_free_text(text: str) -> "tuple[tuple[str, ...], tuple[str, ...]]":
     return tuple(features), tuple(conditions)
 
 
+def _anchored_query(
+    conditions: Sequence[str],
+    features: Sequence[str],
+    text: Optional[str],
+):
+    """Build the query BOTH entry points retrieve with, anchoring included.
+
+    THIS EXISTS BECAUSE THE ANCHORING WAS ONLY ON ONE OF THEM. `retrieve` did
+    it; `retrieve_payload` -- which is what the public
+    `POST /api/v1/knowledge/retrieve` endpoint calls -- built its query
+    directly and skipped it. So the safety control existed, was tested, was
+    documented, and was bypassed by the one path a stranger can reach:
+
+        "what should I take for my thyroid"  -> 5 chunks about triglycerides
+        "is my liver enzyme high"            -> 5 chunks about LDL/HDL
+        "chest pain"                         -> a chunk about seeking advice
+
+    That is section 6k's D7 defect, which section 6r found still live, and it
+    stayed live because a fix applied to one of two duplicated code paths
+    looks complete from either end. Both paths now build their query here, so
+    the next control added cannot be half-applied the same way.
+
+    Returns `None` when free text anchors to nothing at all -- the caller
+    returns no chunks, which is the whole point: better to say a question is
+    not covered than to explain a different analyte.
+    """
+    anchored_features, anchored_conditions = (), ()
+    if text and not (features or conditions):
+        anchored_features, anchored_conditions = _anchor_free_text(text)
+        if not (anchored_features or anchored_conditions):
+            return None
+
+    query = build_query(
+        conditions=tuple(conditions) + tuple(anchored_conditions),
+        features=tuple(features) + tuple(anchored_features),
+        text=text,
+    )
+    return None if query.is_empty else query
+
+
 def retrieve(
     *,
     conditions: Sequence[str] = (),
@@ -166,18 +206,8 @@ def retrieve(
     # the same principle Module 25 uses for terminology (map exactly, or refuse).
     # A query that anchors to nothing in the catalogue returns NOTHING, rather
     # than the nearest-looking chunk.
-    anchored_features, anchored_conditions = (), ()
-    if text and not (features or conditions):
-        anchored_features, anchored_conditions = _anchor_free_text(text)
-        if not (anchored_features or anchored_conditions):
-            return []
-
-    query = build_query(
-        conditions=tuple(conditions) + tuple(anchored_conditions),
-        features=tuple(features) + tuple(anchored_features),
-        text=text,
-    )
-    if query.is_empty:
+    query = _anchored_query(conditions, features, text)
+    if query is None:
         return []
     return (index or get_index()).search(query, top_k=top_k, floor=floor)
 
@@ -196,19 +226,28 @@ def retrieve_payload(
     The echo matters for explainability: a reader shown retrieved knowledge
     should be able to see what question produced it, not just the answer.
     """
-    query = build_query(conditions=conditions, features=features, text=text)
+    query = _anchored_query(conditions, features, text)
     results = (
         []
-        if query.is_empty
+        if query is None
         else (index or get_index()).search(query, top_k=top_k, floor=floor)
     )
-    return {
-        "query": {
+    # The echo describes what was ACTUALLY retrieved on, anchored terms
+    # included, so a reader can see that "my thyroid" resolved to nothing and
+    # a covered question resolved to the canonical names it was answered
+    # with. An echo of the raw text alone would hide the step that matters.
+    echo = (
+        {"conditions": [], "features": [], "text": text, "source": "unanchored"}
+        if query is None
+        else {
             "conditions": list(query.conditions),
             "features": list(query.features),
             "text": query.raw_text,
             "source": query.source,
-        },
+        }
+    )
+    return {
+        "query": echo,
         "similarity_floor": floor,
         "returned": len(results),
         "results": [r.to_dict() for r in results],

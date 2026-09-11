@@ -156,11 +156,41 @@ def test_every_returned_chunk_carries_its_provenance(kclient):
 
 
 def test_free_text_retrieval_works(kclient):
+    """Free text still retrieves -- but ANCHORED, which the echo now shows.
+
+    `source` was asserted to be `"text"`, and that assertion encoded the
+    defect rather than the requirement: it recorded that this endpoint
+    retrieved on the raw words, which is precisely what sections 6k D7 and
+    6r D1 were about. The words are now resolved to canonical features first
+    and retrieved on those, so the query is `findings_and_text` -- the text is
+    still echoed, and what it resolved to is visible beside it.
+    """
     response = kclient.post(RETRIEVE, json={"text": "what does HbA1c measure"})
     assert response.status_code == 200
     data = response.json()["data"]
-    assert data["query"]["source"] == "text"
+    assert data["query"]["source"] == "findings_and_text"
+    assert data["query"]["features"] == ["hba1c"]
+    assert data["query"]["text"] == "what does HbA1c measure"
     assert data["results"]
+
+
+def test_an_uncovered_medical_question_is_refused_over_HTTP(kclient):
+    """The defect, at the layer it was actually reachable from.
+
+    `test_off_domain_query_returns_empty_not_junk` passed throughout, because
+    a bicycle puncture is far enough off-domain for the similarity floor to
+    catch it. The queries that got through were MEDICAL ones this corpus does
+    not cover -- they score inside the same range as covered terms, so no
+    floor can separate them, and only anchoring can.
+    """
+    response = kclient.post(
+        RETRIEVE, json={"text": "my ALT and AST liver enzymes are high"}
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["results"] == []
+    assert data["returned"] == 0
+    assert data["grounding_available"] is False
 
 
 @pytest.mark.parametrize(

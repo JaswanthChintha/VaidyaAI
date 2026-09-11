@@ -450,3 +450,81 @@ def test_index_stats_report_shape_only(index):
     serialised = json.dumps(stats)
     for chunk in index.chunks[:20]:
         assert chunk.text not in serialised
+
+
+# --------------------------------------------------------------------------
+# The anchoring reaches the PUBLIC path too (section 6k D7 / section 6r D1)
+# --------------------------------------------------------------------------
+#
+# The anchoring control existed, was tested, and was documented -- on
+# `retrieve()`. `retrieve_payload()` built its query directly and skipped it,
+# and `retrieve_payload` is what `POST /api/v1/knowledge/retrieve` calls. So
+# the one path a stranger can reach was the one without the control, and two
+# audits recorded the defect as open because a fix applied to one of two
+# duplicated paths looks complete from either end.
+#
+# These are D7's own examples. `test_retrieve_payload_reports_no_grounding_for
+# _off_domain` above passed throughout, because "how do I fix my bicycle" is
+# so far off-domain that the similarity floor caught it. The dangerous queries
+# are the MEDICAL ones this corpus does not cover: measured, they score
+# 0.141-0.271 while covered terms score 0.121-0.27, so the ranges overlap
+# completely and no floor can separate them.
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "my ALT and AST liver enzymes are high",
+        "C reactive protein CRP",
+        "what should I take for my thyroid",
+        "is my liver enzyme high",
+        "chest pain",
+    ],
+)
+def test_an_uncovered_medical_question_grounds_on_nothing(index, question):
+    """Both entry points, because only one of them used to refuse."""
+    assert retrieve(text=question, index=index) == []
+    payload = retrieve_payload(text=question, index=index)
+    assert payload["returned"] == 0
+    assert payload["grounding_available"] is False
+    assert payload["results"] == []
+
+
+@pytest.mark.parametrize(
+    "question,expected_feature",
+    [
+        ("what does a raised HbA1c mean", "hba1c"),
+        ("blood glucose", "blood_glucose"),
+    ],
+)
+def test_a_covered_question_still_retrieves_and_says_what_it_anchored_to(
+    index, question, expected_feature
+):
+    """The refusal must not have been bought by refusing everything.
+
+    D7's worst example was this one: a query naming a feature the corpus DOES
+    cover, which still retrieved a different analyte as its top chunk. It must
+    now resolve to the canonical name and retrieve on that.
+    """
+    payload = retrieve_payload(text=question, index=index)
+    assert payload["returned"] > 0
+    assert payload["grounding_available"] is True
+    assert expected_feature in payload["query"]["features"]
+
+
+def test_the_findings_path_is_untouched_by_anchoring(index):
+    """Canonical names are already exact and must not be re-resolved."""
+    payload = retrieve_payload(
+        conditions=[DIABETES], features=["hba1c"], index=index
+    )
+    assert payload["returned"] > 0
+    assert payload["query"]["conditions"] == [DIABETES]
+    assert payload["query"]["features"] == ["hba1c"]
+
+
+def test_a_refused_query_echoes_that_it_anchored_to_nothing(index):
+    """The echo must not imply a question was asked that never was."""
+    payload = retrieve_payload(text="what should I take for my thyroid", index=index)
+    assert payload["query"]["features"] == []
+    assert payload["query"]["conditions"] == []
+    assert payload["query"]["text"] == "what should I take for my thyroid"
