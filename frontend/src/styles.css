@@ -1,25 +1,299 @@
-/* Plain CSS, no framework. The app is small and the absence states need to be
-   visually distinct from real values -- that is the only strong requirement
-   the design has. */
+/* VaidyaAI — the "Instrument" design system (design.md).
+ *
+ * Plain CSS, no framework. Two things this file has to get right, and they are
+ * the same two the components get right:
+ *
+ *   AN ABSENCE NEVER LOOKS LIKE A VALUE. Anything not measured or not assessed
+ *   is a DASHED OUTLINE WITH NO FILL in `--mono` -- never a risk colour, never
+ *   a greyed-out version of a real value. A grey number still reads as a
+ *   number; a dashed empty outline cannot.
+ *
+ *   RISK COLOUR IS CATEGORICAL. Exactly three carry meaning -- `--green` in
+ *   range, `--amber` borderline, `--rust` above threshold -- and nothing else
+ *   on the page may use them. A fourth decorative colour would teach the eye
+ *   that colour here is decoration.
+ */
+
+/* ==========================================================================
+   TOKENS
+   ==========================================================================
+   Every colour in this file and in every component comes from here. There are
+   no literal hex values below these two blocks, and SVG uses the same tokens
+   (`stroke="var(--rust)"`) so the charts theme with everything else.
+
+   DARK IS NOT AN INVERSION. The semantic hues are lifted in lightness and
+   chroma (#a44a2a -> #e0764c) because the same rust that reads as "above
+   threshold" on sand is nearly black on a warm brown ground -- the three risk
+   colours have to stay distinguishable from each other in both themes, and a
+   straight inversion loses that. */
 :root {
-  --ink: #16202b;
-  --muted: #5b6b7c;
-  --line: #d9e0e7;
-  --bg: #f6f8fa;
-  --card: #ffffff;
-  --accent: #1a6a8f;
-  --danger: #a3242c;
-  --absent: #6b7785;
-  --low: #2e7d4f;
-  --medium: #b06a12;
-  --high: #a3242c;
+  color-scheme: light;
+
+  /* surfaces */
+  --bg:          #efe9e0;
+  --header:      #e6ded1;
+  --header-line: #d8cdbc;
+  --panel:       #fbf8f3;
+  --panel-line:  #ded3c2;
+  --grid:        #e2d8c8;   /* chart gridlines / radar rings */
+  --hairline:    #ebe2d3;   /* in-panel dividers */
+  --track:       #e8dfd0;   /* chart baselines, gauge rest arc */
+  --band:        #dfe6cf;   /* "usual range" band fill */
+  --band-line:   #c9bca7;   /* dashed band for a value never measured */
+
+  /* ink */
+  --ink:   #2b2419;
+  --ink-2: #4a3f30;
+  --body:  #5b4f3f;
+  --muted: #7d6f5d;
+  --mono:  #8a7c69;
+
+  /* semantic -- these three, and only these three, mean something */
+  --green:      #7d8f52;
+  --green-text: #5f6f3c;   /* --green does not pass 4.5:1 as text; this does */
+  --amber:      #c08a26;
+  --rust:       #a44a2a;
+  --brand:      #7b5836;
+  --radar-fill: rgba(164, 74, 42, .16);
+
+  /* ON-colour ink. A token pair, because "white on the accent" stops being
+     legible the moment the accent is a light gold rather than a dark clay --
+     which is exactly what happens in dark mode. */
+  --on-brand:  #fbf8f3;
+  --on-danger: #fbf8f3;
+  --rejected-bg: #f6ece6;   /* the row tint for a reading validation refused */
+
+  /* ---- compatibility aliases ------------------------------------------
+     The pre-existing stylesheet and components name colours by their old
+     roles. Aliasing rather than renaming means every existing rule becomes
+     theme-aware in one move, with no chance of a selector being dropped in a
+     mass rewrite -- and the old names still say what the rule MEANT. */
+  --line:   var(--panel-line);
+  --card:   var(--panel);
+  --accent: var(--brand);
+  --danger: var(--rust);
+  --absent: var(--mono);
+  --low:    var(--green-text);
+  --medium: var(--amber);
+  --high:   var(--rust);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg:          #14100c;
+  --header:      #1d1813;
+  --header-line: #2e2620;
+  --panel:       #1c1712;
+  --panel-line:  #2f2720;
+  --grid:        #332a22;
+  --hairline:    #2d251e;
+  --track:       #2d251e;
+  --band:        #333d24;
+  --band-line:   #4d4334;
+
+  --ink:   #f3ece0;
+  --ink-2: #dccfbc;
+  --body:  #bcae9d;
+  --muted: #948674;
+  --mono:  #948674;
+
+  --green:      #9cb463;
+  --green-text: #adc472;
+  --amber:      #dba842;
+  --rust:       #e0764c;
+  --brand:      #dba842;
+  --radar-fill: rgba(224, 118, 76, .20);
+
+  /* Dark text ON the light accent -- the inverse of the light theme, and the
+     reason these are tokens at all. */
+  --on-brand:  #14100c;
+  --on-danger: #14100c;
+  --rejected-bg: #2a1c16;
 }
 
 * { box-sizing: border-box; }
 
+/* ==========================================================================
+   TYPOGRAPHY
+   ==========================================================================
+   Three families, three jobs, and the split is load-bearing rather than
+   decorative:
+
+     SERIF is the wordmark and the single verdict word ("High"). Nothing else.
+       Reserving it means the one serif word on a screen is always the answer.
+     SANS is every sentence a person reads.
+     MONO is every NUMBER, plus uppercase micro-labels. Numbers in monospace
+       align down a column, which is the whole reason a reader can scan a
+       results table at all.
+
+   Never below 11px. */
+:root {
+  --font-serif: "Instrument Serif", Georgia, "Times New Roman", serif;
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3 { font-family: var(--font-sans); font-weight: 500; color: var(--ink); }
+h2 { font-size: 14px; }
+h3 { font-size: 13.5px; }
+
+/* Every numeric value is monospace. */
+.value, .prob, .measured__value, .progress__score,
+.lab-table td, .range__value, .gauge__scale, .radar text {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Uppercase mono micro-label -- metadata, axes, absence flags. */
+.micro {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+  color: var(--mono);
+}
+
+/* ==========================================================================
+   MOTION
+   ==========================================================================
+   Entry only. Charts draw once on mount and then rest; the ONE loop in the
+   whole app is the shimmer on a radar point that was never measured, because
+   that point is making a claim about absence and a still dot does not.
+
+   Every animation is `both`-filled so it holds its end state -- and every end
+   state is also written as a static style, so the reduced-motion block below
+   can switch animation off without leaving a needle at zero or a bar at
+   scaleX(0). A chart that animates to the truth but rests on a lie is worse
+   than one that never moves. */
+@keyframes rise     { from { opacity: 0; transform: translateY(16px) } to { opacity: 1; transform: none } }
+@keyframes glide    { from { opacity: 0; transform: translateX(-10px) } to { opacity: 1; transform: none } }
+@keyframes fadeIn   { from { opacity: 0 } to { opacity: 1 } }
+@keyframes barGrow  { from { transform: scaleX(0) } to { transform: scaleX(1) } }
+@keyframes drawLine { from { stroke-dashoffset: var(--len, 400) } to { stroke-dashoffset: 0 } }
+@keyframes cellIn   { from { opacity: 0; transform: scale(.6) } to { opacity: 1; transform: scale(1) } }
+@keyframes shimmer  { 0%, 100% { opacity: .25 } 50% { opacity: .7 } }
+
+/* REQUIRED, not a nicety. Vestibular disorders are common and a sweeping
+   needle is exactly the trigger. The end states are static-correct above, so
+   switching everything off leaves a chart that still says the right thing. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Focus must remain visible. */
+:focus-visible {
+  outline: 2px solid var(--rust);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* ==========================================================================
+   SHELL
+   ========================================================================== */
+main { width: min(1060px, 92vw); margin: 26px auto; padding: 0 4px; }
+
+/* The header. Was `.nav` on a white card; now a distinct warm band so the
+   page body reads as the working surface and the chrome recedes. */
+.nav {
+  gap: 18px;
+  padding: 18px 30px;
+  background: var(--header);
+  border-bottom: 1px solid var(--header-line);
+}
+.nav__brand {
+  font-family: var(--font-serif);
+  font-size: 24px;
+  font-weight: 400;
+  color: var(--ink);
+  letter-spacing: .01em;
+}
+/* The italic "AI" is the only brand-coloured thing in the header. */
+.nav__brand em { font-style: italic; color: var(--brand); }
+.nav a { font-size: 13px; color: var(--body); }
+.nav a:hover { color: var(--ink); text-decoration: underline; }
+.nav__user {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--mono);
+}
+
+/* Panels. No shadows anywhere in this design -- separation comes from the
+   border plus the panel/background contrast, which survives dark mode. A
+   shadow does not. */
+.card, .passage, .roundup, .lab-table {
+  background: var(--panel);
+  border: 1px solid var(--panel-line);
+  border-radius: 14px;
+}
+.card { padding: 22px 24px; margin-bottom: 16px; }
+.card > h2:first-child { margin-top: 0; }
+
+.disclaimer {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .06em;
+  background: var(--header);
+  border-top: 1px solid var(--header-line);
+  color: var(--mono);
+}
+
+/* Controls */
+input, select, textarea {
+  font-family: var(--font-sans);
+  background: var(--panel);
+  color: var(--ink);
+  border-radius: 8px;
+}
+button { font-family: var(--font-sans); font-size: 13px; font-weight: 500; border-radius: 8px; }
+label { font-size: 13px; color: var(--ink-2); }
+
+/* ==========================================================================
+   THEME TOGGLE
+   ==========================================================================
+   design.md ships no in-app toggle and sets the theme once from storage or
+   the system preference. One was asked for, so it is added at the only place
+   that keeps the spec's actual property intact: NO COMPONENT KNOWS ABOUT THE
+   THEME. The button writes `localStorage` and re-stamps `data-theme` on
+   <html>; every colour on every page is already a token, so nothing else has
+   to change and nothing can drift out of step. */
+.theme-toggle {
+  background: none;
+  border: 1px solid var(--header-line);
+  color: var(--body);
+  padding: 5px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.theme-toggle:hover { color: var(--ink); border-color: var(--mono); }
+.theme-toggle svg { display: block; }
+
 body {
   margin: 0;
-  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* THE `font:` SHORTHAND, NOT `font-family:`. It resets the family, so this
+     one line sat after the typography block and quietly put the entire app
+     back on system-ui -- three webfonts loaded and used by nothing but the
+     wordmark. A shorthand that overwrites a longhand set earlier is the
+     easiest CSS mistake there is to miss by eye, and the reason the design
+     audit checks computed families rather than trusting the stylesheet. */
+  font: 400 13.5px/1.55 var(--font-sans);
   color: var(--ink);
   background: var(--bg);
 }
@@ -53,7 +327,7 @@ input, select {
 
 button {
   font: inherit; padding: 9px 16px; border-radius: 7px; border: 1px solid var(--accent);
-  background: var(--accent); color: #fff; cursor: pointer;
+  background: var(--accent); color: var(--on-brand); cursor: pointer;
 }
 button:disabled { opacity: .6; cursor: default; }
 button.link {
@@ -111,7 +385,7 @@ button + button.link { margin-left: 16px; }
 
 .button-link {
   display: inline-block; padding: 9px 16px; border-radius: 7px;
-  background: var(--accent); color: #fff; text-decoration: none; font-size: 15px;
+  background: var(--accent); color: var(--on-brand); text-decoration: none; font-size: 15px;
 }
 .report__actions { display: flex; gap: 10px; align-items: center; }
 .crumbs { color: var(--muted); font-size: 14px; }
@@ -121,7 +395,7 @@ button + button.link { margin-left: 16px; }
 .condition__head { display: flex; justify-content: space-between; align-items: baseline; }
 .lab-table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
 .lab-table th, .lab-table td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); }
-.lab--rejected { background: #fdf6f6; }
+.lab--rejected { background: var(--rejected-bg); }
 /* Our normalised name, under the lab's own wording. Secondary on purpose:
    the reader matches rows by what is printed on their paper report. */
 .lab__printed { display: block; font-weight: 400; color: var(--muted); font-size: 13px; }
@@ -162,7 +436,7 @@ button + button.link { margin-left: 16px; }
 .report__delete:hover { color: var(--danger); }
 .report__confirm { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .report__confirm-text { color: var(--danger); font-size: 14px; font-weight: 600; }
-button.danger { background: var(--danger); border-color: var(--danger); }
+button.danger { background: var(--danger); border-color: var(--danger); color: var(--on-danger); }
 
 /* The measured values behind a condition: name, value, and a note ONLY where a
    threshold was crossed. Aligned columns so the eye scans down the numbers
@@ -292,3 +566,219 @@ button.danger { background: var(--danger); border-color: var(--danger); }
 .passage p:last-child { margin-bottom: 0; }
 .passage strong { color: var(--ink); }
 .passage__close { padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+
+/* ==========================================================================
+   AUTH — the first screen anyone sees
+   ==========================================================================
+   Given the same panel/token vocabulary as everything else, so signing in
+   does not look like a different product from the dashboard behind it. */
+.auth { width: min(440px, 92vw); margin-top: 8vh; }
+.auth__head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.auth h1 { font-family: var(--font-serif); font-weight: 400; font-size: 34px; margin: 0; }
+.auth h1 em { font-style: italic; color: var(--brand); }
+.auth__tagline { color: var(--body); margin: 6px 0 20px; max-width: 46ch; }
+.auth .card { padding: 24px 26px; }
+.auth h2 { font-size: 15px; margin: 0 0 18px; }
+.auth button[type="submit"] { width: 100%; padding: 11px 16px; margin-top: 4px; }
+.auth button + button.link { margin-left: 0; margin-top: 12px; display: block; }
+
+/* ==========================================================================
+   CHARTS
+   ==========================================================================
+   Geometry is in the components; everything visual is here, so the two themes
+   and the reduced-motion rule reach the charts the same way they reach the
+   rest of the page. */
+.chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 900px) { .chart-grid { grid-template-columns: 1fr; } }
+
+.chart__caption {
+  margin: 12px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted);
+  max-width: 44ch;
+}
+
+.gauge, .radar { margin: 0; display: flex; flex-direction: column; align-items: center; }
+.gauge__svg, .radar__svg { max-width: 100%; height: auto; }
+.gauge__scale { display: flex; justify-content: space-between; width: 240px; margin-top: 8px; }
+
+.gauge__verdict {
+  font-family: var(--font-serif);
+  font-size: 30px;
+  fill: var(--ink);
+}
+/* An unestablished verdict is never a risk colour and never the same weight
+   as a real one. */
+.gauge__verdict--absent {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  fill: var(--mono);
+}
+
+.radar__label { font-family: var(--font-mono); font-size: 10.5px; fill: var(--body); }
+.radar__label--absent { fill: var(--mono); }
+
+/* ---- the range chart --------------------------------------------------- */
+.range__head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 16px; margin-bottom: 18px;
+}
+.range__head h2 { margin: 0; }
+.range__rows { display: grid; gap: 14px; }
+.range__row {
+  display: grid;
+  grid-template-columns: 190px 1fr 96px;
+  gap: 16px;
+  align-items: center;
+}
+/* A row for something never measured is quieter, but NOT greyed into
+   illegibility -- the reader still has to be able to see what is missing. */
+.range__row--absent { opacity: .75; }
+.range__name { font-size: 13.5px; color: var(--ink); }
+.range__flag { display: block; margin-top: 2px; }
+.range__note { display: block; margin-top: 2px; font-size: 11.5px; color: var(--mono); }
+
+.range__track { position: relative; height: 22px; }
+.range__baseline {
+  position: absolute; top: 9px; left: 0; right: 0; height: 3px;
+  background: var(--track); border-radius: 99px;
+}
+.range__band {
+  position: absolute; top: 6px; height: 9px;
+  background: var(--band); border-radius: 99px;
+}
+/* NO FILL. A dashed empty band is the whole absence signal in this chart. */
+.range__band--absent {
+  background: none;
+  border: 1px dashed var(--band-line);
+  border-radius: 99px;
+}
+.range__excess {
+  position: absolute; top: 9px; height: 3px;
+  background: var(--rust); border-radius: 99px;
+  transform-origin: left center;
+}
+.range__marker {
+  position: absolute; top: 3px; width: 15px; height: 15px; margin-left: -7.5px;
+  border-radius: 50%;
+  /* The panel-coloured ring is what separates the marker from the track it
+     sits on, in both themes. */
+  border: 3px solid var(--panel);
+}
+.range__value { text-align: right; font-size: 13px; font-weight: 500; }
+.range__footnote {
+  margin: 18px 0 0; padding-top: 14px;
+  border-top: 1px solid var(--hairline);
+  font-size: 12.5px; color: var(--muted);
+}
+
+@media (max-width: 560px) {
+  .range__row { grid-template-columns: 1fr auto; }
+  .range__track { grid-column: 1 / -1; }
+}
+
+/* ---- entry motion (design.md section 7) -------------------------------- */
+.chart-grid > .card { animation: rise .5s both; }
+.chart-grid > .card:nth-child(2) { animation-delay: .08s; }
+.range { animation: rise .5s .16s both; }
+
+.gauge__band { animation: drawLine .9s .3s ease-out both; }
+.gauge__band--medium { animation-duration: .7s; animation-delay: .6s; }
+.gauge__band--high { animation-delay: .8s; }
+
+/* The needle sweeps to `--angle` and STOPS there. The static transform on the
+   element is the same angle, so switching the animation off cannot move it. */
+@keyframes sweep { from { transform: rotate(-96deg) } to { transform: rotate(var(--angle, 0deg)) } }
+.gauge__needle {
+  transform-origin: 145px 152px;
+  animation: sweep 1.5s .5s cubic-bezier(.3, 1.4, .4, 1) both;
+}
+
+.radar__shape { animation: fadeIn .9s .55s both; }
+.radar__vertex {
+  transform-origin: center;
+  transform-box: fill-box;
+  animation: cellIn .4s both;
+  animation-delay: calc(.8s + var(--i, 0) * 80ms);
+}
+/* The one loop in the app. */
+.radar__vertex--absent { animation: shimmer 2.4s 1.1s ease-in-out infinite; }
+
+.range__row { animation: glide .5s both; animation-delay: calc(.3s + var(--i, 0) * 80ms); }
+.range__excess { animation: barGrow .8s cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(.45s + var(--i, 0) * 100ms); }
+.range__marker { animation: cellIn .45s cubic-bezier(.3, 1.5, .4, 1) both; animation-delay: calc(1.05s + var(--i, 0) * 100ms); }
+
+/* ==========================================================================
+   LINKS
+   ==========================================================================
+   NO BLUE ANYWHERE (design.md section 1). Anchors outside the header were
+   still falling through to the user-agent default, which is the one colour
+   this palette does not contain -- and on the dark ground it was a low-contrast
+   blue on near-black. Links take the brand clay/gold and stay underlined, so
+   colour is never the only thing marking them. */
+a { color: var(--brand); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:hover { color: var(--ink); }
+.crumbs a { color: var(--body); }
+.crumbs a:hover { color: var(--ink); }
+.dashboard__links a { color: var(--brand); }
+.range__note-all { margin: -6px 0 16px; font-size: 12.5px; color: var(--muted); }
+
+/* `<code>` defaults to the UA's monospace, which is the one place a fourth
+   family was sneaking in. Same token as every other number on the page. */
+code, kbd, samp, pre { font-family: var(--font-mono); }
+.section__code { font-family: var(--font-mono); letter-spacing: .04em; }
+
+/* ==========================================================================
+   BREADCRUMB + CROSS-PAGE LINKS
+   ==========================================================================
+   These two rows were four identical underlined links stacked on top of each
+   other, so the page opened with a list of equal-looking things and none of
+   them was the title. The trail is now mono micro-type that recedes, the
+   filename is set as the heading it actually is, and the two cross-links are
+   given edges so they read as places to go rather than as more prose. */
+.crumbs {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  margin: 0 0 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--mono);
+}
+.crumbs a { color: var(--mono); text-decoration: none; }
+.crumbs a:hover { color: var(--ink); text-decoration: underline; }
+/* The filename, as a title rather than as the end of a trail. */
+.crumbs__here {
+  font-family: var(--font-sans);
+  font-size: 19px;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--ink);
+}
+
+.page-links { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 20px; }
+.page-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 13px;
+  border: 1px solid var(--panel-line);
+  border-radius: 99px;
+  background: var(--panel);
+  color: var(--body);
+  text-decoration: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+/* A chevron, so the shape says "goes somewhere" without another colour. */
+.page-link::after { content: "\2192"; color: var(--mono); }
+.page-link:hover { border-color: var(--mono); color: var(--ink); }
+.page-link:hover::after { color: var(--brand); }

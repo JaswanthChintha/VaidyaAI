@@ -225,9 +225,11 @@ export default function DoctorSummary() {
 
   return (
     <main className="doctor-summary">
-      <p className="crumbs">
-        <Link to={`/reports/${id}`}>Dashboard</Link> · Clinical summary
-      </p>
+      <nav className="crumbs" aria-label="Breadcrumb">
+        <Link to={`/reports/${id}`}>Dashboard</Link>
+        <span aria-hidden="true">/</span>
+        <span className="crumbs__here">Clinical summary</span>
+      </nav>
 
       <h1>Summary for a healthcare professional</h1>
 

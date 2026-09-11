@@ -54,6 +54,24 @@ beforeEach(() => {
  */
 const overallCardText = () => document.querySelector('.overall').textContent;
 
+/**
+ * "Low" as a VALUE, anywhere on the page -- excluding the gauge's printed
+ * scale.
+ *
+ * The risk gauge carries a permanent LOW / MEDIUM / HIGH axis, the way a dial
+ * face is printed: it is part of the instrument, not a statement about this
+ * patient, and it is `--mono` micro-type rather than the serif verdict word.
+ * A page-wide `queryByText('Low')` cannot tell the two apart any more, so the
+ * axis is excluded and the guarantee itself is untouched -- a missing risk
+ * must still never surface as the word Low anywhere a reader would take it as
+ * an answer.
+ */
+function riskWordShown(word) {
+  return screen
+    .queryAllByText(word)
+    .some((node) => !node.closest('.gauge__scale'));
+}
+
 describe('the overall card', () => {
   it('prints the five-valued LABEL, never the three-valued status', async () => {
     // Module 18 emits `Healthy (partial assessment)` precisely because a
@@ -94,7 +112,7 @@ describe('the overall card', () => {
     expect(overallCardText()).toContain('Not Assessed');
     // Page-wide: a missing risk must not become "Low" ANYWHERE, summary
     // included. That one stays unscoped on purpose.
-    expect(screen.queryByText('Low')).not.toBeInTheDocument();
+    expect(riskWordShown('Low')).toBe(false);
   });
 
   it('refuses a risk when nothing was assessed, even if one arrives', async () => {
@@ -113,7 +131,7 @@ describe('the overall card', () => {
 
     await screen.findAllByText('Not Assessed');
     expect(overallCardText()).toContain('Not Assessed');
-    expect(screen.queryByText('Low')).not.toBeInTheDocument();
+    expect(riskWordShown('Low')).toBe(false);
   });
 });
 
@@ -142,7 +160,7 @@ describe('condition cards', () => {
     // either place.
     expect(await screen.findAllByText(/Kidney Disease/)).not.toHaveLength(0);
     expect(screen.getByText(/Not enough information to check/i)).toBeInTheDocument();
-    expect(screen.queryByText('Low')).not.toBeInTheDocument();
+    expect(riskWordShown('Low')).toBe(false);
   });
 
   it('shows a basis conflict rather than merging two kinds of answer', async () => {
@@ -170,6 +188,200 @@ describe('condition cards', () => {
   });
 });
 
+describe('what a condition card says it took into account', () => {
+  // THE CARD NAMED TWO THINGS IT DID NOT HAVE. Every cited feature with a
+  // patient label was listed as "taken into account" regardless of
+  // availability, so a Heart Disease card said "Your history of heart
+  // disease, history of high blood pressure ... were also taken into account"
+  // on a report where both were `not_present_in_report` with a null value.
+  //
+  // The heart model's own author note says blood pressure is "the strongest
+  // known predictor" and is not collected by this platform. The card asserted
+  // the opposite of the assessment's single most important limitation.
+  const heartCard = (lines) => ({
+    overall: { statusLabel: 'Attention Needed', anyAssessed: true },
+    conditions: [
+      {
+        condition: 'Heart Disease',
+        status: 'Borderline',
+        risk: 'Medium',
+        flagged: true,
+        assessed: true,
+      },
+    ],
+    evidence: { conditions: [{ condition: 'Heart Disease', lines }] },
+  });
+
+  const OBSERVED_BMI = {
+    feature: 'bmi',
+    value: 25.25,
+    sourceStage: 'patient_profile',
+    availability: 'observed',
+  };
+  const ABSENT_HYPERTENSION = {
+    feature: 'hypertension',
+    value: null,
+    sourceStage: 'patient_profile',
+    availability: 'not_present_in_report',
+  };
+
+  it('does not claim an absent feature was taken into account', async () => {
+    withDashboard(heartCard([OBSERVED_BMI, ABSENT_HYPERTENSION]));
+    renderDashboard();
+
+    await screen.findAllByText(/Heart Disease/);
+    const card = document.querySelector('.condition');
+    expect(card.textContent).toMatch(/Your BMI were also taken into account|Your BMI was/);
+    // The absent one must not appear in the "taken into account" sentence.
+    expect(card.textContent).not.toMatch(
+      /history of high blood pressure[^.]*were also taken into account/
+    );
+  });
+
+  it('NAMES the absent feature rather than dropping it silently', async () => {
+    // Dropping it is the same failure from the other side: the reader would
+    // never learn the strongest predictor was missing from the assessment.
+    withDashboard(heartCard([OBSERVED_BMI, ABSENT_HYPERTENSION]));
+    renderDashboard();
+
+    await screen.findAllByText(/Heart Disease/);
+    const card = document.querySelector('.condition');
+    expect(card.textContent).toMatch(/No value was available for your/);
+    expect(card.textContent).toMatch(/history of high blood pressure/);
+    expect(card.textContent).toMatch(/could not be taken into account/);
+  });
+
+  it('does not say "close to the usual limit" when nothing was compared to one', async () => {
+    // A Heart Disease card read "Close to the usual limit" directly above
+    // "268 mg/dl above 240 mg/dl" and "8.4 % above 6.5 %". Both sentences
+    // were true of different things -- the risk-factor COUNT was borderline,
+    // the individual values were over -- and the reader could not tell.
+    withDashboard({
+      overall: { statusLabel: 'Attention Needed', anyAssessed: true },
+      conditions: [
+        { condition: 'Heart Disease', status: 'Borderline', risk: 'Medium', flagged: true, assessed: true },
+      ],
+      evidence: {
+        conditions: [
+          {
+            condition: 'Heart Disease',
+            lines: [OBSERVED_BMI],
+            sources: [
+              { assessmentBasis: 'risk_factor_count', assessmentBasisFamily: 'risk_factor_burden' },
+              { assessmentBasis: 'model_probability', assessmentBasisFamily: 'estimated_likelihood' },
+            ],
+          },
+        ],
+      },
+    });
+    renderDashboard();
+
+    await screen.findAllByText(/Heart Disease/);
+    const card = document.querySelector('.condition');
+    expect(card.textContent).not.toMatch(/Close to the usual limit/);
+    expect(card.textContent).toMatch(/known to raise this risk/);
+  });
+
+  it('KEEPS threshold wording when a value really was compared to a cut-off', async () => {
+    // The mirror: a topic decided by a threshold comparison must keep the
+    // concrete description. Only a topic with no comparison at all changes.
+    withDashboard({
+      overall: { statusLabel: 'Attention Needed', anyAssessed: true },
+      conditions: [
+        { condition: 'Diabetes', status: 'Borderline', risk: 'Low', flagged: true, assessed: true },
+      ],
+      evidence: {
+        conditions: [
+          {
+            condition: 'Diabetes',
+            lines: [OBSERVED_BMI],
+            sources: [
+              { assessmentBasis: 'threshold_comparison', assessmentBasisFamily: 'measured_value' },
+            ],
+          },
+        ],
+      },
+    });
+    renderDashboard();
+
+    await screen.findAllByText(/Diabetes/);
+    expect(document.querySelector('.condition').textContent).toMatch(
+      /Close to the usual limit/
+    );
+  });
+
+  it('prefers threshold wording when a topic has BOTH bases', async () => {
+    // The gate is `counted && !compared`, and the second half is what this
+    // covers: if a value really did cross a cut-off, that is the more
+    // concrete thing to tell the reader, even though a count also ran.
+    // Without this the gate could be reduced to `counted` and every test
+    // still passed.
+    withDashboard({
+      overall: { statusLabel: 'Attention Needed', anyAssessed: true },
+      conditions: [
+        { condition: 'Heart Disease', status: 'Borderline', risk: 'Medium', flagged: true, assessed: true },
+      ],
+      evidence: {
+        conditions: [
+          {
+            condition: 'Heart Disease',
+            lines: [OBSERVED_BMI],
+            sources: [
+              { assessmentBasis: 'risk_factor_count', assessmentBasisFamily: 'risk_factor_burden' },
+              { assessmentBasis: 'threshold_comparison', assessmentBasisFamily: 'measured_value' },
+            ],
+          },
+        ],
+      },
+    });
+    renderDashboard();
+
+    await screen.findAllByText(/Heart Disease/);
+    const card = document.querySelector('.condition');
+    expect(card.textContent).toMatch(/Close to the usual limit/);
+    expect(card.textContent).not.toMatch(/known to raise this risk/);
+  });
+
+  it('says nothing about missing inputs when every one was observed', async () => {
+    withDashboard(heartCard([OBSERVED_BMI]));
+    renderDashboard();
+
+    await screen.findAllByText(/Heart Disease/);
+    const card = document.querySelector('.condition');
+    expect(card.textContent).toMatch(/taken into account/);
+    expect(card.textContent).not.toMatch(/No value was available/);
+  });
+});
+
+describe('what the range chart is told about each row', () => {
+  it('calls an unanswered profile question absent, NOT rejected', async () => {
+    // `usable: false` covers two different things, and mapping both to
+    // "rejected" put NOT USABLE against three rows of a real report --
+    // claiming a reading was taken and refused when the patient had simply
+    // never answered the question. `state: 'unavailable'` is the payload's
+    // own word for never-there.
+    withDashboard({
+      overall: { statusLabel: 'Healthy', anyAssessed: true, risk: 'Low' },
+      laboratory: [
+        {
+          feature: 'smoking_history',
+          displayName: 'Smoking history',
+          value: null,
+          state: 'unavailable',
+          usable: false,
+          source: null,
+        },
+      ],
+    });
+    renderDashboard();
+
+    await screen.findAllByText(/Smoking history/i);
+    expect(document.querySelector('.range__row')).not.toBeNull();
+    expect(screen.queryByText('Not usable')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Not on report').length).toBeGreaterThan(0);
+  });
+});
+
 describe('laboratory rows', () => {
   it('renders a rejected reading as unusable, never as 0', async () => {
     withDashboard({
@@ -192,12 +404,16 @@ describe('laboratory rows', () => {
     // back to the patient-facing name ("Creatinine (kidney marker)"). Which of
     // those appears is not the guarantee here -- the guarantee is that the row
     // is named at all, and that the rejected value never renders as a number.
-    expect(await screen.findByText(/Creatinine/)).toBeInTheDocument();
+    // Named in the range chart AND in the results table below it.
+    expect(await screen.findAllByText(/Creatinine/)).not.toHaveLength(0);
     expect(screen.queryByText('999 mg/dl')).not.toBeInTheDocument();
     expect(screen.queryByText('0 mg/dl')).not.toBeInTheDocument();
+    // In the range chart (design.md section 6 asks for the reason under a
+    // rejected row) AND in the results table. A duplicated safety caveat is
+    // the safe direction to err in; a duplicated decoration would not be.
     expect(
-      screen.getByText(/outside the physiologically possible range/)
-    ).toBeInTheDocument();
+      screen.getAllByText(/outside the physiologically possible range/)
+    ).not.toHaveLength(0);
   });
 
   it('prints a real zero rather than treating it as missing', async () => {
@@ -216,7 +432,8 @@ describe('laboratory rows', () => {
     });
     renderDashboard();
 
-    expect(await screen.findByText('0 ng/ml')).toBeInTheDocument();
+    // Shown by the chart and by the table; both must print the real zero.
+    expect(await screen.findAllByText('0 ng/ml')).not.toHaveLength(0);
   });
 
   it('says so when no reference interval was printed', async () => {
@@ -652,7 +869,7 @@ describe('the closing "In short" summary', () => {
     await screen.findByText(/In short/);
     expect(summaryText()).toMatch(/No overall status was established/);
     // And no risk word anywhere, in either the card or the summary.
-    expect(screen.queryByText('Low')).not.toBeInTheDocument();
+    expect(riskWordShown('Low')).toBe(false);
   });
 });
 

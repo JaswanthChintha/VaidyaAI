@@ -1,5 +1,6 @@
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useAuth } from './lib/auth';
+import ThemeToggle from './components/ThemeToggle';
 import SignIn from './pages/SignIn';
 import Profile from './pages/Profile';
 import Reports from './pages/Reports';
@@ -30,12 +31,16 @@ function Nav() {
   if (status !== 'signedIn') return null;
   return (
     <nav className="nav">
-      <span className="nav__brand">VaidyaAI</span>
+      {/* The wordmark carries the one italic serif flourish in the app. */}
+      <span className="nav__brand">
+        Vaidya<em>AI</em>
+      </span>
       <Link to="/reports">Reports</Link>
       <Link to="/timeline">Timeline</Link>
       <Link to="/profile">Your details</Link>
       <span className="nav__spacer" />
       <span className="nav__user">{user?.name || user?.email}</span>
+      <ThemeToggle />
       <button type="button" className="link" onClick={signOut}>
         Sign out
       </button>

@@ -35,6 +35,7 @@ export default function Reports() {
   // confirmation is inline in the row rather than a browser confirm() the
   // user can dismiss without reading.
   const [confirmingId, setConfirmingId] = useState(null);
+  const [reanalysingId, setReanalysingId] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -195,6 +196,64 @@ export default function Reports() {
                 >
                   {busyId === report.id ? 'Analysing… this can take a few minutes' : 'Analyse'}
                 </button>
+              ) : null}
+
+              {/* RE-ANALYSING AN ALREADY-ANALYSED REPORT WAS IMPOSSIBLE FROM
+                  THE UI, and that is a bigger gap than it looks.
+                  `POST /reports/:id/analyze` has always accepted a re-run --
+                  MEMORY.md section 6f documents the semantics as "overwrite,
+                  not versioned" -- but this list only ever offered the button
+                  for `uploaded` and `failed`. So every stored report was
+                  frozen against the pipeline that produced it: fix a synonym,
+                  a threshold or a model, and no existing report could ever
+                  benefit, with nothing on screen to say why.
+
+                  It surfaced as a report whose only test was
+                  "GLYCOSYLATED HEMOGLOBIN, HbA1c" mapping to nothing. The
+                  catalog was fixed; the dashboard kept showing the old stored
+                  result, because a dashboard renders what was stored and
+                  there was no way to store anything new.
+
+                  Behind a confirm, because it REPLACES the stored analysis
+                  rather than adding a version, and costs model calls. */}
+              {report.status === 'processed' || report.status === 'partial' ? (
+                reanalysingId === report.id ? (
+                  <span className="report__confirm">
+                    <span className="report__confirm-text">
+                      Run {report.originalName} through the analysis again? The
+                      current result is replaced, not kept alongside.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReanalysingId(null);
+                        onAnalyze(report.id);
+                      }}
+                      disabled={busyId === report.id}
+                    >
+                      Re-analyse
+                    </button>
+                    <button
+                      type="button"
+                      className="link"
+                      onClick={() => setReanalysingId(null)}
+                      disabled={busyId === report.id}
+                    >
+                      Cancel
+                    </button>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    className="link"
+                    onClick={() => setReanalysingId(report.id)}
+                    disabled={busyId === report.id}
+                  >
+                    {busyId === report.id
+                      ? 'Analysing… this can take a few minutes'
+                      : 'Re-analyse'}
+                  </button>
+                )
               ) : null}
 
               {confirmingId === report.id ? (

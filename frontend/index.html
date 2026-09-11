@@ -4,6 +4,28 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>VaidyaAI</title>
+    <!-- Instrument Serif for the wordmark and the one verdict word; Plex Sans
+         for prose; Plex Mono for every number and micro-label. One request. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap"
+    />
+    <!-- Stamp the theme BEFORE first paint. Doing it in React would render one
+         frame of the light palette first, which on a dark-mode phone at night
+         is a flash of near-white -- the exact thing dark mode exists to avoid. -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('vaidyaai-theme');
+          var system = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          document.documentElement.dataset.theme = stored || system;
+        } catch (e) {
+          document.documentElement.dataset.theme = 'light';
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
+import ThemeToggle from '../components/ThemeToggle';
 
 /**
  * Sign in and register, on one screen.
@@ -52,7 +53,16 @@ export default function SignIn() {
 
   return (
     <main className="auth">
-      <h1>VaidyaAI</h1>
+      {/* THE TOGGLE HAS TO BE HERE TOO. The header is only rendered when
+          signed in, so without this the sign-in screen -- the first thing
+          anyone ever sees, and the one most likely to be opened at night --
+          would be the single page with no way to change the theme. */}
+      <div className="auth__head">
+        <h1>
+          Vaidya<em>AI</em>
+        </h1>
+        <ThemeToggle />
+      </div>
       <p className="auth__tagline">
         Understand your laboratory reports. This is health education and
         decision support, not a diagnosis.

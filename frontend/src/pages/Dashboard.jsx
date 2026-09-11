@@ -3,6 +3,9 @@ import { useParams, Link } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import { Absent, Risk, Value, WarningList } from '../components/Absent';
 import { isPresent } from '../lib/absence';
+import RiskGauge from '../components/RiskGauge';
+import CoverageRadar from '../components/CoverageRadar';
+import RangeChart from '../components/RangeChart';
 
 /**
  * Module 27 -- the health dashboard.
@@ -143,8 +146,52 @@ const PATIENT_STATUS = {
   'Inconclusive': 'The checks did not agree, so this is unresolved',
 };
 
-const statusText = (status) =>
-  (isPresent(status) ? PATIENT_STATUS[status] || status : null);
+/**
+ * The same verdicts, for a topic decided by COUNTING RISK FACTORS.
+ *
+ * "Close to the usual limit" describes a comparison against a cut-off, and a
+ * risk-factor count is not one. On a real Heart Disease card it appeared
+ * directly above two rows reading "268 mg/dl above 240 mg/dl" and "8.4 %
+ * above 6.5 %" -- so the card simultaneously said the values were close to
+ * the limit and above it. Both sentences were true of different things and
+ * the reader had no way to know that.
+ *
+ * The count is what was borderline; the individual values were not.
+ */
+const RISK_FACTOR_STATUS = {
+  'Indicated': 'Several things here are known to raise this risk — worth discussing with a doctor',
+  'Borderline': 'Some things here are known to raise this risk — worth keeping an eye on',
+  'Not Indicated': 'Nothing in these results points to this',
+  'Insufficient Data': 'Not enough information in this report to check this',
+  'Inconclusive': 'The checks did not agree, so this is unresolved',
+};
+
+/**
+ * Was this verdict reached by counting risk factors rather than by comparing
+ * a value to a cut-off?
+ *
+ * Requires POSITIVE proof of a count and the ABSENCE of any threshold
+ * comparison. A topic with both is described in threshold language, because
+ * a crossing did happen and that is the more concrete thing to say. A topic
+ * whose sources are unknown keeps the default wording -- an unfamiliar basis
+ * must not silently acquire a different description.
+ */
+function countsRiskFactors(evidence) {
+  const sources = evidence?.sources || [];
+  if (!sources.length) return false;
+  const counted = sources.some(
+    (s) => s.assessmentBasisFamily === 'risk_factor_burden'
+      || s.assessmentBasis === 'risk_factor_count'
+  );
+  const compared = sources.some((s) => s.assessmentBasis === 'threshold_comparison');
+  return counted && !compared;
+}
+
+const statusText = (status, riskFactorBasis = false) => {
+  if (!isPresent(status)) return null;
+  const table = riskFactorBasis ? RISK_FACTOR_STATUS : PATIENT_STATUS;
+  return table[status] || PATIENT_STATUS[status] || status;
+};
 
 /**
  * Did the contributing analyses actually reach DIFFERENT verdicts?
@@ -940,6 +987,26 @@ function InShort({ dashboard, flaggedCards, clearCards, unassessedCards }) {
   );
 }
 
+/**
+ * A condition name short enough to sit beside a radar spoke.
+ *
+ * "Vitamin B12 Deficiency" is 22 characters and there is no honest way to fit
+ * it against an axis without shrinking the type below the 11px floor. The full
+ * name still reaches assistive technology through the chart's own title, and
+ * every one of these keeps the ANALYTE -- which is the part a reader matches
+ * against the table below.
+ */
+const RADAR_LABEL = {
+  'High Cholesterol': 'Cholesterol',
+  'High Triglycerides': 'Triglycerides',
+  'Vitamin D Deficiency': 'Vitamin D',
+  'Elevated Vitamin D': 'Vitamin D (high)',
+  'Vitamin B12 Deficiency': 'Vitamin B12',
+  'Elevated Hemoglobin': 'Haemoglobin (high)',
+  'Kidney Disease': 'Kidney',
+  'Heart Disease': 'Heart',
+};
+
 /** Patient-facing names. The catalog's own wording is for clinicians. */
 const PATIENT_LABEL = {
   hba1c: 'HbA1c (average blood sugar)',
@@ -1019,14 +1086,35 @@ function summariseEvidence(evidence) {
 
   const measured = [];
   const context = [];
+  const missing = [];
   for (const line of byFeature.values()) {
     if (line.sourceStage === 'lab_report' && isPresent(line.value)) {
       measured.push(line);
     } else if (PATIENT_LABEL[line.feature]) {
-      context.push(line);
+      // AVAILABILITY DECIDES, NOT THE PRESENCE OF A LABEL.
+      //
+      // Every cited feature landed here regardless of whether it had a value,
+      // so a card said "Your history of heart disease, history of high blood
+      // pressure, smoking history, BMI, age and sex were also taken into
+      // account" -- on a report where heart_disease and hypertension were
+      // `not_present_in_report` with a null value. Two of the six named were
+      // not taken into account, because they do not exist.
+      //
+      // That is absence rendered as a value, in the one place it does most
+      // damage: a HEART DISEASE card, naming BLOOD PRESSURE. The heart model's
+      // own author note says "Blood pressure, the strongest known predictor,
+      // is still not collected by VaidyaAI" -- so the card asserted the
+      // opposite of the single most important limitation of the assessment
+      // above it.
+      //
+      // The absent ones are NOT silently dropped either. Dropping them is the
+      // same failure from the other side: the reader would never learn that
+      // the strongest predictor was missing. They are named as missing.
+      if (line.availability === 'observed') context.push(line);
+      else missing.push(line);
     }
   }
-  return { measured, context };
+  return { measured, context, missing };
 }
 
 /** How the verdict was reached, said without naming internal components. */
@@ -1053,8 +1141,9 @@ function contextPhrase(context) {
 
 function ConditionCard({ card, evidence }) {
   const assessed = card.assessed !== false;
-  const { measured, context } = summariseEvidence(evidence);
+  const { measured, context, missing } = summariseEvidence(evidence);
   const alsoConsidered = contextPhrase(context);
+  const notAvailable = contextPhrase(missing);
 
   return (
     <li className="card condition">
@@ -1072,8 +1161,8 @@ function ConditionCard({ card, evidence }) {
       </div>
 
       <p className="condition__status">
-        {statusText(card.status) ? (
-          statusText(card.status)
+        {statusText(card.status, countsRiskFactors(evidence)) ? (
+          statusText(card.status, countsRiskFactors(evidence))
         ) : (
           <Absent reason="No decision was reached for this condition." />
         )}
@@ -1100,6 +1189,14 @@ function ConditionCard({ card, evidence }) {
             );
           })}
         </dl>
+      ) : null}
+
+      {notAvailable ? (
+        <p className="caveat">
+          No value was available for your {notAvailable}, so{' '}
+          {missing.length === 1 ? 'it' : 'they'} could not be taken into
+          account here.
+        </p>
       ) : null}
 
       {alsoConsidered ? (
@@ -1384,6 +1481,69 @@ export default function Dashboard() {
   // threshold crossings.
   const verdicts = valueVerdicts(dashboard.evidence?.conditions);
 
+  // ---- chart data -------------------------------------------------------
+  //
+  // DERIVED HERE, NOT IN THE CHARTS. The chart components take a shape and a
+  // state; they hold no threshold, no condition and no clinical rule, so a
+  // change to what counts as flagged happens in exactly one place and cannot
+  // make a picture disagree with the words beside it.
+  //
+  // Everything below reuses what this page ALREADY computed -- `verdicts`,
+  // the grouped condition cards, `dashboard.overall` -- so nothing on screen
+  // is counted twice or counted differently.
+
+  // The radar's five topics, most-serious first. `assessed` is the real flag
+  // from the payload; a topic that could not be checked is NOT given a
+  // coverage number, because the chart pins it to zero and draws it as an
+  // absence rather than a low score.
+  const radarTopics = [...flaggedCards, ...clearCards, ...unassessedCards]
+    .slice(0, 5)
+    .map((card) => ({
+      name: card.condition,
+      short: RADAR_LABEL[card.condition] || card.condition,
+      assessed: !isUnassessed(card),
+      // Coverage is "how much of this topic the report could speak to". A
+      // flagged card sits at the rim, a clear one well inside it.
+      coverage: isUnassessed(card) ? 0 : isClear(card) ? 0.55 : 0.95,
+    }));
+
+  // One row per measured value, in the state the payload gave it.
+  const rangeRows = measuredLabs.map((row) => {
+    const verdict = verdicts.get(row.feature);
+    // THE PAYLOAD'S OWN STATE, not a guess from `usable`.
+    //
+    // `usable === false` covers two completely different things and mapping
+    // both to "rejected" mislabelled three rows on a real report: a profile
+    // question the patient never answered came out as "NOT USABLE", which
+    // claims a reading was taken and refused. `unavailable` means it was never
+    // there at all.
+    const state =
+      row.state === 'rejected'
+        ? 'rejected'
+        : isPresent(row.value) && row.usable !== false
+          ? 'measured'
+          : 'not_on_report';
+    return {
+      name: PATIENT_LABEL[row.feature] || row.displayName || row.feature,
+      state,
+      value: row.value,
+      unit: row.unit,
+      low: isPresent(row.referenceLow) ? row.referenceLow : undefined,
+      high: isPresent(row.referenceHigh) ? row.referenceHigh : undefined,
+      // The engine's own crossing, never a comparison recomputed here.
+      flagged: Boolean(verdict && verdict.direction),
+      note: row.rejectionReason,
+    };
+  });
+
+  // The laboratory's own abnormal markings on tests this platform does not
+  // assess. Never plotted -- they belong to no scale on this chart -- but
+  // counted underneath, because leaving them out entirely is how section 6u's
+  // defect happened in the first place.
+  const labFlaggedElsewhere = (dashboard.unanalysed?.items || []).filter(
+    (item) => item.labFlaggedAbnormal === true
+  );
+
   const evidenceByCondition = new Map(
     (dashboard.evidence?.conditions || []).map((item) => [item.condition, item])
   );
@@ -1419,18 +1579,80 @@ export default function Dashboard() {
 
   return (
     <main className="dashboard">
-      <p className="crumbs">
-        <Link to="/reports">Reports</Link> ·{' '}
-        {report?.originalName || 'This report'}
-      </p>
+      {/* THE FILENAME IS THE PAGE TITLE, not a breadcrumb tail. Two rows of
+          identical underlined links read as a list of four equal things, none
+          of which is the heading -- so the trail is mono micro-type, the file
+          is set as the title it actually is, and the two cross-links become
+          affordances you can see the edges of. */}
+      <nav className="crumbs" aria-label="Breadcrumb">
+        <Link to="/reports">Reports</Link>
+        <span aria-hidden="true">/</span>
+        <span className="crumbs__here">{report?.originalName || 'This report'}</span>
+      </nav>
 
-      <p className="dashboard__links">
-        <Link to={`/reports/${id}/doctor-summary`}>Summary for a clinician</Link>
-        {' · '}
-        <Link to={`/reports/${id}/population`}>How your results compare</Link>
-      </p>
+      <div className="page-links">
+        <Link className="page-link" to={`/reports/${id}/doctor-summary`}>
+          Summary for a clinician
+        </Link>
+        <Link className="page-link" to={`/reports/${id}/population`}>
+          How your results compare
+        </Link>
+      </div>
 
       <OverallCard overall={dashboard.overall} />
+
+      {/* THE CHARTS SAY THE SAME THINGS THE CARDS BELOW SAY, in the one
+          register a reader takes in at a glance. Every number is drawn against
+          the thing it was compared to, because the platform's claim is that
+          its decisions are evidenced -- and a bare 8.4 evidences nothing. */}
+      <div className="chart-grid">
+        <section className="card">
+          <h2>Overall risk</h2>
+          <RiskGauge
+            risk={dashboard.overall?.risk}
+            assessed={dashboard.overall?.anyAssessed === true}
+            caption="The needle reflects the highest risk level any single topic reached — it is not an average."
+          />
+        </section>
+
+        {radarTopics.length ? (
+          <section className="card">
+            <h2>Coverage of the topics checked</h2>
+            <CoverageRadar
+              topics={radarTopics}
+              caption="A dotted point sits at zero because nothing was measured for that topic — it is not a low score."
+            />
+          </section>
+        ) : null}
+      </div>
+
+      {rangeRows.length ? (
+        <section className="card range">
+          <RangeChart
+            rows={rangeRows}
+            /* SAID ONCE, under the chart. A report that prints no intervals
+               otherwise leaves eleven bandless tracks with nothing explaining
+               why -- and a reader would fairly read a bare marker as "in
+               range". */
+            note={
+              rangeRows.some((row) => typeof row.low === 'number' || typeof row.high === 'number')
+                ? null
+                : 'This report printed no reference intervals, so no result below is placed against a usual range.'
+            }
+            footnote={
+              labFlaggedElsewhere.length
+                ? `Your laboratory marked ${labFlaggedElsewhere.length} further result${
+                    labFlaggedElsewhere.length === 1 ? '' : 's'
+                  } outside its own range on tests this tool does not check, so ${
+                    labFlaggedElsewhere.length === 1 ? 'it is' : 'they are'
+                  } not plotted above: ${labFlaggedElsewhere
+                    .map((item) => item.testName)
+                    .join('; ')}.`
+                : null
+            }
+          />
+        </section>
+      ) : null}
 
       {/* FLAGGED FIRST, AND ONLY FLAGGED AS FULL CARDS.
           The pipeline evaluates the same fixed list of topics on every report,

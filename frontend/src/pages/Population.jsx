@@ -39,12 +39,21 @@ import { isPresent } from '../lib/absence';
  * rendered rather than paraphrased.
  */
 
+/** The same wording `Entry` puts in its heading, so the two cannot drift. */
+const humanName = (key) => String(key).replace(/_/g, ' ');
+
+/** "a, b and c" -- an Oxford-less list for a sentence, not a data dump. */
+function readableList(names) {
+  if (names.length <= 1) return names[0] || '';
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
 function Entry({ name, entry }) {
   const available = entry.available === true;
 
   return (
     <li className="card population__entry">
-      <h3>{name.replace(/_/g, ' ')}</h3>
+      <h3>{humanName(name)}</h3>
 
       {available ? (
         <>
@@ -108,13 +117,39 @@ export default function Population() {
 
   const context = data.populationContext;
   const subject = data.subject;
-  const features = context?.features ? Object.entries(context.features) : [];
+  const allFeatures = context?.features ? Object.entries(context.features) : [];
+
+  // A CARD PER REFUSAL IS NOT THE SAME AS A USEFUL REFUSAL.
+  //
+  // `FEATURE_NOT_CONTINUOUS` covers age, gender and smoking history, and the
+  // page was giving each of them a full card to explain that it has no
+  // percentile. Nobody expected one: age and gender are what the cohort is
+  // MATCHED ON, so asking for their percentile is circular, and smoking
+  // history is a word rather than a number. Those cards were the page
+  // explaining its own mechanics.
+  //
+  // The refusals that DO earn a card are the ones a reader would otherwise
+  // wonder about -- a glucose of 186 with no comparison beside it is a real
+  // question, and "fasting status is not recorded, so the comparison would
+  // look precise and be wrong" is a real answer.
+  //
+  // NOTHING IS HIDDEN FROM THE PAYLOAD. The reason code is still on the API
+  // for anyone reading it, and the features are still named below in one
+  // line -- an absence must stay visible even when it stops being a card.
+  const notMeasurements = allFeatures.filter(
+    ([, entry]) => entry?.reason_code === 'FEATURE_NOT_CONTINUOUS'
+  );
+  const features = allFeatures.filter(
+    ([, entry]) => entry?.reason_code !== 'FEATURE_NOT_CONTINUOUS'
+  );
 
   return (
     <main className="population">
-      <p className="crumbs">
-        <Link to={`/reports/${id}`}>Dashboard</Link> · Population context
-      </p>
+      <nav className="crumbs" aria-label="Breadcrumb">
+        <Link to={`/reports/${id}`}>Dashboard</Link>
+        <span aria-hidden="true">/</span>
+        <span className="crumbs__here">Population context</span>
+      </nav>
 
       <h1>How your results compare</h1>
       {context?.what_this_means ? <p>{context.what_this_means}</p> : null}
@@ -146,6 +181,19 @@ export default function Population() {
           distribution.
         </p>
       )}
+
+      {/* Said once, in a line, instead of three cards. */}
+      {notMeasurements.length ? (
+        <p className="hint">
+          {/* The trailing "age and sex are what the group is chosen by" read
+              as a repeat of the list it followed, and it was only true of two
+              of the three names. One clause, true of all of them. */}
+          {readableList(notMeasurements.map(([name]) => humanName(name)))}{' '}
+          {notMeasurements.length === 1 ? 'is' : 'are'} not measured values, so
+          no percentile is offered for{' '}
+          {notMeasurements.length === 1 ? 'it' : 'them'}.
+        </p>
+      ) : null}
 
       {context?.limitations?.length ? (
         <>

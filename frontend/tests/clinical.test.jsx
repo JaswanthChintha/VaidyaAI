@@ -288,6 +288,68 @@ describe('Module 32 -- the clinician summary, as one passage', () => {
 });
 
 describe('Module 31 -- population context', () => {
+  // WHICH REFUSALS EARN A CARD, AND WHICH ARE THE PAGE TALKING ABOUT ITSELF.
+  //
+  // Every feature the service declines to compare came back as a full card,
+  // including three that nobody expected a percentile for: age and gender are
+  // what the cohort is MATCHED ON (asking for their percentile is circular)
+  // and smoking history is a word. Three cards explaining that is the page
+  // explaining its own mechanics.
+  //
+  // The refusals that DO earn one are the ones a reader would otherwise
+  // wonder about, and they must keep earning one.
+
+  it('keeps a card for a refusal a reader would wonder about', async () => {
+    // A glucose of 186 with no comparison beside it is a real question.
+    await mountPopulation({
+      features: {
+        blood_glucose: {
+          feature: 'blood_glucose',
+          available: false,
+          reason_code: 'NO_VERIFIED_DISTRIBUTION',
+          message:
+            'A glucose result means something different depending on whether the sample was taken fasting.',
+        },
+      },
+    });
+
+    expect(await screen.findByText(/taken fasting/)).toBeInTheDocument();
+    expect(document.querySelectorAll('.population__entry')).toHaveLength(1);
+  });
+
+  it('drops the not-a-measurement cards and says it once instead', async () => {
+    await mountPopulation({
+      features: {
+        age: {
+          feature: 'age',
+          available: false,
+          reason_code: 'FEATURE_NOT_CONTINUOUS',
+          message: 'Age is one of the things the population group is matched ON.',
+        },
+        gender: {
+          feature: 'gender',
+          available: false,
+          reason_code: 'FEATURE_NOT_CONTINUOUS',
+          message: 'Gender is one of the things the population group is matched ON.',
+        },
+        smoking_history: {
+          feature: 'smoking_history',
+          available: false,
+          reason_code: 'FEATURE_NOT_CONTINUOUS',
+          message: 'Smoking history is a category, not a measured number.',
+        },
+      },
+    });
+
+    await screen.findByText(/How your results compare/);
+    // No cards...
+    expect(document.querySelectorAll('.population__entry')).toHaveLength(0);
+    // ...but NOT silently dropped: still named, once, in a line.
+    const body = document.querySelector('main').textContent;
+    expect(body).toMatch(/age, gender and smoking history/);
+    expect(body).toMatch(/not measured values, so no percentile is offered/);
+  });
+
   it('renders a refusal as an answer, in the service own words', async () => {
     await mountPopulation({
       features: {
