@@ -23,9 +23,19 @@ about any of them. That is the fifth time on this project.
 | | Tests |
 |---|---|
 | `backend/` (Node/Express) | **634** passing + 3 opt-in live |
-| `ai-service/` (Python/FastAPI) | **3,697** passing + 7 skipped |
-| `frontend/` (React/Vitest) | **71** passing |
-| **Total** | **4,402** — all green as of 2026-09-07 (§6w) |
+| `ai-service/` (Python/FastAPI) | **3,739** passing + 7 skipped |
+| `frontend/` (React/Vitest) | **111** passing |
+| **Total** | **4,484** -- all green, counted by running them 2026-09-11 |
+
+> ### ▶ NEW CHAT? START AT §6y.
+>
+> It has the run commands, the test account, and **the list of uncommitted
+> work** — a whole session of it, including the entire frontend design system.
+> `origin/master` has none of it. Commit before building on top.
+>
+> Everything runs and all 4,484 tests pass. §6x is the design system
+> (`design.md`, tokens + dark-mode toggle + three charts); §6w is the parameter
+> glossary and the rendering-layer defects found by reading the screens.
 
 > ### ✅ THE HALF-BUILT FEATURE IS FINISHED (§6v design · §6w completion)
 >
@@ -3349,6 +3359,138 @@ rejected reading into the values — each fails a test. Frontend suite **71**
 > patient. The pipeline was correct throughout. **A green suite saw none of it;
 > a person reading the page found all of it.**
 
+### §6r D1 CLOSED — the RAG anchoring reaches the public endpoint at last
+
+Asked whether the platform uses RAG, checking the answer turned up the open
+defect from §6k D7 / §6r D1, still live and still reproducing verbatim.
+
+**What the RAG layer is:** 62 documents → 377 paragraphs → **243 chunks**,
+retrieved with **TF-IDF**, no FAISS, no embeddings model. That choice is
+measured, not assumed, and `app/rag/embeddings.py` states the cost honestly:
+all-MiniLM-L6-v2 scores Recall@1 **0.967 vs 0.733** and MRR **0.971 vs 0.822**.
+The argument for the lexical option is narrow and is written as narrow —
+Module 23 takes the top 5, so Recall@5 (0.967 vs 0.933, one query in thirty) is
+the operative metric, and it holds only because queries here are built from
+canonical vocabulary rather than free prose.
+
+#### THE DEFECT: the control existed, was tested, was documented, and was bypassed
+
+There were TWO retrieval entry points and only one was safe:
+
+* `retrieve()` ran `_anchor_free_text` — every word and adjacent pair resolved
+  through the same exact synonym index Module 5 uses, returning **nothing** when
+  a phrase anchors to nothing.
+* `retrieve_payload()` called `build_query` directly and skipped it — and
+  `retrieve_payload` is what **`POST /api/v1/knowledge/retrieve`** calls.
+
+So the one path a stranger can reach was the one without the control:
+
+```
+'what should I take for my thyroid'  -> 5 chunks about TRIGLYCERIDES
+'is my liver enzyme high'            -> 5 chunks about LDL/HDL and vitamin D
+'chest pain'                         -> a chunk about when to seek advice
+```
+
+**Why no test caught it.** `test_off_domain_query_returns_empty_not_junk`
+passed throughout — "how do I fix my bicycle" is far enough off-domain that the
+similarity floor catches it. The queries that got through were **medical ones
+this corpus does not cover**, and those score 0.141–0.271 against covered terms'
+0.121–0.27: the ranges overlap completely, so **no floor can separate them** and
+only anchoring can. The test suite proved the easy half of the property.
+
+#### The fix, and why it is shaped this way
+
+Both entry points now build their query through one `_anchored_query()`.
+Patching `retrieve_payload` alone would have restored the behaviour and left
+the cause — **two paths building the same query independently is why a fix
+applied to one looked complete from either end and survived two audits.**
+
+The echo is better for it: a refused query reports `source: "unanchored"` with
+empty features, and a covered one reports what it actually resolved to, so a
+reader sees the resolution step rather than just the raw text.
+
+**One existing test had to be changed, and it was asserting the defect.**
+`test_free_text_retrieval_works` required `query.source == "text"` — i.e. that
+this endpoint retrieved on raw words, which is exactly what D7 was about. It now
+asserts `findings_and_text` with `features == ["hba1c"]`.
+
+Verified on the live HTTP endpoint after restart: both D7 examples return
+`returned=0, grounding_available=false`, and "what does a raised HbA1c mean"
+returns 5 chunks anchored to `hba1c`. Reverting the fix fails four of the new
+tests. **ai-service 3,721.**
+
+> The Module 23 patient path was never affected — it goes through `retrieve()`.
+> The exposure was the public endpoint, which is also where §6r found it.
+
+### A Heart Disease card that named two inputs it did not have
+
+The user pointed at one condition card. Two defects, both in the rendering
+layer, both confirmed against the stored payload before anything was changed.
+
+#### 1. ABSENCE RENDERED AS A VALUE, on the worst possible card
+
+> *"Your history of heart disease, history of high blood pressure, smoking
+> history, BMI, age and sex were also taken into account."*
+
+Of the six named, **two did not exist**. The stored evidence:
+
+```
+heart_disease    availability: not_present_in_report   value: null
+hypertension     availability: not_present_in_report   value: null
+smoking_history  availability: observed                value: "never"
+```
+
+`summariseEvidence` bucketed a cited feature into "context" on the strength of
+it having a `PATIENT_LABEL`, **never consulting `availability`** — so a null
+became a contribution.
+
+**This is the single worst place on the platform for that sentence to appear.**
+The heart model's own author note reads *"Blood pressure, the strongest known
+predictor, is still not collected by VaidyaAI."* The card asserted, to the
+patient, the exact opposite of the assessment's most important limitation.
+
+Fixed by gating on `availability === 'observed'`. **The absent ones are NOT
+dropped** — dropping them is the same failure from the other side, and the
+reader would never learn the strongest predictor was missing:
+
+> *"No value was available for your history of heart disease or history of
+> high blood pressure, so they could not be taken into account here."*
+
+#### 2. "Close to the usual limit" printed above two values that were over it
+
+The card read *"Close to the usual limit — worth keeping an eye on"* directly
+above:
+
+```
+Total cholesterol   268 mg/dl   above 240 mg/dl
+HbA1c (average...)  8.4 %       above 6.5 %
+```
+
+Both statements were true of **different things** and the reader had no way to
+know which. Heart Disease here was decided by
+`assessment_basis: risk_factor_count` — the COUNT was borderline; the
+individual values were plainly over their cut-offs. "Close to the usual limit"
+describes a threshold comparison, and no threshold comparison happened.
+
+`PATIENT_STATUS` now has a `RISK_FACTOR_STATUS` sibling, selected when a card
+has **positive proof of a count and no threshold comparison at all**. A topic
+with both keeps threshold wording: a crossing did happen, and that is the more
+concrete thing to say. An unrecognised basis keeps the default — an unfamiliar
+basis must not silently acquire a different description.
+
+#### The mutation that survived, and why it mattered
+
+Four mutations were run. Three failed a test immediately. The fourth --
+reducing the gate from `counted && !compared` to `counted` -- **passed
+everything**, because every fixture had exactly one basis. A card carrying BOTH
+is the only shape that distinguishes them, and it is the shape the real Heart
+Disease card is one config change away from. Added, and the mutation now fails.
+
+> `counted && !compared` is two conditions, so it needs two tests. One
+> assertion per clause, not one per function.
+
+Frontend suite **84**.
+
 ### Still open
 
 * **The ai-service stamps `origin: report_transcription` on profile-derived
@@ -3389,6 +3531,247 @@ rejected reading into the values — each fails a test. Frontend suite **71**
   that the endpoint has its own, but the split is worth keeping in mind.
 * `document.unmapped_count` in `report_builder` **still writes 0** (§6u). The
   dashboard derives around it. Unfixed at source.
+
+---
+
+## 6x. The "Instrument" design system · 2026-09-11 · `design.md` implemented
+
+The user wrote `design.md` (option 2c/3a, warm sand + warm brown-black) and
+asked for it across the whole app — login and authorisation included — plus a
+dark-mode toggle. Frontend suite **44 → 109**.
+
+### THE MOVE THAT MADE IT SAFE: ALIAS, DO NOT RENAME
+
+`styles.css` had 294 lines naming colours by their old roles (`--line`,
+`--card`, `--accent`, `--danger`, `--low/medium/high`). The obvious
+implementation is a rewrite; the obvious implementation also silently drops a
+selector, and on this screen a dropped selector is a dropped absence state.
+
+So the new palette was installed and the OLD NAMES ALIASED ONTO IT:
+
+```css
+--line: var(--panel-line);   --accent: var(--brand);
+--card: var(--panel);        --low:    var(--green-text);
+```
+
+Every existing rule became theme-aware in one move, nothing was deleted, and
+the old names still say what each rule MEANT. Three literal hex values outside
+`:root` were retired; the file now has none.
+
+**`--on-brand` / `--on-danger` are the tokens that stopped a real defect.**
+`button { background: var(--accent); color: #fff }` is fine while the accent is
+a dark clay and illegible the moment it is a light gold — which is exactly what
+dark mode makes it. "White on the accent" is not a colour, it is an assumption.
+
+### The toggle, added without giving any component a theme
+
+`design.md` §2 ships no toggle and sets `data-theme` once at boot. The user
+asked for one; it was added while keeping the spec's actual property intact —
+**no component knows the theme exists**. `lib/theme.js` writes `localStorage`
+and re-stamps `data-theme` on `<html>`; every colour is already a token, so
+nothing else changed. The toggle is in the header AND on the sign-in screen,
+because the header only renders when signed in and sign-in is both the first
+screen anyone sees and the one most likely to be opened at night.
+
+The theme is stamped by an inline script in `index.html` **before first paint**.
+Doing it in React renders one frame of the light palette first, which on a
+dark-mode phone is a flash of near-white — the exact thing dark mode exists to
+prevent. Every `localStorage` access is wrapped: in a private window the
+ACCESSOR throws rather than returning null, and a theme preference must never be
+able to take the app down. "Never chosen" is kept as `null`, distinct from
+'light', so a dark-mode user is not silently opted out of their own setting.
+
+### The charts, and the one thing each of them could have got wrong
+
+Three hand-authored SVG components taking already-derived data. They hold no
+threshold, no condition and no clinical rule — a change to what counts as
+flagged happens in one place and cannot make a picture disagree with the words
+beside it.
+
+* **`RiskGauge`** — a gauge has a resting position and it is *low*. A report
+  where nothing could be assessed would park the needle on "Low" and hand the
+  reader "we could not look" rendered as "we looked and it was fine". So
+  `assessed === false` draws **no needle and no hub**; there is no angle for
+  unknown and the component does not invent one. A risk word arriving with
+  `assessed: false` loses — absence is the safer of two contradictory readings.
+* **`CoverageRadar`** — a vertex at the centre looks like a bad score and
+  usually means the test was never done. Unassessed topics get the app's
+  absence treatment (dashed, unfilled, `--mono` label) and are **pinned to
+  zero even if a coverage number arrives**.
+* **`RangeChart`** — three absences: not on the report, rejected reading, and
+  in-range/flagged. A rejected 999 is never plotted: it is not a high result,
+  it is not a result.
+
+**The needle's angle is a static inline transform as well as the animation's
+end state.** `prefers-reduced-motion` switches every animation off, and a
+needle whose angle lived only in a keyframe would rest pointing at "low" on a
+high-risk report. A chart that animates to the truth but rests on a lie is
+worse than one that never moves.
+
+### FOUR DEFECTS FOUND BY RENDERING IT, NOT BY READING IT
+
+1. **The whole app was on `system-ui`.** `body { font: 16px/1.55 system-ui… }`
+   is the `font:` SHORTHAND, which resets the family — and it sat after the new
+   typography block. Three webfonts loaded and used by nothing but the wordmark.
+   Invisible in the stylesheet, obvious in `getComputedStyle`.
+2. **Links were browser-default blue** on a palette whose first principle is
+   "no blue anywhere". Anchors outside the header had no colour rule at all and
+   fell through to the user agent; on the dark ground it was low-contrast blue
+   on near-black.
+3. **Every band was drawn as an absence.** The chart had two band states and
+   needs THREE: a printed interval (shaded band), *measured with no interval
+   printed* (**no band at all**), and value-absent (dashed empty band). On a
+   report that prints no intervals — which is most of them — the two-state
+   version marked every single row as absent while showing its number beside it.
+4. **"NOT USABLE" against three rows nobody had rejected.** Mapping
+   `usable === false` to 'rejected' caught `state: 'unavailable'` too, so a
+   profile question the patient never answered claimed a reading had been taken
+   and refused. The payload's own `state` decides now.
+
+Also caught: radar axis labels clipped to `"olesterol"` at the spec's exact
+`viewBox` — on a chart about what was measured, the worst possible thing to
+truncate. The pentagon geometry is unchanged; the frame is padded around it.
+
+### How the sweep was done, and why it is worth repeating
+
+Screenshots were unreliable (the browser pane captures below-fold content
+mid-paint). So the audit ran **in the page**: walk every text-bearing element,
+resolve the token palette to RGB, and flag any computed colour that is not in
+it — plus every font family in use.
+
+**12/12 route × theme combinations: zero colour offenders, exactly three font
+families.** That is what caught the `system-ui` regression and would have caught
+the blue links. A stylesheet cannot be audited by reading it; a rendered page
+can be audited by asking it.
+
+Mutation-tested: parking the needle at low when unassessed (3 tests fail),
+drawing an unassessed radar topic as a filled dot (2), plotting a rejected
+reading (1).
+
+### Open
+
+* The range chart and the results table both show every value. The chart is the
+  picture, the table carries what it cannot (printed lab name, profile-derived
+  rows, "no range printed"), and the table is the accessible record — the
+  chart's bars are `aria-hidden`. If that reads as duplication on a real screen
+  it is a one-line change, but it is deliberate.
+* `design.md` §4 lists a `/timeline` trend chart in the range chart's vocabulary.
+  Timeline has the tokens and typography but no chart yet.
+
+---
+
+### Two things changed after reading the running pages
+
+**The population page was giving a card to every refusal**, including three
+that nobody expected an answer for. `FEATURE_NOT_CONTINUOUS` covers age, gender
+and smoking history: age and gender are what the cohort is **matched on**, so
+asking for their percentile is circular, and smoking history is a word. Three
+cards explaining that is the page describing its own mechanics.
+
+Those three are now one line — *"age and gender are not measured values, so no
+percentile is offered for them"* — and the cards that stay are the ones a reader
+would otherwise wonder about: a glucose of 186 with no comparison beside it is
+a real question, and *"fasting status is not recorded, so the comparison would
+look precise and be wrong"* is a real answer. **The reason codes are still in
+the payload**; only the cards went. Mutation-tested both ways: deleting the
+summary line fails a test (an absence that stops being a card must not stop
+being mentioned), and filtering out *all* refusals fails three.
+
+**The breadcrumb row was four identical underlined links stacked in two rows**,
+so every page opened with a list of equal-looking things and none of them was
+the title. Now: the trail is mono micro-type that recedes, the filename is set
+as the heading it actually is (19px sans), and the two cross-links are bordered
+pills with a chevron — shape carrying "goes somewhere" rather than another
+colour. Applied to the dashboard, the clinician summary and the population page.
+
+---
+
+## 6y. STATE AT THE END OF 2026-09-11 — read this before doing anything
+
+**Everything runs. Everything is green. Nothing after commit `e175eb7` is
+committed.**
+
+### Suites, counted by running them
+
+| | |
+|---|---|
+| `backend/` | **634** passing + 3 opt-in live |
+| `ai-service/` | **3,739** passing + 7 skipped |
+| `frontend/` | **111** passing |
+| **Total** | **4,484** |
+
+`cd backend && npm test` · `cd frontend && npx vitest run` ·
+`cd ai-service && .venv/Scripts/python.exe -m pytest -q` **with `.env` moved
+aside** (still unfixed; see §0).
+
+### Running it
+
+```
+cd ai-service && .venv/Scripts/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+cd backend   && npm start          # :5000, Mongo Atlas, non-SRV URI
+cd frontend  && npm run dev        # :5173
+```
+
+Health: `curl http://127.0.0.1:5000/api/v1/health`. **Restart the services
+after any ai-service or backend change** — a live run against a stale process
+proves nothing, and that has cost real time twice.
+
+Test account with an analysed report:
+`glossary.check+1788753613@example.com` / `Str0ng!Passw0rd`,
+report `6a9e36ced9a53914342f3734`.
+
+### UNCOMMITTED WORK — commit this first
+
+`git status` at the end of the session:
+
+* **frontend** — the whole "Instrument" design system (§6x): `styles.css`
+  rewritten around tokens, `index.html` (fonts + pre-paint theme stamp),
+  `lib/theme.js`, `components/ThemeToggle.jsx`, `components/RiskGauge.jsx`,
+  `components/CoverageRadar.jsx`, `components/RangeChart.jsx`, `App.jsx`,
+  `Dashboard.jsx`, `SignIn.jsx`, `Population.jsx`, `DoctorSummary.jsx`,
+  `Reports.jsx`, `tests/design.test.jsx`, `tests/reports.test.jsx`,
+  `tests/dashboard.test.jsx`, `tests/clinical.test.jsx`
+* **ai-service** — the comma-synonym fix (`feature_catalog.py`), the 5xx model
+  fallback (`gemini_client.py`), prose fixtures (`tools/make_test_reports.py`)
+  and their tests
+* **`design.md`** — the user's own spec, untracked
+* `ai-service/app/data/trend_polarity.py`, `app/rag/retriever.py`,
+  `app/services/trend_analyzer.py` and three test files were **already modified
+  when this session started** and were not touched by it. Check what they are
+  before committing.
+
+### What to pick up
+
+1. **Commit the above.** It is a session's worth of work sitting in the working
+   tree, and `origin/master` has none of it.
+2. **`design.md` §4 wants a timeline trend chart** in the range chart's
+   vocabulary. Timeline has the tokens and the typography but no chart.
+3. **Two ai-service defects, still open at source** (§6w "Still open"): profile
+   rows are stamped `origin: report_transcription` with the feature key as the
+   "transcribed" text, and `feature_catalog`'s `display_name` for `gender` is an
+   internal note that reaches any renderer trusting it. Both are worked around
+   in the frontend.
+4. **Module 32's payload nests `present` two different ways** — `trends` and
+   `comparison` at the top level, `knowledge` and `evidence` under `.status`.
+   The frontend normalises with `statusOf()`; the contract is still
+   inconsistent and the next consumer will hit it.
+5. **The frontend fixtures are not validated against real responses** — a
+   demonstrated hazard, not a theoretical one (§6w).
+
+### The one habit worth keeping
+
+Three sessions running, every defect found has been in the **rendering layer of
+a correct pipeline**, and none was visible from a green suite. What found them:
+
+* **reading the page aloud** — the user did this and found two false statements
+  in the first paragraph of a screen that had 60 passing tests;
+* **auditing the rendered DOM rather than the source** — resolving the token
+  palette to RGB and flagging any computed colour outside it caught an entire
+  app silently running on `system-ui`, which no amount of reading `styles.css`
+  would have shown;
+* **mutation-testing every guard** — flip the condition, confirm a test dies.
+
+A screen nobody has read aloud is untested.
 
 ---
 
