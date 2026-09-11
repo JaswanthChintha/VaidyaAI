@@ -71,6 +71,18 @@ from app.schemas.timeline import (
     TimelineGap,
     TimelineTrendsRequest,
 )
+
+
+_LEAKS = (
+    "Module ",
+    "EXTENSION POINT",
+    "REFUSED ON PURPOSE",
+    "app/data",
+    ".py",
+    "sample_timing",
+    "()",
+    "_CUTOFF",
+)
 from app.services.trend_analyzer import analyse_trends
 from tests.trend_payloads import rejection, report, series_reports, vf
 
@@ -408,11 +420,14 @@ def test_an_undeclared_polarity_reports_direction_only(feature, values, unit):
     assert trend.polarity is not None
     assert trend.polarity.kind == POLARITY_UNDECLARED
     assert trend.polarity.direction_of_harm is None
-    # The reason may quote the table's reviewer-facing basis (which discusses
-    # why no direction is declared), but it must NEVER contain the sentence
-    # the classified branches emit.
+    # THIS COMMENT USED TO SANCTION THE DEFECT. It read "the reason may quote
+    # the table's reviewer-facing basis", and that permission is exactly how a
+    # source path and two module numbers reached a patient's timeline. The
+    # reviewer-facing basis may NOT be quoted; the reader-facing one is.
     assert "the direction of change is" not in trend.reason
     assert "whether the change is favourable is not reported" in trend.reason
+    for token in _LEAKS:
+        assert token not in trend.reason, f"{feature}: reason contains {token!r}" 
 
 
 @pytest.mark.parametrize(
@@ -958,3 +973,90 @@ def test_a_real_reading_at_the_edge_of_the_possible_band_still_trends():
     creatinine = trend_of("creatinine", [0.2, 0.4], "mg/dl")
     assert creatinine.usable_point_count == 2
     assert creatinine.gaps == []
+
+
+# --------------------------------------------------------------------------
+# The maintainer's note must not reach the reader
+# --------------------------------------------------------------------------
+#
+# `TrendPolarity.basis` is written for someone reading `trend_polarity.py`, and
+# it should be: it names modules, functions, source paths and extension points.
+# It was formatted straight into the sentence shown on a patient's timeline, so
+# a glucose trend read:
+#
+#   "... Module 8 already refuses to apply fasting cut-offs ... it would be
+#    incoherent for Module 28 to be less careful ... EXTENSION POINT:
+#    `sample_timing()` in app/data/clinical_rules.py ..."
+#
+# Accurate, valuable, and addressed to the wrong person.
+
+
+
+@pytest.mark.parametrize("feature", sorted(POLARITY))
+def test_no_reader_facing_reason_leaks_the_maintainer_note(feature):
+    """Every entry, not just the two that had a long note when this was written.
+
+    Parametrised over the whole table on purpose: the defect was one entry's
+    text reaching the screen, and the guarantee has to hold for the next entry
+    somebody adds.
+    """
+    from app.data.trend_polarity import reader_reason
+
+    text = reader_reason(POLARITY[feature])
+    assert text.strip()
+    for token in _LEAKS:
+        assert token not in text, f"{feature}: reader text contains {token!r}"
+
+
+def test_the_fallback_is_generic_rather_than_the_maintainer_note(monkeypatch):
+    """A missing `reader_basis` must produce a blank-ish sentence, not a leak.
+
+    Falling back to `basis` is what put a source path on a timeline, and it
+    would do so again the moment someone adds an entry and forgets the reader
+    text. This pins the refusal to fall back.
+    """
+    from app.data.trend_polarity import TrendPolarity, reader_reason
+
+    bare = TrendPolarity(
+        "made_up",
+        POLARITY_UNDECLARED,
+        basis="REFUSED ON PURPOSE. See app/data/clinical_rules.py, Module 8.",
+    )
+    text = reader_reason(bare)
+    assert "app/data" not in text
+    assert "Module " not in text
+    assert "improvement" in text
+
+
+def test_a_refused_glucose_series_explains_itself_without_jargon():
+    """End to end: the sentence a reader actually gets on the timeline."""
+    from app.data.trend_polarity import POLARITY, reader_reason
+
+    text = reader_reason(POLARITY["blood_glucose"])
+    # The two real reasons survive, in plain words.
+    assert "fasting" in text
+    assert "too low" in text
+    for token in _LEAKS:
+        assert token not in text
+
+
+@pytest.mark.parametrize(
+    "feature",
+    sorted(
+        name
+        for name, entry in POLARITY.items()
+        if entry.kind == POLARITY_UNDECLARED and entry.trendable
+    ),
+)
+def test_the_rendered_reason_is_clean_for_every_undeclared_feature(feature):
+    """The sentence a reader actually sees, not the helper that builds it.
+
+    An earlier version of these tests asserted only `reader_reason()`, so
+    putting `polarity.basis` back into the three prose call sites passed every
+    one of them. The leak lives in the RENDERED text; that is where it has to
+    be asserted.
+    """
+    trend = trend_of(feature, [10.0, 40.0], "mg/dl")
+    assert trend.reason
+    for token in _LEAKS:
+        assert token not in trend.reason, f"{feature}: {token!r} in reason"

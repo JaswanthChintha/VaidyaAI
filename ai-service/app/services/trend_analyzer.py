@@ -92,6 +92,7 @@ from app.data.trend_polarity import (
     StabilityBand,
     TrendPolarity,
     polarity_for,
+    reader_reason,
     stability_for,
 )
 from app.schemas.repository import (
@@ -804,7 +805,7 @@ def analyse_feature(
         direction_of_harm=polarity.direction_of_harm,
         optimal_low=polarity.optimal_low,
         optimal_high=polarity.optimal_high,
-        basis=polarity.basis,
+        basis=reader_reason(polarity),
     )
     applied_stability = (
         AppliedStability(
@@ -854,7 +855,7 @@ def analyse_feature(
         return result(
             OUTCOME_NOT_TRENDABLE,
             _TEMPLATES["not_trendable"].format(
-                feature=feature, basis=polarity.basis
+                feature=feature, basis=reader_reason(polarity)
             ),
         )
     if band is None:
@@ -1001,7 +1002,7 @@ def analyse_feature(
     )
     if significant:
         reason += _TEMPLATES[key].format(
-            interval=_interval_text(polarity, unit), basis=polarity.basis
+            interval=_interval_text(polarity, unit), basis=reader_reason(polarity)
         )
     if change.volatile:
         reason += _TEMPLATES["volatile"]

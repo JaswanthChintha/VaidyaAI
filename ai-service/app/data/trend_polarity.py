@@ -129,7 +129,20 @@ class TrendPolarity:
 
     feature: str
     kind: str
+    #: THE MAINTAINER'S NOTE. Written for someone reading this file: it names
+    #: modules, functions, source paths and extension points, and it should.
+    #: It is NOT for a reader of the timeline, and it reached one -- a user
+    #: opening a glucose trend was shown "Module 8 already refuses ...
+    #: EXTENSION POINT: `sample_timing()` in app/data/clinical_rules.py".
+    #: Accurate, valuable, and addressed to the wrong person.
     basis: str
+
+    #: THE SAME DECISION, FOR THE PERSON WHOSE BLOOD IT IS. One or two
+    #: sentences, no module numbers, no file paths, no function names. Every
+    #: entry that can be refused needs one; `reader_reason()` refuses to fall
+    #: back to `basis` precisely so that a missing one is a blank rather than
+    #: a leak of the note above.
+    reader_basis: Optional[str] = None
 
     #: MONOTONE only. Which direction of change is the unfavourable one.
     direction_of_harm: Optional[str] = None
@@ -151,6 +164,23 @@ class TrendPolarity:
     #: the sample timing matches (glucose). The analyzer refuses a series that
     #: mixes two DIFFERENT established timings.
     timing_sensitive: bool = False
+
+
+def reader_reason(polarity: "TrendPolarity") -> str:
+    """The refusal in words a patient can read, or a safe generic sentence.
+
+    DELIBERATELY DOES NOT FALL BACK TO `basis`. A fallback is what put a
+    source-file path and two module numbers on a patient's timeline, and it
+    would do it again the moment someone adds a polarity entry and forgets the
+    reader text. A generic sentence is worse writing and cannot leak.
+    """
+    if polarity.reader_basis:
+        return polarity.reader_basis
+    return (
+        "This platform does not declare whether a change in this measurement "
+        "is an improvement, so the direction and size of the change are "
+        "reported without judging them."
+    )
 
 
 POLARITY: Dict[str, TrendPolarity] = {
@@ -276,6 +306,15 @@ POLARITY: Dict[str, TrendPolarity] = {
             "per-timing polarity would need a reviewed target interval per "
             "timing and is deliberately not done here."
         ),
+        reader_basis=(
+            "Whether a change in blood sugar is an improvement is not "
+            "reported here, for two reasons. A fasting sample and one taken "
+            "after eating are not the same measurement, and this report does "
+            "not always say which was taken. And blood sugar can be harmful "
+            "when it is too low as well as too high, so a fall is not "
+            "automatically good news. The change itself is shown; whether it "
+            "is better or worse is a question for a healthcare professional."
+        ),
     ),
     "hemoglobin": TrendPolarity(
         "hemoglobin",
@@ -293,6 +332,14 @@ POLARITY: Dict[str, TrendPolarity] = {
             "ContextualThresholds resolvable from the `gender` and `age` "
             "features that a snapshot carries; wiring them in is the intended "
             "next step and needs clinical review, not just code."
+        ),
+        reader_basis=(
+            "Whether a change in haemoglobin is an improvement is not "
+            "reported here. It can be harmful when too low and when too high, "
+            "and the usual range differs with sex, age and pregnancy, which "
+            "this service does not record. The change itself is shown; "
+            "whether it is better or worse is a question for a healthcare "
+            "professional."
         ),
     ),
     "age": TrendPolarity(
