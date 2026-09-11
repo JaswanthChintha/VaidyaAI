@@ -482,6 +482,53 @@ def lookup_test_name(name: str) -> Tuple[Optional[SynonymMatch], Optional[str]]:
                 ),
                 None,
             )
+
+    # A COMMA-SEPARATED QUALIFIER, which is how many laboratories print the
+    # same thing a parenthetical says.
+    #
+    # `strip_parentheticals` already handles "Glycosylated Hemoglobin (HbA1c)".
+    # The comma form was not handled at all, so a real report printing
+    # "GLYCOSYLATED HEMOGLOBIN, HbA1c" mapped to NOTHING -- even though both
+    # halves are independently valid synonyms of `hba1c`. On a report whose
+    # only test was that one, the result was an analysis with zero features
+    # and a dashboard on which every row read "Not measured", which a reader
+    # reasonably took to mean the platform had lost their results.
+    #
+    # THE SEGMENTS MUST AGREE, and that is the whole safety of this branch.
+    # Two segments naming different features is a name this function does not
+    # understand, and picking either one would be a guess. Lipid
+    # sub-fractions -- the case where a wrong guess would be clinically
+    # serious, mapping an LDL value into TOTAL cholesterol -- never reach
+    # here: `DISTINCT_ANALYTE_TOKENS` is checked against the whole name above
+    # and returns before any candidate is tried.
+    if "," in (name or ""):
+        found: Dict[str, SynonymMatch] = {}
+        for segment in name.split(","):
+            for key in (
+                normalize_test_name(segment),
+                strip_qualifiers(normalize_test_name(segment)),
+            ):
+                hit = SYNONYM_INDEX.get(key) if key else None
+                if hit is not None:
+                    found.setdefault(hit.feature, hit)
+                    break
+        if len(found) == 1:
+            hit = next(iter(found.values()))
+            return (
+                SynonymMatch(
+                    feature=hit.feature,
+                    preference=hit.preference,
+                    matched_term=hit.matched_term,
+                    matched_key=hit.matched_key,
+                    # Never `exact`: the printed name is not the synonym, a
+                    # part of it is, and a consumer weighing two candidates
+                    # for the same feature must be able to prefer the one
+                    # that matched outright.
+                    exact=False,
+                ),
+                None,
+            )
+
     return None, UnmappedReason.NO_SYNONYM
 
 

@@ -92,6 +92,8 @@ class Report:
         note: str,
         unassessed: Optional[List[UnassessedRow]] = None,
         expect_described: Optional[List[str]] = None,
+        prose: Optional[List[Tuple[str, str]]] = None,
+        paired_with: Optional[str] = None,
     ) -> None:
         self.slug = slug
         self.title = title
@@ -114,6 +116,24 @@ class Report:
         #: is the flagged subset, written by hand for the same reason `expect`
         #: is: a list derived from the selector cannot catch the selector.
         self.expect_described = list(expect_described or [])
+        #: (heading, paragraph) pairs. When present the page is rendered as
+        #: NARRATIVE TEXT instead of a table, and `rows` describes the values
+        #: buried in that narrative rather than a printed table.
+        #:
+        #: WHY THIS LAYOUT EXISTS. Every fixture so far prints a tidy
+        #: three-column table, and extraction was only ever proven against
+        #: that. Real documents are not all tables: consultant notes,
+        #: discharge summaries and many small-laboratory reports state results
+        #: inside sentences. A pipeline that reads tables perfectly and prose
+        #: not at all would look completely healthy on this fixture set, and
+        #: the failure would be invisible in exactly the way that matters --
+        #: a value not extracted is not an abnormal value, it is no value, and
+        #: the dashboard renders it as "not measured".
+        self.prose = list(prose or [])
+        #: The table fixture this one must produce identical verdicts to. The
+        #: values are the same; only the LAYOUT differs, so any divergence is
+        #: an extraction defect and nothing else.
+        self.paired_with = paired_with
 
 
 REPORTS: List[Report] = [
@@ -393,6 +413,170 @@ REPORTS: List[Report] = [
         "three flagged rows must each carry a plain-language description of "
         "what the test measures; the in-range HDL row must carry none.",
     ),
+    Report(
+        slug="07-prose-abnormal",
+        title="Consultation Note — Metabolic and Lipid Review",
+        patient="Rakesh Menon",
+        age=58,
+        sex="male",
+        paired_with="02-diabetes-and-lipids",
+        # THE SAME EIGHT VALUES AS FIXTURE 02, VALUE FOR VALUE. Nothing about
+        # the medicine differs; only the LAYOUT does. So the expectation is not
+        # written independently -- it is 02's, and any divergence between the
+        # two is an extraction defect on narrative text and cannot be anything
+        # else.
+        rows=[
+            ("Glycosylated Haemoglobin", "8.4", "%"),
+            ("Fasting Blood Sugar", "186", "mg/dL"),
+            ("Total Cholesterol", "268", "mg/dL"),
+            ("Triglycerides", "320", "mg/dL"),
+            ("Serum Creatinine", "1.1", "mg/dL"),
+            ("Haemoglobin", "14.8", "g/dL"),
+            ("Vitamin D (25-Hydroxy)", "34", "ng/mL"),
+            ("Vitamin B-12", "420", "pg/mL"),
+        ],
+        prose=[
+            (
+                "Reason for review",
+                "Mr Menon attended for a fasting metabolic and lipid review "
+                "following an earlier abnormal screening result. He reports no "
+                "new symptoms. The sample was drawn after a twelve-hour fast "
+                "and processed the same morning.",
+            ),
+            (
+                "Glycaemic indices",
+                "Glycaemic control remains the principal concern. Glycosylated "
+                "haemoglobin measured 8.4 % on this specimen, and the fasting "
+                "blood sugar taken from the same draw was 186 mg/dL. Both were "
+                "repeated on the analyser and agreed to within the usual "
+                "coefficient of variation.",
+            ),
+            (
+                "Lipid profile",
+                "The lipid picture is likewise unfavourable. Total cholesterol "
+                "returned at 268 mg/dL, with triglycerides of 320 mg/dL. The "
+                "specimen was lipaemic on inspection, which is consistent with "
+                "the triglyceride result and does not appear to have interfered "
+                "with the other assays on the panel.",
+            ),
+            (
+                "Renal and haematological indices",
+                "Renal function was unremarkable on this occasion: serum "
+                "creatinine measured 1.1 mg/dL. The full blood count was within "
+                "the laboratory's usual expectations, with a haemoglobin of "
+                "14.8 g/dL and no abnormal cells reported on the film.",
+            ),
+            (
+                "Micronutrient status",
+                "Vitamin D (25-hydroxy) was 34 ng/mL and vitamin B-12 was "
+                "420 pg/mL. Neither was repeated. No further micronutrient "
+                "assays were requested on this sample.",
+            ),
+        ],
+        features={
+            "hba1c": (8.4, "%"),
+            "blood_glucose": (186.0, "mg/dl"),
+            "cholesterol": (268.0, "mg/dl"),
+            "triglycerides": (320.0, "mg/dl"),
+            "creatinine": (1.1, "mg/dl"),
+            "hemoglobin": (14.8, "g/dl"),
+            "vitamin_d": (34.0, "ng/ml"),
+            "vitamin_b12": (420.0, "pg/ml"),
+        },
+        expect={
+            "Diabetes": "Indicated",
+            "High Cholesterol": "Indicated",
+            "High Triglycerides": "Indicated",
+            "Kidney Disease": "Not Indicated",
+            "Anemia": "Not Indicated",
+            "Vitamin D Deficiency": "Not Indicated",
+            "Vitamin B12 Deficiency": "Not Indicated",
+        },
+        note="PROSE, NOT A TABLE. 02's values written into a consultation "
+        "note, with each result stated inside a sentence. Verdicts MUST be "
+        "identical to 02; any difference is an extraction failure on narrative "
+        "text, not a clinical one. A value that is not extracted becomes 'not "
+        "measured' on the dashboard, which is indistinguishable from a test "
+        "the report never contained.",
+    ),
+    Report(
+        slug="08-prose-all-normal",
+        title="Health Check Summary — Narrative Report",
+        patient="Aarti Deshpande",
+        age=34,
+        sex="female",
+        paired_with="01-all-normal",
+        # 01's values, in prose. This is the direction the abnormal pair
+        # cannot test: prose that must produce NO finding. A misread decimal
+        # point or a number picked up from the surrounding sentence would
+        # invent a condition in a healthy person, and 07 would never show it
+        # because 07 is expected to flag.
+        rows=[
+            ("Glycated Haemoglobin", "5.2", "%"),
+            ("Fasting Glucose", "88", "mg/dL"),
+            ("Haemoglobin", "13.6", "g/dL"),
+            ("Serum Creatinine", "0.8", "mg/dL"),
+            ("Total Cholesterol", "172", "mg/dL"),
+            ("Triglycerides", "118", "mg/dL"),
+            ("Vitamin D (25-OH)", "42", "ng/mL"),
+            ("Vitamin B12", "512", "pg/mL"),
+        ],
+        prose=[
+            (
+                "Summary",
+                "Ms Deshpande attended for a routine health check. She is well, "
+                "takes nothing regularly, and reports no symptoms. The results "
+                "below are given in the body of this note rather than as a "
+                "table, as is this laboratory's practice for screening panels.",
+            ),
+            (
+                "Glycaemic indices",
+                "Glycated haemoglobin was 5.2 % and the fasting glucose was "
+                "88 mg/dL. There is nothing in either figure to suggest a "
+                "disturbance of glucose handling at this time.",
+            ),
+            (
+                "Haematology and renal function",
+                "Haemoglobin measured 13.6 g/dL. Serum creatinine was "
+                "0.8 mg/dL, which is comfortably within what this laboratory "
+                "expects for a woman of this age.",
+            ),
+            (
+                "Lipids",
+                "Total cholesterol was 172 mg/dL and triglycerides 118 mg/dL. "
+                "The specimen was clear and was not lipaemic.",
+            ),
+            (
+                "Micronutrients",
+                "Vitamin D (25-OH) was 42 ng/mL and vitamin B12 was 512 pg/mL. "
+                "No supplementation was reported at the time of the draw.",
+            ),
+        ],
+        features={
+            "hba1c": (5.2, "%"),
+            "blood_glucose": (88.0, "mg/dl"),
+            "hemoglobin": (13.6, "g/dl"),
+            "creatinine": (0.8, "mg/dl"),
+            "cholesterol": (172.0, "mg/dl"),
+            "triglycerides": (118.0, "mg/dl"),
+            "vitamin_d": (42.0, "ng/ml"),
+            "vitamin_b12": (512.0, "pg/ml"),
+        },
+        expect={
+            "Diabetes": "Not Indicated",
+            "Anemia": "Not Indicated",
+            "Kidney Disease": "Not Indicated",
+            "High Cholesterol": "Not Indicated",
+            "High Triglycerides": "Not Indicated",
+            "Vitamin D Deficiency": "Not Indicated",
+            "Vitamin B12 Deficiency": "Not Indicated",
+        },
+        note="PROSE, AND NOTHING MAY FLAG. 01's values written into a "
+        "narrative note. Verdicts MUST be identical to 01. This is the case "
+        "07 cannot cover: a number misread out of a sentence, or picked up "
+        "from the surrounding words, would invent a condition in a healthy "
+        "person -- and a fixture that is expected to flag would never show it.",
+    ),
 ]
 
 
@@ -406,6 +590,36 @@ LEFT, RIGHT = 44, W - 44
 
 def _line(page, y: float, colour=(0.72, 0.75, 0.79), width=0.7) -> None:
     page.draw_line((LEFT, y), (RIGHT, y), color=colour, width=width)
+
+
+def _finish(doc, page, report: Report, text) -> None:
+    """The footer and metadata every layout carries, written once.
+
+    The synthetic marker is not optional and is not decoration: these files
+    sit in a directory beside real uploads, and the one thing that must be
+    true of all of them is that nobody can mistake one for a patient record.
+    """
+    text(LEFT, H - 46,
+         "Results relate only to the specimen tested. This is a generated "
+         "document for software testing.",
+         size=7.2, colour=(0.5, 0.54, 0.6))
+    text(LEFT, H - 34, SYNTHETIC_BANNER, size=7.2, bold=True,
+         colour=(0.65, 0.12, 0.12))
+
+    doc.set_metadata({
+        "title": f"{report.title} - SYNTHETIC TEST DOCUMENT",
+        "author": "VaidyaAI test fixture generator",
+        "subject": SYNTHETIC_BANNER,
+        "keywords": "synthetic, test fixture, not a medical record",
+    })
+
+
+def _save(doc, report: Report) -> Path:
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    path = OUT_DIR / f"{report.slug}.pdf"
+    doc.save(str(path))
+    doc.close()
+    return path
 
 
 def render(report: Report) -> Path:
@@ -466,6 +680,46 @@ def render(report: Report) -> Path:
     # cells would tell a reader the laboratory printed no range for any test,
     # which on these fixtures happens to be true but is not what an empty
     # column means anywhere else.
+    # ---- NARRATIVE LAYOUT --------------------------------------------------
+    #
+    # No table, no columns, no aligned numbers. Each result is stated inside a
+    # sentence, which is how a consultation note or a discharge summary
+    # actually reads and is a shape this fixture set could not previously
+    # produce. `insert_textbox` flows the paragraph and returns a negative
+    # number if the text did not fit, which is checked rather than ignored:
+    # silently clipping a paragraph would drop a value off the page and turn
+    # this fixture into a different, weaker test without saying so.
+    if report.prose:
+        for heading, paragraph in report.prose:
+            text(LEFT, y, heading.upper(), size=8.2, bold=True,
+                 colour=(0.35, 0.39, 0.45))
+            y += 12
+            box = pymupdf.Rect(LEFT, y - 9, RIGHT, y + 150)
+            used = page.insert_textbox(
+                box, paragraph, fontsize=9.6, fontname="helv",
+                color=(0.1, 0.12, 0.15), lineheight=1.45, align=0,
+            )
+            if used < 0:
+                raise SystemExit(
+                    f"{report.slug}: paragraph {heading!r} does not fit on the "
+                    "page. Shorten it rather than letting it clip -- a clipped "
+                    "paragraph silently removes a value from the fixture."
+                )
+            # `used` is the space LEFT OVER in the box, so the consumed height
+            # is the box height minus it.
+            y += (box.height - used) - 9 + 12
+
+        y += 6
+        text(LEFT, y, "— END OF REPORT —", size=8.4, bold=True,
+             colour=(0.35, 0.39, 0.45))
+        y += 26
+        text(LEFT, y, "Dr. B. Fictional, MD (Pathology)", size=8.4, bold=True)
+        y += 11
+        text(LEFT, y, "Consultant Pathologist · Reg. No. SPECIMEN-0000", size=7.8,
+             colour=(0.45, 0.49, 0.55))
+        _finish(doc, page, report, text)
+        return _save(doc, report)
+
     cols = (
         (LEFT, LEFT + 230, LEFT + 300, LEFT + 380, LEFT + 470)
         if report.unassessed
@@ -512,25 +766,8 @@ def render(report: Report) -> Path:
     text(LEFT, y, "Consultant Pathologist · Reg. No. SPECIMEN-0000", size=7.8,
          colour=(0.45, 0.49, 0.55))
 
-    text(LEFT, H - 46,
-         "Results relate only to the specimen tested. This is a generated "
-         "document for software testing.",
-         size=7.2, colour=(0.5, 0.54, 0.6))
-    text(LEFT, H - 34, SYNTHETIC_BANNER, size=7.2, bold=True,
-         colour=(0.65, 0.12, 0.12))
-
-    doc.set_metadata({
-        "title": f"{report.title} - SYNTHETIC TEST DOCUMENT",
-        "author": "VaidyaAI test fixture generator",
-        "subject": SYNTHETIC_BANNER,
-        "keywords": "synthetic, test fixture, not a medical record",
-    })
-
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    path = OUT_DIR / f"{report.slug}.pdf"
-    doc.save(str(path))
-    doc.close()
-    return path
+    _finish(doc, page, report, text)
+    return _save(doc, report)
 
 
 # --------------------------------------------------------------------------
@@ -639,6 +876,27 @@ def main() -> int:
         if mismatches:
             failures.append(f"{report.slug}: {mismatches}")
 
+        # THE PROSE AND THE ROWS MUST NOT DRIFT APART.
+        #
+        # In a table layout the rendered page IS `rows`, so they cannot
+        # disagree. In a narrative layout the paragraphs are written by hand
+        # and `rows` is the machine-readable statement of what is buried in
+        # them -- two representations of one fact, which is exactly the shape
+        # that rots. Edit a sentence, forget the row, and the fixture quietly
+        # starts asserting a verdict for a value no longer on the page.
+        #
+        # So every row's printed value must appear somewhere in the prose,
+        # and generation fails if one does not.
+        if report.prose:
+            body = " ".join(paragraph for _heading, paragraph in report.prose)
+            for name, value, unit in report.rows:
+                if value not in body:
+                    failures.append(
+                        f"{report.slug}: {name} = {value} {unit} is in `rows` "
+                        "but does not appear in the prose. The page and the "
+                        "expectation have drifted apart."
+                    )
+
         # A FIXTURE THAT STOPS TESTING WHAT IT CLAIMS MUST SAY SO. If a feature
         # definition is added for one of these analytes the row becomes
         # assessed, this fixture's unassessed section quietly empties, and
@@ -663,8 +921,16 @@ def main() -> int:
                 name: f"{value} {unit}" for name, value, unit in report.rows
             },
             "reference_intervals_printed": False,
+            "layout": "prose" if report.prose else "table",
             "expect": report.expect,
         }
+        if report.paired_with:
+            entry["paired_with"] = report.paired_with
+            entry["pairing_rule"] = (
+                "Same values as the paired fixture, different layout only. "
+                "Verdicts MUST be identical to it; any difference is an "
+                "extraction defect and cannot be a clinical one."
+            )
         if report.unassessed:
             # Kept under its own key rather than merged into `printed_values`:
             # these rows are on the same page but they are a different kind of
@@ -691,6 +957,8 @@ def main() -> int:
         extra = (
             f" + {len(report.unassessed)} unassessed" if report.unassessed else ""
         )
+        extra += "  [prose]" if report.prose else ""
+
         print(
             f"  {path.name:40s} {len(report.rows)} tests{extra}  "
             f"engine agrees: {flag}"

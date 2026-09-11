@@ -327,14 +327,29 @@ class GeminiClient:
             genai_types.Part.from_text(text=prompt),
         ]
 
-        # TRY EACH MODEL IN TURN, but ONLY on quota exhaustion. A 429 is the
-        # one failure a sibling model can actually fix: the free tier meters
-        # per model per day, so the key is not spent even when this model is.
-        # Every other failure is either deterministic (a bad request fails
-        # identically everywhere) or already handled by the retry loop below,
-        # and re-running it on three more models would just spend three more
-        # requests to reach the same answer.
+        # TRY EACH MODEL IN TURN ON THE TWO FAILURES A SIBLING CAN FIX.
+        #
+        # A 429 is the obvious one: the free tier meters per model per day, so
+        # the key is not spent even when this model is.
+        #
+        # A 5xx IS THE OTHER, and leaving it out was wrong. A 503 from
+        # `gemini-3.6-flash` says nothing whatever about whether
+        # `gemini-3.5-flash` is healthy -- it is a statement about one
+        # endpoint at one moment. This originally sat under "every other
+        # failure is deterministic or already handled by the retry loop",
+        # which is true of a 4xx and false of a server error, and the
+        # difference showed up as soon as the provider had a bad afternoon:
+        # two extractions of the same one-page document failed ninety seconds
+        # apart while a third, between them, succeeded. Two retries against a
+        # flaky endpoint is not resilience when three healthy endpoints are
+        # sitting unused.
+        #
+        # STILL NOT SHOPPED AROUND: a provider SAFETY BLOCK, and any
+        # deterministic 4xx. A block is an ANSWER, and asking three more
+        # models until one complies is exactly the thing this chain must never
+        # do. Neither is a 5xx, so neither reaches the branch below.
         rate_limit_error: Optional[ModelError] = None
+        unavailable_error: Optional[ModelError] = None
         chain = self._model_chain()
 
         for position, model in enumerate(chain):
@@ -351,10 +366,22 @@ class GeminiClient:
                 self._mark_exhausted(model)
                 rate_limit_error = exc
                 continue
+            except ModelError as exc:
+                if exc.code != ErrorCode.MODEL_UNAVAILABLE:
+                    raise
+                logger.warning(
+                    "gemini_model_unavailable_falling_back %s",
+                    safe_meta(model=model, position=position),
+                )
+                unavailable_error = exc
+                continue
 
-        # Every model in the chain is out of quota. Report the provider's own
-        # answer, not a synthesised one.
-        raise rate_limit_error or self._to_service_error(
+        # Nothing in the chain answered. Report the provider's own reason
+        # rather than a synthesised one, preferring the rate limit: "out of
+        # quota" is actionable by waiting, "temporarily unavailable" only by
+        # retrying, and a caller told the weaker of the two would retry into
+        # a wall.
+        raise rate_limit_error or unavailable_error or self._to_service_error(
             RuntimeError("no model available")
         )
 

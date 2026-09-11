@@ -116,6 +116,27 @@ def _no_sleep(monkeypatch: Any) -> None:
     monkeypatch.setattr("app.services.gemini_client.time.sleep", lambda _s: None)
 
 
+@pytest.fixture(autouse=True)
+def _clear_model_cooldown() -> Any:
+    """THE COOLDOWN IS A MODULE-LEVEL GLOBAL, so it leaks between tests.
+
+    `_mark_exhausted` records a 429 in `_MODEL_COOLDOWN` so later calls skip
+    that model -- correct in production, and in a test process it means every
+    429 test permanently shrinks the chain for everything that runs after it.
+    Tests here passed only because of the order they happened to run in, and
+    a new one asserting a call count against the FULL chain failed while
+    passing in isolation.
+
+    Cleared before and after, so this file cannot depend on its own ordering
+    and cannot poison another file.
+    """
+    from app.services import gemini_client
+
+    gemini_client._MODEL_COOLDOWN.clear()
+    yield
+    gemini_client._MODEL_COOLDOWN.clear()
+
+
 def build(settings: Settings, results: List[Any]) -> tuple:
     sdk = StubSDKClient(results)
     return GeminiClient(settings, client=sdk), sdk
@@ -388,3 +409,62 @@ def test_error_messages_never_contain_the_api_key(settings):
 def test_api_key_is_redacted_in_settings_repr(settings):
     assert "test-key-not-real" not in repr(settings)
     assert "test-key-not-real" not in str(settings)
+
+
+# --------------------------------------------------------------------------
+# A 5xx crosses the model chain; a safety block still does not
+# --------------------------------------------------------------------------
+#
+# THE CHAIN ORIGINALLY ADVANCED ONLY ON 429, and a server error aborted it
+# outright -- so a flaky primary failed the whole request while three healthy
+# siblings sat unused. It showed up the first time the provider had a bad
+# afternoon: two extractions of the same one-page document failed ninety
+# seconds apart, with a third succeeding between them, on the same model.
+#
+# A 503 from one endpoint says nothing about whether another is healthy. That
+# is what separates it from a deterministic 4xx, which fails identically
+# everywhere and must NOT be shopped around.
+
+
+def test_an_unavailable_primary_falls_back_to_a_working_model(settings):
+    # The primary must exhaust its OWN retry budget first -- a single 503
+    # followed by success is handled on the same model, which is what
+    # `test_transient_error_then_success` already covers. The fallback is for
+    # an endpoint that is down rather than momentarily hiccuping.
+    responses = [FakeAPIError(503)] * settings.gemini_max_retries
+    responses.append(make_response(GOOD_JSON))
+    client, sdk = build(settings, responses)
+    assert call(client)["parameters"][0]["test_name"] == "HbA1c"
+    # The primary's full budget, then the fallback answers first time.
+    assert sdk.models.calls == settings.gemini_max_retries + 1
+
+
+def test_unavailable_everywhere_still_reports_unavailable(settings):
+    client, _ = build(settings, [FakeAPIError(503)])
+    with pytest.raises(ModelError) as exc:
+        call(client)
+    assert exc.value.code == ErrorCode.MODEL_UNAVAILABLE
+    assert exc.value.status_code == 503
+
+
+def test_a_rate_limit_is_reported_ahead_of_an_unavailability(settings):
+    """Which reason surfaces when the chain fails for two different reasons.
+
+    "Out of quota" is actionable by waiting; "temporarily unavailable" only by
+    retrying, and a caller told the weaker of the two retries into a wall.
+    """
+    # The primary is out of quota and hands straight on; every remaining
+    # model is unavailable and burns its budget.
+    budget = (len(settings.fallback_model_list) + 1) * settings.gemini_max_retries
+    responses = [FakeAPIError(429)] + [FakeAPIError(503)] * (budget + 4)
+    client, _ = build(settings, responses)
+    with pytest.raises(ModelRateLimitedError):
+        call(client)
+
+
+def test_a_deterministic_4xx_still_does_not_shop_around(settings):
+    """Unchanged by the 5xx fallback, and the reason they differ."""
+    client, sdk = build(settings, [FakeAPIError(400)])
+    with pytest.raises(ServiceError):
+        call(client)
+    assert sdk.models.calls == 1

@@ -355,3 +355,81 @@ def test_tristate_boolean_garbage_is_reported_not_guessed():
     value, recognised = normalize_tristate_boolean("maybe-ish")
     assert recognised is False
     assert value is None
+
+
+# --------------------------------------------------------------------------
+# Comma-separated qualifiers
+# --------------------------------------------------------------------------
+#
+# A REAL REPORT PRINTED "GLYCOSYLATED HEMOGLOBIN, HbA1c" AND IT MAPPED TO
+# NOTHING. Both halves are independently valid synonyms of `hba1c`, and the
+# parenthetical form of the same name -- "Glycosylated Hemoglobin (HbA1c)" --
+# already worked; only the comma form did not. On a report whose only test was
+# that one, the analysis produced zero features and every row of the dashboard
+# read "Not measured", which reads as the platform having lost the results
+# rather than as never having understood the name.
+
+
+def test_a_comma_separated_qualifier_maps_like_the_parenthetical_one():
+    from app.data.feature_catalog import lookup_test_name
+
+    comma, _ = lookup_test_name("GLYCOSYLATED HEMOGLOBIN, HbA1c")
+    paren, _ = lookup_test_name("Glycosylated Hemoglobin (HbA1c)")
+    assert comma is not None
+    assert paren is not None
+    assert comma.feature == paren.feature == "hba1c"
+    # Not an exact match: the printed name is not the synonym, part of it is.
+    assert comma.exact is False
+
+
+@pytest.mark.parametrize(
+    "printed,feature",
+    [
+        ("Cholesterol, Total", "cholesterol"),
+        ("Creatinine, Serum", "creatinine"),
+        ("Glucose, Fasting", "blood_glucose"),
+        ("Vitamin D, 25-Hydroxy", "vitamin_d"),
+    ],
+)
+def test_ordinary_comma_qualifiers_still_reach_their_feature(printed, feature):
+    from app.data.feature_catalog import lookup_test_name
+
+    match, reason = lookup_test_name(printed)
+    assert match is not None, reason
+    assert match.feature == feature
+
+
+@pytest.mark.parametrize("printed", ["Cholesterol, LDL", "Cholesterol, HDL", "Cholesterol, VLDL"])
+def test_a_lipid_subfraction_is_still_refused_after_the_comma(printed):
+    """THE CASE A WRONG GUESS WOULD BE CLINICALLY SERIOUS.
+
+    `cholesterol` means TOTAL cholesterol. Folding an LDL value into it would
+    put the wrong number under a threshold built for a different one. The
+    distinct-analyte guard runs against the whole printed name before any
+    candidate is tried, so the comma branch can never reach these.
+    """
+    from app.data.feature_catalog import lookup_test_name
+    from app.data.feature_catalog import UnmappedReason
+
+    match, reason = lookup_test_name(printed)
+    assert match is None
+    assert reason == UnmappedReason.DISTINCT_ANALYTE
+
+
+def test_segments_naming_different_features_are_refused_not_guessed():
+    """Two halves that disagree is a name this function does not understand."""
+    from app.data.feature_catalog import lookup_test_name
+    from app.data.feature_catalog import UnmappedReason
+
+    match, reason = lookup_test_name("Haemoglobin, Glucose")
+    assert match is None
+    assert reason == UnmappedReason.NO_SYNONYM
+
+
+def test_a_comma_name_with_no_known_segment_is_still_unmapped():
+    from app.data.feature_catalog import lookup_test_name
+    from app.data.feature_catalog import UnmappedReason
+
+    match, reason = lookup_test_name("Widget Count, Deluxe")
+    assert match is None
+    assert reason == UnmappedReason.NO_SYNONYM
