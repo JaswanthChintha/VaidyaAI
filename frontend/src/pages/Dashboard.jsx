@@ -1804,6 +1804,12 @@ export default function Dashboard() {
   // moved.
   const profileLabs = labs.filter((row) => row.source === 'patient_profile');
   const measuredLabs = labs.filter((row) => row.source !== 'patient_profile');
+  // Rows the reader is shown: a value that is there, or one that was
+  // taken and refused. `measuredLabs` itself is left whole -- it still
+  // feeds `resultFeatures`, which stops a test being described twice.
+  const reportedLabs = measuredLabs.filter(
+    (row) => isPresent(row.value) || row.state === 'rejected'
+  );
   // Module 20's Input -> Evidence -> Decision chain, keyed by condition, so
   // each card can say which measured value produced its verdict.
   // Three groups, never merged -- and ONLY A PROVABLY CLEAR CARD IS COLLAPSED.
@@ -2063,8 +2069,22 @@ export default function Dashboard() {
       ) : null}
 
       <h2>Your results</h2>
-      {measuredLabs.length ? (
-        <LabTable rows={measuredLabs} verdicts={verdicts} />
+      {/* A TEST THAT WAS NEVER ON THE REPORT GETS NO ROW.
+          Four of eleven rows here said "Not measured -- this value was not
+          found in the submitted report", which is a row per test the pipeline
+          hoped for and a table that is mostly about what is not in front of
+          you. The absence is still reported, in the places that can say
+          something useful about it: the condition card names the input it
+          could not take into account, and a topic with no input at all now
+          comes back NOT CHECKED from the rule engine.
+
+          A REJECTED READING IS NOT AN ABSENT ONE AND KEEPS ITS ROW. It was
+          printed on the report and this tool refused it, which the reader has
+          to be told -- dropping it would let a value that exists disappear
+          without a word. So the test is "has a value, or had one taken and
+          refused", never `usable`. */}
+      {reportedLabs.length ? (
+        <LabTable rows={reportedLabs} verdicts={verdicts} />
       ) : (
         <p className="empty">No laboratory values were read from this report.</p>
       )}

@@ -1111,25 +1111,25 @@ describe('what the charts and the table are told about each row', () => {
     });
   });
 
-  it('calls an unanswered profile question absent, NOT rejected', async () => {
-    // `usable: false` covers two different things, and mapping both to
-    // "rejected" put NOT USABLE against three rows of a real report --
-    // claiming a reading was taken and refused when the patient had simply
-    // never answered the question. `state: 'unavailable'` is the payload's
-    // own word for never-there.
+  it('drops a never-measured row but KEEPS a rejected one', async () => {
+    // Two absences that must not be treated alike. A test that was never on
+    // the report gets no row: four of them made the table mostly a list of
+    // things not in front of the reader, and the topics they belong to are
+    // reported as NOT CHECKED elsewhere.
+    //
+    // A REJECTED reading is the opposite case. It WAS printed on the report
+    // and this tool refused it, so dropping it would let a value that exists
+    // vanish with nothing said. It keeps its row and keeps "Not usable" --
+    // the label that must never reach the never-measured row, because it
+    // claims a reading was taken.
     withDashboard({
       overall: { statusLabel: 'Healthy', anyAssessed: true, risk: 'Low' },
       laboratory: [
-        // A measured row alongside it: a row nobody answered is only ever
-        // seen beside rows that were, and the rule is about telling the two
-        // apart.
         {
           feature: 'vitamin_b12',
           displayName: 'Vitamin B12',
           value: 420,
           unit: 'pg/ml',
-          referenceLow: 200,
-          referenceHigh: 900,
           state: 'measured',
           usable: true,
         },
@@ -1141,15 +1141,30 @@ describe('what the charts and the table are told about each row', () => {
           usable: false,
           source: null,
         },
+        {
+          // NO VALUE ON A REJECTED ROW, which is the shape that reaches the
+          // guard. `ReportRejectedFeature.value` is `Optional[Any] = None` on
+          // a deliberately permissive schema, so a refused reading whose value
+          // did not survive is a real payload -- and a `isPresent(value)` test
+          // alone would drop it without a word. That is the defect
+          // `_laboratory_values` documents: a reader seeing no creatinine row
+          // concludes none was ordered.
+          feature: 'vitamin_d',
+          displayName: 'Vitamin D',
+          value: null,
+          state: 'rejected',
+          usable: false,
+        },
       ],
     });
     renderDashboard();
 
-    await screen.findAllByText(/Smoking history/i);
-    expect(screen.queryByText('Not usable')).not.toBeInTheDocument();
-    // The table's own word for never-there. `Not usable` above is the one
-    // it must never be, because that claims a reading was taken and refused.
-    expect(screen.getAllByText('Not measured').length).toBeGreaterThan(0);
+    await screen.findAllByText(/Vitamin B12/i);
+    // Never there -> no row at all.
+    expect(screen.queryByText('Smoking history')).not.toBeInTheDocument();
+    // Taken and refused -> still on the page, and still SAID to be refused.
+    expect(screen.getAllByText(/Vitamin D/i).length).toBeGreaterThan(0);
+    expect(screen.getByText('Not usable')).toBeInTheDocument();
   });
 });
 
