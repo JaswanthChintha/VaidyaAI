@@ -1079,7 +1079,14 @@ def test_intermediate_reports_are_rendered_but_take_no_part_in_the_verdict():
     assert parameter.change.last_value == 6.2
     assert parameter.change.step_count == 1  # the pair only
     assert [point.value for point in data.series["hba1c"].points] == [6.1, 9.0, 6.2]
-    assert any("take no part" in warning for warning in data.warnings)
+    # THE INVARIANT is the two assertions above: the middle report is in the
+    # series and contributes nothing to the pair's classification. The warning
+    # must SAY so; it no longer says it in this service's own words ("take no
+    # part in the classification ... the returned series"), which described
+    # the data flow rather than the reader's reports.
+    warned = " ".join(data.warnings).lower()
+    assert "not included" in warned or "take no part" in warned
+    assert "other report" in warned
 
 
 def _stable_dump(data: Any) -> str:

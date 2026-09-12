@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { Absent, Value, WarningList } from '../components/Absent';
+import TrendChart from '../components/TrendChart';
+import { PATIENT_LABEL } from '../lib/labels';
 import { isPresent } from '../lib/absence';
 
 /**
@@ -58,12 +60,33 @@ function HistorySummary({ history }) {
 }
 
 /** One feature's trajectory, or the stated reason there isn't one. */
+/**
+ * A feature name as a table-row heading.
+ *
+ * `PATIENT_LABEL` was already imported on this page and already used for the
+ * chart headings above -- and this table printed `trend.feature` RAW, so one
+ * screen showed "HbA1c (average blood sugar)" as a chart title and `hba1c`,
+ * `blood_glucose`, `vitamin_b12` and `smoking_history` as row headings in the
+ * table beneath it. Found while auditing the comparison table one row down
+ * for the same class of leak.
+ *
+ * The table's entries for the profile answers are lower case because they are
+ * written for mid-sentence use ("sex", "age", "smoking history"); a row
+ * heading needs the first letter raised. The shared table is NOT edited for
+ * that -- it would break every prose caller -- so the casing happens here,
+ * where the heading is.
+ */
+function rowHeading(feature) {
+  const label = PATIENT_LABEL[feature] || feature;
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
 function TrendRow({ trend }) {
   const classified = trend.outcome === 'TREND_CLASSIFIED';
 
   return (
     <tr>
-      <th scope="row">{trend.feature}</th>
+      <th scope="row">{rowHeading(trend.feature)}</th>
       <td>
         {classified && isPresent(trend.trend) ? (
           <span className={`trend trend--${trend.trend}`}>{trend.trend}</span>
@@ -95,6 +118,65 @@ function TrendRow({ trend }) {
   );
 }
 
+/**
+ * Outcomes that mean "this is not a quantity with a trajectory" at all.
+ *
+ * FOUND BY LOOKING AT A REAL PAYLOAD, not by reading the schema. `age` comes
+ * back NOT_TRENDABLE with two perfectly good points, and a chart drawn from
+ * those points is a line -- on the live data, age descending from 58 to 34,
+ * because the two synthetic reports carry different patients. A picture of a
+ * trend beside a sentence refusing to describe one is the chart disagreeing
+ * with the words next to it, which is the thing these components exist to
+ * prevent. `gender` is the same shape from the other end: NOT_NUMERIC, no
+ * readings at all, and an axis with nothing on it is not a chart.
+ */
+const NOT_A_TRAJECTORY = new Set(['NOT_TRENDABLE', 'NOT_NUMERIC']);
+
+/**
+ * Module 28's payload, turned into the chart's already-derived props.
+ *
+ * EVERY DECISION HERE IS THE SERVICE'S, REPEATED. `classified` is its
+ * `outcome`, the band is its own declared optimal range, and each gap keeps
+ * the availability code Module 7 gave it. Nothing is inferred, and in
+ * particular nothing absent acquires a number on the way through.
+ */
+function chartPropsFor(trend) {
+  const polarity = trend.polarity || {};
+  // The service's own declared optimal range, handed over as it stands.
+  //
+  // THE "BOTH ENDS OR NO BAND" RULE LIVES IN THE CHART, NOT HERE. A one-sided
+  // optimum (cholesterol declares a floor and no ceiling) drawn as a band
+  // would run to the edge of the frame and assert a ceiling nobody declared --
+  // and that rule belongs at the layer that cannot be bypassed, in one place,
+  // where one mutation can kill it. A second copy here changes nothing
+  // observable, which is exactly what makes it a comment pretending to be a
+  // guarantee.
+  const band = { low: polarity.optimal_low, high: polarity.optimal_high };
+
+  return {
+    // The reader's name for it, never the canonical key. `blood_glucose` and
+    // `vitamin_b12` are how this platform stores a feature, not how a patient
+    // says it, and nine chart headings is nine places to say it wrong.
+    label: PATIENT_LABEL[trend.feature] || trend.feature,
+    unit: trend.canonical_unit,
+    points: (trend.points || []).map((point) => ({
+      date: point.date,
+      value: point.value,
+      unit: point.unit,
+      questionable: point.questionable === true,
+    })),
+    // A gap has no `value` field in the payload and is given none here.
+    gaps: (trend.gaps || []).map((gap) => ({
+      date: gap.date,
+      kind: gap.availability,
+      reason: gap.reason,
+    })),
+    band,
+    classified: trend.outcome === 'TREND_CLASSIFIED',
+    trend: trend.trend,
+  };
+}
+
 function Trends({ data, history }) {
   const features = data?.features ? Object.values(data.features) : [];
   const summary = data?.summary;
@@ -110,6 +192,49 @@ function Trends({ data, history }) {
           {summary.stable} stable · {summary.not_determinable} not determinable
         </p>
       ) : null}
+
+      {/* THE CHARTS SIT ABOVE THE TABLE AND SAY THE SAME THINGS. The table
+          stays the record -- it carries the service's own refusal sentence for
+          every feature, including the ones with nothing to plot; the charts
+          carry what a table cannot, which is where the line STOPS. */}
+      {features.map((trend) => {
+        if (NOT_A_TRAJECTORY.has(trend.outcome)) return null;
+        const props = chartPropsFor(trend);
+        // At least one real reading, or there is nothing to place: the row
+        // below still carries the service's own sentence saying why.
+        if (!props.points.length) return null;
+        // CLOSED BY DEFAULT, AND THE SUMMARY CARRIES THE FINDING.
+        //
+        // Nine charts at ~200px each were most of this page. Collapsing them
+        // is only safe because the summary states the DIRECTION -- improving,
+        // stable, or the service's own refusal -- so a reader scanning the
+        // shut list learns the same thing the open list told them, and opens
+        // only the one they want to look at.
+        //
+        // The direction word comes from the same `classified && trend`
+        // predicate the table uses, NOT from `trend.trend` alone: a payload
+        // carrying a direction without a classification must not be summarised
+        // as though it had one (MEMORY 6z -- that contradiction printed the
+        // string "null" as a direction once already).
+        const declared = trend.outcome === 'TREND_CLASSIFIED' && isPresent(trend.trend);
+        return (
+          <details
+            className="trend-chart__block disclosure"
+            key={`chart-${trend.feature}`}
+          >
+            <summary className="disclosure__summary">
+              <h3 className="trend-chart__title">{props.label}</h3>
+              {declared ? (
+                <span className={`trend trend--${trend.trend}`}>{trend.trend}</span>
+              ) : (
+                <span className="trend-chart__nodirection">no direction</span>
+              )}
+              <span className="disclosure__chevron" aria-hidden="true" />
+            </summary>
+            <TrendChart {...props} />
+          </details>
+        );
+      })}
 
       {features.length ? (
         <table className="lab-table">
@@ -138,23 +263,136 @@ function Trends({ data, history }) {
   );
 }
 
+
+/** A report, named the way the person who uploaded it would recognise it. */
+function reportLabel(entry, namesById) {
+  const date = entry.chronoDate ? new Date(entry.chronoDate) : null;
+  const when =
+    date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString() : 'undated';
+  const name = namesById.get(entry.reportId);
+  return name ? `${when} — ${name}` : when;
+}
+
+/**
+ * Choose which two reports to compare.
+ *
+ * THE DEFAULT IS THE SERVICE'S OWN CHOICE, not this component's. With nothing
+ * selected the endpoints are called with no pair and answer
+ * `selection: "first_vs_latest"`; the selects are then filled FROM the pair
+ * that came back, so the control always shows the comparison actually on
+ * screen rather than a guess that could disagree with it.
+ *
+ * BOTH SELECTS CHANGE BOTH SECTIONS. The progress score is computed from the
+ * same two reports as the table, and a score describing one pair beside a
+ * table describing another is two answers to different questions presented as
+ * one screen.
+ *
+ * Out-of-order choices are allowed on purpose: comparing a later report
+ * against an earlier one is a real question, Module 29 reports
+ * `chronological: false` for it, and the sentence under the table already
+ * says every direction is reversed. What is NOT allowed is comparing a report
+ * with itself, which is not a comparison; that option is left out of the
+ * second list rather than refused after the fact.
+ */
+function PairPicker({ reports, namesById, pair, onChange, busy }) {
+  if (!reports || reports.length < 2) return null;
+
+  const baseline = pair?.baseline || '';
+  const comparison = pair?.comparison || '';
+
+  const choose = (which) => (event) => {
+    const chosen = event.target.value;
+
+    // PICKING THE OTHER SIDE'S REPORT MEANS SWAP, NOT NOTHING.
+    //
+    // On an account with two reports, choosing the other one as the baseline
+    // necessarily equals the current comparison. Refusing that leaves a
+    // control that visibly does nothing when clicked -- which is what the
+    // first version did, and it is worse than no control. A reader who names
+    // the later report as the baseline is asking for the comparison the other
+    // way round, which Module 29 supports and reports as
+    // `chronological: false`, and the sentence under the table already
+    // explains that every direction is reversed.
+    // ONLY THE FIRST SELECT CAN COLLIDE, because the second list excludes the
+    // current baseline and therefore cannot offer it. A branch handling the
+    // other direction would be unreachable, and an unreachable branch is one
+    // nobody can find out is wrong.
+    const next =
+      which === 'baseline'
+        ? chosen === comparison
+          // Swap. On an account with two reports this is the only change
+          // available, and refusing it left a control that visibly did nothing
+          // when clicked. Naming the later report as the baseline asks for the
+          // comparison the other way round -- supported, reported by Module 29
+          // as `chronological: false`, and already explained under the table.
+          ? { baseline: chosen, comparison: baseline }
+          : { baseline: chosen, comparison }
+        : { baseline, comparison: chosen };
+
+    // A half-made choice is never sent: the backend refuses one of the pair
+    // rather than guessing the other, so it would become an error message
+    // under a table the reader was in the middle of changing.
+    if (next.baseline && next.comparison && next.baseline !== next.comparison) {
+      onChange(next);
+    }
+  };
+
+  return (
+    <div className="pair-picker">
+      <label>
+        <span className="pair-picker__label">Compare</span>
+        <select value={baseline} onChange={choose('baseline')} disabled={busy}>
+          {reports.map((entry) => (
+            <option key={entry.reportId} value={entry.reportId}>
+              {reportLabel(entry, namesById)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        <span className="pair-picker__label">with</span>
+        <select value={comparison} onChange={choose('comparison')} disabled={busy}>
+          {reports
+            .filter((entry) => entry.reportId !== baseline)
+            .map((entry) => (
+              <option key={entry.reportId} value={entry.reportId}>
+                {reportLabel(entry, namesById)}
+              </option>
+            ))}
+        </select>
+      </label>
+      {busy ? <span className="hint">Comparing…</span> : null}
+    </div>
+  );
+}
+
 /** The spec's Parameter / Previous / Current / Trend table. */
-function Comparison({ data }) {
+function Comparison({ data, reports, namesById, pair, onPairChange, busy }) {
   const rows = data?.table || [];
 
   return (
     <section className="card">
       <h2>Comparing two reports</h2>
 
+      <PairPicker
+        reports={reports}
+        namesById={namesById}
+        pair={pair}
+        onChange={onPairChange}
+        busy={busy}
+      />
+
       {data?.pair ? (
         <p className="hint">
           Comparing the report of{' '}
           {new Date(data.pair.baseline_date || data.pair.baseline?.date).toLocaleDateString()}{' '}
           with {new Date(data.pair.comparison_date || data.pair.comparison?.date).toLocaleDateString()}
+          {/* The full stop belongs to whichever ending is used. Both were
+              printed before, giving "…is reversed.." -- invisible until the
+              picker made an out-of-order comparison reachable at all. */}
           {data.pair.chronological === false
             ? ' — these were given out of date order, so the direction of every change is reversed.'
-            : ''}
-          .
+            : '.'}
         </p>
       ) : null}
 
@@ -215,9 +453,59 @@ function Comparison({ data }) {
   );
 }
 
+/**
+ * The 0-100 progress scale, with the score marked on it.
+ *
+ * A bare "62.5 / 100" makes a reader do the work of placing it. The scale is
+ * the one thing on this card that is genuinely about THIS score and cannot be
+ * said in fewer words.
+ *
+ * NEVER A RISK COLOUR. The card states in its own words that this is "not a
+ * health score, not a risk score and not a diagnosis" -- painting the marker
+ * green at 80 and rust at 20 would contradict that sentence from two inches
+ * away, which is the fault every chart in this app is built to avoid. The
+ * marker is `--brand`, the neutral accent, exactly as the percentile bar is.
+ *
+ * NO BAND BOUNDARIES ARE DRAWN. Module 30 puts them at 20/40/60/80, and four
+ * gridlines would invite a reader to treat the nearest one as a threshold --
+ * the bands are labels for reading the number, not cut-offs that mean
+ * anything clinically. The band's WORDS are printed above; the picture just
+ * places the number.
+ */
+function ScoreScale({ score }) {
+  const value = Number(score);
+  // Absence is not a guess, and neither is a number off the declared scale.
+  if (!Number.isFinite(value) || value < 0 || value > 100) return null;
+  const x = 10 + (value / 100) * 240;
+  return (
+    <svg
+      className="scorescale"
+      viewBox="0 0 260 22"
+      width="260"
+      height="22"
+      role="img"
+      aria-label={`${value} out of 100 on this scale.`}
+    >
+      <title>{`${value} out of 100 on this scale.`}</title>
+      <line
+        x1="10"
+        y1="11"
+        x2="250"
+        y2="11"
+        stroke="var(--track)"
+        strokeWidth="8"
+        strokeLinecap="round"
+      />
+      <circle className="scorescale__mark" cx={x} cy="11" r="6" fill="var(--brand)" />
+    </svg>
+  );
+}
+
 /** Module 30. A refusal here is `score: null`, and it is shown as one. */
-function Progress({ data }) {
+function Progress({ data, alreadyWarned }) {
   const computed = data?.outcome === 'SCORE_COMPUTED';
+  const seen = new Set(alreadyWarned || []);
+  const ownWarnings = (data?.warnings || []).filter((w) => !seen.has(w));
 
   return (
     <section className="card">
@@ -229,18 +517,29 @@ function Progress({ data }) {
             <strong>{data.score}</strong>
             <span className="hint"> / 100</span>
           </p>
+          <ScoreScale score={data.score} />
+          {/* THE BAND DESCRIPTION IS NOT RENDERED, and that is a rendering
+              call rather than an edit to the service.
+              It restates its own label in this platform's vocabulary: under
+              "More favourable movement than unfavourable" it printed "Across
+              the parameters that could be assessed, more of the movement was
+              in the direction recorded as favourable than in the direction
+              recorded as unfavourable." That is the label again, longer. The
+              field is untouched on the API for any other consumer; it is the
+              SECOND sentence on this card that was the problem, not the
+              existence of the sentence. */}
           {data.band ? (
-            <p>
+            <p className="progress__band">
               <strong>{data.band.label}</strong>
-              {data.band.description ? (
-                <span className="hint"> {data.band.description}</span>
-              ) : null}
             </p>
           ) : null}
-          {data.scale ? (
-            <p className="hint">
-              Higher is better. {data.scale.direction_text}
-            </p>
+          {/* "Higher is better." WAS PRINTED HERE AS A LITERAL, immediately
+              in front of `direction_text`, which itself opened "The scale
+              runs from 0 to 100 and HIGHER IS BETTER". The card said it
+              twice in one breath. The service's sentence now carries it
+              once, in plain words, and this line adds nothing to it. */}
+          {data.scale?.direction_text ? (
+            <p className="progress__meaning">{data.scale.direction_text}</p>
           ) : null}
         </>
       ) : (
@@ -254,20 +553,38 @@ function Progress({ data }) {
         />
       )}
 
+      {/* COVERAGE IS AN ABSENCE STATEMENT, so it stays on the card and in
+          plain words. "parameter(s)" is a placeholder printed at a reader;
+          the counts decide the wording. The floor is only worth mentioning
+          when it is the reason there is no score -- quoting "at least 3 are
+          needed" under a score built from 8 answers a question nobody asked.
+          The counts are the service's, verbatim. */}
       {data?.coverage ? (
-        <p className="hint">
-          Based on {data.coverage.contributing_count} of{' '}
-          {data.coverage.features_examined} parameter(s) examined
+        <p className="progress__coverage">
+          Worked out from {data.coverage.contributing_count} of your{' '}
+          {data.coverage.features_examined} results.
           {data.coverage.excluded_count > 0
-            ? `; ${data.coverage.excluded_count} could not be placed on the scale`
+            ? ` The other ${data.coverage.excluded_count} could not be
+               compared this way, so ${
+                 data.coverage.excluded_count === 1 ? 'it is' : 'they are'
+               } not in the number.`.replace(/\s+/g, ' ')
             : ''}
-          . At least {data.coverage.minimum_required} are needed for a score.
+          {!computed
+            ? ` At least ${data.coverage.minimum_required} are needed before a score is shown.`
+            : ''}
         </p>
       ) : null}
 
-      {data?.warnings?.length ? (
-        <WarningList warnings={data.warnings} />
-      ) : null}
+      {/* MODULE 30 INHERITS MODULE 29'S WARNINGS, so the intermediate-report
+          sentence arrived on BOTH cards and printed twice on one screen --
+          measured in the live DOM, not guessed. Only the ones this card adds
+          are shown.
+          FILTERED BY EXACT TEXT against what the comparison card actually
+          rendered, never by index or by position: a warning that exists only
+          on the progress payload must still appear, and one the reader has
+          already read two inches higher must not. Nothing is dropped from the
+          API. */}
+      {ownWarnings.length ? <WarningList warnings={ownWarnings} /> : null}
 
       {data?.what_this_is_not ? (
         <p className="hint">{data.what_this_is_not}</p>
@@ -278,18 +595,30 @@ function Progress({ data }) {
 
 export default function Timeline() {
   const [state, setState] = useState({ loading: true });
+  // `null` means "whatever the service chooses", which is first vs latest.
+  // A pair is only ever set from a reader's explicit choice.
+  const [pair, setPair] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [names, setNames] = useState(new Map());
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        // Three independent calls: one failing must not blank the other two.
-        const [trends, comparison, progress] = await Promise.allSettled([
+        // Independent calls: one failing must not blank the others. The report
+        // list is only for LABELLING the picker, so its failure costs the
+        // names and nothing else.
+        const [trends, comparison, progress, reports] = await Promise.allSettled([
           api.getTrends(),
           api.getComparison(),
           api.getProgress(),
+          api.listReports(),
         ]);
         if (cancelled) return;
+        if (reports.status === 'fulfilled') {
+          const list = reports.value?.reports || reports.value?.items || [];
+          setNames(new Map(list.map((r) => [r.id, r.originalName])));
+        }
         setState({
           loading: false,
           trends: trends.status === 'fulfilled' ? trends.value : null,
@@ -308,6 +637,42 @@ export default function Timeline() {
       cancelled = true;
     };
   }, []);
+
+  /**
+   * Re-ask BOTH questions about the newly chosen pair.
+   *
+   * The trends section is deliberately not refetched: it describes every
+   * report on the account, not the two being compared, and re-running it would
+   * redraw an unrelated section under the reader's hands.
+   *
+   * THE OLD ANSWERS ARE CLEARED BEFORE THE NEW ONES ARRIVE. Leaving the
+   * previous table on screen under a changed picker states that those numbers
+   * are the comparison the control now names, which they are not.
+   */
+  const choosePair = async (next) => {
+    setPair(next);
+    setBusy(true);
+    setState((current) => ({
+      ...current,
+      comparison: null,
+      comparisonError: null,
+      progress: null,
+      progressError: null,
+    }));
+    const [comparison, progress] = await Promise.allSettled([
+      api.getComparison(next),
+      api.getProgress(next),
+    ]);
+    setBusy(false);
+    setState((current) => ({
+      ...current,
+      comparison: comparison.status === 'fulfilled' ? comparison.value : null,
+      comparisonError:
+        comparison.status === 'rejected' ? comparison.reason.message : null,
+      progress: progress.status === 'fulfilled' ? progress.value : null,
+      progressError: progress.status === 'rejected' ? progress.reason.message : null,
+    }));
+  };
 
   if (state.loading) return <p className="loading">Loading your timeline…</p>;
   if (state.error) return <p className="error" role="alert">{state.error}</p>;
@@ -330,13 +695,32 @@ export default function Timeline() {
       {state.comparisonError ? (
         <p className="error" role="alert">{state.comparisonError}</p>
       ) : (
-        <Comparison data={state.comparison?.comparison} />
+        <Comparison
+          data={state.comparison?.comparison}
+          reports={state.comparison?.history?.reports || state.trends?.history?.reports}
+          namesById={names}
+          /* THE PAIR ON SCREEN, not the one requested. With no explicit choice
+             the service picks first-vs-latest, and seeding the selects from
+             its answer means the control can never describe a comparison the
+             table is not showing. */
+          pair={
+            pair || {
+              baseline: state.comparison?.comparison?.pair?.baseline_report_id,
+              comparison: state.comparison?.comparison?.pair?.comparison_report_id,
+            }
+          }
+          onPairChange={choosePair}
+          busy={busy}
+        />
       )}
 
       {state.progressError ? (
         <p className="error" role="alert">{state.progressError}</p>
       ) : (
-        <Progress data={state.progress?.progress} />
+        <Progress
+          data={state.progress?.progress}
+          alreadyWarned={state.comparison?.comparison?.warnings}
+        />
       )}
     </main>
   );

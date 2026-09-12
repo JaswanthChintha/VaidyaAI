@@ -1060,3 +1060,114 @@ def test_the_rendered_reason_is_clean_for_every_undeclared_feature(feature):
     assert trend.reason
     for token in _LEAKS:
         assert token not in trend.reason, f"{feature}: {token!r} in reason"
+
+
+# ==========================================================================
+# THE `feature` FIELD IS THE CANONICAL KEY, NOT A LABEL
+# ==========================================================================
+#
+# Every consumer keys off it: the frontend looks up its own patient wording
+# with `PATIENT_LABEL[trend.feature]` and uses the same value as a React key.
+#
+# A blanket rewrite that routed eleven `feature=feature` occurrences through
+# a label helper -- ten of them genuine message templates -- caught the
+# `FeatureTrend(...)` construction too, and the response began carrying
+# "Glycated haemoglobin, NGSP %" where `hba1c` belongs. The frontend's lookup
+# missed, fell back to the raw field, and the chart headings quietly switched
+# to the clinical register.
+#
+# THE WHOLE SUITE PASSED. 3,768 tests, and not one asserted that the field a
+# dozen consumers index by is the key they index with. It was found by
+# looking at the rendered page. This is that test.
+
+
+def test_the_feature_field_is_the_canonical_key_not_a_display_name():
+    from app.data.feature_catalog import CANONICAL_FEATURES, FEATURES
+
+    data = analyse(series_reports('hba1c', [8.4, 5.4, 5.2], '%'))
+    assert data.features, "expected at least one analysed feature"
+
+    for key, trend in data.features.items():
+        # The mapping key and the object agree, and both are canonical.
+        assert trend.feature == key
+        assert trend.feature in CANONICAL_FEATURES
+        # And it is NOT the human label -- the exact substitution that slipped
+        # through. Only meaningful where the two actually differ.
+        label = FEATURES[key].description
+        if label != key:
+            assert trend.feature != label
+
+
+def test_the_reader_facing_reason_uses_the_label_not_the_key():
+    """The other half. The sentences a reader sees must NOT say `blood_glucose`.
+
+    Both halves are needed: pinning only the key would allow the messages to
+    regress to raw keys, and pinning only the messages is what allowed the
+    key itself to become a label.
+    """
+    from app.data.feature_catalog import FEATURES
+
+    # SEVERAL OUTCOMES, NOT ONE. The first version of this test analysed a
+    # single healthy three-reading series, so only the `change_line` template
+    # was ever produced -- reverting any OTHER message to the raw key survived
+    # it. Each scenario below drives a different template.
+    scenarios = [
+        # classified: the change sentence
+        series_reports('blood_glucose', [186.0, 120.0, 88.0], 'mg/dl'),
+        # one reading: the insufficient-data sentence
+        series_reports('hba1c', [6.1], '%'),
+        # a category feature: the not-numeric sentence
+        series_reports('smoking_history', ['never', 'never'], None),
+        # two units: the unit-mismatch sentence
+        [
+            report('r1', '2024-01-01T00:00:00Z',
+                   {'creatinine': vf('creatinine', 1.1, 'mg/dl')}),
+            report('r2', '2024-02-01T00:00:00Z',
+                   {'creatinine': vf('creatinine', 97.0, 'umol/l')}),
+        ],
+    ]
+
+    # TWO CHECKS, because each alone is wrong.
+    #
+    # A plain substring test flags "Serum creatinine" for containing
+    # "creatinine" -- a false positive from the test, on a message that is
+    # perfectly correct. So the negative check is limited to SNAKE_CASE keys,
+    # which cannot occur inside a real label: `blood_glucose`,
+    # `smoking_history`, `vitamin_b12`, `heart_disease`. Those are exactly the
+    # ones that look wrong on a screen.
+    #
+    # And a negative check alone would pass on a message that dropped the
+    # feature name entirely, so the label must also be PRESENT.
+    snake_keys = [k for k in FEATURES if "_" in k]
+
+    seen = 0
+    for reports in scenarios:
+        data = analyse(reports)
+        for key, trend in data.features.items():
+            if not trend.reason:
+                continue
+            text = trend.reason.lstrip()
+
+            # (a) A snake_case key cannot occur inside a real label, so its
+            #     presence anywhere is a leak.
+            for leaked in snake_keys:
+                assert leaked not in text, (
+                    f"reason for {key!r} names the canonical key {leaked!r}: "
+                    f"{trend.reason!r}"
+                )
+
+            # (b) EVERY template here opens with the feature name, so a
+            #     single-word key like `hba1c` or `creatinine` shows up as the
+            #     first token. That is the precise signal: a word-boundary
+            #     search would flag the correct "Serum creatinine" for
+            #     containing "creatinine", and a substring search flags it
+            #     too. Only the OPENING distinguishes the label from the key.
+            for prefix in (f"{key} ", f"{key}:"):
+                assert not text.startswith(prefix), (
+                    f"reason for {key!r} OPENS with the canonical key: "
+                    f"{trend.reason!r}"
+                )
+            seen += 1
+
+    assert seen, "no reason sentence was exercised -- the test proved nothing"
+

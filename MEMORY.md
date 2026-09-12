@@ -3,10 +3,18 @@
 > Living context file for the VaidyaAI build. Keep this in the project folder so the
 > project's history, decisions, and state survive independently of any chat session.
 >
-> **Last updated:** 2026-09-07 · **All 32 modules + frontend built** · Module 11 retrained
-> (§6s) · first real run (§6t) · Module 27 rewritten for patients (§6u) · the parameter
-> glossary finished and live-verified (§6v design, §6w) · **three screens rewritten after
-> a user read them aloud — every defect was in the rendering layer (§6w)**
+> **Last updated:** 2026-09-12 · **All 32 modules + frontend built**
+>
+> The build history is §1–§6w. The recent design and safety work is:
+> the "Instrument" design system (§6x) · the timeline trend chart (§6z) · five
+> patient-facing screens reworked on a reader's objections (§6aa–§6af) · the
+> clinician summary WRITTEN BY GEMINI behind four gates (§6ag) · a report
+> picker for the comparison (§6ah) · and a third session of design, WCAG AA
+> and internal-vocabulary work (§6aj–§6ao).
+>
+> **⚠ NOTHING SINCE `6dc3409` IS COMMITTED — 45 files, three sessions deep.**
+> **Read §6ap first.** It is the current handover and supersedes §6ai, whose
+> test-account description is now stale.
 
 ---
 
@@ -22,20 +30,25 @@ about any of them. That is the fifth time on this project.
 
 | | Tests |
 |---|---|
-| `backend/` (Node/Express) | **634** passing + 3 opt-in live |
-| `ai-service/` (Python/FastAPI) | **3,739** passing + 7 skipped |
-| `frontend/` (React/Vitest) | **111** passing |
-| **Total** | **4,484** -- all green, counted by running them 2026-09-11 |
+| `backend/` (Node/Express) | **636** passing + 3 opt-in live |
+| `ai-service/` (Python/FastAPI) | **3,770** passing + 7 skipped |
+| `frontend/` (React/Vitest) | **312** passing |
+| **Total** | **4,718** -- ALL THREE re-run green 2026-09-12 |
 
-> ### ▶ NEW CHAT? START AT §6y.
+> ### ▶ NEW CHAT? START AT §6ap.
 >
-> It has the run commands, the test account, and **the list of uncommitted
-> work** — a whole session of it, including the entire frontend design system.
-> `origin/master` has none of it. Commit before building on top.
+> It has the run commands, the test account **as it actually is today**, the
+> full list of all 45 uncommitted files with the section each belongs to, a
+> commit split, and what to pick up. §6ai is the PREVIOUS handover and its
+> account description is now STALE — read §6ap instead.
 >
-> Everything runs and all 4,484 tests pass. §6x is the design system
-> (`design.md`, tokens + dark-mode toggle + three charts); §6w is the parameter
-> glossary and the rendering-layer defects found by reading the screens.
+> **THREE sessions of work are in the working tree and `origin/master` has
+> none of it.** §6y's list was never committed, §6ai's sat on top of that, and
+> §6aj–§6ao sit on top of both. There is still no recovery point.
+>
+> Everything runs and all 4,718 tests pass, all three suites run 2026-09-12.
+> §6x is the design system; §6z–§6ah are the second session; §6aj–§6ao are the
+> third (a design pass, a WCAG pass, and an internal-vocabulary sweep).
 
 > ### ✅ THE HALF-BUILT FEATURE IS FINISHED (§6v design · §6w completion)
 >
@@ -3650,13 +3663,14 @@ reading (1).
 
 ### Open
 
-* The range chart and the results table both show every value. The chart is the
-  picture, the table carries what it cannot (printed lab name, profile-derived
-  rows, "no range printed"), and the table is the accessible record — the
-  chart's bars are `aria-hidden`. If that reads as duplication on a real screen
-  it is a one-line change, but it is deliberate.
-* `design.md` §4 lists a `/timeline` trend chart in the range chart's vocabulary.
-  Timeline has the tokens and typography but no chart yet.
+* ~~The range chart and the results table both show every value... If that
+  reads as duplication on a real screen it is a one-line change, but it is
+  deliberate.~~ **IT READ AS DUPLICATION, to the person the screen is for.
+  CLOSED 2026-09-11 — see §6ab.** The chart is drawn only when at least one row
+  carries a real reference interval; on a report that prints none, the panel
+  does not appear at all. The table is unchanged and remains the record.
+* ~~`design.md` §4 lists a `/timeline` trend chart in the range chart's
+  vocabulary.~~ **BUILT 2026-09-11 — see §6z.**
 
 ---
 
@@ -3686,7 +3700,11 @@ colour. Applied to the dashboard, the clinician summary and the population page.
 
 ---
 
-## 6y. STATE AT THE END OF 2026-09-11 — read this before doing anything
+## 6y. STATE AFTER THE FIRST 2026-09-11 SESSION — **SUPERSEDED BY §6ai**
+
+> Its uncommitted list was never committed and is still in the working tree,
+> underneath this session's. The run commands and the test account here are
+> still correct; §6ai has the current state.
 
 **Everything runs. Everything is green. Nothing after commit `e175eb7` is
 committed.**
@@ -3695,10 +3713,10 @@ committed.**
 
 | | |
 |---|---|
-| `backend/` | **634** passing + 3 opt-in live |
-| `ai-service/` | **3,739** passing + 7 skipped |
-| `frontend/` | **111** passing |
-| **Total** | **4,484** |
+| `backend/` | **636** passing + 3 opt-in live |
+| `ai-service/` | **3,765** passing + 7 skipped |
+| `frontend/` | **213** passing |
+| **Total** | **4,614** |
 
 `cd backend && npm test` · `cd frontend && npx vitest run` ·
 `cd ai-service && .venv/Scripts/python.exe -m pytest -q` **with `.env` moved
@@ -3744,8 +3762,9 @@ report `6a9e36ced9a53914342f3734`.
 
 1. **Commit the above.** It is a session's worth of work sitting in the working
    tree, and `origin/master` has none of it.
-2. **`design.md` §4 wants a timeline trend chart** in the range chart's
-   vocabulary. Timeline has the tokens and the typography but no chart.
+2. ~~**`design.md` §4 wants a timeline trend chart.**~~ **BUILT 2026-09-11 —
+   see §6z.** `components/TrendChart.jsx`, wired into the Trends section of
+   `/timeline` only; the rest of that page is untouched, by design.
 3. **Two ai-service defects, still open at source** (§6w "Still open"): profile
    rows are stamped `origin: report_transcription` with the feature key as the
    "transcribed" text, and `feature_catalog`'s `display_name` for `gender` is an
@@ -3772,6 +3791,2854 @@ a correct pipeline**, and none was visible from a green suite. What found them:
 * **mutation-testing every guard** — flip the condition, confirm a test dies.
 
 A screen nobody has read aloud is untested.
+
+
+---
+
+## 6z. The timeline trend chart · 2026-09-11 · `design.md` §4 closed
+
+`components/TrendChart.jsx`, wired into the Trends section of `/timeline` and
+nowhere else — the comparison and progress sections were deliberately left
+alone. Hand-authored SVG, already-derived props, **no threshold, polarity,
+condition or stability band inside it**, same contract as `RangeChart` and
+`CoverageRadar`. Frontend suite **111 → 147**.
+
+### THE FOUR STATES, WHICH ARE THE ENTIRE POINT
+
+A flat line and "we have no data" look identical if you let them. Module 28's
+payload already keeps these apart, and the chart's only job is not to collapse
+them:
+
+| Situation | Drawn as | The thing it must not be |
+|---|---|---|
+| >=2 readings, `TREND_CLASSIFIED` | solid line, direction colour | — |
+| **<2 readings** (`INSUFFICIENT_DATA`) | **no line at all**; one dot + a sentence | a flat line, or the word "stable" |
+| **a gap** | the line **BREAKS**; dashed unfilled marker in a lane *below the axis* | a line drawn through a period nobody measured |
+| **a rejected reading** | same lane, `NOT USABLE` + the service's reason | a plotted value — a rejected 999 is not a high result |
+| >=2 readings, any other outcome | line in neutral ink, no trend word | a risk colour the service did not classify |
+
+A gap has **no y position** and is never given one: `TimelineGap` structurally
+has no `value` field, and the lane sits outside the plot so the rendering
+cannot quietly invent one.
+
+### TWO RULES THE CHART DECIDES ITSELF, AND THEY ARE PRESENTATION
+
+Both are the same class as the range chart's display domain, and both are
+documented as such in the file:
+
+* **Readings in two units are never placed on one axis** — and withholding
+  only the LINE is not enough. Two dots positioned by one shared scale make
+  the comparison just as firmly; 7.2 mmol/L would sit at the floor and
+  100 mg/dL at the ceiling, which reads as a collapse and is the same
+  measurement twice. So mixed units render no plot at all, and say why.
+* **Every number printed on the chart is a reading somebody took.** Labelling
+  the axis with the *domain* printed the padding: readings of 8.4 and 5.2 came
+  out as "8.78" and "4.82" — two numbers that appear on a medical chart, look
+  like measurements, and are neither. The labels are now the highest and
+  lowest actual readings, at their own heights, deduplicated so a flat line
+  prints its one value once rather than twice or never.
+
+### FOUR THINGS FOUND BY RUNNING IT, NOT BY READING IT
+
+A second fixture (`01-all-normal.pdf`) was uploaded and analysed against real
+Gemini so that a real two-report timeline existed. All four of these came from
+the live payload or the rendered page; the suite was green throughout.
+
+1. **`age` arrives `NOT_TRENDABLE` with two perfectly good points** — and on
+   the live data those are 58 and 34, because the two synthetic fixtures carry
+   different patients. Charted, that is a person getting 24 years younger,
+   drawn beside a sentence refusing to describe a trend. **A picture that
+   disagrees with the words next to it is the thing these components exist to
+   prevent.** The page now skips `NOT_TRENDABLE` / `NOT_NUMERIC` outright.
+2. **`gender` is the same shape from the other end** — `NOT_NUMERIC`, zero
+   readings, two gaps. That rendered an axis with nothing on it. A chart needs
+   at least one real reading; the table row beside it already carries the
+   service's own refusal sentence.
+3. **`186 mg/dl` rendered as `16 mg/dl`.** The y-axis label is right-anchored
+   8 units left of the plot, and adding the unit pushed it off the viewBox.
+   **A clipped axis label does not look broken — it looks like a smaller
+   number.** This is §6x's `"olesterol"` defect recurring, and the fix is the
+   same one: pad the frame, move no geometry. Now guarded by a test on the
+   gutter width, and verified in-page with `getBBox()` across all 35 labels.
+4. **`vitamin_b12` declares `optimal_low: 200` and no ceiling.** A one-sided
+   optimum drawn as a band runs to the top of the frame and asserts a ceiling
+   nobody declared. The both-ends rule fires on live data, not just in a test.
+
+### MUTATION-TESTED: 17 GUARDS FLIPPED, 17 KILLED A TEST
+
+Run as a script: apply the mutation, run the two files, revert. **Four
+survived the first pass**, and each named a missing test rather than a
+harmless guard:
+
+* `classified && trend === 'worsening'` — dropping `classified` SURVIVED,
+  because every fixture with no classification also had `trend: null`, so the
+  second clause was false anyway. **Two conditions need two tests**, the
+  §6w `counted && !compared` lesson hit again. The distinguishing shape is a
+  payload where `classified` and `trend` CONTRADICT each other.
+* Testing that shape exposed a real defect: **`classified: true` with
+  `trend: null` rendered the string "null" as the direction** in the chart's
+  own aria-label. Now one `declared` flag checks both halves — the same shape
+  as the gauge's `assessed && known risk` — and absence wins the contradiction.
+* Two page-level mutations survived because the component enforces the same
+  rule underneath. One had a distinguishing shape (a non-classified outcome
+  carrying a trend word) and got a test. The other — the band's both-ends
+  rule, copied into the page — had none, because it changed nothing
+  observable. **That is exactly what a comment pretending to be a guarantee
+  looks like**, so the duplicate was deleted and the rule now lives in one
+  place, at the layer that cannot be bypassed.
+
+### Also
+
+* `PATIENT_LABEL` moved out of `Dashboard.jsx` into **`src/lib/labels.js`**.
+  Nine chart headings name the same features the dashboard names, and a second
+  copy of that table is how one of them ends up saying `blood_glucose` to a
+  patient. It is still table-row/subject wording and still wrong mid-sentence
+  — `readableFeature`'s split (§6w) is unchanged.
+* The in-page palette sweep was re-run over the new elements: **zero colour
+  offenders, exactly two font families, both themes.** Reduced-motion rest
+  state checked the same way — the line rests at `stroke-dashoffset: 0`, fully
+  drawn, because `pathLength="1"` makes the drawn state the default rather
+  than the end of a keyframe.
+* `improving` takes `--green`, matching the page's existing `.trend--improving`
+  rule. Worth knowing that this stretches green from "in range" to "in range or
+  moving favourably": **a green line does NOT mean the values are normal.** It
+  is paired with the word "improving" in the title and the table, so colour is
+  never the only signal — but if that reading ever bites, this is where it is.
+
+### NOT VERIFIED LIVE
+
+**The gap and rejected paths were never produced by real data.** All six
+single-page fixtures carry the same eight mapped tests, so no report is
+missing a parameter and nothing was rejected — `history` came back
+`considered: 2, included: 2, excludedCount: 0`, with gaps only on `gender`.
+Those two paths were exercised by patching the response at the transport layer
+in a live browser (the line breaks into 0 paths, two dashed markers sit below
+the axis at `cy=166`, and `NO READING` / `NOT USABLE` are distinguished with
+their own reasons) — a real render of synthetic data, which is not the same as
+a real report missing a real parameter. **A fixture with a parameter absent
+from one report would close this**, and it would be the first fixture on this
+project able to exercise a timeline gap at all.
+
+
+---
+
+## 6aa. The condition card, read aloud again · 2026-09-11 · two sentences cut
+
+The user looked at the Heart Disease card and said: *"make sure visible only
+required sentences which are understandable for users."* The card carried four
+sentences under its values. Two went.
+
+### CUT: the basis-conflict paragraph — **the SECOND removal of this shape**
+
+> *"Two checks were made and they did not agree. One counts risk factors from
+> your profile; the other is a statistical estimate. They answer different
+> questions, so neither settles the other — this is worth raising with a
+> doctor."*
+
+§6w removed the paragraph explaining that "Needs Monitoring" and "risk Low"
+do not contradict each other, on this user's own instruction — *"why this for
+a patient"* — and recorded the generalisation: **when a screen needs a
+paragraph explaining why two of its own fields do not contradict each other,
+the fields are the bug, not the missing paragraph.** A risk-factor tally
+versus a model probability is that same paragraph, on a different card, and it
+survived that pass because nobody read this card aloud.
+
+A patient cannot adjudicate between the two; the decision engine already did,
+and the fused verdict is what the card shows. The sentence ended on "worth
+raising with a doctor", which the status line above it says already.
+
+**Nothing is hidden.** `basisConflict` and `basisNote` stay in the payload, and
+the clinician passage still states which kind of check flagged what —
+including the model-only case, which is the one a reader can genuinely be
+misled by (§6w, "Four things kept", item 1). `shouldShowBasisNote` was deleted
+rather than left as an unreachable branch; its reasoning is preserved as a
+comment where it stood, because it was good reasoning (`basisConflict` does not
+mean "they disagreed", and the test was "can we PROVE they agreed", never "did
+they disagree" — missing per-source verdicts are not agreement).
+
+### CONDITIONALLY CUT: "Checked against standard clinical thresholds..."
+
+Above a row reading `268 mg/dl — above 240 mg/dl`, that sentence is the screen
+narrating its own mechanics. §6u removed *"Based on: Clinical Rule Engine,
+Random Forest"* from this very card for exactly that reason, and this is the
+same sentence in friendlier words.
+
+**But it could not go unconditionally, and the live page is why.** On the
+analysed report:
+
+```
+High Cholesterol  268 mg/dl  above 240 mg/dl        -> no sentence. The row IS the explanation.
+Kidney Disease    1.1 mg/dl  (crosses nothing)      -> sentence KEPT.
+```
+
+Creatinine 1.1 does not cross the kidney threshold; the topic is flagged
+anyway. Strip the sentence there and a patient sees a normal-looking value
+under a **High** verdict with nothing on the card connecting them — a verdict
+with no reason, which is a thing to be believed or not. So it is stated exactly
+where the card does not already explain itself, and nowhere else.
+
+### KEPT, both of them
+
+* *"No value was available for your history of heart disease and history of
+  high blood pressure, so they could not be taken into account here."* — the
+  §6w fix. The heart model's own author note says blood pressure is the
+  strongest known predictor and is not collected here; dropping this hides the
+  assessment's single biggest limitation.
+* *"Your smoking history, BMI, age and sex were also taken into account."* —
+  plain English, one line, and the other half of the sentence above it. Keeping
+  only the absence would make the assessment look thinner than it was; keeping
+  only this was the original §6w defect.
+
+### THE GATE WAS WRONG ON ITS FIRST WRITING, AND A MUTATION SAID SO
+
+First version: `card.flagged === true && !measured.some(crossing)`. The
+`flagged` clause **survived mutation**, and chasing why found two faults:
+
+1. **It is unreachable.** `ConditionCard` renders only for the flagged group,
+   so the clause can never be false — an unkillable mutation, and the test
+   written for it passed **without asserting anything**. A vacuous green is
+   worse than no test, and this file has a whole catalogue of them.
+2. **It was also incorrect.** `isClear` requires the exact status
+   `Not Indicated`, so a **`Borderline`** topic lands in the flagged group with
+   `flagged` NOT true. Gating on it would have stripped the explanation from
+   precisely the cards least able to speak for themselves.
+
+Now `!measured.some(crossing)` alone, with the caller's guarantee named in a
+comment at the point that relies on it. Seven mutations run over the final
+version, **7 killed** — including putting the lecture back, and cutting the
+methodology line unconditionally.
+
+
+### THEN: what the three ML models actually contributed, and the sentence it earned
+
+The user asked whether the Diabetes, Heart and Kidney models were included in
+the result. They are — those three topics are hybrid, the other ten on this
+report are rule-only — but "included" means something different in each, and
+the per-source verdicts are the thing worth keeping:
+
+| Topic | Clinical Rule Engine | Random Forest | Shown |
+|---|---|---|---|
+| Diabetes | Indicated / High | Indicated / High (p 0.95) | High — both agree |
+| Heart Disease | Indicated / High (`risk_factor_count`) | **Not Indicated / Low** (p 0.46) | High — **the rule's verdict; the model said no** |
+| Kidney Disease | **Not Indicated / Low** (creatinine 1.1, in range) | Indicated / High (p 0.70) | High — **the model's verdict; nothing crossed** |
+
+So Heart Disease is the `basisConflict: true` card, and **Kidney is its mirror
+image**: a normal-looking number under a serious word, with nothing on the card
+joining them. Cutting the generic methods line above had left that card saying
+only "Checked against standard clinical thresholds, and also assessed by a
+statistical model" — true, and it does not tell the reader that the threshold
+check came back CLEAR and the model is the entire reason the topic is there.
+
+`flaggedByModelAlone()` now states it, in the model author's own framing
+(§6w: *"a high score is a reason to discuss testing with a clinician, never a
+finding"*), and REPLACES the generic line rather than joining it:
+
+> *"No measured value crossed a standard limit for this. It was flagged by a
+> statistical model that compares your results with patterns in population
+> data — that is a reason to discuss it with a doctor, not a finding in
+> itself."*
+
+**PROOF IN BOTH DIRECTIONS, OR SILENCE.** It never infers "nothing crossed"
+from the absence of a crossing on screen — that is a clinical claim and the
+render layer does not get to make it. It reads the producer's own per-source
+verdicts and stays silent unless both are present AND assessed. A finding is an
+explicit status (`Indicated` / `Borderline`), never "not `Not Indicated`", so
+`Insufficient Data` and any unrecognised status cannot become one.
+
+Nine mutations, **9 killed** — two only after the first pass exposed missing
+tests: a card carrying only ONE of the two sources (which also read
+`undefined.status` and would have taken the page down), and a source marked
+`assessed: false` whose `Not Indicated` is a check that did not run, not a
+check that came back clear.
+
+### A THIRD STATUS VOCABULARY, because the headline then contradicted the fix
+
+Reading the fixed card caught it immediately: the headline still said *"These
+results point to this"* directly above *"No measured value crossed a standard
+limit for this."* "These results point to this" describes a comparison of
+measured values, and no comparison found anything here. That is the identical
+shape as §6w's *"Close to the usual limit"* printed above two values that were
+over it — the fault `RISK_FACTOR_STATUS` was created to fix, appearing in a
+third basis. **The contradiction was always latent on this card; the new
+sentence is what made it visible.**
+
+So `MODEL_STATUS` joins `PATIENT_STATUS` and `RISK_FACTOR_STATUS`:
+
+```
+Kidney Disease                                            High
+A statistical model flagged this — worth discussing with a doctor
+Creatinine (kidney marker)   1.1 mg/dl
+No value was available for your history of high blood pressure, ...
+Your Haemoglobin, Blood sugar and age were also taken into account.
+No measured value crossed a standard limit for this. The model compares your
+results with patterns in population data — it cannot confirm a condition.
+```
+
+**Only the two statuses that differ are defined**; `statusText` falls back to
+`PATIENT_STATUS` for the rest, so the three lines all three tables would
+otherwise hold identically cannot drift apart in three places. And the caveat
+was rewritten once the headline carried the attribution — the first version
+said "flagged by a statistical model" and "a reason to discuss it with a
+doctor" immediately below a headline saying both, which is §6w's repetition
+defect arriving by the back door.
+
+**THE MODEL BASIS OUTRANKS THE RISK-FACTOR BASIS, and that ordering needed its
+own test.** A rule that counts risk factors and finds NONE returns
+`Not Indicated` with no threshold comparison anywhere — so `countsRiskFactors`
+and `flaggedByModelAlone` are true at the same time, and taking the
+risk-factor wording there would announce "several things here are known to
+raise this risk" about a count that came back empty. Whichever analysis
+actually produced the verdict names it.
+
+Six mutations on the wording, **6 killed** — including reversing that
+precedence.
+
+### Two more things the rendered page said out loud
+
+* **`|| status` had no test.** Mutating the final fallback into a guessed gloss
+  survived everything: an unrecognised status would have been described as
+  "These results point to this". That is §6w's rule (*a missing gloss is
+  cosmetic, a wrong one is clinical*) with no assertion behind it, and three
+  tables now share the fallback. Tested.
+* **"Your BMI were also taken into account."** Read off the live Obesity card,
+  which cites exactly one feature. The sentence directly above it already
+  switches `it`/`they` on the same count; this one never learned to.
+
+> The habit that found all of this is the same one as the last three sessions:
+> **a screen nobody has read aloud is untested.** The suite was green before
+> and after; the user reading one card is what moved it.
+
+
+---
+
+## 6ab. The range chart, on a report that prints no intervals · 2026-09-11
+
+The user looked at the range chart on the live dashboard: *"in this all are at
+same, only colour difference, and i can't see any shaded band — and also
+remove the sentence 'this report printed no reference intervals'."*
+
+All three observations are the same defect.
+
+### EIGHT ROWS, EIGHT DOTS, ALL IN THE SAME PLACE
+
+`domainFor` builds a per-row display domain from `[low, high, value]` and pads
+it to `ceiling * 1.35`. With no printed interval, the only number in that list
+is the value itself — so **every row's marker lands at exactly 1/1.35 = 74% of
+its own track, whatever the value is.** HbA1c 8.4, glucose 186, cholesterol
+268: three identical positions, separated only by colour.
+
+That is not a weak chart. It is **a picture that looks like a measurement and
+encodes nothing**, under a panel titled *"Where each result sits against its
+reference range"* on a report with no reference ranges in it, above a legend
+(`SHADED BAND = USUAL RANGE`) pointing at a band that is not on screen. A
+reader comparing two dots is reading an artefact of a multiplication.
+
+### THE FIX IS NOT TO REMOVE THE SENTENCE
+
+The sentence the user asked to delete — *"This report printed no reference
+intervals, so no result below is placed against a usual range"* — was doing
+real work: §6x added it because eleven bandless tracks with nothing explaining
+them read as "everything is in range". Deleting only the sentence leaves the
+meaningless picture AND removes its only caveat, which is strictly worse than
+before.
+
+**So the chart itself goes, on a report where nothing can be compared**, and
+the sentence goes with it because there is no longer anything to explain.
+`hasComparableRange(rows)` is exported from `RangeChart` and used by BOTH the
+component (the layer that cannot be bypassed) and `Dashboard` (which must not
+draw the bordered panel around a chart that has decided to render nothing —
+otherwise the result is an empty box with a heading). One rule, one definition,
+two callers — not two copies, which is the trap this session already hit twice.
+
+**NOTHING IS LOST, and this was checked against the live DOM before the change,
+not assumed.** The results table below carries every value with its verdict
+(`High` / `In range`), the laboratory's own printed name, and all three
+absences with their reasons under "From your profile". The lab-flagged footnote
+the chart used to carry is separately stated by the "Also on your report, but
+not assessed here" section. Verified after the change: no `.range` panel, no
+empty card, and "laboratory marked ..." still on the page.
+
+This closes §6x's own open question, in §6x's own words: *"If that reads as
+duplication on a real screen it is a one-line change, but it is deliberate."*
+It read as duplication, to the person the screen is for.
+
+### Mutation-tested, and the two that survived the first pass
+
+Four mutations, all four killed after the gaps were closed:
+
+* drawing the chart with no comparable range — killed;
+* refusing it when a band DOES exist — killed (9 tests);
+* **`low && high` weakened to `low || high`** — survived. A one-sided interval
+  draws no band (`hasBand` needs both), so a chart admitted on the strength of
+  one is a chart with no bands in it: the refused state reached sideways. Real
+  gap, now tested — and the same both-ends rule the trend chart needed (§6z).
+* **the page-level guard removed** — survived, because nothing asserted that
+  the empty bordered panel does not render. The component returning null is not
+  the same as the section not existing. Now tested on the page.
+
+Five existing single-row chart tests were rewritten to place their row NEXT TO
+a banded one rather than alone. That is not a concession to the new rule — it
+is the only arrangement in which a reader ever sees those rows, so the tests
+describe the product more accurately than they did before.
+
+
+---
+
+## 6ac. The coverage radar said the opposite of its own title · 2026-09-11
+
+The user asked what the radar panel meant. Answering it against the live DOM
+found three defects, one of them serious.
+
+### THE SERIOUS ONE: the radius was the VERDICT, under the word "Coverage"
+
+```js
+coverage: isUnassessed(card) ? 0 : isClear(card) ? 0.55 : 0.95
+```
+
+A flagged topic sat at the rim, a clear one well inside it. So **the more
+topics a report flagged, the fuller and more reassuring the pentagon looked**,
+under a panel titled *"Coverage of the topics checked"* and a caption about
+things not being measured. A big shape reads as thorough; here it meant
+"everything on this chart is abnormal". The code comment even said *"Coverage
+is how much of this topic the report could speak to"* — which is not what
+`isClear ? 0.55 : 0.95` computes. **A comment asserting a guarantee is not a
+guarantee**, for the fourth time in this file.
+
+It now measures what the title says: **of the inputs each assessment cites,
+how many the report actually carried**, from the evidence lines'
+`availability`. On the live report that is Diabetes 5 of 8, Heart 5 of 8,
+Kidney 4 of 5, Cholesterol 1 of 1, Triglycerides 1 of 1 — an irregular shape
+that finally says something, and says the flagged multi-input topics were
+assessed on partial information, which is the one question the condition cards
+below do NOT answer.
+
+Two absence rules in the derivation:
+
+* **an unassessed topic keeps its spoke** and its dashed point at zero — that
+  is the chart's entire reason for existing;
+* **an assessed topic whose coverage cannot be computed is left OFF** rather
+  than given a radius. There is no number for "we do not know how much we saw".
+
+And **a feature counts once, however many rules cite it**, available if ANY
+line observed it — double-counting would inflate exactly the topics that have
+several rules, and "first line wins" made it an accident of ordering.
+
+### The two smaller ones
+
+* **`.glycerides`.** Measured, not guessed: the label box started at x=-74.1
+  against a viewBox starting at -56. §6x widened this frame once for
+  `"olesterol"` on the RIGHT; the left was still too narrow for the longest
+  name. Now -104, with a test on the gutter.
+  **Widening a frame is only half the fix**: the element was still
+  `width="278"`, so the whole chart rendered scaled DOWN to fit the gutter
+  inside it — the pentagon shrinks every time a label needs more room. The
+  element now matches the frame and `max-width: 100%` keeps it in the panel.
+* **A caption for a mark that was not on the chart.** "A dotted point sits at
+  zero because nothing was measured" sat under a chart whose own title said
+  *"All 5 topics were assessed"*. Same fault as a "shaded band = usual range"
+  legend above a chart with no band (§6ab, the same afternoon). The prop is
+  now `absenceCaption` and the component shows it only when a dotted point
+  exists — named so the contract cannot be misread by the next caller.
+
+Also: the SVG title now speaks the fractions (*"Inputs available for each
+topic: Diabetes 5 of 8..."*). A radius is not readable by a screen reader and
+is not precise to anyone else either.
+
+### TEN MUTATIONS, and the two that survived were the whole point
+
+* **Reverting the radius to the verdict SURVIVED the first pass.** Every new
+  test asserted the spoken fractions, which come from the counts — so the
+  geometry could go back to being the verdict and still pass. **Asserting what
+  a chart SAYS is not asserting what it DRAWS.** Both are tested now, at the
+  component and through the page.
+* **Un-pinning an unassessed topic from zero SURVIVED**, and that exposed a
+  latent inconsistency rather than a missing test: **the polygon and the
+  vertices computed each point's radius independently.** §6x's rule — "the
+  polygon must pass through the centre on that axis" — was enforced twice and
+  tested once, so the filled shape could reach out to a topic whose own point
+  was drawn at the centre as an absence. One radius, computed once, used by
+  both; and the pinning test now asserts the polygon too.
+
+Third and fourth passes: 10/10 killed, including double-counted features and
+an observed line losing to a later absent one.
+
+
+---
+
+## 6ad. Two results with no explanation, and nothing saying so · 2026-09-11
+
+The user, reading "What these results mean": *"in this section few parameters
+are missing which are there in the report."*
+
+Correct. Eight results on the report, **six explanation cards**, and nothing on
+the page about the other two.
+
+### THE FACT WAS PRODUCED, STORED, AND DROPPED AT THE LAST HOP
+
+Module 23 explains up to `max_explanations` usable values — capped at **6**,
+in `config/env.js` (`Math.min(6, ...)`) and enforced by the service's own
+`ge=0, le=6`, because every explanation is a model call. **And it already
+records every value it passed over.** Straight from the stored analysis:
+
+```
+/data/analysis/explanation/skipped:
+  cholesterol    explanation_limit_reached
+  triglycerides  explanation_limit_reached
+  bmi | age | gender   explanation_limit_reached
+```
+
+`ReportExplanationSet.skipped` crosses HTTP, `normaliseExplanationSet` spreads
+it through to storage, `+patientExplanation` selects it — and
+`buildRecommendationsSection` never read it. **Four layers carried the fact and
+the fifth threw it away**, which is this project's signature failure for the
+fourth session running.
+
+**The frontend could not have caught this.** `Explanations` already refuses to
+skip a withheld paragraph — its docstring says *"silently omitting the second
+would make a partial set look complete"* — but it guards `available !== true`
+on the ENTRIES array, and **an explanation that was never requested has no
+entry to be absent in.** The guard was real, tested, and structurally unable to
+fire. Worth remembering: a guard over a list cannot see what never entered the
+list.
+
+### What it says now
+
+`explanations.notExplained` carries `{feature, reason}` verbatim, reason codes
+included — the same split as the population page's refusal codes, which stayed
+in the payload after the cards went. The page states it:
+
+> *"Total cholesterol and Triglycerides have no explanation above. Only a set
+> number of explanations is written for each report, and this one has more
+> results than that — nothing was wrong with these results, and their values
+> are in the table above."*
+
+**Its own sentence, not the withheld one.** "Never attempted" is not
+"withheld": the withheld line blames the writing step, and using it here would
+tell a reader their result was refused when it was simply not reached. Third
+time this three-state distinction has had to be drawn on this project (§6w's
+glossary: never asked / described / withheld).
+
+**Profile answers are filtered out.** `skipped` also names `age`, `gender` and
+`bmi`; "no explanation was prepared for your age" is the screen describing its
+own mechanics, and nobody was waiting to be told what age measures. Only
+features shown as results on this page are named.
+
+### THE BUG IN MY OWN FIX, caught by a mutation
+
+The first version rendered the section whenever anything was skipped — so with
+no explanation on screen at all, the page would have said *"...have no
+explanation **above**"* pointing at nothing. That is §6w's scope-statement
+fault exactly (*"No line BELOW asserts..."* moved to the foot of a page). With
+zero explanations shown there is no partial set to mistake for a complete one,
+so the section stays absent.
+
+Seven mutations, 7 killed. The last survivor was not a missing test but a
+DUPLICATED RULE: `andList` and `nameList` each computed the comma-safe
+separator (§6w: a laboratory prints "LDL Cholesterol, Direct", and a
+comma-joined list of two reads as four). One `commaSafeSeparator` now, used by
+both — and the existing "In short" comma test kills the mutation.
+
+Also read off the live page and fixed: *"Total cholesterol, Triglycerides are
+not explained above"* is not a sentence. `andList` gives the final "and";
+`contextPhrase` was rewritten to use it rather than keep its own copy.
+
+### THE CAP WAS THEN RAISED, ON THE USER'S WORD: 6 -> 10
+
+`DEFAULT_MAX_EXPLANATIONS` 6 → 10 in `app/services/explanation.py`, and
+`config/env.js` 6 → 10 to match. The route bound is `le=DEFAULT_MAX_EXPLANATIONS`
+so it follows on its own — but **the Node clamp is a separate constant in a
+separate language and nothing links the two.** Raising only the Node side turns
+every analyse into a 422; that warning is now in the comment beside it.
+
+**Raising the number alone would have spent the new budget on the wrong rows.**
+`laboratory_values` carries the age, sex and BMI the assessment used alongside
+the printed results, and all three were candidates — at a cap of 10, three
+model calls would go to writing "this test measures your age". Two changes
+made the budget mean what it says:
+
+* **A profile answer is not a result.** Rows are excluded on
+  `source != "lab_report"`, with the new reason `not_a_laboratory_value`.
+  **`source`, NOT `origin`** — the ai-service stamps `report_transcription` on
+  profile-derived rows (§6w, still open at source), so `origin` says the
+  opposite of the truth here.
+* **Positive proof only.** `LaboratoryValue.source` is `Optional[str] = None`,
+  so a row can genuinely arrive without one — an older stored report, a
+  hand-built row, and **every fixture in `test_explanation.py`**. Requiring the
+  field to EQUAL "lab_report" skips every such row and explains nothing at all.
+  A missing field is not evidence that a value came from the profile. Caught by
+  the existing tests the moment the strict version ran, which is the
+  fixture-vs-producer hazard (§6w) arriving from the other direction: here the
+  FIXTURE was the honest one and the new code assumed a field it does not
+  always get.
+
+**Eligibility is now decided before the budget.** With the limit checked first,
+every row past the cap came back as `explanation_limit_reached` — including
+rows that were never eligible at all — so a rejected value was blamed on the
+budget and a caller could not tell "we ran out" from "there was nothing here to
+explain". Three reasons answering three different questions, flattened into one
+by the order of two `if`s.
+
+**Live, after restarting both services** (the OpenAPI now advertises
+`maximum: 10`), the same report re-analysed:
+
+```
+generatedCount: 8   withheldCount: 0
+explained:     hba1c, blood_glucose, hemoglobin, vitamin_d,
+               vitamin_b12, creatinine, cholesterol, triglycerides
+notExplained:  bmi, age, gender  -- not_a_laboratory_value
+```
+
+Eight cards on the page, and the "no explanation above" sentence correctly
+absent because nothing is missing. It stays as the safety net for a report
+that ever does exceed 10.
+
+
+### AND STILL NOT ALL OF THEM — the section is not the whole report
+
+*"still this section didn't contain all parameters listed in the report."* Also
+correct, and a different fact again. The report prints **twelve** parameters:
+
+* **8** the platform assesses → explained here, with the reader's own value;
+* **4** it has no feature for (LDL Direct, HDL, Blood Urea, Potassium) → the
+  `parameter_glossary` section, higher up, under "Also on your report, but not
+  assessed here". Three carry a description; HDL is not lab-flagged so nobody
+  asked (§6w's three states).
+
+Nothing was lost — but a section headed *"What these results mean"* showing
+eight of twelve reads as the complete list, which is the same
+partial-set-looks-complete fault in a third costume. It now says so and points
+at the section that has the rest, and the test asserts the named heading
+ACTUALLY EXISTS on the page: a signpost to a section that is not there is worse
+than none.
+
+**NOT MERGED, and this is the architecture rather than a layout preference.**
+Those four are described from the test NAME ONLY, with no patient data in the
+prompt (§6v) — that is the entire argument for why the feature is safe. Moving
+them into a list whose other entries interpret the reader's own values invites
+exactly the inference the design forbids. Four mutations, 4 killed.
+
+
+### A word set in the figures face
+
+Seen on the running page while checking the above: **From your profile** read
+
+```
+BMI    26.42 kg/m2
+Age    58 years
+Sex    male
+```
+
+all three in `IBM Plex Mono` with tabular numerals, because `.lab-table td`
+sets every cell that way. That treatment is right for the reason design.md §3
+gives — figures align down the column, which is what makes a results table
+scannable — and **a word aligns with nothing**, so the only thing it carries
+there is the LOOK of a measured value, directly under two real figures and a
+heading about results.
+
+Non-numeric cells now take the body face (`.lab__word`), and a string value is
+capitalised on its first letter only: NOT `text-transform: capitalize`, which
+renders an absence sentence as "Not Measured", and not a rewording — "male"
+and "Male" are the same answer. Absence sentences in that column get the body
+face too, which is what they always should have had. Four mutations, 4 killed.
+
+Live: BMI and Age stay mono, Sex is "Male" in sans.
+
+### The cost, stated plainly
+
+**Every explanation is a Gemini call.** An eight-value report now spends 8
+where it spent 6, and the free tier is 20 per model per day with a fallback
+chain across models. Two full analyses of an ordinary report is most of a
+day's quota on the first model. `AI_SERVICE_MAX_EXPLANATIONS` lowers it
+without a code change if that bites.
+
+
+---
+
+## 6ae. The clinician's caveat, written for a clinician · 2026-09-11
+
+*"this summary is for the healthcare professional. he does not know what is ml
+model and roc and all."*
+
+The **On the model output** paragraph read:
+
+> *"Trained on 399 rows and measured on 100, from a single UCI cohort in which
+> creatinine and haemoglobin separate the classes almost cleanly. A ROC-AUC
+> near 0.99 says the separation was easy, not that this would hold on a
+> screening population. One misclassification moves recall by about 1.6
+> points."*
+
+Every word of that is true and it is addressed to whoever trained the model.
+§6w had ruled that this page *"does not get to reword an author's safety
+note"* — correct as a rule about the RENDERING layer, and it left the note
+unreadable by its actual audience. **The fix is to rewrite it where it is
+authored**, not to paraphrase it downstream where two statements of the same
+fact would drift.
+
+`honest_read` in `app/ml/kidney.py` and `app/ml/heart.py` is now written for
+the reader of the document. **Every fact kept, only the register changed** —
+dataset size, the two analytes that made the split easy, that the accuracy
+reflects the dataset rather than screening performance, the fragility of a
+100-record test set; and for heart, what a flag is actually worth, the
+self-report limitation and the missing blood pressure. The ML reading of the
+same numbers is untouched in `ml/artifacts/*.metrics.json`, whose audience
+really is a model reviewer.
+
+### THE SAFETY SCANNER REFUSED THE FIRST TWO DRAFTS, AND WAS RIGHT BOTH TIMES
+
+Module 24 **withholds the whole note** if any phrase trips it — it deletes the
+model's statement of its own limits from the document that most needs it.
+
+1. *"about 37 of every 100 people it flags turn out to have heart disease"* →
+   `diagnostic_assertion`. The original said *"most patients it flags will NOT
+   have heart disease"*, and **that direction was not an accident**: the same
+   fact stated as a negation passes. Now "roughly two out of every three people
+   it flags do NOT have heart disease" — which is precision 0.37 in the only
+   form the scanner allows, and the more useful form for a clinician anyway.
+2. *"so it misses people not yet **diagnosed**"* → `diagnostic_assertion` on
+   the word itself. The original used "identified", and the comment beside it
+   already recorded an earlier draft failing this exact way. It happened again
+   on the first rewrite. **Found by bisecting the sentence through
+   `_transcribe` directly**, which took one command and no guessing.
+
+### THE GUARD BELONGS AT THE PRODUCER, and a mutation proved it
+
+A frontend test asserting "no ROC-AUC in the passage" runs against a FIXTURE
+and cannot see `app/ml/kidney.py`. Putting `ROC-AUC` back into the note
+survived the frontend suite completely. `test_the_honest_read_is_written_for_a
+_clinician` now checks the string where it is authored, in both predictors.
+
+Three further mutations were needed after the first sweep:
+
+* the frontend jargon list did not include **this page's own lead-in**
+  (*"a likelihood derived from patterns in training data"*) — a list that
+  polices only the upstream note lets the local copy of the same register
+  straight through;
+* a diagnostic claim smuggled into the note survived until
+  `test_doctor_summary.py` was in the run — the safety scan lives there, not
+  in the predictor tests;
+* **inverting the caveat survived**: `"nothing shows it holds in a screening
+  population"` → `"it holds in a screening population"` still contained the
+  phrase the test asserted. An assertion that a phrase APPEARS says nothing
+  about which way round the claim points, and on this sentence the direction is
+  the whole content. Now pinned as a negation, with several phrasings allowed.
+
+### Frozen in storage, like the explanations
+
+`honest_read` is captured into the decision metadata at analysis time, so
+**every already-analysed report keeps the old wording until it is re-analysed.**
+Same shape as the explanation cap (§6ad): changing a generator does not rewrite
+what a past run stored.
+
+
+---
+
+## 6af. "How many times should I tell you" · 2026-09-11 · the same lesson, third screen
+
+The user, with reason: *"this application will be used by normal users, they
+don't know anything about the models — only show useful things."* The same
+instruction §6u and §6w already recorded, arriving a third time because each
+fix was applied to the SCREEN in front of us rather than to the class of fault.
+**Worth stating as a standing rule: when a fix is "remove this system's own
+vocabulary from a reader-facing surface", it is never one surface.**
+
+Three things went.
+
+### 1. "Worth knowing about this analysis" — DELETED from the dashboard
+
+It printed the pipeline's stage warnings verbatim at a patient:
+
+> *"'25-Hydroxy Vitamin D' reported unit 'ng/dL', which is not a recognised
+> unit for feature 'vitamin_d' (canonical: 'ng/ml'). The value was left
+> unconverted and flagged canonical_unit=false."*
+
+That is a bug report. Nothing in it is actionable by the person whose blood it
+is, and the facts they CAN act on are already on the page in their own words:
+a value that could not be used says so on its own row, an unreadable page is
+stated in the summary, a failed stage is stated there too. **Relocated, not
+deleted** — every warning is in the stored analysis and on
+`GET /reports/:id/analysis`, which is where a maintainer looks. `readerWarnings`
+and its methodology filter went with it; a filter whose only consumer is gone
+is an unreachable branch.
+
+### 2. The validator's rejection message — off the patient page
+
+`rejectionReason` is written for whoever fixes the unit. The row and the range
+chart both printed it. One sentence now, `REJECTED_FOR_READER`, defined once
+and used by both: *"This result could not be used, so nothing on this page is
+based on it."* **The chart mutation SURVIVED the first sweep** — the fixture
+had no reference interval, so no chart rendered and only the table was ever
+asserted. A banded row was added to the fixture; 3/3 killed after that.
+
+### 3. The clinician passage — this system's component names removed
+
+*"Threshold comparison against the platform's configured cut-offs flagged..."*
+is how the software describes itself. A clinician reads a handover note. Now:
+
+> *Diabetes was flagged two ways: a measured value crossed one of this tool's
+> cut-offs, and the statistical model agreed. ... Kidney Disease was flagged by
+> the statistical model alone — no measured value crossed a cut-off for it.*
+
+The three-group distinction §6w insisted on is intact; only the vocabulary
+changed. The frontend jargon list grew to cover component names as well as ML
+metrics, and two mutations confirm both the wording and the distinction are
+held by tests.
+
+### STILL OPEN: the user asked for the clinician summary to be GENERATED by Gemini
+
+Not done, and it is not a wording change. The document publishes
+`integrity.llm_calls_made: 0` and `model_generated_text_included: false`
+**about itself**, and §6w's decision to compose rather than generate rests on
+that. Generating it means: those two claims become false unless updated
+honestly; the output must pass Module 24 like every other model text; and it
+needs a fact check against the composed version so an LLM cannot quietly drop
+one of the four things §6w kept (which kind of check flagged what, the model
+limitation, every absence, the closing line). The safe shape is
+generate → validate → verify-facts → **fall back to the composed passage**, so
+the worst case is today's behaviour. Awaiting the user's word because it flips
+a published safety claim, not because the work is unclear.
+
+
+---
+
+## 6ag. The clinician summary, written by the model · 2026-09-11 · Module 32b
+
+On the user's instruction. §6w's decision to COMPOSE rather than generate is
+not overturned lightly — it argues, correctly, that "summarise these results
+for a doctor" is the worst possible use of a model. What changed is that the
+composed prose kept reaching for this system's own vocabulary, three times in
+one session, and prose written for a reader is better prose.
+
+**`app/services/clinician_narrative.py`, and the worst case is exactly the
+composed passage.** Four gates, each discarding the text outright:
+
+1. **no model** → `model_unavailable`, no network touched. This is what makes
+   the caller's fallback the NORMAL path rather than an error path;
+2. **Module 24**, the same `guarded_generation` every other model text goes
+   through;
+3. **the fact check**, this module's own contribution: every value, flagged
+   name, unassessed name, unsupplied profile answer, the no-intervals fact and
+   the model-only distinction must be in the output or it is thrown away;
+4. **no silent substitution** — `text` is None on every refusal and `outcome`
+   says which gate stopped it.
+
+Each refusal gets ONE retry that says what went wrong: the safety layer quotes
+its codes back, a fact failure names what was dropped. "Try again" is not
+feedback.
+
+### THE MODEL NEVER HANDLES THE SAFETY-CRITICAL SENTENCES
+
+The limitation note and the closing line are APPENDED after approval; the model
+is told not to write them. The first version told it to copy them and verified
+the copy, which **could never succeed**: the kidney model's own note is judged
+`UNHEDGED_INTERPRETIVE_CLAIM` by this module's safety context — it passes
+Module 32's transcription check, which applies different controls — so a
+narrative REQUIRED to contain it was unapprovable. Three live runs were refused
+and **the refusing paragraph was the safety note itself**, found by bisecting
+the output through the validator paragraph by paragraph.
+
+Appending is also simply stronger: a sentence the model retypes is one it can
+mistype.
+
+### FIVE DEFECTS IN MY OWN WORK, ALL FOUND BY RUNNING IT
+
+The offline suite was green before any of these. Every one came from reading a
+live response.
+
+1. **Bare numbers.** `_value_strings` passed values without test names, so the
+   narrative read "the reported values are 8.4 %, 186 mg/dl, 14.8 g/dl..." — a
+   list of quantities of nothing, worse than the passage it replaced.
+2. **Profile answers as laboratory results**, including the catalog's internal
+   note: *"a patient with Age in whole years recorded as 58 years and
+   Self-described gender as stored by Module 2 as male"*. The filter looked for
+   a top-level `source`; the producer carries it at `provenance.source`.
+3. **A flagged topic with no assessment entry vanished from the prompt** — the
+   fallback only fired when ALL THREE flag groups were empty. `_missing` then
+   required a name the model was never given, refusing every narrative forever.
+   A fallback that only fires when nothing else did is not a fallback.
+4. **`_missing` checked the test NAME instead of the number**, because
+   `value.split(" ")[0]` started returning "Glucose" once names were added.
+5. **`not_supplied` was read from a field that does not exist.** There is no
+   such list on the payload; the signal is `null` on the three tri-state keys.
+   The check fed by it could never fire, and a live narrative dropped "were not
+   supplied" while the gate reported nothing missing. **Second time in one file
+   that a guessed field name produced a check protecting nothing.**
+
+Two more absences were lost on a run that passed every other gate — the
+unsupplied answers and the no-intervals sentence — because the fact check did
+not list them. **A fact check that does not name a fact does not protect it.**
+
+### Also worth keeping
+
+* **`require_referral` is off, and the reason was MEASURED rather than
+  assumed.** With it on, the validator records `MISSING_PROFESSIONAL_REFERRAL`
+  and **approves anyway** — §6r's finding, named in §6k D1 and never fixed. It
+  is not a blocking control, so leaving it on would stamp a code on every
+  narrative while refusing nothing. A mutation flipping it is equivalent.
+* **The narrative is cached on the report, keyed to `analysis.version`.** The
+  doctor summary is built per request, so generating inline would spend a model
+  call every time someone opened the page. A re-analysis invalidates it,
+  because prose describing the previous run is worse than no prose.
+* `model_unavailable` is the one outcome NOT cached: a key outage is a
+  configuration state, not an answer about this report.
+* The page says a model wrote the wording AND that the findings were not
+  produced by one. The distinction is the whole reason the composed version
+  existed.
+* The route is in `tests/test_explain_endpoint.py::ROUTES` from the day it was
+  written, not after it shipped dead (§6w).
+
+
+### THEN THE CAVEAT ITSELF WAS TOO LONG · the user again, and again right
+
+*"why this part in the summary?? show only required part to the healthcare
+professionals."* — pointing at four sentences of dataset arithmetic: 399
+records to learn from, 100 to check against, 1.6 percentage points.
+
+**The caveat stays; the arithmetic goes.** Those counts are the EVIDENCE for
+the caveat, not the caveat. What a clinician acts on is that the flag came from
+a pattern rather than a measurement, that the accuracy figure flatters it, and
+what the flag is therefore worth. The kidney `honest_read` is now three
+sentences:
+
+> *"This came from a pattern model, not from a measurement. It was developed on
+> one small dataset in which the two groups separated unusually cleanly, so its
+> accuracy there flatters it and nothing shows it holds in a screening
+> population where kidney disease is far less common. It is a reason to
+> consider further assessment, never a finding in itself."*
+
+**WHAT MAY NEVER GO IS THE CAVEAT.** This platform has found it MISSING three
+separate times (§6o D8, §6p, §6w), each time leaving a model's flag on screen
+with nothing qualifying it, and each time it was recorded as the worst thing on
+the page. Shortening it is not the same decision as dropping it.
+
+The test that pinned "399" was changed to assert what the count was a PROXY
+for — a smallness word plus the non-transfer negation. That is the same
+invariant ("a near-perfect metric must never appear without the fact that the
+dataset was small and the accuracy does not transfer"), stated without pinning
+a figure the document deliberately no longer shows. **Twice now a test here has
+been rewritten to follow this note; the guard against that is that the
+invariant, not the wording, is what each version asserts.**
+
+### Three prose defects the live runs showed, none visible offline
+
+Each was found by reading a generated narrative, and each is a known fault of
+this project arriving through a new door:
+
+1. **Lowercase sentence starts** — "hypertension, heart disease, smoking
+   history were not supplied" opening a sentence, because the facts block hands
+   the model lower-case keys. §6w's ". hypertension, heart disease..." exactly.
+2. **The same sentence four times** — "This tool flagged Heart Disease because
+   a measured value crossed a cut-off", once per topic. §6w's burial fault,
+   which the clinician page was rewritten to remove in the first place.
+3. **The old note kept appearing after it was changed** — `honest_read` is
+   captured into the decision metadata at analysis time, so every stored report
+   keeps the previous wording until re-analysed. Same as the explanations
+   (§6ad). **Worth knowing as a standing property: changing a generator does
+   not rewrite what a past run stored, and on this project that has now
+   surprised three separate changes.**
+
+Both prose faults are prompt rules now. Neither is enforced by a gate — the
+gates guarantee facts and safety, not style, and a style gate would refuse
+prose for being ugly while the fallback was uglier still.
+
+
+### The page around it · a box two-thirds full is not a document
+
+The passage card took the app's full 880px column while its paragraphs wrapped
+at a 68ch measure, so a third of every line's width was empty inside the box
+and the panel read as a half-filled container. **The container follows the
+measure**: the card is `min(100%, 74ch)`, and the whole route — trail, heading
+and article — shares that width, because this page is a document with one
+article on it and nothing to put beside it. Verified at 1230px and at 375px;
+no horizontal overflow at either.
+
+**And the prose arrived as one ten-line block.** The model separates its
+sentence groups with a DOUBLE SPACE after a full stop, not with a blank line,
+however the prompt asks — two live runs confirmed it. The renderer now treats
+both as a break: it reflows already-approved text and changes not one character
+of it, which is the cheap half of a choice whose other half was another round
+of prompt-tuning at a model call each. Seven paragraphs instead of one.
+
+### Live, after four rounds of fixes
+
+```
+outcome: generated   calls: 1   missing: []
+```
+
+Values named, absences stated, the three flag groups intact including "Kidney
+Disease was flagged by the statistical model alone, and no measured value
+crossed a cut-off for it", the limitation note verbatim, the closing line last.
+
+**Cost, measured:** one model call per ANALYSIS, not per page view -- the
+narrative is cached on the report and keyed to `analysis.version`. A refusal is
+cached too, deliberately: retrying a safety rejection on every page view would
+spend a day's quota on one reader.
+
+
+---
+
+## 6ah. Comparing any two reports · 2026-09-11 · a picker, not an endpoint
+
+The timeline compared the first report with the latest and offered no way to
+choose. **The backend already took `?baseline=&comparison=` on both
+`/timeline/comparison` and `/timeline/progress`** — the capability was there
+from the day those routes were written and nothing exposed it. This was a
+frontend control, not a feature.
+
+### The decisions worth keeping
+
+* **BOTH SECTIONS ARE RE-ASKED, the trends section is not.** The progress score
+  is computed from the same two reports as the table; a score describing one
+  pair beside a table describing another is two answers to different questions
+  presented as one screen. Trends describes EVERY report on the account, so
+  refetching it would redraw an unrelated section under the reader's hands.
+* **The old table is cleared before the new one arrives.** Leaving the previous
+  numbers under a changed picker states that they are the comparison the
+  control now names.
+* **The selects are seeded from the pair that came BACK, not the one
+  requested.** With no explicit choice the service picks first-vs-latest;
+  reading its answer is what stops the control describing a comparison the
+  table is not showing.
+* **Report names come from `listReports` and their failure costs the labels
+  only.** An account with four reports from one week is four identical options
+  otherwise. The picker still renders with dates alone.
+* **Both or neither.** `pairQuery` sends a pair only when both ids are present:
+  the backend refuses exactly one rather than guessing, so a half-made choice
+  would become an error under a table the reader was mid-way through changing.
+
+### TWO DEFECTS FOUND BY DRIVING IT, both invisible to the suite
+
+1. **The control did nothing when clicked.** On an account with TWO reports the
+   only available change is choosing the other report as the baseline — which
+   necessarily equals the current comparison, and the identical-pair guard
+   silently refused it. **A control that visibly does nothing is worse than no
+   control.** It now SWAPS: naming the later report as the baseline asks for
+   the comparison the other way round, which Module 29 supports and reports as
+   `chronological: false`. Verified live: the table recomputed, HbA1c went from
+   `8.4 → 5.2 improved` to `5.2 → 8.4 worsened`.
+   The symmetric branch (colliding from the SECOND select) was written, found
+   unreachable — that list excludes the current baseline — and deleted with
+   its test rather than kept as a branch nobody can find out is wrong.
+2. **"…the direction of every change is reversed.."** The conditional clause
+   carried its own full stop and another was printed after it regardless.
+   Latent since the sentence was written, and **invisible until the picker made
+   an out-of-order comparison reachable for the first time**. A feature's first
+   real use is when its neighbours get tested.
+
+Seven mutations on the control and the query builder, all killed — including
+sending half a pair and pasting an unescaped id into the URL, which needed a
+test at the API layer because the picker can no longer produce either.
+
+
+### THE MIDDLE READING WAS NOWHERE · found on a three-report chart
+
+The user, pointing at the middle dot of a three-point series: *"when i click on
+that it is showing 7th to 11th for every dot, but that dot belongs to the 9th
+September report."*
+
+Correct, and it was worse than a tooltip bug. **That reading appeared nowhere
+on the page at all:**
+
+* the x axis is deliberately two dates rather than a ruler (the readings are
+  irregular and evenly spaced ticks would imply a cadence nobody kept), so the
+  middle date is not labelled;
+* the chart's `<title>` — the only sentence describing the series — named the
+  FIRST and the LAST and said "across 3 readings";
+* and because only the SVG carried a title, **every dot showed that same
+  whole-series summary**, which reads as though the dot under the pointer is
+  the 7th-to-11th span.
+
+So the one thing a reader was pointing at was the one thing nothing said.
+
+**Two fixes, and the second is the one that matters for a screen reader.**
+Each marker now carries its own `<title>` (a child title takes precedence over
+the parent's for the element under the pointer), and the summary names EVERY
+reading while the list stays readable — above six it falls back to the two ends
+and the count, because a sentence naming fourteen dates is not a summary. The
+gap markers got titles on the same reasoning: that lane sits below the axis
+with no date of its own either.
+
+Four mutations, all killed — including one that survived the first pass because
+the gap reason is deliberately printed twice (tooltip and list) and the test
+counted occurrences rather than looking at the marker's own title.
+
+**Verification boundary, stated:** the three-point case is covered by tests
+(the middle dot's tooltip is asserted by position); the live check ran on a
+two-report account. The reporter's own account has three.
+
+
+---
+
+## 6ai. STATE AT THE END OF THE SECOND 2026-09-11 SESSION — **SUPERSEDED BY §6ap**
+
+> Its run commands are still correct; its **test-account description is not**
+> (the reports on that account have changed), and its uncommitted list is now
+> a subset of §6ap's. Read §6ap.
+
+**Everything runs. All 4,614 tests pass. NOTHING IS COMMITTED.**
+
+### ⚠ THE WORKING TREE IS TWO SESSIONS DEEP AND `origin/master` IS AT `6dc3409`
+
+§6y's uncommitted list was never committed, and this session's work sits on
+top of it. **Commit before building anything new.** `git status` right now:
+
+```
+ M MEMORY.md
+ M ai-service/app/api/routes_explain.py          new clinician-summary route
+ M ai-service/app/ml/heart.py                    honest_read rewritten for a clinician
+ M ai-service/app/ml/kidney.py                   honest_read rewritten, then shortened
+ M ai-service/app/services/explanation.py        eligibility before budget; profile rows excluded
+ M ai-service/tests/test_explain_endpoint.py     new route added to ROUTES
+ M ai-service/tests/test_explanation.py
+ M ai-service/tests/test_heart_predictor.py      jargon guard at the producer
+ M ai-service/tests/test_kidney_predictor.py     jargon guard; smallness not the count
+ M backend/src/config/env.js                     maxExplanations 6 -> 10
+ M backend/src/controllers/doctorSummaryController.js  narrative, cached per analysis
+ M backend/src/models/Report.js                  +doctorNarrative
+ M backend/src/services/aiServiceClient.js       +writeClinicianSummary
+ M backend/src/services/dashboardService.js      +explanations.notExplained
+ M backend/tests/dashboard.test.js
+ M frontend/src/components/CoverageRadar.jsx     real coverage, frame, caption
+ M frontend/src/components/RangeChart.jsx        hasComparableRange
+ M frontend/src/lib/api.js                       pair query for comparison/progress
+ M frontend/src/pages/Dashboard.jsx              cards, warnings, explanations, labels
+ M frontend/src/pages/DoctorSummary.jsx          narrative render + fallback, layout
+ M frontend/src/pages/Timeline.jsx               trend charts + the report picker
+ M frontend/src/styles.css
+ M frontend/tests/clinical.test.jsx
+ M frontend/tests/dashboard.test.jsx
+ M frontend/tests/design.test.jsx
+ M frontend/tests/timeline.test.jsx
+?? ai-service/app/services/clinician_narrative.py      NEW MODULE (32b)
+?? ai-service/tests/test_clinician_narrative.py        19 tests
+?? frontend/src/components/TrendChart.jsx              NEW COMPONENT
+?? frontend/src/lib/labels.js                          PATIENT_LABEL, shared
+?? frontend/tests/api.test.jsx                         NEW
+?? frontend/tests/trendchart.test.jsx                  NEW, 33 tests
+```
+
+A sensible split, if committing in parts: (1) the timeline trend chart
+§6z; (2) the dashboard card and chart work §6aa–§6ac; (3) the explanation cap
+and the model notes §6ad–§6af; (4) the Gemini clinician summary §6ag; (5) the
+comparison picker §6ah.
+
+### Running it (unchanged)
+
+```
+cd ai-service && .venv/Scripts/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+cd backend   && npm start          # :5000, Mongo Atlas, non-SRV URI
+cd frontend  && npm run dev        # :5173, or :5174 if that is taken
+```
+
+Health: `curl http://127.0.0.1:5000/api/v1/health`. **Restart after any
+backend or ai-service change** — and this session hit the stale-process trap
+twice more, once on the OpenAPI route and once on a model note.
+
+Tests: `cd backend && npm test` · `cd frontend && npx vitest run` ·
+`cd ai-service && .venv/Scripts/python.exe -m pytest -q` **with `.env` moved
+aside** (still unfixed; see §0).
+
+Test account: `glossary.check+1788753613@example.com` / `Str0ng!Passw0rd`.
+It has TWO analysed reports — `06-lab-flagged...pdf` (2026-09-07) and
+`01-all-normal.pdf` (2026-09-11) — both re-analysed on the current code.
+
+### What this session did, in one line each
+
+| § | |
+|---|---|
+| **6z** | the timeline trend chart: a real change, <2 readings, a gap, a rejected reading — kept apart |
+| **6aa** | the condition card: the two-checks lecture removed; "how it was checked" only where the values do not say |
+| **6ab** | the range chart is not drawn when nothing has a reference interval |
+| **6ac** | the coverage radar measured the VERDICT under the word "Coverage"; now real coverage |
+| **6ad** | two results had no explanation and nothing said so; the cap raised 6 → 10 |
+| **6ae** | the model notes rewritten for a clinician, guarded at the producer |
+| **6af** | pipeline warnings and validator messages off the patient page |
+| **6ag** | **the clinician summary is now written by Gemini**, behind four gates, falling back to the composed passage |
+| **6ah** | a picker for comparing any two reports; per-dot tooltips on the trend chart |
+
+### KNOWN AND OPEN, carried forward
+
+* **The Gemini narrative is cached per analysis** (`report.doctorNarrative`,
+  keyed to `analysis.version`). A refusal is cached too, deliberately.
+  `model_unavailable` is not. **Changing the prompt or a model note does not
+  affect stored reports** — clear `doctorNarrative` or re-analyse.
+* **`honest_read` is captured at analysis time**, so changing a model note
+  needs a re-analysis to show. This surprised three separate changes today.
+* **Two ai-service defects still open at source** (§6w "Still open"): profile
+  rows stamped `origin: report_transcription`, and `feature_catalog`'s
+  `display_name` for `gender` being an internal note. Both worked around in
+  three places now, including the new narrative module.
+* **Module 32's payload still nests `present` two ways** (§6w).
+* **`MISSING_PROFESSIONAL_REFERRAL` does not block** — measured this session:
+  the validator records the code and approves anyway (§6r, §6k D1).
+* **Frontend fixtures are still not generated from real responses.** This
+  session hit it twice inside one new module: a guessed `source` field and a
+  guessed `not_supplied` field each produced a check that protected nothing.
+* Gemini free tier is 20/day/model with a fallback chain. Today spent roughly
+  five analyses plus a dozen narrative calls.
+
+### The habit, after two sessions of this
+
+Every defect this session was found by **running it and reading the result** —
+never by the suite, which was green before and after each one. The user found
+most of them. What worked:
+
+* **mutation-testing every guard**, and treating a SURVIVOR as information:
+  four times it meant a missing test, twice it meant an unreachable branch to
+  delete, and twice it exposed a real bug (a `null` printed as a direction, a
+  fact check that could never fire);
+* **reading the producer's actual response before writing a consumer**, which
+  this session proved the hard way three times;
+* **asking what a sentence is FOR** — most of the removals were text that
+  described the software rather than the patient.
+
+---
+
+## 6aj. The round-up and the guidance list, read aloud · 2026-09-12
+
+The user, on the two plainest panels on the dashboard: *"these are looking
+somewhat normal or simple make it as a good design."* Both were redesigned —
+and as usual the redesign is not where the value was. **Auditing the two
+sections against the spec found a defect that had been live since §6x**, and
+the design work is the smaller half of this entry.
+
+Frontend suite **213 → 224**. Both sections had ONE test between them before
+this (`/Not enough information to check/`, asserting the wording only).
+
+### THE DEFECT: the absence group was separated by a tint
+
+```css
+.condition__roundup            { color: var(--ink); }
+.condition__roundup--unassessed{ color: var(--muted); }
+```
+
+Two comma-runs, `--ink` versus `--muted`. **One step of grey carrying the
+single distinction this whole screen exists to preserve** — CHECKED AND CLEAR
+is not COULD NOT CHECK — and `styles.css`'s own file header says in as many
+words why that can never work: *"a grey number still reads as a number; a
+dashed empty outline cannot."* `design.md` §6 mandates the treatment
+(`NOT CHECKED` in `--mono`, dashed `--band-line`, **no fill**) and this panel
+had never implemented it.
+
+It was invisible on both stored reports, because neither has an unassessed
+topic — `01-all-normal.pdf` renders twelve clear and zero unchecked. **The
+group that was wrong is the group the data cannot produce.**
+
+Now: chips. Cleared topics are filled, bordered solid, ticked. Unchecked
+topics have **no fill**, a dashed `--band-line` border, and the words
+`NOT CHECKED` in mono. The charts already speak this language, so the page has
+one absence vocabulary instead of three.
+
+### THE FILL IS NOT THE SIGNAL, AND THE FIRST COMMENT SAID IT WAS
+
+The CSS comment claimed *"Fill is the signal; colour only agrees with it."*
+Measured in the page: `--panel` on `--bg` is **1.14:1 in light, 1.06:1 in
+dark**. The fill is very nearly invisible and carries almost nothing. That is
+**a comment asserting a guarantee the code does not make — the fifth time in
+this file** — written, this time, by the person who had just finished quoting
+the rule about it.
+
+What a reader actually sees is SOLID vs DASHED, a tick vs no tick, and the
+literal words. Three signals, none of them colour alone. The comment says that
+now, with the measurement in it.
+
+### A CONTRAST REGRESSION, INTRODUCED AND THEN CAUGHT BY MEASURING
+
+Putting the unchecked topic NAMES in `--mono` — the obvious reading of
+design.md §6 — scored **3.37:1** on `--bg`. Below AA, and **dimmer than the
+`--muted` comma-run it replaced (4.04:1)**. Wrong twice: these are the topics
+a reader most needs to take to a doctor, and the file's own principle is that
+the OUTLINE carries the absence *precisely so the text does not have to be
+degraded to carry it.*
+
+Names are `--body` now: **6.6:1 light, 8.73:1 dark.** `--mono` is spent on the
+tag, which is where design.md actually puts it.
+
+> **~~STILL OPEN, APP-WIDE~~ — FIXED THE SAME DAY, see §6am.** `--mono` at 11px
+> measured **3.37:1** here and **3.04:1** in the header — below AA, and it is the
+> `NOT CHECKED` / `NOT ON REPORT` / `NOT USABLE` tag in every component.
+>
+> Recorded at the time as app-wide and therefore not to be diverged from
+> locally. That judgement was right and the conclusion drawn from it was
+> wrong: app-wide is a reason to fix it AT THE TOKEN, not a reason to leave
+> it. §6am changed the token, which fixed every component at once — and
+> found two more failing tokens on the way, one of them far worse.
+
+### The guidance list: one attribution, not one per row
+
+Three bullets, each ending `Related to: Obesity.` — §6ag's repetition fault
+and §6w's burial fault, in a list. `sharedBecausePhrase` hoists it to one line
+**only when every row's set is identical**, compared set-wise because the
+catalog's order is incidental.
+
+**Hoisting a set that is not shared is the failure mode, and it is the bad
+direction:** one line saying "Obesity" above a bullet that is there because of
+Diabetes announces a condition the bullet never claimed — the exact hazard
+`matchedConditions` exists to prevent. Unlike sets keep their per-row spans.
+
+The list also stopped being browser bullets (`list-style` discs at
+`padding-left: 20px` gave the most reader-facing list on the page less
+structure than a form label). Rows with a left rule — and **the rule's token
+was measured, not picked**: `--hairline` was the first try and drew literally
+nothing at **1.064:1** against `--bg`, an element present in the stylesheet and
+absent from the screen. `--band-line` is the most visible and is exactly wrong,
+because it is the dashed-absence token and spending it on decoration teaches
+the eye that it means nothing. `--panel-line`, 1.225:1.
+
+### A NUL BYTE IN THE SOURCE
+
+`grep` started reporting `Binary file src/pages/Dashboard.jsx matches`. An edit
+had written `.join('\0')` where `.join(' ')` was intended — a literal NUL
+inside a string literal. It **worked**, which is why nothing caught it: as a
+join separator a NUL is as unique as a space, every test passed, and the page
+rendered correctly.
+
+What it broke was the tooling. `grep -n` refused to print matches, and the
+mutation runner reported **"pattern not found"** for the one mutation aimed at
+that line — a guard silently exempted from mutation testing by an invisible
+character. Found by debugging the skip rather than shrugging at it. Scanned the
+whole of `src/` and `tests/`: this was the only one.
+
+**Worth carrying: a mutation reported as SKIPPED is not a mutation that
+passed.** The runner prints KILLED / SURVIVED / SKIP, and SKIP is the row that
+looks like nothing happening and means the guard was never tested at all.
+
+### MUTATION-TESTED: 11 GUARDS, 10 KILLED, 1 DELETED
+
+Run as a script (mutate, run `dashboard.test.jsx`, revert). The survivor:
+
+* **`if (!first) return null;` SURVIVED** — the guard against hoisting when a
+  row has no reason. Unreachable: `groupGuidance` pushes an item only when
+  `matchedConditions` returned a non-empty list, so every row that arrives has
+  one. Deleted rather than kept, on §6aa's precedent, with the caller's
+  guarantee named in a comment at the point that relies on it. It is also
+  unreachable a second way — `becausePhrase` returns null for an empty list, so
+  a future unfiltered caller falls through to the per-row spans, which is the
+  safe direction.
+
+The ten killed include rendering an unchecked chip as a clear one (2 tests),
+dropping `NOT CHECKED` (1), cutting the "open question, not a negative result"
+sentence (1), hoisting without comparing the sets (1), making the comparison
+order-sensitive (1), keeping the per-row spans beside the hoisted line (2),
+forcing the plural (1), printing a count the chips do not match (2), never
+hoisting (3), and drawing the unchecked group when it is empty (1).
+
+**The CSS carries guarantees vitest cannot see.** jsdom loads no stylesheet, so
+"no fill" and "dashed" are unkillable from the suite. They are held by the
+in-page audit below instead, and that asymmetry is worth knowing before
+trusting a green run on anything in this file.
+
+### Verified in the page, both themes
+
+* **Zero colour offenders, 36 elements scanned, light and dark.** Every
+  computed colour resolves to a declared token.
+* Fill / no-fill, solid / dashed, and the mono tag confirmed by
+  `getComputedStyle` rather than by screenshot.
+* **The unchecked group was forced onto the live page by patching `fetch` at
+  the transport layer** — same technique as §6z's gap markers — because
+  neither stored report has an unassessed topic. Two injected topics rendered
+  as dashed outlines with `NOT CHECKED` and the correct plural. Nothing was
+  written anywhere; the patch was removed and the page reloaded before the
+  final sweep.
+* No horizontal overflow from either section at 375px; twelve chips wrap to
+  twelve rows, widest 188px.
+
+### FOUND IN PASSING, NOT FIXED — the header does not fit a phone
+
+At 375px the page scrolls horizontally to **558px**, and none of it is these
+two sections. The offenders are all in the header: `nav__user`, `theme-toggle`
+and the sign-out `link` button do not wrap, putting sign-out at x=535 on a
+screen 375 wide. Pre-existing, unrelated to this change, and reported rather
+than folded into it. **This is a patient-facing screen and a phone is the most
+likely thing it is opened on.**
+
+### Also
+
+* **`.guidance, .warnings { padding-left: 20px }` was split.** The new
+  `.guidance` rule overrides it by order, and leaving the dead declaration in
+  place is the unreachable-branch smell this project keeps deleting.
+* Neither section had real coverage before this. The clear round-up and the
+  entire guidance list had **no test at all**; the one test that existed
+  asserted a wording. Eleven now, and they assert the markup — a test reading
+  only the text passes with both groups rendered identically, which is the bug.
+
+---
+
+## 6ak. The header on a phone · 2026-09-12 · and the design system's dead `.nav`
+
+Raised by §6aj's closing note: at 375px the page scrolled horizontally to
+558px and `Sign out` sat at **x=535** — 160px off the right edge, on the
+control that ends a session. Frontend suite **224 → 232**.
+
+### FIXING THE PHONE AND LEAVING THE TABLET IS THE SAME DEFECT
+
+The first fix scoped everything to `@media (max-width: 560px)`, measured at
+375px, and looked complete. **It was measured against the wrong string.** The
+browser happened to be signed in as `jaswanth` — eight characters. With the
+project's own test-account email (`glossary.check+1788753613@example.com`, 37
+characters) the header still overflowed **from 561px to about 890px**, with
+`Sign out` at x=811 on an 800px window.
+
+The signed-in identity is the ONLY variable-length item in a fixed row, so
+truncation belongs at every width and not inside a breakpoint. It is declared
+once in the base rule now; the phone query keeps only the row-two sizing.
+
+`min-width: 0` is the load-bearing half and is easy to omit: a flex item
+defaults to `min-width: auto` and **refuses to shrink below its content**, so
+`overflow: hidden` on its own does nothing and the row grows instead.
+
+> **The lesson, and it is not about CSS.** A responsive check run against
+> whatever the session happened to be signed in as is a check against one
+> string. The fixture that mattered was sitting in §6ai the whole time. **Test
+> the longest value the system can actually produce, not the one on screen.**
+
+Swept 320 / 375 / 414 / 560 / 561 / 640 / 720 / 800 / 900 / 1024 / 1280 with
+the long email, driven in an offscreen iframe so the pane never had to be
+resized eleven times: **zero overflow, sign-out and toggle on screen at every
+width.** Ellipsis engages below 1024 and stops being needed above it.
+
+### THE DESIGN SYSTEM'S HEADER RULES HAVE BEEN DEAD SINCE §6x
+
+Found while reading `.nav`, and NOT FIXED — it changes the desktop header's
+appearance and is the user's call. `styles.css` has **two** `.nav` blocks: §6x's
+at ~206, and the pre-existing one at ~307. The later one wins on every shared
+property:
+
+| | §6x intended | Actually renders |
+|---|---|---|
+| background | `--header` | `--panel` |
+| border-bottom | `--header-line` | `--panel-line` |
+| padding | `18px 30px` | `12px 24px` |
+| gap | `18px` | `16px` |
+| `.nav__user` | 11px `--mono` | 14px `--muted` |
+| `.nav a` | `--body` | `--ink` |
+
+So §6x's *"distinct warm band so the page body reads as the working surface and
+the chrome recedes"* is not on screen, and `.nav__user` is a hybrid — it kept
+`font-family: mono` and `uppercase` from the older block's non-overridden
+neighbours while losing the size and colour.
+
+**§6x's own in-page palette sweep passed it.** Both rules use legitimate
+tokens, so there were zero colour offenders. **A palette sweep proves no colour
+is foreign; it cannot prove a rule won.** That is a real limit of the technique
+§6x introduced and should be read alongside it.
+
+This is also §6x's "ALIAS, DO NOT RENAME" discipline landing exactly one step
+short: nothing was deleted, which was right, but the new block was added
+*above* the old one, where it loses.
+
+### THE SAME TRAP NEARLY ATE THE FIX
+
+A media query adds **no specificity**. `@media (...) { .nav { ... } }` placed
+earlier in the file loses to a later plain `.nav` on every shared property —
+`flex-wrap` included. The phone block therefore has to sit BELOW the rule at
+~307, and moving it up would be a silent revert with the code still present and
+still looking correct.
+
+That invariant is now a test rather than a comment: `design.test.jsx` reads
+`styles.css` as source and asserts the phone block appears after every plain
+`.nav {`. Mutating it to hoist the block kills that test.
+
+### CSS IS INVISIBLE TO EVERY OTHER TEST IN THE SUITE
+
+jsdom applies no stylesheet and evaluates no media query, so the round-up's
+"no fill"/"dashed" absence treatment and all of the header behaviour were
+**unkillable from a render test** — §6aj said so and left it to the in-page
+audit, which is a one-off and does not run in CI.
+
+`design.test.jsx` now reads `styles.css` as text and pins the invariants that
+have an absence or an overflow behind them (+8 tests). Source-level assertions
+are weaker than a rendered check and they are not nothing: they are the only
+thing in the suite that can fail when one of these rules is quietly reverted.
+
+### MUTATION-TESTED: 19 RUN, 19 KILLED — AFTER THE RUNNER WAS FIXED THREE TIMES
+
+11 CSS guards, then 3 scoped re-runs, then 5 on the relocated rule.
+**Every survivor on the first pass turned out to be a bug in the runner, not a
+gap in the tests** — and each one had reported something false about a guard:
+
+1. **A NUL byte** (§6aj) made one mutation report `pattern not found`.
+2. **CRLF vs LF** made four more report `pattern not found` — every multi-line
+   pattern, against a CRLF file.
+3. **A non-unique pattern**: the two `.chip--clear` mutations SURVIVED because
+   `background: var(--panel); border: 1px solid var(--panel-line);` also
+   appears in `.card, .passage, .roundup, .lab-table` **earlier in the file**,
+   so `replace(..., 1)` mutated that rule instead and never touched the chip.
+   Scoped to the named rule, both die.
+
+> **Three different ways for a mutation runner to lie in one task.** SKIP and
+> SURVIVED are both claims about the runner before they are claims about the
+> code. §6aj recorded "a SKIP is not a pass"; the `.chip--clear` pair extends
+> it: **a SURVIVOR is not a gap until you have proved the mutation landed.**
+
+One genuine gap did surface once the runner was honest: **dimming the cleared
+chip's text off `--ink` survived everything.** The unchecked chip's colour was
+pinned and this one was not, so the two could drift into the same ink while
+fill and border still differed — quietly spending one of the three signals
+that keep them apart. Tested.
+
+### Still open
+
+* ~~**§6x's `.nav` block is still dead.**~~ **FIXED on the user's word the same
+  day — see §6al.** The two rules are merged into one, the older block is
+  deleted, and `.nav` being declared exactly once is now a test.
+* ~~`--mono` at 11px is **3.37:1** in light mode, below AA.~~ **FIXED §6am**
+  — and it was worse than reported: `--muted` failed too, and `--amber` as
+  text measured 2.28:1. All three fixed at the token.
+* **A raw feature key reaches a patient**: the stored Vitamin B12 explanation
+  reads *"Your vitamin_b12 test measures…"*. It is LLM text frozen at analysis
+  time (§6ad/§6ag: changing a generator does not rewrite what a past run
+  stored), so it needs a re-analysis to confirm any fix. Same family as the
+  `PATIENT_LABEL` work in §6z, one layer further up.
+
+---
+
+## 6al. The design system's header, finally on screen · 2026-09-12
+
+On the user's word, closing §6ak's open item. `styles.css` had **two `.nav`
+blocks**; §6x's was above the pre-existing one and lost every property they
+shared, so the header specified in `design.md` §4 had never rendered. Frontend
+suite **232 → 236**.
+
+Now live and measured in the page: `--header` ground, `--header-line` bottom,
+18px/30px padding, 18px gap, the serif wordmark at 24px/400 in `--ink` with
+only the italic `AI` in `--brand`, links 13px `--body`, the identity mono 11px
+uppercase.
+
+### THE MERGE'S REAL RISK WAS THE DELETED BLOCK, NOT THE KEPT ONE
+
+§6x's rule was written as an ADDITION — it carried only the properties it
+meant to change and relied on the block below for the rest. So deleting that
+block naively would have taken three load-bearing declarations with it:
+
+| Declaration | Lived only in the deleted block | If lost |
+|---|---|---|
+| `display: flex` / `align-items: center` | yes | the header stops being a row |
+| `.nav__spacer { flex: 1 }` | yes | controls collapse left against the links |
+| `.nav a { text-decoration: none }` | yes | **every header link gets the browser default underline** |
+
+The third is the one worth remembering: §6x already had to fix
+browser-default anchors once (its defect 2), and this would have reintroduced
+them on every page, from a rule nobody would think to look at. All three are
+folded into the surviving rule, each named in a comment at the point that
+needs it, and each has a mutation.
+
+**The old block is DELETED, not left in place.** Keeping it "just in case" is
+precisely what made the design system's header dead for a month.
+
+### §6x's OWN PADDING THEN BROKE THE ROW, AND NO TEST COULD HAVE SAID SO
+
+18px/30px and an 18px gap leave the row tighter than the 12/24 they replaced.
+The first thing a squeezed flex row does is wrap its own children's text:
+**"Your details" and "Sign out" each split over two lines** from about 780px
+down. That is not an overflow — no scrollbar, no offscreen element, nothing
+for the width sweep to report — **it just looks broken**, and it was visible
+only in a screenshot.
+
+The header's labels are short and fixed, so they stay whole (`white-space:
+nowrap`); the identity beside them is the one item that may shrink and it
+already truncates rather than wrapping. **Shrink pressure now lands on the
+only item designed to absorb it.**
+
+Verified by counting rendered LINE BOXES per item (`Range.getClientRects()`),
+not by element height: the first attempt used height ÷ line-height and
+reported the theme toggle as wrapped at every width, because that button
+contains an icon and padding. **A proxy measurement produces a defect that
+isn't there just as readily as it misses one that is.**
+
+### Widths and themes
+
+Swept 320 / 375 / 560 / 561 / 640 / 720 / 781 / 800 / 900 / 1024 / 1280 with
+the 37-character test-account email, in an offscreen iframe: **no overflow, no
+wrapped label, sign-out and toggle on screen at every width.** Header palette
+sweep: **zero colour offenders, both themes**, three font families (sans,
+serif for the wordmark, mono for the identity) — which is itself the evidence
+the serif wordmark is finally rendering.
+
+### Contrast, measured on the new ground — one number fails
+
+| | light | dark |
+|---|---|---|
+| wordmark | 11.49 | 15.00 |
+| links / toggle | 5.97 | 8.12 |
+| sign out | 4.78 | 8.13 |
+| **identity, 11px** | **3.04** | 4.97 |
+
+**The identity label fails AA in light mode at 3.04:1**, and restoring §6x
+made it worse rather than better — it was 14px `--muted` before and is now
+11px `--mono` on the darker `--header` band.
+
+**Deliberately not changed.** `--mono` is §6x's own choice and `design.md` §4
+asks for "metadata (mono, right)"; deviating silently would be editing the
+user's design system while claiming to restore it. It is one token away from
+fixed (`--body` measures 5.97 on the same ground) and belongs with the other
+`--mono` finding in §6ak — both are the same app-wide question, and the
+accessibility review §10 item 4 still calls for is where it should be settled,
+once, rather than per-element.
+
+### MUTATION-TESTED: 7 GUARDS, 7 KILLED
+
+Including putting the deleted block back below (the exact regression), the
+band reverting to `--panel`, the border to `--panel-line`, and each of the
+three fold-ins dropped individually. `design.test.jsx` also now asserts
+**`.nav` is declared exactly once** — two rules for one element is the shape
+of the original fault, so the count is the guarantee.
+
+> **What this one is really about.** The defect was not a wrong value; every
+> value in both blocks was a legitimate token, which is why the palette sweep
+> passed for a month. It was a rule that never applied. **Source-level
+> invariants — how many times is this declared, does this come before that —
+> catch a class of fault that neither a rendered audit nor a green suite can
+> see**, and they are cheap. That is the lasting output of §6aj–§6al, more
+> than any of the individual fixes.
+
+---
+
+## 6am. Text contrast · 2026-09-12 · three tokens, and the worst one never rendered
+
+On the user's word, closing §6ak and §6aj's open contrast items. What began as
+one token ended as three, because measuring the whole screen found more than
+the thing that had been reported. Frontend suite **236 → 242**.
+
+### THE ABSENCE LABELS WERE THE LEAST READABLE TEXT IN THE APP
+
+Auditing every text node against its **effective** background (walking up for
+the first non-transparent ancestor, not assuming) found **17 failures on one
+screen**, all from two tokens:
+
+| token | was | worst measured | now | worst |
+|---|---|---|---|---|
+| `--mono` | `#8a7c69` | **3.04:1** | `#655b4d` | 4.98 |
+| `--muted` | `#7d6f5d` | **3.66:1** | `#6c6050` | 4.59 |
+
+The text they carry is *"Not measured"*, *"not checked"*, and the reasons
+underneath them. **On a screen whose entire purpose is that an absence must
+not be mistaken for a result, the absence labels were the hardest thing on it
+to read.** Fixed at the token, not on 17 elements — guarantees belong at the
+lowest layer. Hue and chroma are unchanged (each is the original scaled toward
+black), so the palette still reads as one family.
+
+`--mono` is deliberately set DARKER than `--muted`: it carries 11px tracked
+uppercase, which is harder to read than 13–14px prose at the same ratio. Dark
+mode was already compliant on the same grounds (4.97–5.34) and is untouched.
+
+> Worth knowing: dark has ALWAYS set `--muted` and `--mono` to one value, so
+> the two converging in light would have been the system's own precedent, not
+> a new problem. The gap was kept anyway, for the reason above.
+
+### THE WORST DEFECT IN THE APP NEVER RENDERED DURING THE SWEEP
+
+`--amber` measured **2.28:1 as text** — far worse than anything reported — and
+it is the colour of `.flag--low`, `.verdict--low`, `.risk--medium`,
+`.status--partial` and `.caveat`: patient-facing words in the results table.
+
+**The route sweep passed it clean.** Neither stored report has a borderline
+finding or a low-flagged value, so that text never rendered on any of the 12
+route × theme combinations. It was found by computing the token table
+directly, then confirmed by **forcing a `Borderline` topic and a low-flagged
+row through the transport layer** so the text existed to be audited.
+
+> **A rendered audit only covers the states your data can reach.** This is the
+> §6z gap/rejected lesson and the §6aj unchecked-chip lesson arriving a third
+> time: the fixtures do not produce every branch, so an in-page sweep is a
+> lower bound on the defects, never a clean bill. Computing from the tokens
+> covers the states the data cannot reach.
+
+The fix is the pattern the palette had already invented and applied exactly
+once: `--green-text` exists because *"--green does not pass 4.5:1 as text"*.
+`--amber` had the identical problem and no such pair. Now `--amber-text:
+#775200` (5.26:1), with `--amber` unchanged and still painting the gauge's
+middle arc — geometry, not text.
+
+### DARKENING A HUE TO PASS AA DRAGS IT INTO ITS NEIGHBOUR'S LUMINANCE
+
+`--amber-text` and `--rust` differ by only **1.05:1** in luminance. The
+stylesheet's header requires the three risk colours stay *distinguishable from
+each other*, so luminance could not be the thing that separates them and the
+first candidate had to be checked another way.
+
+Chosen on **CIE Lab ΔE**, not luminance: `#775200` sits ΔE 28 from rust and 32
+from green-text (a just-noticeable difference is ~2). Both are tested, because
+a value that passes AA and collapses into rust would satisfy every other
+assertion here.
+
+### THE MUTATION THAT MATTERED: THE FIX WAS BYPASSABLE BY ONE ALIAS
+
+8 token mutations. **T4 SURVIVED**: repointing `--medium` from
+`var(--amber-text)` back to `var(--amber)`.
+
+That restores the 2.28:1 defect in full, and every contrast test still passed
+— because they check token VALUES, and **no stylesheet rule names
+`--amber-text`; they all name `--medium`.** A guard over a list cannot see
+what never entered the list (§6ad), in a stylesheet.
+
+Now tested: `--low` → `--green-text`, `--medium` → `--amber-text`, `--high` →
+`--rust`, `--absent` → `--mono`, asserted as the alias mapping rather than as
+values. 8/8 killed after that, including inverting the mono/muted hierarchy
+(both still AA, so only the hierarchy test catches it) and darkening
+`--amber-text` into rust.
+
+### The test, and what it deliberately does NOT check
+
+`design.test.jsx` computes WCAG ratios from the hex values as written, for
+both themes. jsdom has no colours and the in-page palette sweep only asks
+whether a colour is *in* the palette — **a token that is in the palette and
+too light passes that check every time**, which is how this survived §6x.
+
+The token × ground pairs are a **measured table, not a cartesian product**.
+The first version used the product and failed on `--green-text` over
+`--header` at 4.11:1 — a pairing that does not exist, because the header holds
+a wordmark, links, an identity and two controls and no verdict word. Tuning a
+colour to satisfy a combination nothing renders is the same error as tuning
+`--mono` against `--track`, which backs chart geometry and no text.
+**Adding a pairing now means adding a row, deliberately, with a number.**
+
+### Verified
+
+* **0 AA failures across 6 routes × 2 themes**, re-run after the change with
+  the transport patch removed.
+* The forced borderline state: 0 failures in both themes, and the gauge's
+  middle arc still resolves to the bright `--amber` — the chart vocabulary is
+  untouched while the words are legible.
+* Both `--mono` findings from §6aj and §6ak are now closed. `--ink`, `--ink-2`,
+  `--body`, `--brand`, `--rust` and `--green-text` were already compliant on
+  the grounds they are used on and were not changed.
+
+### Still open
+
+* `--rust` measures 4.38:1 on `--header` — below AA, but no verdict word is
+  ever painted in the header, so it is not in the pair table. If a risk word
+  ever moves into the header, that row has to be added and the colour
+  revisited.
+* ~~`/signin` was never audited.~~ **MEASURED, CLEAN — see below.**
+
+### §6am-b. `/signin`, the route a signed-in session cannot reach
+
+It had never been audited by anything, because every sweep runs from a live
+session and `/signin` redirects. "Same tokens, therefore fine" was the
+inference on offer and it is exactly the kind this project keeps being wrong
+about, so it was measured instead.
+
+**Reached without risking the session.** `AuthProvider` starts `signedOut`
+when `hasSession()` is false and only calls `refreshSession()` when it is
+true - so removing `localStorage['vaidyaai.refresh']` for the length of one
+script renders the real sign-in page with **no logout call and no server-side
+change**. The value is captured first, restored in a `finally`, and the
+parent tab keeps its in-memory session throughout. Verified afterwards by a
+full reload: still signed in, same token.
+
+**Three states, both themes, zero AA failures:** the sign-in form, the form
+carrying an `.error` paragraph, and the register view (Name / Email /
+Password). The error was INJECTED with its real class rather than produced by
+submitting bad credentials - a real failed login would spend an attempt
+against the user's own account and could trip rate limiting. `.error`
+resolves to `--rust`, which is 5.52:1 on the card.
+
+**And it found one more alias gap.** `--danger` -> `--rust` was not in the
+alias table, so repointing it was the T4 defect again with a different name:
+`.error`, `.status--failed` and `.report__confirm-text` would all have
+followed it anywhere. Now pinned; two mutations, both killed.
+
+> The habit worth keeping: **a route your session cannot reach is a route
+> nothing has ever checked.** Auditing from a signed-in browser silently
+> excludes sign-in, registration and every error state on them - and those
+> are the first screens a new patient sees.
+
+---
+
+## 6an. The long sections, put behind disclosures · 2026-09-12
+
+The user: *"for the sections topics you could read about, what these results
+mean give like hyperlinks ... when the user wants then only he can click
+those, otherwise it is looking too long."* Frontend suite **242 → 248**.
+
+Measured: the dashboard was **4,950px** and is now **3,745px** — **24%
+shorter**, all of it from eight explanation paragraphs and one guidance list.
+
+### WHAT MAY CLOSE IS A CLINICAL DECISION, NOT A LAYOUT ONE
+
+The explanations section holds two different kinds of thing, and only one of
+them may be hidden behind a toggle:
+
+| | Treatment |
+|---|---|
+| the eight explanation paragraphs | `<details>`, closed, subject in the summary |
+| *"…have no explanation above"* (§6ad) | **stays on the page** |
+| *"No plain-language explanation could be prepared for…"* | **stays on the page** |
+| *"your report lists N other tests it does not check"* | **stays on the page** |
+| *"Written by a language model…"* | **stays on the page** |
+
+**A reader who never opens a disclosure never learns what is inside it.** For
+prose that is a saving; for a sentence reporting that something is MISSING it
+turns the absence into silence — the one failure this page exists to prevent,
+arriving through a layout change. The three absence sentences and the
+provenance line are therefore outside every `<details>`, and each has a
+mutation proving it.
+
+The guidance section is the opposite case and closes **as a whole**: nothing
+in it is an absence, the rows are a line each, and six toggles for six short
+lines is more chrome than content. Its *"not personalised treatment advice"*
+qualifier travels INSIDE with the items — it has nothing to qualify while the
+group is shut. The count sits on the summary so opening it is an informed
+choice.
+
+Native `<details>`/`<summary>`, not a button and a state hook: keyboard
+operable, correct role for a screen reader, and it still opens with no
+JavaScript. The chevron is a CSS border rotated on `[open]`, so it cannot pick
+up a font that lacks the glyph, and the global `prefers-reduced-motion` block
+already switches its transition off.
+
+### THE SUITE WENT GREEN ON THIS CHANGE AND COULD NOT HAVE TOLD ANYONE
+
+All 242 tests passed on the commit that collapsed the section. **jsdom renders
+the children of a closed `<details>` like any others**, so every existing
+`getByText` still found text no reader could see.
+
+That is not a small gap — it means the entire "is this sentence on the page"
+style of assertion in `dashboard.test.jsx`, which is most of it, is blind to
+whether the sentence is reachable. The new tests therefore assert DOM SHAPE:
+`expect(said.closest('details')).toBeNull()` for each absence notice. Asking
+*is this text present* cannot answer *can the reader see it*; asking *what is
+it nested inside* can.
+
+8 mutations, 8 killed — including moving each of the three absence notices
+and the provenance line inside a disclosure, opening the explanations by
+default, and emptying the summaries so the list becomes blank toggles.
+
+### I REPORTED THIS BROKEN WHEN IT WAS NOT — THE PROBE WAS WRONG
+
+Worth recording as a measurement failure, because it nearly shipped as a
+false statement to the user.
+
+`getBoundingClientRect().height` on the collapsed paragraph returns **100**,
+and `offsetHeight` returns 100. On that evidence the conclusion was that the
+browser pane does not implement `<details>` at all, and a "clean document with
+no CSS" control was built to confirm it — **which used the same bad probe and
+therefore agreed**. A control that shares the instrument's fault confirms the
+error instead of catching it.
+
+The screenshot disproved it: eight neatly collapsed rows. `checkVisibility()`
+returns **false** for the same element. Chromium keeps the last-known layout
+box for rect queries on content hidden by a closed `<details>`
+(`content-visibility` semantics); `checkVisibility()` is the only probe that
+answers the question asked.
+
+> **Two rules from this.** A control has to differ from the thing it is
+> checking in the way that matters, or it is a second run of the same mistake.
+> And when a measurement and a screenshot disagree on this project, the
+> screenshot has now won twice — once here and once on the wrapped nav labels
+> (§6al), where a height-based probe invented a defect that was not there.
+
+A second, smaller version of the same fault: the chevron's rotation was read
+200ms after a 180ms transition and came back inverted. Re-read from explicit
+`open` state with a longer settle, it is correct (45° closed, −135° open).
+Nothing was wrong with the CSS.
+
+### Verified
+
+* Page height 4,950 → 3,745px; reopening everything restores 4,950 exactly.
+* Both themes: all closed on arrival, content `checkVisibility() === false`,
+  every summary and subject visible, **every absence notice visible**.
+* Disclosure chrome: zero colour offenders across 54 elements, zero AA
+  failures, `cursor: pointer`, default marker suppressed.
+* Click opens, clicks closed again, summary is focusable.
+
+### Known, and accepted
+
+* **Find-in-page does not reach closed content** in browsers without
+  `hidden=until-found` behaviour for `<details>`. The subject of every
+  explanation is in its summary and stays searchable; the paragraph body is
+  not. Accepted as the cost of the thing that was asked for.
+* Closed content is not announced to a screen reader until expanded — which
+  is the correct behaviour for a disclosure, and the reason the absence
+  notices were kept outside one.
+### §6an-b. The opened panel, read aloud — three faults in the reveal
+
+The user circled the section OPEN: *"add some good design to this part also,
+it is looking very odd and simple."* Measured against the live DOM, three
+separate faults, all in the revealed state rather than the collapsed one —
+**the state that had not been looked at.** Frontend suite **248 → 251**.
+
+1. **The count was 680px from the heading it counted.** `.disclosure__summary
+   > h2` is `flex: 1`, so the heading stretched to 672px and parked the badge
+   at x=710, hard against the chevron, where it read as a second control
+   rather than "there are three of these". A `__spacer` does the pushing now
+   and the heading sizes to its text; the gap is 10px. Adjacency is the whole
+   content of that badge, and it had none.
+2. **The revealed content had no edge.** Three blocks landed straight on the
+   page ground, so nothing said where the disclosure ended — the closing
+   "not personalised treatment advice" qualifier in particular read as page
+   text that merely followed the list. One panel now holds the attribution,
+   the topics and the qualifier: opening the toggle produces ONE object.
+3. **The rows were a pale left rule at 1.2:1** — the §6aj `--hairline`
+   fault again, in the place it was moved to. Inside the panel they are
+   bullet rows separated by hairlines, which read against `--panel`.
+
+### THE ROWS ARE STILL NOT LINKS, AND THAT IS DELIBERATE
+
+The section was asked for as "hyperlinks". The SUMMARY became a real control
+and looks like one; the rows did not, because **there is nowhere for them to
+go** — the catalog supplies a sentence, not a document. A row styled as a
+link that does nothing when clicked is a worse answer than a plain row, and
+on a page about someone's blood it invites the reader to believe there is more
+to read about their result than there is.
+
+So the marker is a bullet, not a chevron; the rows carry no hover state and
+`cursor: auto`; and a test asserts the list contains **no anchor, button,
+role=link, role=button or tabindex**. Mutation: turning the rows into `<a>`
+elements is killed.
+
+> If these topics ever gain real destinations, that test is the thing to
+> change, and changing it should be a deliberate act — which is the point of
+> writing the affordance down rather than leaving it as a styling accident.
+
+### Verified
+
+* Badge 10px from the heading; chevron still pinned right.
+* Panel: `--panel` on `--bg`, 12px radius, qualifier divided by a hairline.
+* Both themes: zero colour offenders across 16 elements, zero AA failures.
+* 4 mutations, 4 killed: fake links, the badge moved back beside the chevron,
+  the panel removed, and the qualifier moved out of it.
+
+> **The pattern worth naming.** §6an collapsed the section and verified the
+> COLLAPSED state carefully — heights, visibility, absence notices — and never
+> looked at the open one. A disclosure has two states and shipping it means
+> reading both. Every fault above was in the half nobody opened.
+### §6an-c. The population page's method notes — panelled, NOT collapsed
+
+Same complaint, circled on the population page: three stacked `.hint` blocks
+(browser bullets, no container, one flat grey) ending the page in a wall, with
+the closing disclaimer reading as text that merely followed the list.
+Frontend suite **251 → 257**.
+
+### THE ANSWER THAT WORKED ON THE DASHBOARD IS THE WRONG ONE HERE
+
+The obvious move — and the consistent-looking one — is the disclosure from
+§6an. **It must not be used.** These bullets are the CAVEATS on the comparison
+above them, and §6ag is explicit: what may never go is the caveat. This
+platform has found it missing three separate times and recorded it each time
+as the worst thing on the page. **A caveat behind a toggle is a caveat most
+readers never open — the same outcome as deleting it, reached more slowly.**
+
+Length was the complaint; hiding is not the only answer to it. So: one panel,
+a heading, the shared bullet rows, and the disclaimer divided off by a rule as
+the conclusion OF the bullets rather than a remark after them — the same
+shape as `.passage__close` on the clinician page, which solved this exact
+problem for that document.
+
+A component test now asserts `.notes` is **not** a `<details>` and contains
+none. If it ever becomes one, that assertion has to be deleted first, by
+someone who has read why it is there.
+
+### ONE ROW RULE, TWO CALLERS — NOT A SECOND COPY
+
+The limitations wanted exactly the treatment the guidance topics had got an
+hour earlier. Copying it would have been **the third duplicated rule this
+stylesheet has had to reverse** (§6z's band rule, §6al's two `.nav` blocks — the
+second of which cost a month of the header being dead).
+
+So `.guidance > li`'s styling was promoted to a shared **`.bullets`**, the
+in-panel override was deleted, and both pages now point at it. Two tests hold
+it: the invariant it always carried (no risk colour on a decorative mark,
+asserted on the row AND the `::before` dot) and a new one — **`.bullets` is
+defined exactly once, with no page-scoped override** — which is the `.nav`
+lesson written down as a guard rather than as a paragraph.
+
+The existing test that pinned `.guidance > li`'s left rule was rewritten to
+follow the rule to its new home. Worth noting honestly: that is the third
+time on this project a test has been edited to match a refactor, and the
+protection against that is exactly what was done here — the INVARIANT was
+kept identical and only the selector moved.
+
+### Verified
+
+* Both themes, both pages: zero colour offenders, zero AA failures.
+* Rows `cursor: auto`, panel is a `<section>`, close rule present, no
+  horizontal overflow.
+* The dashboard's guidance panel re-checked after the refactor: 3 rows, dot
+  `rgb(123,88,54)` = `--brand`, hairline separators intact.
+* **6 mutations, 6 killed** — the panel turned into a disclosure, the
+  disclaimer moved out, the panel gated on limitations alone (which silently
+  loses the disclaimer), the population list dropped off `.bullets`, a second
+  copy of the row rule reintroduced, and a risk colour spent on the dot.
+
+> **A `[no tests]` result is a PARSE ERROR, not a kill.** Two mutations this
+> session reported it, both because the JSX I generated was unbalanced — the
+> compiler caught them, no test did. Re-run well-formed, both genuinely died.
+> This is the SKIP rule from §6aj in a third costume: KILLED, SURVIVED, SKIP
+> and `[no tests]` are all claims about the RUNNER before they are claims
+> about the code.
+### §6an-d. Twenty-one lines saying three things — the population cards
+
+The user circled the repeated prose on the comparison cards: *"see all are
+repeating sentences ... do the need innovatively."* Frontend suite
+**257 → 269**, plus a new component.
+
+**Measured on the live payload first, not assumed.** Seven comparison cards,
+each carrying three lines:
+
+| line | unique values across 7 cards |
+|---|---|
+| `Compared with: 20-29 years, male` | **1** — byte-identical |
+| `what_this_means` | 7, differing ONLY by the interpolated parameter name |
+| `what_this_does_not_mean` | 7, same |
+
+So: twenty-one lines saying three things. The cohort is chosen from the
+patient's own age and sex, so it cannot differ between parameters on one
+report; the other two are one sentence template each.
+
+### THE FIX IS NOT DELETION, IT IS RELOCATION AND A PICTURE
+
+**One method statement above the list**, carrying the cohort and both
+sentences. For the caveat this is BETTER placement, not merely less of it:
+it is now read BEFORE the first band rather than after each one. It is a
+`.method` panel in body ink, deliberately **not** a `.hint` — demoting the
+only surviving copy of a caveat to the page's quietest type is how a caveat
+stops being read, and a mutation doing exactly that is killed.
+
+**And each card gained `PercentileBar`** — the 0-100 scale with the published
+band drawn on it. That is the innovation the repetition was hiding: the cards
+needed something ABOUT THEIR OWN RESULT, and "between the 50th and the 75th"
+is the one thing on the card a reader has to do arithmetic to picture.
+
+Three rules inside it, all of them this project's existing ones:
+
+* **No risk colour, ever.** The page says a percentile "does not say whether
+  a result is normal, high, or low" — a green or rust segment two inches
+  below that sentence contradicts it. The fill is `--brand`.
+* **A band, not a point.** Module 31 publishes cut-points and interpolates
+  nothing; its own limitations list says a band is reported precisely because
+  the estimates carry sampling uncertainty. A single marker would invent the
+  precision the service refuses.
+* **An open end runs to the frame and is not capped.** "Below the 5th
+  percentile" has no published floor, and a closed segment from 0 asserts a
+  bound nobody published — the one-sided-interval fault of §6ab and §6z, third
+  appearance.
+
+### READING THE PRODUCER PAID FOR ITSELF IMMEDIATELY
+
+`band.position` is **`"between_published_percentiles"`**, not `"between"` —
+the Python constant is `POSITION_BETWEEN` and its VALUE is the long string.
+Guessing from the constant name would have produced a component that matched
+nothing and rendered no bar at all, on every card, silently. That is §6ag's
+guessed-field-name defect exactly, and it was avoided only by fetching the
+real response and printing `Object.keys(band)`.
+
+### The hoist is guarded, and the guard is clinical
+
+`sharedCohortLabel` hoists ONLY when every available comparison agrees.
+Module 31 matches on (sex, age band) and refuses rather than falling back, so
+a table with different age bands per parameter is possible — and one line
+above the list saying "20-29 years" over a card compared against 30-39 would
+**misstate which population the reader is being measured against**. Unequal
+cohorts put the line back on every card. Same shape as the dashboard's
+`sharedBecausePhrase`.
+
+### MUTATION-TESTED: 9 GUARDS, 9 KILLED
+
+Hoisting unequal cohorts, demoting the method statement to `.hint`, dropping
+the caveat clause, showing the statement with no bars on the page (§6ac's
+legend-for-a-mark-that-is-not-there), printing both the hoisted and per-card
+cohort lines, a risk colour on the band, drawing an unrecognised position,
+capping an open end, and drawing a `between` band missing one end.
+
+### Verified, and one boundary stated
+
+* 21 repeated lines → **0**; one method statement; 7 bars; no overflow.
+* Both themes: zero colour offenders, zero AA failures, band fill resolves to
+  `--brand` in each.
+* **NOT LIVE-VERIFIED: both open-ended positions.** Every value on both
+  stored reports lands `between_published_percentiles`, so `below_lowest` and
+  `at_or_above_highest` have never been rendered from real data. They are
+  covered by tests and are reachable the moment a value falls outside the
+  published grid — the same boundary §6z recorded for timeline gaps.
+
+> **A third probe error, and the pattern is now unmistakable.** The palette
+> sweep reported ~60 offenders: every one was `fill: rgb(0,0,0)` on a `<line>`
+> or on an HTML `<p>`, where `fill` is a UA default that paints nothing. Like
+> the `getBoundingClientRect` reading of a closed `<details>` (§6an) and the
+> height-based wrap check (§6al), **the instrument invented a defect that was
+> not there.** Scope `fill` to elements that actually fill.
+### §6an-e. The progress card, in plain English — and the FIRST ai-service edit
+
+The user asked what the score shows, then asked for the card in simple
+English with nothing unnecessary. Frontend **269 → 279**; ai-service
+**3,765 pass, 7 skipped** — the exact baseline, re-run in full because shared
+strings moved.
+
+**The jargon was authored in the SERVICE, so it was fixed there** (§6ae's rule:
+rewrite where it is written, never paraphrase downstream where two statements
+of one fact drift apart).
+
+| was | now |
+|---|---|
+| "...the direction the polarity table records as favourable" | "...moved in the better direction" |
+| "against the stability band declared for that parameter" | "A change has to be big enough to count at all." |
+| "take no part in the classification and appear only in the returned series" | "...not included, though it still appears on the chart above" |
+| caveat, 5 sentences / ~90 words | 2 sentences, **every claim kept** |
+
+`polarity table` and `stability band` are FILES IN THIS REPOSITORY. Naming
+them on a patient's results page is this platform's most repeated defect —
+§6u, §6w, §6af, and now a fourth time in a fourth place.
+
+### THE CARD SAID "HIGHER IS BETTER" TWICE IN ONE BREATH
+
+`Timeline.jsx` rendered the literal `"Higher is better. "` immediately in
+front of `direction_text`, which itself opened *"The scale runs from 0 to 100
+and HIGHER IS BETTER"*. Not a wording preference — a duplication in the
+markup. And the band DESCRIPTION restated its own label in longer words, so
+it is no longer rendered (the field is untouched on the API).
+
+### WHAT WAS KEPT, AND WHY IT IS NOT NEGOTIABLE
+
+* **The caveat.** Shorter, never weaker: not a health score, not a risk
+  score, not a diagnosis; nothing about what to do; only movement between two
+  reports; cannot see what was not measured on both; ask a professional. All
+  six claims survive in two sentences. §6ag: shortening is not the same
+  decision as dropping, and this class of sentence has gone MISSING three
+  times on this project.
+* **The coverage line** — an absence. "8 of your 12 results ... the other 4
+  could not be compared this way". `parameter(s)` is gone; the counts choose
+  the wording.
+* **The floor** ("at least 3 are needed") now appears ONLY when it is the
+  reason there is no score. Under a score built from 8 it answered a question
+  nobody asked.
+
+### `ScoreScale`, and the colour it may not use
+
+A bare "62.5 / 100" makes the reader place the number themselves. The marker
+is `--brand`: **the card's own text says this is not a risk score**, and a
+green marker at 80 with a rust one at 20 would contradict that sentence two
+inches below it. No band boundaries are drawn either — four gridlines at
+20/40/60/80 would invite a reader to treat the nearest as a threshold, and
+they are labels for reading the number, not clinical cut-offs.
+
+### A REPETITION THE REDESIGN EXPOSED: Module 30 inherits Module 29's warnings
+
+Measured in the live DOM after the rewrite: *"This comparison uses two of your
+reports..."* printed on the comparison card AND the progress card, because
+the progress payload carries Module 29's warnings too. The progress card now
+renders only the warnings the comparison card did not — filtered by **exact
+text against what was actually rendered**, never by index, so a warning unique
+to progress still appears. Both directions are tested.
+
+### MUTATION-TESTED: 9 GUARDS, and the survivor was a WEAK TEST
+
+**P1 SURVIVED**: putting the `"Higher is better."` literal back. The test
+counted occurrences of the phrase and allowed one — and since the REWRITTEN
+service sentence no longer contains that phrase, the prefix was the only copy
+and the count was still 1. **Counting a phrase cannot catch a page prepending
+its own words to an author's sentence; equality can.** The assertion is now
+`meaning.textContent === data.scale.direction_text`, and P1 dies.
+
+Also killed: the band description restored, the caveat dropped, the coverage
+line dropped, the excluded-count clause dropped (an absence going silent), a
+risk colour on the marker, an out-of-range score drawn anyway, the warning
+filter removed, and the filter swallowing everything.
+
+### THREE AI-SERVICE TESTS PINNED THE OLD WORDING
+
+Each was rewritten to assert the INVARIANT rather than the sentence — §6ag's
+warning about editing a test to follow a note, which has now happened four
+times here. The three denials in the caveat, the size-does-not-scale claim,
+and "the middle report is in the series and contributes nothing" are each
+asserted in whichever words carry them, with the old phrasing still accepted.
+
+### Process notes
+
+* **`assert_safe` guards this text** and passed first time — then was PROVED
+  live by feeding it two known-bad strings and watching it refuse. A guard
+  that has not been seen to fail has not been seen to work.
+* **The ai-service was restarted before any live check**, and the new strings
+  confirmed on `/progress/policy` before touching the browser.
+* **A `[no tests]` result is a parse error, not a kill** — third and fourth
+  occurrences this session. One was my own test file: an escaped apostrophe
+  did not survive the edit and broke the transform.
+* **The backend rate-limited me** (history: 60 requests / 15 min; the timeline
+  costs 4 per load). Not a defect — my own reloading. The limiter is
+  in-memory, so restarting the backend clears it, which is faster and more
+  honest than waiting out a window.
+### §6an-f. "Save changes did nothing" — it did. The page never said what it does.
+
+The user, on the profile page: the two diagnosis questions *"after clicking
+save changes also are like that only, not changed ... looks something odd"*.
+Frontend **279 → 286**.
+
+### THE SAVE IS NOT BROKEN, AND THAT WAS WORTH PROVING FIRST
+
+Driven end to end in the browser: selected **No**, the PUT sent
+`{"hypertension":false}`, the server returned `hypertension: false` with 200,
+and the answer **survived a full reload still showing No**. The tri-state
+control, the payload builder, the validator and PUT's replace semantics are
+all correct. The profile was restored to exactly the state it was found in
+(both unanswered) once the check was done.
+
+**So the report was right and the diagnosis was wrong.** What is odd is not
+the saving; it is that saving VISIBLY ACHIEVES NOTHING:
+
+### THE REAL CAUSE: the answers do not reach a report already analysed
+
+`analysisService.buildProfilePayload()` reads the profile **at analysis
+time** and the result is stored on the report. So a reader who answers these
+two questions BECAUSE the dashboard told them *"no value was available for
+your history of heart disease and history of high blood pressure"* goes back
+to the dashboard, sees the identical sentence, and concludes the form is
+broken.
+
+Nothing on the page said so. It does now, next to "Saved.", where the
+expectation actually forms:
+
+> *These answers are used the next time a report is analysed. Reports you
+> have already analysed keep what was known when they ran, so their results
+> do not change.*
+
+**This is the fourth appearance of one standing property** — the explanation
+cap (§6ad), the clinician narrative (§6ag), the model notes (§6ae), and now the
+profile answers: *changing an input does not rewrite what a past run stored.*
+The first three were recorded as facts for a developer. This is the first
+time it has been said to the person it actually surprises.
+
+### AND A RAW DOCUMENT KEY AT A PATIENT
+
+The completeness line read **"Still blank: heartDisease"** — a Mongo field
+name shown to the person whose heart it is. Same defect as `vitamin_b12`
+reaching a reader (§6ak), one layer up. Now "diagnosed heart disease",
+matching the question the form asks above it so a reader can find the thing
+they are told is missing.
+
+`PROFILE_FIELD_LABEL` is kept SEPARATE from `PATIENT_LABEL` deliberately:
+that table is keyed by Module 5's snake_case feature names
+(`heart_disease`), these are Module 2's camelCase document keys
+(`heartDisease`). One table answering to two key styles is exactly how a
+lookup misses and prints the raw key — the defect being fixed.
+
+### The two questions no longer look unfinished
+
+A bare `<fieldset>` draws its border THROUGH its own legend and has no
+ground of its own, which is why these two read as unstyled next to the
+inputs above them. They now sit on `--bg` inside the card with the legend as
+an ordinary heading, and each option is a full-width row with a hit area —
+the labels always wrapped their inputs, so the whole row was already
+clickable; it just did not look like it, and on a phone a 7px radio was
+otherwise the entire target. No risk colour: "yes, I was diagnosed" is an
+ANSWER, not a finding, and tinting it would make the form look like it was
+judging the reply.
+
+### THE PROFILE PAGE HAD NO TESTS AT ALL
+
+None. On the page holding the two answers the heart model names as its
+single biggest limitation. Its own comments stated three guarantees that
+nothing checked — and **a comment asserting a guarantee is not a
+guarantee**, which this file has now caught four times:
+
+1. a stored `false` round-trips as "No", never as "Not sure";
+2. "Not sure" is sent by OMITTING the key, because the validator rejects an
+   explicit null with a 422 the patient cannot act on;
+3. `false` IS sent, because it is a real answer.
+
+`tests/profile.test.jsx`, 7 tests. **7 mutations, 7 killed** — including
+reading a stored `false` as unknown, defaulting an absent answer to No
+(an absence becoming a value, on the page where it would originate),
+sending the null that 422s, dropping a real "No" from the payload, removing
+the note, and printing the raw keys again.
+
+> **Worth carrying:** the bug report was accurate and the cause was not the
+> one it named. Proving the save worked BEFORE changing anything is what
+> stopped a correct payload builder being "fixed".
+### §6an-g. The two diagnosis questions, collapsed — and the legend that never fitted
+
+The user: the boxes are *"placed"* wrongly, and after Save they should CLOSE,
+reopening only when the reader wants to change something — *"don't make open
+those 2 every time"*. Frontend **286 → 294**.
+
+### THE PLACEMENT FAULT WAS `<legend>`, AND IT HAS NO CSS FIX
+
+A user agent paints a `<legend>` **over its fieldset's top border**. That is
+invisible while the box has no background and unmissable once it does — which
+is what §6an-f's restyle had just given it, so the heading sat half on the
+border with the line running through the text. Every fix for it is a float
+hack.
+
+`<details>` has no such element and no such problem, and the change was
+already wanted for the collapse. **One change answered both halves of the
+request.**
+
+THE GROUPING IS NOT OPTIONAL AND WAS NOT DROPPED. `<fieldset>` is what tells
+a screen reader three radios belong to one question; `role="radiogroup"` plus
+`aria-label` carries it, and is tested. A bonus: the question is now announced
+ONCE, where a summary plus a legend would have said the same words twice.
+
+### CLOSING IS ONLY SAFE BECAUSE THE ANSWER IS ON THE SUMMARY
+
+The condition attached to the whole request. Each row reads
+**"Diagnosed heart disease — Not sure / prefer not to say"** while shut, so:
+
+* nothing is hidden that a reader would otherwise have to open both boxes to
+  find;
+* an UNANSWERED question stays visible as unanswered — the one thing this
+  form exists to prevent going quiet.
+
+A collapsed question that concealed its own answer would be more work than
+the open version, not less.
+
+### THE STATE IS NOT DERIVED FROM THE ANSWER, DELIBERATELY
+
+Opening the boxes that are still blank is the obvious "helpful" move and it
+is wrong twice: it nags someone who deliberately chose *prefer not to say* on
+every single visit, and it springs both boxes open again the instant a save
+completes — which is precisely the behaviour being removed. Closed on
+arrival, closed after save, opened only by the reader. A mutation deriving
+the state from the answers kills three tests.
+
+### MUTATION-TESTED: 15 GUARDS, and the survivor was the dangerous one
+
+**R4 SURVIVED**: flipping `answerLabel`'s fallback from *Not sure* to **No**.
+That renders an unanswered question as an ANSWERED one — an absence turned
+into a value, on the form where that would originate, and the single worst
+thing this page could do.
+
+It survived because `null` matches the third option, so the fallback is only
+reached by a value that is none of true/false/null — and the form normalises
+to those three with `?? null`, so **no rendering test can produce the shape**.
+Reaching it needs the exported function. `answerLabel` is now tested directly
+against `undefined`, `'yes'`, `1`, `0` and `{}`, and both R4 and "delete the
+fallback entirely" die.
+
+> **The pattern, third time this session.** A guard that only fires on a shape
+> the UI cannot construct is invisible to every UI test — §6ad's "a guard over
+> a list cannot see what never entered the list", §6am's alias that no value
+> test touched, and now a fallback no render can reach. When a mutation
+> survives, ask WHICH INPUT would reach the mutated line, and test at the
+> layer that accepts it.
+
+Also killed: boxes open by default, boxes not closed after save, the answer
+removed from the summary, the radiogroup role dropped, and the boxes
+re-opening because an answer is missing.
+
+### Verified
+
+* Live: clicking one summary opens THAT one only; choosing No and saving
+  leaves both shut with the summary reading "No". Profile restored to
+  unanswered afterwards, as found.
+* Both themes: zero colour offenders; question 12.7:1 / 16.1:1, answer
+  5.08:1 / 5.34:1 against the box.
+
+> **Not a defect, but worth stating:** these two questions are the heart
+> model's single biggest declared gap, and they are now one click further
+> away. The summary keeps the absence visible and the completeness line still
+> names them, so nothing is concealed — but if answer rates matter, this is
+> the change that would move them.
+### §6an-h. "Clumsy" was two blocks in contact, on four screens
+
+The user circled the top and bottom of the profile page: *"these look clumsy,
+add some space between them."* Frontend **294 → 295**.
+
+Measured before touching anything, and it was not a padding judgement:
+
+| pair | gap |
+|---|---|
+| profile intro → the form card | **0px** |
+| "used the next time a report is analysed" → Save changes | **0px** |
+
+**Two elements literally touching.** Cause: `.hint { margin: 4px 0 0 }` — no
+bottom margin at all, so anything following it that sets no top margin of its
+own sits flush against it.
+
+### IT WAS NEVER ONE SURFACE, AND THE SWEEP SAID SO BEFORE THE FIX
+
+Walked every `.hint` on four routes looking for a following sibling within
+4px. **Four collisions on two routes**, all the same rule:
+
+* `/profile` — intro against the form;
+* `/timeline` — intro against the first panel, the trend summary against its
+  chart block, and the comparison lead against the results table.
+
+So the fix went to the rule, not the page (§6am's lesson: app-wide is a reason
+to fix it at the lowest layer, not a reason to patch one screen). The 4px TOP
+is deliberately kept — a hint belongs to the thing above it, and pushing it
+away would attach it to the wrong subject. A mutation doing that is killed
+alongside the one that removes the bottom.
+
+**The bottom margin is a FLOOR, not an addition.** Adjacent margins collapse
+to the larger of the two, so every place that already set more spacing keeps
+exactly what it had — nothing that was correct became looser. Re-measured
+across all four routes afterwards: zero collisions.
+
+### A FIFTH PROBE ERROR, AND THE SAME SHAPE AS THE OTHER FOUR
+
+The re-sweep reported eight fresh "collisions" on the dashboard at **-18px**
+— the explanation summaries' heading against their chevron. They are FLEX
+SIBLINGS ON ONE ROW, 9px apart horizontally; my probe compared vertical gaps
+and read a neighbour as an overlap.
+
+> That is the fifth measurement this session that invented a defect: the
+> `getBoundingClientRect` reading of a closed `<details>` (§6an), the
+> height-based wrap check (§6al), `fill` on a `<line>` (§6an-d), the
+> mid-transition chevron (§6al), and now a vertical gap between horizontal
+> siblings. **Every one was disproved by looking at the screen.** The probes
+> are still worth having — they found the four real 0px gaps that no
+> screenshot would have measured — but a probe's output is a claim about the
+> probe until a second, different observation agrees with it.
+
+### Also
+
+The profile's closing block was three touching lines under the last question.
+"Saved." and its note are ONE thing and are grouped as one (4px apart); the
+button is the next thing and is separated (20px), as is the block from the
+questions above it (20px).
+
+A mistyped command also ran `vitest` from the REPO ROOT rather than
+`frontend/`, which collected the backend's Jest files and reported 225
+failures. Nothing was wrong and nothing had been written — the python step
+before it had already failed on a missing path. Worth knowing because the
+output looks catastrophic: **a suite run from the wrong directory fails
+everything, and says nothing about the code.**
+### §6an-i. "Why is Module 2 here?" — the leak was in four labels, then eleven more
+
+The user, on the comparison table: **"Self-described gender as stored by
+Module 2."** — *"y module 2 came here?"*. ai-service **3,765 → 3,768**,
+frontend **295 → 297**.
+
+### IT WAS A KNOWN, OPEN DEFECT — AND IT WAS FOUR, NOT ONE
+
+§6ai listed it: *"`feature_catalog`'s `display_name` for `gender` being an
+internal note"*, worked around in three places and never fixed at source.
+Reading the catalog, **four** of the fourteen entries put a maintainer's note
+in the field the nine laboratory entries use as a LABEL:
+
+```
+gender           Self-described gender as stored by Module 2.
+smoking_history  Smoking history, diabetes-dataset categories.
+hypertension     Known hypertension. TRI-STATE: true / false / absent(unknown).
+heart_disease    Known heart disease. TRI-STATE: ...
+```
+
+Two of those were on the screen the user photographed. The other two would
+have printed an implementation contract the moment they appeared. And the
+field is not only rendered — `rag/query.py` feeds it to the retriever as a
+**search term**, so "as stored by Module 2" was also polluting retrieval.
+
+Fixed at source. The facts the notes carried are real and are kept, as
+comments, which is where a note to a maintainer belongs. "Self-described" is
+deliberately retained in the label: it is the patient's own answer rather
+than a clinical determination, and only the module number goes.
+
+### THEN THE SAME AUDIT FOUND THE TABLE ABOVE IT, AND A THIRD MODULE
+
+Sweeping the page for the same class:
+
+* **The trends table printed RAW FEATURE KEYS** — `hba1c`, `blood_glucose`,
+  `vitamin_b12`, `smoking_history` — while `PATIENT_LABEL`, already imported
+  in that very file, titled the charts above them "HbA1c (average blood
+  sugar)". One screen, both vocabularies, twelve rows apart.
+* **`trend_analyzer.py` interpolated the raw key into eleven reader-facing
+  sentences**: *"blood_glucose went from 186 to 88"*, *"smoking_history is a
+  category feature"*. All eleven now route through the catalog label.
+* Two more sentences named files: *"declared not trendable in the polarity
+  table"* and *"Reason recorded in the polarity table"*. The reason itself is
+  useful and is kept verbatim; only the filing cabinet goes.
+
+**That is the fifth and sixth surface.** §6af's standing rule was *when a fix
+is "remove this system's vocabulary from a reader-facing surface", it is never
+one surface.* The corollary this adds: **finding one is a reason to sweep the
+whole screen it is on, and then the producer behind it.**
+
+### THE GUARD IS AT THE CATALOG, WHERE NO RENDER TEST COULD SUBSTITUTE
+
+Three tests in `test_feature_catalog.py` scan the table itself: no label may
+contain "module", "tri-state", "dataset", "true / false"; **no label may end
+in a full stop** (a label is a noun phrase — the full stop was the tell that
+a sentence had crept in, and both offenders had one); and no label may be
+empty. 4 mutations, 4 killed.
+
+### TWO RUNNER FAULTS, AND ONE OF THEM CORRUPTED A FILE
+
+1. **All four catalog mutations first reported SURVIVED.** The runner passed
+   a LIST argv with `shell=True`, which on Windows executes only the first
+   element — pytest never ran, produced no output, and "no failure" was read
+   as "survived". Re-run with `shell=False`: 4/4 killed. **Sixth runner fault
+   this session**, and the first that inverted a result rather than skipping
+   it.
+2. **A regex insertion put a new function INSIDE the module docstring**,
+   splitting a sentence, because the first match for `_TEMPLATES` was a
+   mention in that docstring rather than the assignment. Caught by reading
+   the file after writing it. Anchor on the DEFINITION
+   (`^_TEMPLATES\s*=\s*\{`), never on the first mention of a name.
+
+### Verified
+
+* ai-service **3,768 pass, 7 skipped**, run in full twice (shared strings).
+  Frontend **297**. ai-service restarted before every live check.
+* Live page sweep for `hba1c`, `blood_glucose`, `vitamin_b12`,
+  `smoking_history`, `heart_disease`, `vitamin_d`, "polarity table",
+  "Module 2", "diabetes-dataset", "TRI-STATE": **all gone**.
+* Both tables read properly: trends as "HbA1c (average blood sugar) / Blood
+  sugar / Sex", comparison as "Glycated haemoglobin, NGSP % / Self-described
+  gender".
+
+### STILL OPEN
+
+* **"stability band"** survives in the trend sentence (*"That clears the
+  declared stability band for this feature (17 % and 5 mg/dl)"*). Left
+  deliberately: unlike a module number it is a real concept shown WITH its
+  own numbers, so replacing it is a wording decision rather than a leak fix.
+* `origin: report_transcription` on profile rows (§6w) is still open at
+  source — the other half of §6ai's pair.
+### §6an-j. The nine trend charts, collapsed — and a contract I broke on the way
+
+The user: give the trend charts the same disclosure as "What these results
+mean", *"these are taking too long space in the page"*. Frontend
+**297 → 300**, ai-service **3,768 → 3,770**.
+
+Nine charts at ~200px each. Page **6,156 → 4,298px, 30% shorter**.
+
+**Closing is safe only because the summary states the DIRECTION** —
+"HbA1c (average blood sugar) — improving". A shut list that hid its own
+directions would make a reader open nine boxes to learn what the open list
+told them at a glance. Same condition as the profile questions (§6an-g).
+
+The direction comes from `outcome === 'TREND_CLASSIFIED' && isPresent(trend)`,
+the SAME two-part predicate the table uses — never `trend.trend` alone.
+§6z: a payload carrying a direction without a classification printed the
+string "null" as a direction once already. 4 mutations, 4 killed.
+
+### I BROKE THE API CONTRACT, AND 3,768 TESTS DID NOT NOTICE
+
+The worst thing in this entry, and it was mine.
+
+§6an-i routed eleven `feature=feature` occurrences through a label helper with
+a blanket regex. **Ten were message templates. The eleventh was the response
+object:**
+
+```python
+return FeatureTrend(
+    feature=_label(feature),   # <- the canonical key, replaced by a label
+```
+
+So `GET /trends` began returning `feature: "Glycated haemoglobin, NGSP %"`
+where `hba1c` belongs. Every consumer keys off that field: the frontend's
+`PATIENT_LABEL[trend.feature]` lookup missed, fell through to the raw value,
+and the chart headings silently reverted to the clinical register.
+
+**The full suite passed.** 3,768 tests, and not one asserted that the field a
+dozen consumers index by is the key they index with. It was found by reading
+the rendered page — noticing that the chart said "Glycated haemoglobin,
+NGSP %" while the table under it said "HbA1c (average blood sugar)".
+
+> **Two names for one parameter on one screen is a symptom, not a style
+> issue.** It was the only visible trace of a broken contract.
+
+Two tests now hold both halves, and both are needed: pinning only the key
+lets the messages regress to raw keys, and pinning only the messages is what
+let the key become a label. 5 mutations, 5 killed.
+
+### THE TEST FOR THE MESSAGES TOOK THREE ATTEMPTS, EACH WRONG DIFFERENTLY
+
+1. **One fixture** — a healthy three-reading series only ever produced the
+   `change_line` template, so reverting any OTHER message survived. Four
+   scenarios now drive four templates.
+2. **Plain substring** — flagged the CORRECT "Serum creatinine" for
+   containing "creatinine". A false positive from the test, on working code.
+3. **Snake_case only** — caught `blood_glucose` but not single-word keys
+   like `hba1c`, so two mutations still survived.
+
+The signal that actually works: **every one of these templates OPENS with the
+feature name**, so a raw key appears as the first token. `startswith(key)`
+separates the key from a label that merely contains the same word.
+
+### AND I HIT THE STALE-PROCESS TRAP THE NOTES WARN ABOUT
+
+After reverting the contract break I ran the suite, wrote tests, ran
+mutations — and checked the browser **without restarting the ai-service**.
+The page still showed the old labels, and for a moment that looked like the
+revert had failed. It had not; the process was three edits old.
+
+MEMORY has warned about this since §0 and it has now cost time six times on
+this project. **The rule is not "restart after changing the service" — it is
+"restart before BELIEVING the browser".** The two are different: I had
+restarted after the earlier edits in this same session and still got caught,
+because the check came after a LATER edit.
+
+### Verified
+
+* 9 charts closed on arrival, each summary naming its parameter and
+  direction; page 30% shorter; reopening restores the full height.
+* **Chart headings and table rows now agree** — asserted in the live DOM,
+  not assumed.
+* ai-service **3,770 pass / 7 skipped**; frontend **300**.
+### §6ao. The parameters this tool does not assess, given the laboratory's own limits
+
+The user asked whether an out-of-catalogue parameter could be assessed by
+Gemini, was told why not, and then specified the safe version himself: **use
+the reference ranges printed in the report, diagnose nothing new, and show
+these parameters in "Your results" and "What these results mean" like the
+rest.** Frontend **300 → 312**. No backend or ai-service change.
+
+### WHAT WAS REFUSED, AND WHY IT MATTERED
+
+The original proposal was *"compared with usual limits **using Gemini**"*.
+A model-supplied reference range is not wording — it is an invented clinical
+threshold, and **this platform has shipped that defect once already** (§6v: an
+empty `permitted_numbers` turned the validator's numeric control OFF and let
+an invented range through). The limits here are the LABORATORY'S, already
+extracted by Module 4 and already in the dashboard payload
+(`labReferenceLow/High`, `labFlag`). The comparison is arithmetic.
+
+**Nothing needed to be built in either service.** The whole feature was a
+rendering change over data the backend had carried for sessions.
+
+### A RECORDED DECISION WAS REVERSED, DELIBERATELY AND NOT QUIETLY
+
+`Dashboard.jsx` said, in the code: *"NOT MERGED, deliberately: those four are
+described from the test NAME ONLY ... Putting them in a list whose other
+entries interpret the reader's own values would invite the inference the
+whole architecture exists to prevent."*
+
+That reasoning is correct **about the list**, and it is why these are a
+SEPARATE GROUP with its own heading, its own verdict vocabulary and an
+explicit "your result was not used and is not interpreted here" — not
+interleaved rows. What changed is the judgement that burying a laboratory's
+own abnormal marking at the foot of the page was the safer of the two errors.
+It is not. The old comment's reasoning is preserved where the new group is
+defined.
+
+### THREE SEPARATIONS, EACH ONE TEST AWAY FROM COLLAPSING
+
+1. **The limit is the laboratory's**, never invented, and attributed IN THE
+   CELL rather than only in a heading far above.
+2. **The marking never borrows the verdict palette.** `--green/--amber/--rust`
+   mean THIS TOOL crossed a threshold it holds; nothing here was assessed by
+   this tool. The group contains zero `.verdict` elements, asserted.
+3. **The description is about the TEST, not the value**, and is labelled as
+   such where it sits. That label is what makes inclusion safe, so it is not
+   decoration and has its own test.
+
+### I SHIPPED A BUG INTO THE CELL ADDED TO SURFACE REAL FINDINGS
+
+The first version printed the comparison only when a range existed, so a
+result **the laboratory had marked abnormal with no printed interval** fell
+through to "no range printed" and **lost the marking entirely**. An absence
+swallowing a real finding, in the one cell built to stop exactly that.
+
+Laboratories routinely flag against sex-specific ranges they do not print, so
+this is the common case, not an edge. The flag and the range are independent
+facts and are now rendered independently. **An existing test caught it** — it
+expected two lab markings and found one.
+
+### THE OLD SECTION WAS DELETED, NOT LEFT ALONGSIDE
+
+Keeping "Also on your report, but not assessed here" as well would have
+printed every one of these parameters TWICE — the repetition this screen has
+spent the whole session removing. The `Unanalysed` component is deleted
+rather than orphaned: an unused component that still renders a complete
+version of a screen is the most expensive kind of dead code, because the next
+reader cannot tell which of the two is live.
+
+### MUTATION-TESTED: 11 GUARDS, and the survivor exposed a VACUOUS TEST
+
+**X8 SURVIVED**: showing the description heading with nothing described. The
+test written for it supplied no explanations at all, so "What these results
+mean" returned null and the heading was absent **for a reason that had
+nothing to do with the guard**. A vacuous green — the same shape as §6aa's
+unreachable `flagged` clause. The fixture now includes one written
+explanation, which makes the guard the only thing between the reader and an
+empty heading, and X8 dies.
+
+Also killed: the marking lost without a range, a blank limits cell, the lab's
+marking dressed as a tool verdict, attribution dropped, "not checked is not
+the same as normal" removed, rows unmarked, and the description label
+dropped.
+
+### Two smaller things the rendering caught
+
+* **"within up to 100"** — `within` only reads against a two-sided interval.
+  One-sided forms are now "at or below 100" / "at or above 15", tested.
+* A description card appeared OPEN, which looked like a defect. It was an
+  artifact of my own `scrollIntoView` poking earlier in the session: on a
+  fresh mount with no interaction, nothing is open. **Checked instead of
+  assumed, in both directions.**
+
+### VERIFICATION BOUNDARY, STATED
+
+**Not seen on a real report.** The test account now holds
+`01-all-normal.pdf` and `03-renal-anaemia-deficiency.pdf`, and BOTH return
+`unanalysed.count: 0` — the `06-lab-flagged-tests-we-do-not-assess.pdf`
+fixture §6ai recorded on this account is no longer there. All five states
+(flagged with range, flagged without range, one-sided range, no range,
+in-range) were rendered by patching the dashboard response at the transport
+layer — a real render of synthetic data, which is not the same as a real
+report. Re-analysing `06` would close it and costs Gemini quota.
+
+Verified otherwise: zero colour offenders and zero AA failures across 27
+elements in both themes; zero `.verdict` elements in the group.
+
+## 6ap. STATE AT THE END OF THE 2026-09-12 SESSION — READ THIS FIRST
+
+**Everything runs. All three suites are green, all three run today.
+NOTHING IS COMMITTED — this is now THREE sessions of work in the tree.**
+
+| | Tests | Last run |
+|---|---|---|
+| `backend/` | **636** passed, 3 skipped | 2026-09-12 ✅ |
+| `ai-service/` | **3,770** passed, 7 skipped | 2026-09-12 ✅ (`.env` moved aside) |
+| `frontend/` | **312** passed | 2026-09-12 ✅ |
+| **Total** | **4,718** | |
+
+### ⚠ 45 FILES UNCOMMITTED, 8 OF THEM NEW. `origin/master` IS STILL AT `6dc3409`
+
+§6y's list was never committed, §6ai's sat on top of it, and this session's sits
+on top of both. **Commit before building anything new.**
+
+```
+ M MEMORY.md
+ M ai-service/app/api/routes_explain.py            §6ag  clinician-summary route
+ M ai-service/app/data/feature_catalog.py          §6ai  4 labels were internal notes
+ M ai-service/app/data/progress_scoring.py         §6an-e scale text + caveat, plain English
+ M ai-service/app/ml/heart.py                      §6ae  honest_read for a clinician
+ M ai-service/app/ml/kidney.py                     §6ae
+ M ai-service/app/services/explanation.py          §6ad  eligibility before budget
+ M ai-service/app/services/progress_analyzer.py    §6an-e warning wording
+ M ai-service/app/services/report_comparator.py    §6an-e intermediate-reports sentence
+ M ai-service/app/services/trend_analyzer.py       §6an-i labels in 10 templates + _label()
+ M ai-service/tests/test_explain_endpoint.py
+ M ai-service/tests/test_explanation.py
+ M ai-service/tests/test_feature_catalog.py        §6an-i +3 label guards
+ M ai-service/tests/test_heart_predictor.py
+ M ai-service/tests/test_kidney_predictor.py
+ M ai-service/tests/test_progress_analyzer.py      §6an-e invariants, not wording
+ M ai-service/tests/test_report_comparator.py      §6an-e
+ M ai-service/tests/test_trend_analyzer.py         §6an-j +2 contract guards
+ M backend/src/config/env.js                       §6ad  maxExplanations 6 -> 10
+ M backend/src/controllers/doctorSummaryController.js §6ag
+ M backend/src/models/Report.js                    §6ag  +doctorNarrative
+ M backend/src/services/aiServiceClient.js         §6ag
+ M backend/src/services/dashboardService.js        §6ad  +explanations.notExplained
+ M backend/tests/dashboard.test.js
+ M frontend/src/components/CoverageRadar.jsx       §6ac
+ M frontend/src/components/RangeChart.jsx          §6ab
+ M frontend/src/lib/api.js                         §6ah
+ M frontend/src/pages/Dashboard.jsx                §6aa–§6ac, §6aj, §6an, §6ao
+ M frontend/src/pages/DoctorSummary.jsx            §6ag
+ M frontend/src/pages/Population.jsx               §6an-c, §6an-d
+ M frontend/src/pages/Profile.jsx                  §6an-f, §6an-g
+ M frontend/src/pages/Timeline.jsx                 §6z, §6ah, §6an-e, §6an-i, §6an-j
+ M frontend/src/styles.css                         most sections
+ M frontend/tests/clinical.test.jsx
+ M frontend/tests/dashboard.test.jsx
+ M frontend/tests/design.test.jsx                  +CSS-as-source suite
+ M frontend/tests/timeline.test.jsx
+?? ai-service/app/services/clinician_narrative.py  NEW  Module 32b
+?? ai-service/tests/test_clinician_narrative.py    NEW  19 tests
+?? frontend/src/components/PercentileBar.jsx       NEW  §6an-d
+?? frontend/src/components/TrendChart.jsx          NEW  §6z
+?? frontend/src/lib/labels.js                      NEW  PATIENT_LABEL + PROFILE_FIELD_LABEL
+?? frontend/tests/api.test.jsx                     NEW
+?? frontend/tests/profile.test.jsx                 NEW  §6an-f, the page had NO tests
+?? frontend/tests/trendchart.test.jsx              NEW  33 tests
+```
+
+**A commit split, if committing in parts:** (1) §6z trend chart · (2) §6aa–§6ac
+dashboard cards and charts · (3) §6ad–§6af explanation cap and model notes ·
+(4) §6ag Gemini clinician summary · (5) §6ah comparison picker · (6) §6aj–§6an
+the design pass (chips, header, contrast, disclosures) · (7) §6an-i/§6an-j the
+label sweep and the trend contract · (8) §6ao the unassessed-parameter group.
+
+### Running it
+
+```
+cd ai-service && .venv/Scripts/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+cd backend   && npm start          # :5000, Mongo Atlas, non-SRV URI
+cd frontend  && npm run dev        # :5173
+```
+
+Health: `curl http://127.0.0.1:5000/api/v1/health` and
+`curl http://127.0.0.1:8000/openapi.json`.
+
+> **VITE BINDS TO `::1` ONLY.** `curl http://127.0.0.1:5173` returns nothing and
+> looks like a dead server. Use **`http://localhost:5173`**. §6ai's health
+> instructions cost 30 wasted polls on this.
+
+Tests: `cd backend && npm test` · `cd frontend && npx vitest run` ·
+`cd ai-service && .venv/Scripts/python.exe -m pytest -q` **with `.env` moved
+aside** (still unfixed, see §0).
+
+> **RUN vitest FROM `frontend/`.** From the repo root it collects the backend's
+> Jest files and reports ~225 failures that mean nothing (§6an-h).
+
+### Test account, and what is ACTUALLY on it now
+
+`glossary.check+1788753613@example.com` / `Str0ng!Passw0rd`
+
+**§6ai's description of this account is STALE.** It now holds TWO reports and
+`06-lab-flagged-tests-we-do-not-assess.pdf` is NO LONGER one of them:
+
+| report | analysed | note |
+|---|---|---|
+| `03-renal-anaemia-deficiency.pdf` | 2026-09-09 | |
+| `01-all-normal.pdf` | 2026-09-11 | |
+
+`history` reports `considered: 2, included: 2`. **Neither has any unassessed
+parameter** (`unanalysed.count: 0` on both), which is why §6ao could not be
+verified on real data. Re-analysing `06-lab-flagged...pdf` would fix that and
+costs Gemini quota.
+
+### What this session did, in one line each
+
+| § | |
+|---|---|
+| **6aj** | the round-up became chips; an absence group separated by a TINT got the dashed no-fill treatment design.md §6 always required |
+| **6ak** | the header did not fit a phone; identity truncation moved to every width after the 37-char email broke 561–890px too |
+| **6al** | the design system's `.nav` had been DEAD since §6x — a second `.nav` block lower in the file won every shared property |
+| **6am** | WCAG AA: `--mono`, `--muted` and `--amber` as text all failed; fixed at the tokens |
+| **6an** | the long sections behind `<details>`; absences and caveats stay outside every disclosure |
+| **6an-b** | the opened guidance panel — count 680px from its heading, content with no edge |
+| **6an-c** | the population limitations panelled, NOT collapsed — a caveat behind a toggle is a caveat nobody opens |
+| **6an-d** | 21 repeated lines on the comparison cards → one method statement + a `PercentileBar` |
+| **6an-e** | the progress card in plain English; first ai-service edit of these sessions |
+| **6an-f** | "save changes did nothing" — the save was fine; the page never said answers only affect FUTURE analyses |
+| **6an-g** | the two diagnosis questions collapsed; `<legend>` is painted over its own border and has no CSS fix |
+| **6an-h** | "clumsy" was `.hint` having no bottom margin — four 0px collisions on two routes |
+| **6an-i** | "why is Module 2 here?" — 4 catalog labels, 11 trend templates, 2 file references |
+| **6an-j** | the trend charts collapsed — and I found an API contract I had broken |
+| **6ao** | the parameters this tool does not assess now carry the LABORATORY's own limits, in "Your results" |
+
+### KNOWN AND OPEN, carried forward
+
+* **§6ao is NOT live-verified** — no report on the account has an unassessed
+  parameter. All five states were rendered by patching the transport layer.
+* **`--rust` is 4.38:1 on `--header`** — below AA, but no verdict word is ever
+  painted in the header, so it is not in the tested pair table (§6am). If one
+  ever moves there, that row must be added and the colour revisited.
+* **"stability band"** still appears in one trend sentence (§6an-i). A real
+  concept shown with its own numbers, so changing it is a wording decision.
+* **`origin: report_transcription` on profile rows** (§6w) still open at source.
+* **`MISSING_PROFESSIONAL_REFERRAL` does not block** — the validator records the
+  code and approves anyway (§6r, §6k D1).
+* **Module 32's payload still nests `present` two ways** (§6w).
+* **Frontend fixtures are still not generated from real responses.**
+* **The ai-service suite still needs `.env` moved aside.** Fix `conftest.py`.
+* Gemini free tier is 20/day/model. This session spent almost none — no
+  analyses were run.
+
+### THE LESSONS THIS SESSION ACTUALLY PAID FOR
+
+1. **A probe's output is a claim about the PROBE until something else agrees.**
+   Five measurements invented defects that were not there: `getBoundingClientRect`
+   on a closed `<details>`, a height-based wrap check, `fill` on a `<line>`, a
+   chevron read mid-transition, and a vertical gap between flex siblings. Every
+   one was disproved by a screenshot.
+2. **KILLED / SURVIVED / SKIP / `[no tests]` are claims about the RUNNER first.**
+   Six runner faults: a NUL byte, CRLF vs LF, a non-unique pattern, a list argv
+   with `shell=True` (which INVERTED four results), and two `[no tests]` parse
+   errors from malformed JSX.
+3. **When a mutation survives, ask which INPUT reaches the mutated line.** Three
+   guards were invisible to every UI test because the UI cannot construct the
+   shape that reaches them — test at the layer that accepts it.
+4. **Finding one leaked internal name is a reason to sweep the whole screen,
+   then the producer behind it.** §6af's rule, extended.
+5. **Restart before BELIEVING the browser** — not merely after editing. I had
+   restarted earlier in the session and still got caught by a later edit.
+6. **A green suite said nothing about a broken API contract** that changed a
+   field a dozen consumers index by. Found by reading the page.
 
 ---
 

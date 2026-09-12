@@ -732,6 +732,29 @@ function buildRecommendationsSection(clinicalReport, explanationSet, guidance) {
         explanationSet && set.explanation_available !== true
           ? stringOrNull(set.notice) || analysisService.EXPLANATION_SET_NOTICE
           : stringOrNull(set.notice),
+      // WHICH RESULTS WERE NEVER ASKED ABOUT, AND WHY.
+      //
+      // Module 23 explains up to `max_explanations` usable values and records
+      // every one it passed over in `skipped` - `explanation_limit_reached`,
+      // `value_not_usable`, `not_a_canonical_feature`. That list was produced,
+      // stored, and dropped here, so a report with eight results and six
+      // explanations rendered as six cards with nothing saying the other two
+      // were not attempted. A PARTIAL SET THAT LOOKS COMPLETE is this
+      // codebase's standing failure, and the entries array cannot carry it:
+      // an explanation that was never requested has no entry to be absent in.
+      //
+      // Carried verbatim, reason codes included, so the client can decide what
+      // is worth a sentence - the same split as the population page's refusal
+      // codes, which stayed in the payload after the cards went.
+      notExplained: listOf(set.skipped)
+        .map((item) => {
+          const entry = objectOf(item);
+          return {
+            feature: stringOrNull(entry.feature),
+            reason: stringOrNull(entry.reason),
+          };
+        })
+        .filter((item) => item.feature),
       generatedCount: numberOrUndefined(set.generated_count),
       withheldCount: numberOrUndefined(set.withheld_count),
       entries,

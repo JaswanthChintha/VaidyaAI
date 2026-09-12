@@ -565,13 +565,44 @@ class KidneyPredictor(Predictor):
                 ),
                 "positive_class": metrics.get("positive_class"),
                 "artifact": "ml/artifacts/kidney_rf_v1.metrics.json",
+                # WRITTEN FOR THE CLINICIAN WHO READS IT, not for a model
+                # reviewer. This string is rendered verbatim on the doctor
+                # summary (Module 32), and the earlier wording -- "399 rows",
+                # "a single UCI cohort", "a ROC-AUC near 0.99", "moves recall
+                # by about 1.6 points" -- is the vocabulary of whoever trained
+                # the thing. A clinician handed a patient's phone reads past
+                # it, and the caveat is the part they most need.
+                #
+                # EVERY FACT IS KEPT and only the register changed: the small
+                # single-source dataset, the two analytes that made the split
+                # easy, that the accuracy reflects the dataset rather than
+                # expected screening performance, and the fragility of a
+                # 100-record test set. The ML reading of the same facts is
+                # untouched in `ml/artifacts/kidney_rf_v1.metrics.json`, whose
+                # audience really is a model reviewer.
+                # SHORTENED AGAIN 2026-09-11, on the reader's objection: the
+                # dataset arithmetic is the EVIDENCE for the caveat, not the
+                # caveat. "399 records to learn from and 100 to check against"
+                # and "1.6 percentage points" tell a clinician how the model
+                # was built; what they can act on is that the flag came from a
+                # pattern, that its accuracy figure flatters it, and what the
+                # flag is therefore worth. The counts remain in
+                # `ml/artifacts/kidney_rf_v1.metrics.json`, whose audience is a
+                # model reviewer.
+                #
+                # WHAT MAY NOT GO IS THE CAVEAT ITSELF. This platform has found
+                # it MISSING three separate times (MEMORY.md 6o D8, 6p, 6w),
+                # each time leaving a model's flag on screen with nothing
+                # qualifying it, and each time it was recorded as the most
+                # serious thing on the page.
                 "honest_read": (
-                    "Trained on 399 rows and measured on 100, from a single "
-                    "UCI cohort in which creatinine and haemoglobin separate "
-                    "the classes almost cleanly. A ROC-AUC near 0.99 says the "
-                    "separation was easy, not that this would hold on a "
-                    "screening population. One misclassification moves recall "
-                    "by about 1.6 points."
+                    "This came from a pattern model, not from a measurement. "
+                    "It was developed on one small dataset in which the two "
+                    "groups separated unusually cleanly, so its accuracy there "
+                    "flatters it and nothing shows it holds in a screening "
+                    "population where kidney disease is far less common. It is "
+                    "a reason to consider further assessment, never a finding "
+                    "in itself."
                 ),
             },
         }

@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { Absent } from '../components/Absent';
 import { isPresent } from '../lib/absence';
+import PercentileBar from '../components/PercentileBar';
 
 /**
  * Module 31 -- how a value compares with an age- and sex-matched group.
@@ -48,7 +49,34 @@ function readableList(names) {
   return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
-function Entry({ name, entry }) {
+/**
+ * The cohort line, hoisted -- but ONLY when every card really shares it.
+ *
+ * On this report all seven comparisons carry "20-29 years, male", byte for
+ * byte: the cohort is chosen from the patient's own age and sex, so it is the
+ * same for every parameter that got one. Printed per card that is the same
+ * line seven times.
+ *
+ * HOISTING AN UNSHARED COHORT WOULD BE A CLINICAL FALSEHOOD, not untidiness.
+ * Module 31 matches on (sex, age band) and refuses rather than falling back,
+ * so a future table with different age bands per parameter is possible -- and
+ * one line above the list saying "20-29 years" over a card compared against
+ * 30-39 would misstate which population a reader is being measured against.
+ * So: every AVAILABLE comparison must agree, or every card keeps its own.
+ * The same shape as the dashboard's `sharedBecausePhrase`.
+ */
+export function sharedCohortLabel(features) {
+  const labels = (features || [])
+    .filter(([, entry]) => entry?.available === true && entry?.comparison?.cohort)
+    .map(
+      ([, entry]) =>
+        `${entry.comparison.cohort.age_band_label}, ${entry.comparison.cohort.sex}`
+    );
+  if (!labels.length) return null;
+  return labels.every((label) => label === labels[0]) ? labels[0] : null;
+}
+
+function Entry({ name, entry, cohortLabel }) {
   const available = entry.available === true;
 
   return (
@@ -71,12 +99,29 @@ function Entry({ name, entry }) {
               </span>
             ) : null}
           </p>
-          <p className="hint">
-            Compared with: {entry.comparison.cohort.age_band_label},{' '}
-            {entry.comparison.cohort.sex}
-          </p>
-          <p className="hint">{entry.comparison.what_this_means}</p>
-          <p className="hint">{entry.comparison.what_this_does_not_mean}</p>
+          <PercentileBar
+            position={entry.comparison.band.position}
+            lowerPercentile={entry.comparison.band.lower_percentile}
+            upperPercentile={entry.comparison.band.upper_percentile}
+            label={entry.comparison.band.label}
+          />
+          {/* THE METHOD SENTENCES ARE STATED ONCE, ABOVE THE LIST.
+              `what_this_means` and `what_this_does_not_mean` are ONE template
+              each with the parameter name interpolated -- measured on the
+              live payload: seven cards, seven "unique" strings, one sentence.
+              Printed per card that is the same paragraph seven times, which
+              is 6ag's repetition fault and 6w's burial fault together.
+              They are NOT deleted. Both are hoisted verbatim-in-meaning to
+              the method statement above the cards, where the caveat is read
+              BEFORE any band rather than after each one. Keeping the cohort
+              line here too is the only part that is conditional: see
+              `sharedCohortLabel`. */}
+          {cohortLabel ? null : (
+            <p className="hint">
+              Compared with: {entry.comparison.cohort.age_band_label},{' '}
+              {entry.comparison.cohort.sex}
+            </p>
+          )}
         </>
       ) : (
         // The refusal, in the service's own words. This is an answer.
@@ -142,6 +187,7 @@ export default function Population() {
   const features = allFeatures.filter(
     ([, entry]) => entry?.reason_code !== 'FEATURE_NOT_CONTINUOUS'
   );
+  const cohortLabel = sharedCohortLabel(features);
 
   return (
     <main className="population">
@@ -169,10 +215,40 @@ export default function Population() {
         </p>
       ) : null}
 
+      {/* THE METHOD, ONCE, ABOVE THE CARDS THAT USE IT.
+          Every card repeated two sentences that differed only by the
+          parameter name, and one cohort line that did not differ at all.
+          Stated here they are read BEFORE the first band rather than after
+          each one -- which for the caveat is strictly better placement, not
+          merely less of it (6ag: what may never go is the caveat; this moves
+          it forward, it does not remove it).
+          The cohort clause appears only when every comparison agrees on it. */}
+      {features.some(([, entry]) => entry?.available === true) ? (
+        <p className="method">
+          {/* The cohort reads as an aside, not as a noun phrase glued into
+              the sentence: "among people of 20-29 years, male in the survey"
+              was the first version and it is not English. */}
+          Each bar below shows where your result sits among people of your age
+          and sex in the survey
+          {cohortLabel ? ` (${cohortLabel})` : ''} — the share whose result was
+          at or below yours, with people whose result equals yours counted in
+          that share.{' '}
+          <strong>
+            It does not say whether a result is normal, high, or low. It only
+            says how common it is.
+          </strong>
+        </p>
+      ) : null}
+
       {features.length ? (
         <ul className="population__list">
           {features.map(([name, entry]) => (
-            <Entry key={name} name={name} entry={entry} />
+            <Entry
+              key={name}
+              name={name}
+              entry={entry}
+              cohortLabel={cohortLabel}
+            />
           ))}
         </ul>
       ) : (
@@ -195,18 +271,42 @@ export default function Population() {
         </p>
       ) : null}
 
-      {context?.limitations?.length ? (
-        <>
-          <h2>What this comparison cannot account for</h2>
-          <ul className="hint">
-            {context.limitations.map((limitation, index) => (
-              <li key={index}>{limitation}</li>
-            ))}
-          </ul>
-        </>
-      ) : null}
+      {/* THE LIMITATIONS AND THE DISCLAIMER ARE ONE OBJECT, AND IT IS NOT
+          COLLAPSIBLE.
+          They were three consecutive `.hint` blocks -- browser bullets, no
+          container, every line the same muted grey -- so the page ended in a
+          grey wall and the closing statement read as text that merely
+          followed the list.
+          Panelled together now: they answer the same question ("how far can
+          this comparison be trusted"), and the disclaimer is that question's
+          conclusion rather than a separate remark.
 
-      {context?.disclaimer ? <p className="hint">{context.disclaimer}</p> : null}
+          DELIBERATELY NOT PUT BEHIND A DISCLOSURE, unlike the dashboard's
+          guidance topics. Section 6ag: what may never go is the CAVEAT --
+          this platform has found it missing three separate times and recorded
+          it each time as the worst thing on the page. A caveat behind a
+          toggle is a caveat most readers never open, which is the same
+          outcome by a slower route. Length was the complaint; hiding is not
+          the only answer to it, and here it is the wrong one. */}
+      {context?.limitations?.length || context?.disclaimer ? (
+        <section className="notes">
+          {context?.limitations?.length ? (
+            <>
+              <h2 className="notes__title">
+                What this comparison cannot account for
+              </h2>
+              <ul className="bullets">
+                {context.limitations.map((limitation, index) => (
+                  <li key={index}>{limitation}</li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+          {context?.disclaimer ? (
+            <p className="notes__close">{context.disclaimer}</p>
+          ) : null}
+        </section>
+      ) : null}
     </main>
   );
 }

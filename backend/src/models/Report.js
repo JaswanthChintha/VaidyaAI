@@ -261,6 +261,24 @@ const reportSchema = new mongoose.Schema(
     },
 
     /**
+     * Module 32's handover note, WRITTEN BY A MODEL and cached here.
+     *
+     * CACHED BECAUSE THE DOCUMENT IS BUILT PER REQUEST. The doctor summary is
+     * assembled on every GET, so writing the prose inline would spend a model
+     * call every time someone opened the page - on a free tier of 20 a day,
+     * that is one reader. It is written once per analysis and re-used.
+     *
+     * `analysisVersion` is what makes the cache honest: a re-analysis bumps
+     * the version and this narrative is then ignored, because prose describing
+     * the previous run's findings is worse than no prose at all.
+     */
+    doctorNarrative: {
+      type: mongoose.Schema.Types.Mixed,
+      select: false,
+      default: undefined,
+    },
+
+    /**
      * Module 23's `ReportExplanationSet` - THE PATIENT-FACING EXPLANATION.
      *
      * The clinical report above is written for a reader who already knows what

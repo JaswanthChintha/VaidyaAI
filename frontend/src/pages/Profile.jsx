@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError } from '../lib/api';
+import { profileFieldLabel } from '../lib/labels';
 
 /**
  * Module 2's patient profile.
@@ -49,29 +50,65 @@ const SMOKING = [
 ];
 
 /** true / false / null -- never a bare checkbox. See the header. */
-function TriState({ label, value, onChange, help }) {
+const TRISTATE_OPTIONS = [
+  { v: true, label: 'Yes' },
+  { v: false, label: 'No' },
+  { v: null, label: 'Not sure / prefer not to say' },
+];
+
+/** The stored answer in the words the form uses for it. */
+export function answerLabel(value) {
+  const match = TRISTATE_OPTIONS.find((option) => option.v === value);
+  return match ? match.label : TRISTATE_OPTIONS[2].label;
+}
+
+/**
+ * One tri-state question, as a disclosure.
+ *
+ * CLOSED IS THE RESTING STATE, and closing loses nothing: THE ANSWER IS ON
+ * THE SUMMARY. A collapsed question that hid its own answer would make the
+ * reader open both boxes to find out what is recorded, which is more work
+ * than the open version and would put an absence ("Not sure") out of sight --
+ * the one thing this form must never do.
+ *
+ * `<details>` REPLACED `<fieldset>`, and that fixed the layout defect as a
+ * side effect. A `<legend>` is positioned OVER its fieldset's top border by
+ * the user agent: give the box a background and the heading sits half on the
+ * border with the line running through it, which is exactly what it looked
+ * like. There is no CSS that makes a legend an ordinary block without a float
+ * hack, and the element was buying nothing that `role="radiogroup"` plus an
+ * `aria-label` does not -- the grouping a screen reader needs is preserved,
+ * and the question is now announced once rather than by both a summary and a
+ * legend saying the same words.
+ */
+function TriState({ label, value, onChange, help, open, onOpenChange }) {
   const name = label.replace(/\s+/g, '-').toLowerCase();
-  const options = [
-    { v: true, label: 'Yes' },
-    { v: false, label: 'No' },
-    { v: null, label: 'Not sure / prefer not to say' },
-  ];
   return (
-    <fieldset className="tristate">
-      <legend>{label}</legend>
-      {help ? <p className="hint">{help}</p> : null}
-      {options.map((option) => (
-        <label key={String(option.v)} className="tristate__option">
-          <input
-            type="radio"
-            name={name}
-            checked={value === option.v}
-            onChange={() => onChange(option.v)}
-          />
-          {option.label}
-        </label>
-      ))}
-    </fieldset>
+    <details
+      className="tristate"
+      open={open}
+      onToggle={(event) => onOpenChange(event.currentTarget.open)}
+    >
+      <summary className="tristate__summary">
+        <span className="tristate__q">{label}</span>
+        <span className="tristate__answer">{answerLabel(value)}</span>
+        <span className="disclosure__chevron" aria-hidden="true" />
+      </summary>
+      <div className="tristate__body" role="radiogroup" aria-label={label}>
+        {help ? <p className="hint">{help}</p> : null}
+        {TRISTATE_OPTIONS.map((option) => (
+          <label key={String(option.v)} className="tristate__option">
+            <input
+              type="radio"
+              name={name}
+              checked={value === option.v}
+              onChange={() => onChange(option.v)}
+            />
+            {option.label}
+          </label>
+        ))}
+      </div>
+    </details>
   );
 }
 
@@ -87,6 +124,27 @@ const EMPTY = {
 
 export default function Profile() {
   const [form, setForm] = useState(EMPTY);
+  /**
+   * Which diagnosis questions are open.
+   *
+   * CLOSED ON ARRIVAL AND CLOSED AFTER A SAVE. They are two of the eight
+   * fields on this form and they take five rows each; left open they are most
+   * of the page, and a reader who has already answered them has no reason to
+   * be looking at the radio buttons.
+   *
+   * This state is NOT derived from the answers. Opening "unanswered" ones
+   * automatically was the obvious move and is wrong twice over: it would
+   * re-open both boxes on every visit for anyone who has deliberately chosen
+   * "prefer not to say" -- nagging someone for an answer they have already
+   * given -- and it would make the boxes spring open again the moment a save
+   * completed, which is the behaviour being removed.
+   */
+  const [openQuestion, setOpenQuestion] = useState({
+    hypertension: false,
+    heartDisease: false,
+  });
+  const openSetter = (key) => (next) =>
+    setOpenQuestion((current) => ({ ...current, [key]: next }));
   const [server, setServer] = useState(null);
   const [exists, setExists] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -176,6 +234,9 @@ export default function Profile() {
       setServer(profile);
       setExists(true);
       setSaved(true);
+      // The answers are in; the controls for changing them are not what the
+      // reader needs to see next.
+      setOpenQuestion({ hypertension: false, heartDisease: false });
     } catch (err) {
       setError(err.message);
     }
@@ -259,12 +320,16 @@ export default function Profile() {
           value={form.hypertension}
           onChange={(v) => set('hypertension', v)}
           help="If you are not sure, say so. An unanswered question is treated as unknown, not as 'no'."
+          open={openQuestion.hypertension}
+          onOpenChange={openSetter('hypertension')}
         />
 
         <TriState
           label="Diagnosed heart disease"
           value={form.heartDisease}
           onChange={(v) => set('heartDisease', v)}
+          open={openQuestion.heartDisease}
+          onOpenChange={openSetter('heartDisease')}
         />
 
         {error ? (
@@ -272,7 +337,29 @@ export default function Profile() {
             {error}
           </p>
         ) : null}
-        {saved ? <p className="ok">Saved.</p> : null}
+        {/* WHAT "SAVED." DOES NOT MEAN, and the reason this page looked
+            broken. `analysisService.buildProfilePayload()` reads the profile
+            AT ANALYSIS TIME and the result is stored on the report, so a
+            report that has already been analysed keeps the answers that were
+            known when it ran. A reader who answers these two questions
+            BECAUSE the dashboard told them "no value was available for your
+            history of heart disease and high blood pressure" then sees the
+            dashboard say exactly the same thing, and concludes the save did
+            nothing.
+            It is the same standing property as the explanation cap and the
+            clinician narrative (MEMORY 6ad, 6ag): changing an input does not
+            rewrite what a past run stored. Said here, where the reader is
+            when the expectation forms. */}
+        {saved ? (
+          <>
+            <p className="ok">Saved.</p>
+            <p className="hint">
+              These answers are used the next time a report is analysed.
+              Reports you have already analysed keep what was known when they
+              ran, so their results do not change.
+            </p>
+          </>
+        ) : null}
 
         <button type="submit">{exists ? 'Save changes' : 'Create profile'}</button>
       </form>
@@ -296,8 +383,18 @@ export default function Profile() {
             Profile completeness: <strong>{completeness.percent}%</strong> (
             {completeness.filled} of {completeness.fields} fields the analysis
             can use).
+            {/* THE FIELD NAMES WERE PRINTED RAW. "Still blank: heartDisease"
+                is a key from the profile document shown to the person whose
+                heart it is -- the same defect as `vitamin_b12` reaching a
+                patient, one layer up. The words now match the question the
+                form asks above, so a reader can find what they are told is
+                missing. */}
             {completeness.missing?.length ? (
-              <> Still blank: {completeness.missing.join(', ')}.</>
+              <>
+                {' '}
+                Still blank:{' '}
+                {completeness.missing.map(profileFieldLabel).join(', ')}.
+              </>
             ) : null}
           </p>
         ) : null}

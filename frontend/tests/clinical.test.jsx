@@ -13,11 +13,12 @@ import { api } from '../src/lib/api';
  * product. Both are tested on exactly those properties.
  */
 
-function mountSummary(doctorSummary, history) {
+function mountSummary(doctorSummary, history, narrative) {
   vi.spyOn(api, 'getDoctorSummary').mockResolvedValue({
     report: { originalName: 'r.pdf' },
     history: history || {},
     doctorSummary,
+    narrative: narrative ?? null,
   });
   return render(
     <MemoryRouter initialEntries={['/reports/abc/doctor-summary']}>
@@ -117,7 +118,17 @@ describe('Module 32 -- the clinician summary, as one passage', () => {
               probability: 0.7,
               limitations: {
                 roc_auc: 0.9987,
-                author_note: { text: 'A ROC-AUC near 0.99 says the separation was easy, not that this would hold on a screening population.' },
+                // COPIED FROM THE PRODUCER, not written to suit the page:
+                // this is `app/ml/kidney.py`'s `honest_read` verbatim. The
+                // previous fixture held the wording the note USED to have, so
+                // it would have gone on passing after the source was rewritten
+                // -- §6w's `basis.limitations` hazard, one layer along.
+                author_note: {
+                  text:
+                    'Its measured accuracy there is high because that separation was easy, '
+                    + 'and nothing shows it holds in a screening population where kidney '
+                    + 'disease is far less common.',
+                },
               },
             },
           },
@@ -153,12 +164,15 @@ describe('Module 32 -- the clinician summary, as one passage', () => {
     // analysis did not find.
     await mountSummary(REPORT);
     await screen.findByText(/Flagged/);
+    // The DISTINCTION, not one phrasing of it: flagged by the model, with no
+    // measured value crossing a cut-off. The wording moved to the words a
+    // clinician uses; the claim it carries is unchanged.
     expect(passage()).toMatch(
-      /Kidney Disease was flagged by the statistical model only/
+      /Kidney Disease was flagged by the statistical model alone/
     );
-    expect(passage()).toMatch(/no measured value crossed a configured threshold/);
+    expect(passage()).toMatch(/no measured value crossed a cut-off/);
     // And a rule-flagged topic is not described that way.
-    expect(passage()).toMatch(/configured cut-offs flagged Diabetes/);
+    expect(passage()).toMatch(/Diabetes .*crossed one of this tool's cut-offs/);
   });
 
   it('carries one sentence of model limitation, in the author own words', async () => {
@@ -167,7 +181,34 @@ describe('Module 32 -- the clinician summary, as one passage', () => {
     await mountSummary(REPORT);
     await screen.findByText(/Flagged/);
     expect(passage()).toMatch(/not a measurement/);
-    expect(passage()).toMatch(/says the separation was easy/);
+    expect(passage()).toMatch(/screening population/);
+  });
+
+  it('does not put model-development vocabulary in front of a clinician', async () => {
+    // THE READER IS A CLINICIAN, NOT A MODEL REVIEWER. "ROC-AUC", "recall",
+    // "precision", "training rows", "UCI cohort" are how the people who build
+    // these things describe them; a clinician handed a patient's phone reads
+    // past them, and the model's limits are the part they most need. The notes
+    // were rewritten at source (app/ml/heart.py, app/ml/kidney.py) with every
+    // fact kept.
+    await mountSummary(REPORT);
+    await screen.findByText(/Flagged/);
+    const text = passage();
+    // 'training data' is in the list because of THIS PAGE'S OWN lead-in
+    // sentence, not the model's note: "a likelihood derived from patterns in
+    // training data" is the same register, written here rather than upstream,
+    // and a list that only policed the upstream note let it straight through.
+    for (const jargon of [
+      'ROC-AUC', 'ROC AUC', 'PR-AUC', 'UCI', 'held-out', 'training data',
+      // How this system names its own parts. A clinician reads a handover
+      // note, not a description of the software that produced it.
+      'Threshold comparison', 'configured threshold', 'configured cut-off',
+      "platform's configured",
+    ]) {
+      expect(text).not.toContain(jargon);
+    }
+    // And the substance survives the plain wording.
+    expect(text).toMatch(/screening population/);
   });
 
   it('omits the model paragraph entirely when no model flagged anything', async () => {
@@ -177,7 +218,7 @@ describe('Module 32 -- the clinician summary, as one passage', () => {
       assessments: [REPORT.assessments[0], REPORT.assessments[2]],
     });
     await screen.findByText(/Flagged/);
-    expect(passage()).not.toMatch(/statistical model only/);
+    expect(passage()).not.toMatch(/statistical model alone/);
     expect(passage()).not.toMatch(/On the model output/);
   });
 
@@ -224,6 +265,74 @@ describe('Module 32 -- the clinician summary, as one passage', () => {
     expect(passage()).not.toMatch(/were not supplied/);
   });
 
+  describe('the written version', () => {
+    // The prose is generated, Module-24 approved and fact-checked in the
+    // ai-service (app/services/clinician_narrative.py). This page's job is
+    // only to render it WHEN THERE IS ONE and to fall back silently when
+    // there is not -- so the worst case of the whole feature is the composed
+    // passage this page has always shown.
+    const WRITTEN = {
+      outcome: 'generated',
+      text: 'First written paragraph about the results.\n\nSecond written paragraph.',
+    };
+
+    it('breaks paragraphs on a double space as well as a blank line', async () => {
+      // The model groups its sentences with two spaces after a full stop,
+      // whatever the prompt asks, so the whole note arrived as one ten-line
+      // block. Reflowed here; not one character of the approved text changes.
+      await mountSummary(REPORT, undefined, {
+        outcome: 'generated',
+        text: 'First group ends here.  Second group starts here.',
+      });
+      await screen.findByText(/First group ends here/);
+      const paras = [...document.querySelectorAll('.passage p')];
+      expect(paras.length).toBeGreaterThanOrEqual(2);
+      expect(paras[0].textContent).toBe('First group ends here.');
+      expect(paras[1].textContent).toBe('Second group starts here.');
+    });
+
+    it('renders the written prose when one was approved', async () => {
+      await mountSummary(REPORT, undefined, WRITTEN);
+      expect(await screen.findByText(/First written paragraph/)).toBeInTheDocument();
+      expect(screen.getByText(/Second written paragraph/)).toBeInTheDocument();
+      // The composed passage is NOT also on the page -- two summaries of the
+      // same report, differing in wording, is worse than either alone.
+      expect(screen.queryByText(/Reported values/)).not.toBeInTheDocument();
+    });
+
+    it('says a model wrote the wording, and that it did not decide anything', async () => {
+      // The reader is entitled to know. The findings were not produced by a
+      // model and the distinction is the whole reason the composed version
+      // existed in the first place.
+      await mountSummary(REPORT, undefined, WRITTEN);
+      await screen.findByText(/First written paragraph/);
+      expect(screen.getByText(/written by a language model/)).toBeInTheDocument();
+      expect(
+        screen.getByText(/findings themselves were not produced by a language model/)
+      ).toBeInTheDocument();
+    });
+
+    it('falls back to the composed passage when there is no narrative', async () => {
+      await mountSummary(REPORT, undefined, null);
+      expect(await screen.findByText(/Reported values/)).toBeInTheDocument();
+      expect(screen.queryByText(/written by a language model/)).not.toBeInTheDocument();
+    });
+
+    it('falls back when the narrative was REFUSED, not merely absent', async () => {
+      // A refusal is an object with an outcome and no text. Branching on the
+      // object being truthy would render an empty article -- a blank page
+      // where the document used to be.
+      await mountSummary(REPORT, undefined, {
+        outcome: 'facts_missing',
+        text: null,
+        notice: 'A written summary could not be prepared for this report.',
+        missing_facts: ['value:186 mg/dl'],
+      });
+      expect(await screen.findByText(/Reported values/)).toBeInTheDocument();
+      expect(screen.getByText(/Kidney Disease was flagged/)).toBeInTheDocument();
+    });
+  });
+
   it('closes on one line, not a scope statement', async () => {
     await mountSummary(REPORT);
     await screen.findByText(/Not a diagnosis/);
@@ -257,7 +366,7 @@ describe('Module 32 -- the clinician summary, as one passage', () => {
       assessments: [REPORT.assessments[2]],
     });
     await screen.findByText(/Flagged/);
-    expect(passage()).toMatch(/No topic crossed a configured threshold/);
+    expect(passage()).toMatch(/No measured value crossed a cut-off/);
     // And that is still not a clean bill: the absences paragraph stands.
     expect(passage()).toMatch(/not supplied/);
   });
@@ -426,5 +535,201 @@ describe('Module 31 -- population context', () => {
 
     expect(await screen.findByText(/missing gender/)).toBeInTheDocument();
     expect(screen.getByText('Update your details')).toBeInTheDocument();
+  });
+});
+
+/**
+ * THE METHOD-NOTES PANEL, AND WHY IT IS NOT A DISCLOSURE.
+ *
+ * The population page ended in three stacked `.hint` blocks -- browser
+ * bullets, no container, one flat grey -- and the user asked for a design.
+ * The dashboard's answer to the same complaint was to collapse the section.
+ * THAT ANSWER IS WRONG HERE, and these tests are what stops someone applying
+ * it later for consistency.
+ *
+ * These bullets are the caveats on the comparison above them. Section 6ag:
+ * what may never go is the CAVEAT -- this platform has found it missing three
+ * separate times and recorded it each time as the worst thing on the page.
+ * A caveat behind a toggle is a caveat most readers never open: the same
+ * outcome as deleting it, reached more slowly.
+ */
+describe('the population page method notes', () => {
+  const context = {
+    comparisons: [],
+    limitations: [
+      'The reference population is the United States civilian non-institutionalised population surveyed by NHANES.',
+      'Pregnant participants were excluded from every group.',
+    ],
+    disclaimer:
+      'Population context is educational information, not a medical assessment. Discuss your results with a qualified healthcare professional.',
+  };
+
+  it('shows every limitation without anything to click first', async () => {
+    await mountPopulation(context);
+
+    await screen.findByText(/What this comparison cannot account for/);
+    const panel = document.querySelector('.notes');
+    expect(panel).not.toBeNull();
+    // NOT a disclosure. If this ever becomes one, this assertion is the thing
+    // that has to be deleted -- deliberately, by someone who has read why.
+    expect(panel.tagName).not.toBe('DETAILS');
+    expect(panel.querySelector('details')).toBeNull();
+    expect(panel.querySelectorAll('.bullets > li')).toHaveLength(2);
+  });
+
+  it('keeps the closing disclaimer inside the same panel, divided off', async () => {
+    // It read as page text that merely followed the bullets. It is the
+    // conclusion OF the bullets, so it lives with them and is separated by a
+    // rule rather than by a paragraph break.
+    await mountPopulation(context);
+
+    await screen.findByText(/What this comparison cannot account for/);
+    const close = screen.getByText(/educational information, not a medical assessment/);
+    expect(close.className).toContain('notes__close');
+    expect(close.closest('.notes')).toBe(document.querySelector('.notes'));
+  });
+
+  it('still shows the disclaimer when there are no limitations to list', async () => {
+    // The panel is rendered when EITHER exists. A disclaimer that disappears
+    // because the limitations array came back empty would be an absence
+    // created by a layout condition.
+    await mountPopulation({ ...context, limitations: [] });
+
+    const close = await screen.findByText(/educational information, not a medical assessment/);
+    expect(close.closest('.notes')).not.toBeNull();
+    expect(screen.queryByText(/What this comparison cannot account for/)).not.toBeInTheDocument();
+  });
+
+  it('uses the SHARED row style, not a second copy of it', async () => {
+    // The dashboard's guidance list and this one are the same shape. They
+    // share `.bullets`; two copies is how they drift, and this file has
+    // already paid for that once with two `.nav` blocks.
+    await mountPopulation(context);
+
+    await screen.findByText(/What this comparison cannot account for/);
+    expect(document.querySelector('.notes ul').className).toContain('bullets');
+  });
+});
+
+/**
+ * THE REPEATED SENTENCES, AND WHERE THEY WENT.
+ *
+ * Measured on the live payload before any of this was written: seven
+ * comparison cards, each carrying "Compared with: 20-29 years, male"
+ * (byte-identical across all seven) plus two sentences that were "unique"
+ * only because the parameter name was interpolated into one template. That is
+ * twenty-one lines saying three things.
+ *
+ * They are hoisted, not deleted -- and the caveat among them is now read
+ * BEFORE the first band rather than after each one, which is better
+ * placement and not merely less of it (section 6ag: what may never go is the
+ * caveat).
+ */
+describe('the population page, without the repetition', () => {
+  const comparison = (name, cohort) => ({
+    available: true,
+    comparison: {
+      value: 5.2,
+      unit: '%',
+      cohort: cohort || { age_band_label: '20-29 years', sex: 'male' },
+      band: {
+        position: 'between_published_percentiles',
+        lower_percentile: 50,
+        upper_percentile: 75,
+        lower_value: 5.2,
+        upper_value: 5.4,
+        label: 'between the 50th and the 75th percentile',
+      },
+      what_this_means: `Of people of this age and sex in the survey, this is the share whose ${name} was at or below yours.`,
+      what_this_does_not_mean: `This does not say whether your ${name} is normal, high, or low.`,
+    },
+  });
+
+  it('states the cohort ONCE when every comparison shares it', async () => {
+    await mountPopulation({
+      features: { hba1c: comparison('HbA1c'), hemoglobin: comparison('haemoglobin') },
+      limitations: [],
+    });
+
+    await screen.findByText(/Each bar below shows/);
+    // Once on the page, in the method statement -- and not repeated per card.
+    expect(screen.getAllByText(/20-29 years, male/)).toHaveLength(1);
+    expect(screen.queryByText(/^Compared with:/)).not.toBeInTheDocument();
+  });
+
+  it('drops each card back to its OWN cohort line when they differ', async () => {
+    // THE GUARD THAT MATTERS, and it is clinical rather than cosmetic.
+    // Module 31 matches on (sex, age band). One line above the list saying
+    // "20-29 years" over a card compared against 30-39 would misstate which
+    // population the reader is being measured against.
+    await mountPopulation({
+      features: {
+        hba1c: comparison('HbA1c'),
+        hemoglobin: comparison('haemoglobin', {
+          age_band_label: '30-39 years',
+          sex: 'male',
+        }),
+      },
+      limitations: [],
+    });
+
+    await screen.findByText(/Each bar below shows/);
+    expect(screen.getByText(/Compared with: 20-29 years/)).toBeInTheDocument();
+    expect(screen.getByText(/Compared with: 30-39 years/)).toBeInTheDocument();
+    // ...and the hoisted clause does not name a cohort it cannot vouch for.
+    expect(screen.getByText(/Each bar below shows/).textContent)
+      .not.toMatch(/20-29 years/);
+  });
+
+  it('keeps the caveat, once, and NOT in the page’s quietest type', async () => {
+    // It used to appear seven times. Reducing it to one copy is only safe if
+    // that copy is prominent: demoting the sole surviving caveat to `.hint`
+    // is how a caveat stops being read.
+    await mountPopulation({
+      features: { hba1c: comparison('HbA1c') },
+      limitations: [],
+    });
+
+    const method = await screen.findByText(/Each bar below shows/);
+    expect(method.className).toContain('method');
+    expect(method.className).not.toContain('hint');
+    expect(method.textContent).toMatch(/does not say whether a result is normal, high, or low/);
+  });
+
+  it('draws a bar for each comparison and none for a refusal', async () => {
+    await mountPopulation({
+      features: {
+        hba1c: comparison('HbA1c'),
+        blood_glucose: {
+          available: false,
+          reason_code: 'NO_VERIFIED_DISTRIBUTION',
+          message: 'No population comparison is offered for blood glucose.',
+        },
+      },
+      limitations: [],
+    });
+
+    await screen.findByText(/Each bar below shows/);
+    expect(document.querySelectorAll('.pctbar')).toHaveLength(1);
+    // The refusal is still stated in the service's own words.
+    expect(screen.getByText(/No population comparison is offered/)).toBeInTheDocument();
+  });
+
+  it('says nothing about bars when no comparison was made at all', async () => {
+    // A method statement describing bars, above a page with no bars, is the
+    // "shaded band = usual range" legend over a chart with no band (6ac).
+    await mountPopulation({
+      features: {
+        blood_glucose: {
+          available: false,
+          reason_code: 'NO_VERIFIED_DISTRIBUTION',
+          message: 'No population comparison is offered for blood glucose.',
+        },
+      },
+      limitations: [],
+    });
+
+    await screen.findByText(/No population comparison is offered/);
+    expect(screen.queryByText(/Each bar below shows/)).not.toBeInTheDocument();
   });
 });

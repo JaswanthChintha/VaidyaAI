@@ -79,26 +79,45 @@ FEATURES: Dict[str, FeatureDefinition] = {
     "age": FeatureDefinition(
         "age", "years", "integer", SOURCE_PATIENT_PROFILE, "Age in whole years"
     ),
+    # `description` IS A LABEL. It is rendered to readers -- the comparison
+    # table, the clinician summary, the progress table -- and it is also fed
+    # to the RAG retriever as a search term. The nine laboratory entries above
+    # treat it that way ("Serum creatinine", "25-hydroxyvitamin D"); these
+    # four did not, and printed an internal note instead:
+    #
+    #     "Self-described gender as stored by Module 2."
+    #     "Smoking history, diabetes-dataset categories."
+    #     "Known hypertension. TRI-STATE: true / false / absent(unknown)."
+    #
+    # A reader comparing two reports was shown a module number, the name of a
+    # training dataset, and an implementation contract. The facts those notes
+    # carried are real and are kept -- as comments, which is where a note to a
+    # maintainer belongs.
     "hypertension": FeatureDefinition(
         "hypertension",
         None,
+        # TRI-STATE: true / false / absent meaning unknown. Enforced by the
+        # schema and the validator, not by this string.
         "boolean",
         SOURCE_PATIENT_PROFILE,
-        "Known hypertension. TRI-STATE: true / false / absent(unknown).",
+        "Known high blood pressure",
     ),
     "heart_disease": FeatureDefinition(
         "heart_disease",
         None,
+        # TRI-STATE, as above. Absent is never a stated "no".
         "boolean",
         SOURCE_PATIENT_PROFILE,
-        "Known heart disease. TRI-STATE: true / false / absent(unknown).",
+        "Known heart disease",
     ),
     "smoking_history": FeatureDefinition(
         "smoking_history",
         None,
         "category",
         SOURCE_PATIENT_PROFILE,
-        "Smoking history, diabetes-dataset categories.",
+        # The six categories below are the diabetes dataset's vocabulary; the
+        # `categories` tuple states that far better than a label could.
+        "Smoking history",
         categories=("never", "former", "current", "ever", "not_current", "no_info"),
     ),
     "gender": FeatureDefinition(
@@ -106,7 +125,10 @@ FEATURES: Dict[str, FeatureDefinition] = {
         None,
         "category",
         SOURCE_PATIENT_PROFILE,
-        "Self-described gender as stored by Module 2.",
+        # "Self-described" is kept deliberately: it is the patient's own
+        # answer, not a clinical determination, and that distinction is worth
+        # a reader's attention. Only the module number goes.
+        "Self-described gender",
         categories=("male", "female", "other", "prefer_not_to_say"),
     ),
 }

@@ -190,11 +190,19 @@ SCALE_MAX = 100.0
 #: The one token a consumer may branch on to know which way the scale points.
 SCALE_DIRECTION = "higher_is_better"
 
+#: WRITTEN FOR THE PATIENT, NOT FOR THIS SERVICE.
+#: The previous wording shouted "HIGHER IS BETTER" in the middle of a sentence
+#: whose caller ALSO prints "Higher is better." in front of it, and explained
+#: the scale in terms of "the parameters that could be assessed" moving in "the
+#: direction the polarity table records as favourable". A polarity table is a
+#: file in this repository. Nothing about it is the reader's business, and
+#: naming it on a results page is this platform's most repeated defect -- see
+#: MEMORY 6u, 6w, 6af, and now this.
+#: Every fact is kept: the range, which way it points, and what moves it.
 SCALE_DIRECTION_TEXT = (
-    "The scale runs from 0 to 100 and HIGHER IS BETTER. A higher number means "
-    "that more of the parameters that could be assessed moved in the "
-    "direction the polarity table records as favourable, between the two "
-    "reports compared. A lower number means more of them moved the other way."
+    "A higher number means more of your results moved in the better "
+    "direction between the two reports. A lower number means more of them "
+    "moved the other way."
 )
 
 #: What kind of scale it is, as a token and as a sentence. Named constants
@@ -616,17 +624,22 @@ WHAT_THIS_IS = (
     "is their average. Every parameter counts the same."
 )
 
+#: SHORTER, NEVER WEAKER. Ninety words of NOT-statements is a paragraph a
+#: reader skips, and a caveat that is skipped is not a caveat. Every claim
+#: from the long version survives here: it is not a risk score, not a measure
+#: of health, not a diagnosis; it says nothing about what to do; it describes
+#: only movement between two reports; it cannot see what was not measured on
+#: both of them; and the question of whether any of it matters belongs to a
+#: professional. MEMORY 6ag: shortening is not the same decision as dropping,
+#: and this platform has found this class of sentence MISSING three times.
+#: Checked by `assert_safe` at import -- see `progress_analyzer`.
 WHAT_THIS_IS_NOT = (
-    "The score is NOT a risk score, NOT a measure of health, and it is not a "
-    "diagnosis. It says nothing about how likely any condition is, nothing "
-    "about how serious any value is, and nothing about what should be done. "
-    "It describes movement in measured numbers between two points in time and "
-    "nothing else. It cannot see any parameter that was not measured on both "
-    "reports, and it cannot see anything that is not one of the parameters "
-    "this service recognises, so a score close to either end of the scale is "
-    "a statement about the parameters listed beside it and not about a "
-    "person. Whether any of it matters is a question for the reference range "
-    "printed on the report and for a qualified healthcare professional."
+    "This number is not a health score, not a risk score and not a "
+    "diagnosis. It only describes which way your results moved between two "
+    "reports: it cannot see anything that was not measured on both of them, "
+    "it says nothing about how serious any value is, and it says nothing "
+    "about what you should do. Whether any of it matters is a question for a "
+    "qualified healthcare professional."
 )
 
 

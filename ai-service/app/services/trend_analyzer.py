@@ -162,6 +162,23 @@ DISCLAIMER = (
     "is not a substitute for review by a qualified health professional."
 )
 
+def _label(feature: str) -> str:
+    """The feature's reader-facing name, for the sentences below.
+
+    EVERY TEMPLATE HERE IS SHOWN TO A READER, and every one of them used to
+    interpolate the raw canonical key -- "blood_glucose went from 186 to 88",
+    "smoking_history is a category feature". The catalog already holds the
+    name for each feature and it is what the comparison table beside these
+    sentences prints; there is no reason for one panel to say "Blood sugar"
+    and the panel under it to say `blood_glucose`.
+
+    Falls back to the key. A feature with no catalog entry is still nameable,
+    and an unnamed row is worse than an ugly one.
+    """
+    definition = FEATURES.get(feature)
+    return definition.description if definition else feature
+
+
 _TEMPLATES: Dict[str, str] = {
     "insufficient": (
         "{feature}: {count} usable reading(s) across {reports} report(s). At "
@@ -173,7 +190,7 @@ _TEMPLATES: Dict[str, str] = {
         "nothing to trend. The readings are returned in order for reference."
     ),
     "not_trendable": (
-        "{feature} is declared not trendable in the polarity table: {basis}"
+        "No direction is declared for {feature}: {basis}"
     ),
     "no_stability_band": (
         "{feature} has no declared stability band, so there is no threshold "
@@ -256,10 +273,12 @@ _TEMPLATES: Dict[str, str] = {
         "reference interval ({interval}) on opposite sides, so no favourable "
         "or unfavourable direction is reported."
     ),
+    # "Reason recorded in the polarity table" named a file in this repository
+    # inside a sentence a patient reads. The REASON that follows is genuinely
+    # useful and is kept verbatim; only the filing cabinet it came out of goes.
     "direction_unknown": (
         " No clinical direction is declared for this feature, so whether the "
-        "change is favourable is not reported. Reason recorded in the polarity "
-        "table: {basis}"
+        "change is favourable is not reported. Why: {basis}"
     ),
     "volatile": (
         " Note that the value moved significantly in the opposite direction at "
@@ -826,6 +845,16 @@ def analyse_feature(
         change: Optional[TrendChange] = None,
     ) -> FeatureTrend:
         return FeatureTrend(
+            # THE CANONICAL KEY, NEVER THE LABEL. This is the field every
+            # consumer keys off -- the frontend looks up its own patient
+            # wording with it and uses it as a React key. A blanket
+            # `feature=feature` -> `feature=_label(feature)` rewrite across
+            # this file caught this ONE line along with ten genuine message
+            # templates, and it silently changed the API contract: the
+            # response started carrying "Glycated haemoglobin, NGSP %" where
+            # `hba1c` belongs, the frontend's label lookup missed, and the
+            # chart headings quietly reverted to the clinical register.
+            # 3,768 tests did not notice. Found by reading the rendered page.
             feature=feature,
             value_type=definition.value_type,
             canonical_unit=definition.canonical_unit,
@@ -848,20 +877,20 @@ def analyse_feature(
         return result(
             OUTCOME_NOT_NUMERIC,
             _TEMPLATES["not_numeric"].format(
-                feature=feature, value_type=definition.value_type
+                feature=_label(feature), value_type=definition.value_type
             ),
         )
     if not polarity.trendable:
         return result(
             OUTCOME_NOT_TRENDABLE,
             _TEMPLATES["not_trendable"].format(
-                feature=feature, basis=reader_reason(polarity)
+                feature=_label(feature), basis=reader_reason(polarity)
             ),
         )
     if band is None:
         return result(
             OUTCOME_NO_STABILITY_BAND,
-            _TEMPLATES["no_stability_band"].format(feature=feature),
+            _TEMPLATES["no_stability_band"].format(feature=_label(feature)),
         )
 
     # ---- unit integrity. Refused, never coerced. -------------------------
@@ -875,7 +904,7 @@ def analyse_feature(
         shown = ", ".join(sorted(str(u) for u in observed))
         return result(
             OUTCOME_UNIT_MISMATCH,
-            _TEMPLATES["unit_mismatch"].format(feature=feature, units=shown),
+            _TEMPLATES["unit_mismatch"].format(feature=_label(feature), units=shown),
         )
     non_canonical = [
         p
@@ -887,7 +916,7 @@ def analyse_feature(
         return result(
             OUTCOME_UNIT_NOT_CANONICAL,
             _TEMPLATES["unit_not_canonical"].format(
-                feature=feature,
+                feature=_label(feature),
                 count=len(non_canonical),
                 canonical=definition.canonical_unit or "none",
             ),
@@ -904,7 +933,7 @@ def analyse_feature(
             return result(
                 OUTCOME_NOT_COMPARABLE_SAMPLE_TIMING,
                 _TEMPLATES["timing_mismatch"].format(
-                    feature=feature, timings=", ".join(sorted(established))
+                    feature=_label(feature), timings=", ".join(sorted(established))
                 ),
             )
         unspecified = any(
@@ -933,14 +962,14 @@ def analyse_feature(
             return result(
                 OUTCOME_NOT_COMPARABLE_AGE_CONTEXT,
                 _TEMPLATES["age_unknown"].format(
-                    feature=feature, min_age=polarity.min_age_years
+                    feature=_label(feature), min_age=polarity.min_age_years
                 ),
             )
         if min(recorded_ages) < polarity.min_age_years:
             return result(
                 OUTCOME_NOT_COMPARABLE_AGE_CONTEXT,
                 _TEMPLATES["age_context"].format(
-                    feature=feature, min_age=polarity.min_age_years
+                    feature=_label(feature), min_age=polarity.min_age_years
                 ),
             )
 
@@ -949,7 +978,7 @@ def analyse_feature(
         return result(
             OUTCOME_INSUFFICIENT_DATA,
             _TEMPLATES["insufficient"].format(
-                feature=feature, count=len(points), reports=len(reports)
+                feature=_label(feature), count=len(points), reports=len(reports)
             ),
         )
 
@@ -978,7 +1007,7 @@ def analyse_feature(
         else ""
     )
     reason = _TEMPLATES["change_line"].format(
-        feature=feature,
+        feature=_label(feature),
         first=_fmt(change.first_value),
         last=_fmt(change.last_value),
         unit=suffix,

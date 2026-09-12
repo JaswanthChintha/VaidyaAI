@@ -822,6 +822,67 @@ describe('Module 27 - GET /reports/:id/dashboard', () => {
       ...overrides,
     });
 
+    it('carries the results that were never explained, and why', async () => {
+      // A REPORT WITH EIGHT RESULTS AND SIX EXPLANATIONS. Module 23 explains up
+      // to `max_explanations` and records every value it passed over; that list
+      // was produced, stored, and dropped at this layer, so the dashboard
+      // showed six cards with nothing saying the other two were not attempted.
+      // The entries array cannot carry this: an explanation that was never
+      // requested has no entry to be absent in.
+      const id = await seedAnalysed(alice.id, {
+        patientExplanation: {
+          explanation_available: true,
+          generated_count: 1,
+          withheld_count: 0,
+          explanations: [
+            entry({
+              feature: 'hba1c',
+              outcome: 'generated',
+              generated_explanation_available: true,
+              explanation: 'HbA1c reflects average blood sugar over recent months.',
+              notice: null,
+            }),
+          ],
+          skipped: [
+            { feature: 'cholesterol', reason: 'explanation_limit_reached' },
+            { feature: 'triglycerides', reason: 'explanation_limit_reached' },
+          ],
+        },
+      });
+
+      const res = await getDashboard(alice.token, id);
+      const { notExplained } = res.body.data.dashboard.recommendations.explanations;
+
+      expect(notExplained).toEqual([
+        { feature: 'cholesterol', reason: 'explanation_limit_reached' },
+        { feature: 'triglycerides', reason: 'explanation_limit_reached' },
+      ]);
+    });
+
+    it('reports nothing skipped as an empty list, never as a missing key', async () => {
+      const id = await seedAnalysed(alice.id, {
+        patientExplanation: {
+          explanation_available: true,
+          generated_count: 1,
+          withheld_count: 0,
+          explanations: [
+            entry({
+              feature: 'hba1c',
+              outcome: 'generated',
+              generated_explanation_available: true,
+              explanation: 'HbA1c reflects average blood sugar.',
+              notice: null,
+            }),
+          ],
+        },
+      });
+
+      const res = await getDashboard(alice.token, id);
+      expect(
+        res.body.data.dashboard.recommendations.explanations.notExplained
+      ).toEqual([]);
+    });
+
     it('a WITHHELD explanation and an ABSENT one render differently', async () => {
       const id = await seedAnalysed(alice.id, {
         patientExplanation: {

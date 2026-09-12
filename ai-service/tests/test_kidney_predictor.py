@@ -615,7 +615,19 @@ def test_the_decision_does_not_overstate_a_tiny_dataset(predictor):
     decision = predictor.predict(dict(HIGH_RISK))
     reference = decision.metadata["model_performance_reference"]
     assert reference["roc_auc"] > 0.95
-    assert "399 rows" in reference["honest_read"]
+    # THE SMALL-SAMPLE FACT, not one phrasing of it and not the count.
+    #
+    # This asserted the literal "399 rows", then "399". The note no longer
+    # carries the count at all: a clinician reads it on the doctor summary and
+    # the dataset arithmetic is the EVIDENCE for the caveat rather than the
+    # caveat. The invariant is unchanged and is what the count was a proxy for
+    # -- a near-perfect metric must never appear without the fact that the
+    # dataset was small and the accuracy does not transfer. The exact figures
+    # stay in the artifact metrics, whose audience is a model reviewer.
+    honest = reference["honest_read"]
+    lowered_note = honest.lower()
+    assert any(word in lowered_note for word in ("small", "tiny", "limited")), honest
+    assert "screening population" in honest
     assert reference["majority_class_baseline_accuracy"] == pytest.approx(0.63)
 
 
@@ -701,3 +713,61 @@ def test_metadata_contains_no_raw_report_text(predictor):
     blob = json.dumps(decision.metadata)
     for forbidden in ("raw_text", "patient_name", "NORTHFIELD"):
         assert forbidden not in blob
+
+
+# --------------------------------------------------------------------------
+# The note's audience
+# --------------------------------------------------------------------------
+
+#: Vocabulary that belongs to whoever trained the model, not to the clinician
+#: the doctor summary is addressed to. `honest_read` is rendered VERBATIM on
+#: that page (Module 32), so this is the only layer that can keep it readable:
+#: a check in the frontend runs against a fixture and cannot see this string.
+MODEL_REVIEWER_VOCABULARY = (
+    "roc-auc",
+    "roc auc",
+    "pr-auc",
+    "auc",
+    "uci",
+    "held-out",
+    "holdout",
+    "training data",
+    "training set",
+    "precision at",
+    "recall at",
+    "f1",
+)
+
+
+def test_the_honest_read_is_written_for_a_clinician(predictor):
+    """The caveat is worth nothing to a reader who stops at the vocabulary.
+
+    It is rendered verbatim on the document a patient hands to a clinician, and
+    a clinician is not obliged to know what a ROC-AUC is. Every FACT stays --
+    the dataset size, the easy separation, the fragility of the test split --
+    only the register changed.
+    """
+    decision = predictor.predict(dict(HIGH_RISK))
+    honest = decision.metadata["model_performance_reference"]["honest_read"]
+    lowered = honest.lower()
+
+    offenders = [word for word in MODEL_REVIEWER_VOCABULARY if word in lowered]
+    assert not offenders, f"{offenders} in: {honest}"
+
+    # ...and the substance did not go with the jargon. Not the COUNT: the
+    # dataset arithmetic is the evidence for the caveat, not the caveat, and a
+    # clinician acts on the smallness rather than on 399.
+    assert any(word in lowered for word in ("small", "tiny", "limited")), honest
+    # THE DIRECTION OF THE CLAIM, not just the phrase. Asserting that
+    # "screening population" appears passes just as happily for "it HOLDS in a
+    # screening population" -- the inversion of the one thing this note exists
+    # to say about a near-perfect number. Several phrasings are allowed so the
+    # sentence can still be reworded; the negation cannot be dropped.
+    assert any(
+        phrase in lowered
+        for phrase in (
+            "nothing shows it holds",
+            "no evidence it holds",
+            "not shown to hold",
+        )
+    ), honest

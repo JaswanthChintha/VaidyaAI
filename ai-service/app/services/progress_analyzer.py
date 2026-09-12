@@ -305,11 +305,13 @@ _WARNING_TEMPLATES: Dict[str, str] = {
         "the coverage below is the coverage that was asked for rather than "
         "everything the two reports carried."
     ),
+    # "the stability band declared for that parameter" is this repository
+    # describing its own configuration to a patient. The FACT it carries is
+    # worth keeping and is easy to say plainly: size decides whether a change
+    # counts, never how much it counts for.
     "significance_not_scaled": (
-        "The size of each change decides only whether it counts as a change "
-        "at all, against the stability band declared for that parameter. A "
-        "larger change does not move the score further than a smaller one in "
-        "the same category."
+        "A change has to be big enough to count at all. After that, a large "
+        "change and a small one count the same."
     ),
 }
 

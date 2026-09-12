@@ -971,3 +971,48 @@ def test_the_registry_describes_the_new_predictors_without_phi():
     for entry in payload["predictors"]:
         assert entry["available"] is True
         assert entry["source_kind"] == "machine_learning"
+
+
+# --------------------------------------------------------------------------
+# The note's audience
+# --------------------------------------------------------------------------
+
+#: Vocabulary that belongs to whoever trained the model, not to the clinician
+#: the doctor summary is addressed to. `honest_read` is rendered VERBATIM on
+#: that page (Module 32), so this is the only layer that can keep it readable:
+#: a check in the frontend runs against a fixture and cannot see this string.
+MODEL_REVIEWER_VOCABULARY = (
+    "roc-auc",
+    "roc auc",
+    "pr-auc",
+    "auc",
+    "uci",
+    "held-out",
+    "holdout",
+    "training data",
+    "training set",
+    "precision at",
+    "recall at",
+    "f1",
+)
+
+
+def test_the_honest_read_is_written_for_a_clinician(predictor):
+    """The caveat is worth nothing to a reader who stops at the vocabulary.
+
+    It is rendered verbatim on the document a patient hands to a clinician, and
+    a clinician is not obliged to know what a ROC-AUC is. Every FACT stays --
+    the dataset size, the easy separation, the fragility of the test split --
+    only the register changed.
+    """
+    decision = predictor.predict(dict(HIGH_RISK))
+    honest = decision.metadata["model_performance_reference"]["honest_read"]
+    lowered = honest.lower()
+
+    offenders = [word for word in MODEL_REVIEWER_VOCABULARY if word in lowered]
+    assert not offenders, f"{offenders} in: {honest}"
+
+    # ...and the substance did not go with the jargon: what a flag is worth,
+    # and the predictor this platform does not collect.
+    assert "never a finding" in honest
+    assert "Blood pressure" in honest

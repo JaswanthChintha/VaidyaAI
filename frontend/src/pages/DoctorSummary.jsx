@@ -148,6 +148,7 @@ export default function DoctorSummary() {
   if (!data) return <p className="loading">Preparing the clinical summary…</p>;
 
   const summary = data.doctorSummary || {};
+  const narrative = data.narrative || null;
   const patient = summary.patient || {};
   const laboratory = summary.laboratory || {};
   const quality = summary.data_quality || {};
@@ -233,6 +234,42 @@ export default function DoctorSummary() {
 
       <h1>Summary for a healthcare professional</h1>
 
+      {/* THE WRITTEN VERSION, WHEN THERE IS ONE.
+          `narrative.text` is non-null only after the ai-service generated it,
+          Module 24 approved it, AND every required fact was verified present
+          in the output (app/services/clinician_narrative.py). Any one of those
+          failing sends `text: null`, and the composed passage below is what
+          renders -- which is what this page has always shown, so the worst
+          case of the whole feature is today's document.
+          BRANCHED ON `text`, NEVER ON `narrative` BEING TRUTHY: a refusal is
+          an object with an outcome and no text, and `{narrative && ...}` would
+          render an empty article. */}
+      {isPresent(narrative?.text) ? (
+        <article className="passage">
+          {narrative.text
+            /* A DOUBLE SPACE AFTER A FULL STOP IS A PARAGRAPH BREAK TOO.
+               The model groups its sentences that way and not with blank
+               lines, however the prompt asks -- so the whole note arrived as
+               one ten-line block. This reflows already-approved text and
+               changes not one character of it; the alternative was another
+               round of prompt-tuning at a model call each. */
+            .replace(/\.\s{2,}/g, '.\n\n')
+            .split(/\n\s*\n/)
+            .map((para) => para.trim())
+            .filter(Boolean)
+            .map((para, index) => (
+              <p key={index}>{para}</p>
+            ))}
+          {/* SAID, NOT IMPLIED. The reader is entitled to know a model wrote
+              the prose -- the findings in it were not decided by one, and the
+              distinction is the whole reason the composed version existed. */}
+          <p className="passage__close">
+            The wording above was written by a language model from the findings
+            of this analysis and checked before being shown. The findings
+            themselves were not produced by a language model.
+          </p>
+        </article>
+      ) : (
       <article className="passage">
         {/* Subject, context, and what the analysis did not have. */}
         <p>
@@ -285,42 +322,55 @@ export default function DoctorSummary() {
 
         {/* WHAT WAS FLAGGED, AND BY WHAT. The three groups are the point of
             this paragraph: a threshold crossing and a model estimate are
-            different claims, and one real report contains one of each. */}
+            different claims, and one real report contains one of each.
+            SAID AS A CLINICIAN WOULD SAY IT. "Threshold comparison against the
+            platform's configured cut-offs" is how this system describes its
+            own components; the reader is a clinician, and the thing they need
+            is which KIND of check fired, in ordinary clinical words. */}
         {flagged.length ? (
           <p>
             <strong>Flagged.</strong>{' '}
             {byBoth.length
-              ? `Threshold comparison and the statistical model both flagged ${nameList(
-                  byBoth
-                )}. `
+              ? `${nameList(byBoth)} ${
+                  byBoth.length === 1 ? 'was' : 'were'
+                } flagged two ways: a measured value crossed one of this tool's cut-offs, and the statistical model agreed. `
               : ''}
             {byRule.length
-              ? `Threshold comparison against the platform's configured cut-offs flagged ${nameList(
-                  byRule
-                )}. `
+              ? `${nameList(byRule)} ${
+                  byRule.length === 1 ? 'was' : 'were'
+                } flagged because a measured value crossed one of this tool's cut-offs. `
               : ''}
             {byModel.length
               ? `${nameList(byModel)} ${
                   byModel.length === 1 ? 'was' : 'were'
-                } flagged by the statistical model only — no measured value crossed a configured threshold for ${
+                } flagged by the statistical model alone — no measured value crossed a cut-off for ${
                   byModel.length === 1 ? 'it' : 'them'
                 }. `
               : ''}
           </p>
         ) : (
           <p>
-            <strong>Flagged.</strong> No topic crossed a configured threshold and
-            no model flagged one.
+            <strong>Flagged.</strong> No measured value crossed a cut-off, and
+            the statistical model flagged nothing.
           </p>
         )}
 
         {/* ONE SENTENCE OF MODEL LIMITATION, in the model author's own words.
-            Found missing from this page three separate times. */}
+            Found missing from this page three separate times.
+
+            THE LEAD-IN IS WRITTEN FOR THE READER THIS PAGE IS ADDRESSED TO.
+            "A likelihood derived from patterns in training data" is how the
+            people who build these things describe them; a clinician is not
+            obliged to know it, and this is the sentence that decides how much
+            weight they give everything after it. The notes that follow were
+            rewritten at source for the same reason (app/ml/heart.py,
+            app/ml/kidney.py) -- every fact kept, the vocabulary of model
+            development dropped. */}
         {byBoth.length + byModel.length > 0 ? (
           <p>
             <strong>On the model output.</strong> A model estimate is a
-            likelihood derived from patterns in training data, not a
-            measurement, and it is not a statement that a condition is present.
+            comparison against patterns in past data, not a measurement of this
+            patient, and it is not a statement that a condition is present.
             {modelNotes.length ? ` ${modelNotes.join(' ')}` : ''}
           </p>
         ) : null}
@@ -330,8 +380,8 @@ export default function DoctorSummary() {
         {clear.length ? (
           <p>
             <strong>Assessed, not flagged.</strong>{' '}
-            {nameList(clear.map((a) => a.condition))}. Each was compared against
-            the platform&rsquo;s configured thresholds and none was crossed.
+            {nameList(clear.map((a) => a.condition))}. Each was compared
+            against this tool&rsquo;s cut-offs and none was crossed.
           </p>
         ) : null}
 
@@ -372,6 +422,7 @@ export default function DoctorSummary() {
           report remains the primary record.
         </p>
       </article>
+      )}
     </main>
   );
 }

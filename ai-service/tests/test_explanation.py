@@ -646,6 +646,84 @@ def test_explain_report_passes_the_conditions_the_feature_contributed_to(
     assert result.explanations[0].conditions == ("Diabetes",)
 
 
+def test_explain_report_does_not_spend_a_call_on_a_profile_answer(
+    offline_settings,
+):
+    """Age, sex and BMI are context the assessment used, not results.
+
+    They arrive in `laboratory_values` alongside the printed values, so they
+    were candidates for explanation -- three model calls spent writing "this
+    test measures your age" while a real cholesterol result went unexplained
+    for want of budget.
+    """
+    from app.services.explanation import explain_report
+
+    report = _report()
+    report["laboratory_values"].append(
+        {
+            "feature": "age",
+            "value": 58,
+            "unit": "years",
+            "status": "valid",
+            "usable": True,
+            "source": "patient_profile",
+        }
+    )
+
+    fake = FakeTextClient(_APPROVABLE)
+    result = explain_report(report, llm=fake, settings=offline_settings)
+
+    assert "age" not in [e.feature for e in result.explanations]
+    reasons = {row["feature"]: row["reason"] for row in result.skipped}
+    assert reasons["age"] == "not_a_laboratory_value"
+    # And no call was made for it.
+    assert len(fake.prompts) == len(result.explanations)
+
+
+def test_a_row_with_no_source_at_all_is_still_explained(offline_settings):
+    """A missing `source` is not evidence that a value came from the profile.
+
+    `LaboratoryValue.source` is `Optional[str] = None`, so an older stored
+    report or a hand-built row can arrive without one. Requiring the field to
+    EQUAL "lab_report" would skip every such row and explain nothing at all.
+    """
+    from app.services.explanation import explain_report
+
+    report = _report()
+    assert "source" not in report["laboratory_values"][0]
+
+    result = explain_report(
+        report, llm=FakeTextClient(_APPROVABLE), settings=offline_settings
+    )
+    assert [e.feature for e in result.explanations] == ["hba1c"]
+
+
+def test_a_row_past_the_limit_is_not_blamed_on_the_limit_when_it_was_never_eligible(
+    offline_settings,
+):
+    """Eligibility is decided before the budget.
+
+    With the limit checked first, every row past the cap came back as
+    `explanation_limit_reached` -- including rows that were never eligible at
+    all -- so a caller could not tell "we ran out" from "there was nothing
+    here to explain".
+    """
+    from app.services.explanation import explain_report
+
+    result = explain_report(
+        _report(),
+        llm=FakeTextClient(_APPROVABLE),
+        settings=offline_settings,
+        max_explanations=0,
+    )
+
+    reasons = {row["feature"]: row["reason"] for row in result.skipped}
+    assert reasons["hba1c"] == "explanation_limit_reached"
+    # These two are not the budget's fault and must not say they are.
+    assert reasons["creatinine"] == "value_not_usable"
+    assert reasons["not_a_feature"] == "not_a_canonical_feature"
+
+
 def test_explain_report_honours_the_call_limit(offline_settings):
     from app.services.explanation import explain_report
 

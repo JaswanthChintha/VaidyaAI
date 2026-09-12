@@ -399,9 +399,22 @@ _WARNING_TEMPLATES: Dict[str, str] = {
         "The two compared reports carry the same date. Any change between them "
         "cannot be placed in time."
     ),
-    "intermediate_reports": (
-        "{count} report(s) lie between the two compared reports. They take no "
-        "part in the classification and appear only in the returned series."
+    # "take no part in the classification and appear only in the returned
+    # series" describes this service's own data flow. What a reader needs is
+    # which reports the comparison used -- and `(s)` is a placeholder nobody
+    # should read, so the count decides the wording.
+    # TWO WHOLE SENTENCES, not one with five placeholders. The first attempt
+    # pluralised the verb and the pronoun but not the noun and produced
+    # "2 other report are not part of it" -- a sentence assembled from parts
+    # that do not agree is the same defect as "1 report(s)" wearing a
+    # different hat.
+    "intermediate_reports_one": (
+        "This comparison uses two of your reports. One other report is not "
+        "included, though it still appears on the chart above."
+    ),
+    "intermediate_reports_many": (
+        "This comparison uses two of your reports. {count} other reports are "
+        "not included, though they still appear on the chart above."
     ),
     "extreme_present": (
         "{count} reading(s) used in this comparison were flagged as clinically "
@@ -1285,8 +1298,15 @@ def compare_reports(request: ReportComparisonRequest) -> ReportComparisonData:
     low_index, high_index = sorted((baseline_index, comparison_index))
     intermediate = max(0, high_index - low_index - 1)
     if len(ordered) > 2:
+        # The count decides the verb and the pronoun. "1 report(s) lie" is a
+        # placeholder printed at a reader; a sentence that cannot agree with
+        # its own number reads as unfinished software.
         warnings.append(
-            _WARNING_TEMPLATES["intermediate_reports"].format(count=intermediate)
+            _WARNING_TEMPLATES["intermediate_reports_one"]
+            if intermediate == 1
+            else _WARNING_TEMPLATES["intermediate_reports_many"].format(
+                count=intermediate
+            )
         )
 
     pair = ComparisonPair(

@@ -43,7 +43,7 @@ const ApiError = require('../utils/ApiError');
  *                 it Module 15's collection) nested VERBATIM under `fusion`.
  *   Explanation   POST /api/v1/explain/report, JSON
  *                 { report: <Module 17's DATA OBJECT, unwrapped>,
- *                   max_explanations: <int, 0..6> }                  Module 23
+ *                   max_explanations: <int, 0..10> }                 Module 23
  *                 -> a ReportExplanationSet. NOTE: a refusal is an HTTP 200
  *                 with `outcome` != "generated", NOT an error - see below.
  *   Guidance      POST /api/v1/explain/guidance, JSON
@@ -124,6 +124,7 @@ const PATHS = Object.freeze({
   explain: '/api/v1/explain/report',
   guidance: '/api/v1/explain/guidance',
   glossary: '/api/v1/explain/glossary',
+  clinicianSummary: '/api/v1/explain/clinician-summary',
   timeline: '/api/v1/timeline/trends',
   comparison: '/api/v1/comparison/reports',
   progress: '/api/v1/progress/score',
@@ -842,8 +843,9 @@ async function generateReport({ validated, requestId }) {
  * `max_explanations` is sent explicitly rather than left to the far side's
  * default: every explanation is a model call, and the number of them one
  * analyze request may spend is a deployment decision that belongs in this
- * deployment's config. The service `ge=0, le=6`-validates it, so it is clamped
- * in config/env.js rather than sent and 422'd.
+ * deployment's config. The service validates it against its own
+ * `DEFAULT_MAX_EXPLANATIONS`, so it is clamped in config/env.js rather than
+ * sent and 422'd.
  *
  * A REFUSAL IS A SUCCESS AT THIS LAYER. Every non-generated outcome is an HTTP
  * 200 carrying a structured fallback, so it arrives here as a normal `data`
@@ -1088,6 +1090,29 @@ async function scoreProgress({
  *
  * @returns {Promise<object>} the UNWRAPPED `DoctorSummaryData` object.
  */
+/**
+ * Module 32's handover note, written as prose.
+ *
+ * GENERATED ONCE PER ANALYSIS AND CACHED BY THE CALLER, never per page view.
+ * The doctor summary itself is built on demand, so calling this inline would
+ * spend a model call every time someone opened the page -- on a free tier of
+ * 20 a day that is one reader.
+ *
+ * A REFUSAL IS A SUCCESS AT THIS LAYER, exactly as it is for Module 23: no
+ * model configured, a safety rejection and a failed fact check all arrive as
+ * HTTP 200 carrying `outcome` and no text, and the caller renders the composed
+ * passage it renders today. Nothing here inspects `outcome`.
+ */
+async function writeClinicianSummary({ summary, requestId }) {
+  return postJson({
+    path: PATHS.clinicianSummary,
+    stage: STAGES.EXPLANATION,
+    payload: { summary },
+    requestId,
+    timeoutMs: config.aiService.explainTimeoutMs,
+  });
+}
+
 async function generateDoctorSummary({
   report,
   reportRef,
@@ -1268,6 +1293,7 @@ module.exports = {
   compareReports,
   scoreProgress,
   generateDoctorSummary,
+  writeClinicianSummary,
   populationContext,
   health,
   resetClient,

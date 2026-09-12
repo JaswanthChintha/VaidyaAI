@@ -787,9 +787,19 @@ def explain_terminology_entry(
 # Report-level convenience
 # --------------------------------------------------------------------------
 
-#: A report can carry a dozen values. Each explanation is one model call, so
-#: the default is a bound rather than "all of them".
-DEFAULT_MAX_EXPLANATIONS = 6
+#: Each explanation is one model call, so this stays a bound rather than
+#: "however many rows arrived" -- one request must not be able to become
+#: dozens of round trips.
+#:
+#: RAISED FROM 6 TO 10 (2026-09-11) so an ordinary report is explained in full.
+#: At 6, a report carrying eight laboratory values left two of them with no
+#: explanation and the reader was not told which -- and the two that lost were
+#: whichever came last in the row order, not the least important. The platform
+#: maps eight laboratory features today (`FEATURES` also holds age, sex, BMI
+#: and the three history answers, which are context rather than results and no
+#: longer consume the budget), so 10 covers every printed value with headroom
+#: for two more before anyone has to think about this again.
+DEFAULT_MAX_EXPLANATIONS = 10
 
 #: How many per-feature generations may be in flight at once.
 #:
@@ -817,6 +827,12 @@ def _report_field(report: Any, name: str) -> Any:
     if isinstance(report, Mapping):
         return report.get(name)
     return getattr(report, name, None)
+
+
+#: The value of `laboratory_values[].source` that means "the laboratory
+#: printed this". Anything else is context the assessment used, not a result
+#: the reader is holding.
+SOURCE_LAB_REPORT = "lab_report"
 
 
 def explain_report(
@@ -857,14 +873,48 @@ def explain_report(
         feature = str(feature)
         if wanted is not None and feature not in wanted:
             continue
-        if len(explanations) >= max(0, int(max_explanations)):
-            skipped.append({"feature": feature, "reason": "explanation_limit_reached"})
-            continue
+        # ELIGIBILITY IS DECIDED BEFORE THE BUDGET, not after.
+        #
+        # With the limit checked first, every row past the cap was reported as
+        # `explanation_limit_reached` -- including rows that were never
+        # eligible at all. A rejected value would be blamed on the budget, and
+        # a caller could not tell "we ran out of explanations" from "there was
+        # nothing here to explain". These three reasons are answers to
+        # different questions and the order made them one.
         if not _report_field(row, "usable"):
             skipped.append({"feature": feature, "reason": "value_not_usable"})
             continue
         if feature not in FEATURES:
             skipped.append({"feature": feature, "reason": "not_a_canonical_feature"})
+            continue
+
+        # A PROFILE ANSWER IS NOT A RESULT, and must not consume the budget.
+        #
+        # `laboratory_values` carries the age, sex and BMI the assessment used
+        # alongside the values the laboratory printed. They were candidates
+        # here, so on an eleven-row report three model calls could be spent
+        # writing "this test measures your age" -- which is not a sentence any
+        # reader is waiting for -- while a real cholesterol result went
+        # unexplained for want of budget.
+        #
+        # `source` is the field to branch on. NOT `origin`: the ai-service
+        # stamps `report_transcription` on profile-derived rows (MEMORY.md 6w,
+        # still open at source), so `origin` says the opposite of the truth
+        # here.
+        #
+        # POSITIVE PROOF ONLY. `source` is `Optional[str] = None` on the
+        # schema, so a row can genuinely arrive without one -- from an older
+        # stored report, or a caller that builds rows by hand. Requiring it to
+        # EQUAL "lab_report" would skip every such row and explain nothing at
+        # all; a missing field is not evidence that a value came from the
+        # profile. Excluded only when the row says outright that it did.
+        source = _report_field(row, "source")
+        if source is not None and source != SOURCE_LAB_REPORT:
+            skipped.append({"feature": feature, "reason": "not_a_laboratory_value"})
+            continue
+
+        if len(explanations) >= max(0, int(max_explanations)):
+            skipped.append({"feature": feature, "reason": "explanation_limit_reached"})
             continue
         planned.append(
             dict(

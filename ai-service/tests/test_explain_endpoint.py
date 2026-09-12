@@ -101,6 +101,8 @@ ROUTES = [
     # `success is True` and would have caught it on the first run -- the route
     # was simply never listed here.
     ("post", "/api/v1/explain/glossary", {"test_names": ["Blood Urea"]}),
+    # Listed HERE on the day it was written, not after it shipped dead.
+    ("post", "/api/v1/explain/clinician-summary", {"summary": {}}),
 ]
 
 

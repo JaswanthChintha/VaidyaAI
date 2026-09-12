@@ -1085,8 +1085,17 @@ def test_a_narrow_score_is_reported_as_narrow():
     assert data.outcome == PROGRESS_SCORE_COMPUTED
     assert data.coverage.contributing_count == 3
     assert any("It describes those parameters" in w for w in data.warnings)
-    assert any(
-        "A larger change does not move the score further" in w for w in data.warnings
+    # THE INVARIANT, NOT THE SENTENCE. The response must state that the SIZE
+    # of a change decides only whether it counts at all -- never how much it
+    # counts for -- so a reader cannot take a big number as a big score.
+    # The wording was rewritten out of this service's own vocabulary ("the
+    # stability band declared for that parameter"); what is pinned here is
+    # the claim, in whichever words carry it.
+    warnings_text = " ".join(data.warnings).lower()
+    assert "big enough to count" in warnings_text or "counts as a change" in warnings_text
+    assert (
+        "count the same" in warnings_text
+        or "does not move the score further" in warnings_text
     )
 
 
@@ -1157,7 +1166,16 @@ def test_the_disclaimer_and_scale_wording_ride_on_every_response():
         # is cased. Asserting the exact lowercase literal would fail on a
         # purely typographic edit while a real removal of the sentence would
         # still be caught.
-        assert "not a measure of health" in data.what_this_is_not.lower()
-        assert "not a risk score" in data.what_this_is_not.lower()
+        # THE THREE DENIALS ARE THE INVARIANT. Which words carry them is not:
+        # "not a measure of health" became "not a health score" when this
+        # paragraph was rewritten for a reader, and pinning the old phrase
+        # would fail on that edit while a genuine REMOVAL of the denial --
+        # the thing this platform has actually done three times -- would slip
+        # through either way. Each denial is matched in the forms that state
+        # it, and the test fails if any of the three stops being stated.
+        said = data.what_this_is_not.lower()
+        assert "not a health score" in said or "not a measure of health" in said
+        assert "not a risk score" in said
+        assert "not a diagnosis" in said
         assert "not a diagnosis" in data.disclaimer
         assert data.what_this_is.strip()

@@ -7,6 +7,7 @@ const { sendSuccess } = require('../utils/apiResponse');
 const { ownerScopedFilter, assertCanAccess, OWNER_ONLY } = require('../utils/ownership');
 const aiService = require('../services/aiServiceClient');
 const historyService = require('../services/historyService');
+const config = require('../config/env');
 
 /**
  * Module 32 - the Doctor-Friendly Clinical Summary.
@@ -85,7 +86,7 @@ const ownFilter = (req, base = {}) => ownerScopedFilter(req.user, { ...OWNER_ONL
  * clinician's page. Loading it here would serve no purpose but to put it one
  * careless edit away from doing so.
  */
-const DOCTOR_SUMMARY_PROJECTION = '+clinicalReport';
+const DOCTOR_SUMMARY_PROJECTION = '+clinicalReport +doctorNarrative';
 
 /**
  * GET /reports/:id/doctor-summary
@@ -175,6 +176,19 @@ const getDoctorSummary = asyncHandler(async (req, res) => {
     requestId: aiService.newRequestId(report._id.toString()),
   });
 
+  // THE WRITTEN VERSION, ONCE PER ANALYSIS.
+  //
+  // Cached on the report and keyed to `analysis.version`: a re-analysis makes
+  // the stored prose describe findings that are no longer on the page, and
+  // prose about the previous run is worse than no prose at all.
+  //
+  // EVERY FAILURE IS A NULL, NEVER AN ERROR. No model, a safety refusal, a
+  // failed fact check, the ai-service being unreachable -- all of them leave
+  // `narrative` absent and the client renders the composed passage it renders
+  // today. A page that is one Gemini outage away from a 500 would be a worse
+  // document than the one this replaces.
+  const narrative = await resolveNarrative(report, version, summary);
+
   return sendSuccess(res, 200, {
     // The file the document describes. Metadata only - `toPublicJSON` carries
     // no medical values and no storage key.
@@ -204,7 +218,69 @@ const getDoctorSummary = asyncHandler(async (req, res) => {
     // and `comparison.present`, and on `overall.any_assessed` - which being
     // false is NOT a clean bill of health.
     doctorSummary: summary,
+    // Module 32 as prose, or null. `null` is an ordinary answer and the
+    // client MUST be able to render without it -- see resolveNarrative.
+    narrative,
   });
 });
+
+/**
+ * The cached narrative, or a fresh one, or null.
+ *
+ * Never throws. This is a presentation improvement on a document that already
+ * renders without it, so a failure here must cost nothing: the catch is
+ * deliberate and the reason is logged rather than surfaced.
+ */
+async function resolveNarrative(report, version, summary) {
+  const cached = report.doctorNarrative;
+  // A REFUSAL IS CACHED TOO, and deliberately: a safety rejection costs two
+  // model calls, and retrying it on every page view would spend a day's quota
+  // on one reader. `model_unavailable` is the exception -- that is a
+  // configuration state, not an answer about this report, and caching it would
+  // leave the page permanently without prose after a key outage.
+  if (
+    cached
+    && cached.analysisVersion === version
+    && cached.outcome
+    && cached.outcome !== 'model_unavailable'
+  ) {
+    return cached;
+  }
+
+  let written = null;
+  try {
+    written = await aiService.writeClinicianSummary({
+      summary,
+      requestId: aiService.newRequestId(report._id.toString()),
+    });
+  } catch (err) {
+    // Correlation only: a stage, an opaque id, no body. The same shape
+    // aiServiceClient.logFailure uses, and silent under test.
+    if (!config.isTest) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[narrative] reportId=${report._id} outcome=unavailable ${err.message}`
+      );
+    }
+    return null;
+  }
+  if (!written || typeof written !== 'object') return null;
+
+  const stored = { ...written, analysisVersion: version };
+  // Persisted best-effort. A write failure means the next request writes it
+  // again, which is a wasted call and not a broken page.
+  try {
+    await Report.updateOne(
+      { _id: report._id },
+      { $set: { doctorNarrative: stored } }
+    );
+  } catch (err) {
+    if (!config.isTest) {
+      // eslint-disable-next-line no-console
+      console.warn(`[narrative] reportId=${report._id} outcome=not_cached ${err.message}`);
+    }
+  }
+  return stored;
+}
 
 module.exports = { getDoctorSummary };

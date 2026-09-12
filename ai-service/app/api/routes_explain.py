@@ -6,6 +6,8 @@
     GET  /api/v1/explain/terms      Module 25 -- what it will answer
     POST /api/v1/explain/guidance   Module 26 -- educational lifestyle guidance
     POST /api/v1/explain/glossary   describe tests this platform does NOT assess
+    POST /api/v1/explain/clinician-summary
+                                    write Module 32's handover note as prose
     GET  /api/v1/explain/policy     what all three do and refuse to do
 
 Thin HTTP wrapper, like `routes_report.py` and `routes_safety.py`. All logic
@@ -57,6 +59,10 @@ from app.services.lifestyle import (
     LifestyleGuidance,
     guidance_policy_document,
     lifestyle_guidance,
+)
+from app.services.clinician_narrative import (
+    ClinicianNarrative,
+    write_clinician_summary,
 )
 from app.services.parameter_glossary import (
     MAX_PER_REQUEST as GLOSSARY_MAX_PER_REQUEST,
@@ -456,6 +462,55 @@ def glossary_endpoint(
         data=describe_parameters(
             request.test_names, llm, max_calls=GLOSSARY_MAX_PER_REQUEST
         )
+    )
+
+
+class ClinicianSummaryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    summary: Dict[str, Any] = Field(
+        description="A Module 32 DoctorSummary, as returned by "
+        "POST /api/v1/report/doctor-summary. Posted verbatim: this endpoint "
+        "REWRITES a document that already exists and derives no finding of "
+        "its own."
+    )
+
+
+class ClinicianSummaryResponse(BaseModel):
+    """The `{success, data}` envelope, for the reason §6w records at length.
+
+    A route that returns a bare payload is rejected by the backend's
+    `unwrapEnvelope` as malformed, and the feature is then dead on every call
+    with nothing saying so. This route is also listed in
+    `tests/test_explain_endpoint.py::ROUTES`, which is the test that would
+    have caught that one on its first run.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    success: bool = True
+    data: ClinicianNarrative
+
+
+@router.post(
+    "/clinician-summary",
+    response_model=ClinicianSummaryResponse,
+    response_model_exclude_none=False,
+    summary="Write the clinician handover note as prose",
+)
+def clinician_summary_endpoint(
+    request: ClinicianSummaryRequest,
+    llm: Any = Depends(get_explanation_llm),
+) -> ClinicianSummaryResponse:
+    """Rewrite an existing Module 32 summary for the reader it is addressed to.
+
+    NO MODEL IS NOT AN ERROR. With no key configured this answers 200 with
+    `outcome: model_unavailable` and no text, because the caller's fallback --
+    the composed passage it renders today -- is the normal path here, not a
+    failure path. Erroring would turn a configuration state into a broken page.
+    """
+    return ClinicianSummaryResponse(
+        data=write_clinician_summary(request.summary, llm=llm)
     )
 
 

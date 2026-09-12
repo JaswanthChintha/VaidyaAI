@@ -46,8 +46,42 @@ function domainFor({ low, high, value }) {
 
 const pct = (n, domain) => Math.max(0, Math.min(100, ((n - domain.min) / (domain.max - domain.min)) * 100));
 
-export default function RangeChart({ rows = [], title, footnote, note }) {
+/**
+ * Is there anything on this chart to compare a value AGAINST?
+ *
+ * ==========================================================================
+ * A CHART WITH NO REFERENCE RANGE IN IT IS NOT THIS CHART
+ * ==========================================================================
+ *
+ * Exported so the page and this component share ONE definition of the rule
+ * rather than two copies of it -- the page needs it to decide whether to draw
+ * the panel around the chart, and the component needs it because a guarantee
+ * belongs at the layer that cannot be bypassed.
+ *
+ * WHY IT EXISTS, read off a real screen: on a report that prints no intervals
+ * -- which is most of them -- every row's display domain is derived from its
+ * own value alone, so every marker lands at the same fraction of its own
+ * track. Eight rows, eight dots in an identical position, distinguished only
+ * by colour. That is not a weak chart, it is a picture that LOOKS like a
+ * measurement and encodes nothing: a reader comparing two dots is reading an
+ * artefact of `value * 1.35`.
+ *
+ * The panel title promises "where each result sits against its reference
+ * range". With no reference range anywhere the honest rendering is no chart,
+ * and nothing is lost: the results table below carries every value, its
+ * verdict, the laboratory's own printed name, and every absence with its
+ * reason. §6x left this open -- "if that reads as duplication on a real
+ * screen it is a one-line change" -- and a reader has now said it does.
+ */
+export function hasComparableRange(rows = []) {
+  return rows.some(
+    (row) => typeof row.low === 'number' && typeof row.high === 'number'
+  );
+}
+
+export default function RangeChart({ rows = [], title, footnote }) {
   if (!rows.length) return null;
+  if (!hasComparableRange(rows)) return null;
 
   return (
     <div className="range">
@@ -55,8 +89,6 @@ export default function RangeChart({ rows = [], title, footnote, note }) {
         <h2>{title || 'Where each result sits against its reference range'}</h2>
         <span className="micro">Shaded band = usual range</span>
       </div>
-
-      {note ? <p className="range__note-all">{note}</p> : null}
 
       <div className="range__rows">
         {rows.map((row, index) => {

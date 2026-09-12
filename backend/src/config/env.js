@@ -310,10 +310,16 @@ const config = {
 
     // How many findings Module 23 may explain in one run. EVERY ONE IS A MODEL
     // CALL, so this is a cost and latency control, not a display preference.
-    // The ai-service caps the field at its own `DEFAULT_MAX_EXPLANATIONS` (6)
-    // and 422s anything higher, so it is clamped here rather than sent and
+    // The ai-service caps the field at its own `DEFAULT_MAX_EXPLANATIONS` and
+    // 422s anything higher, so it is clamped here rather than sent and
     // rejected at the far end.
-    maxExplanations: Math.min(6, Math.max(0, toInt(process.env.AI_SERVICE_MAX_EXPLANATIONS, 6))),
+    //
+    // RAISED 6 -> 10 (2026-09-11). At 6 an ordinary eight-value report left two
+    // results unexplained, chosen by row order. **THIS NUMBER MUST NOT EXCEED
+    // THE ai-service's OWN `DEFAULT_MAX_EXPLANATIONS`** -- the two are separate
+    // constants in separate languages and nothing links them, so raising this
+    // one alone turns every analyse into a 422.
+    maxExplanations: Math.min(10, Math.max(0, toInt(process.env.AI_SERVICE_MAX_EXPLANATIONS, 10))),
 
     // Extra attempts after the first, for TRANSIENT failures only (connection
     // refused/reset, timeout, 5xx). A 401 or a 422 is deterministic and is

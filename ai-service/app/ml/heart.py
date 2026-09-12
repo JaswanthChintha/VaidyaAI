@@ -771,13 +771,37 @@ class HeartPredictor(Predictor):
                 # most needs it. An earlier draft said "SELF-REPORTED physician
                 # diagnosis", which the Module 24 scanner correctly reads as a
                 # diagnostic assertion; the fact is kept, the phrasing is not.
+                # SAME REGISTER CHANGE as the kidney note, and the same rule:
+                # every fact kept, only the vocabulary of model development
+                # dropped. "Held-out ROC-AUC about 0.84 at a realistic 9%
+                # prevalence" and "precision at the Indicated cut-off" are
+                # measures a clinician is not obliged to know; the thing they
+                # can act on is what a flag is worth, which is why that figure
+                # is stated as people rather than as a ratio -- and as the
+                # NEGATIVE, "two out of three do NOT have it", which is both
+                # the same fact as precision 0.37 and the only form Module 24
+                # allows. Phrased the other way round ("37 of every 100 turn
+                # out to have heart disease") the scanner reads a diagnostic
+                # assertion and WITHHOLDS THE WHOLE NOTE -- it deletes the
+                # model's statement of its own limits from the document that
+                # most needs it. The original note was already written this way
+                # round; that was not an accident.
+                #
+                # "IDENTIFIED", NOT "DIAGNOSED", for the same reason, and this
+                # one was found by the suite rather than by reading: the word
+                # "diagnosed" in "misses people not yet diagnosed" is itself
+                # read as a diagnostic assertion and withholds the note. The
+                # comment below already recorded an earlier draft failing this
+                # way; it happened again on the first rewrite. "COARSE" stays:
+                # a discriminator short of excellent is never described here
+                # without a limiting word, and a test asserts exactly that.
                 "honest_read": (
-                    "A COARSE discriminator: held-out ROC-AUC about 0.84 at a "
-                    "realistic 9% prevalence. Precision at the Indicated "
-                    "cut-off is about 0.37, so most patients it flags will NOT "
-                    "have heart disease -- a high score is a reason to discuss "
-                    "testing with a clinician, never a finding. It learned from "
-                    "what respondents said a doctor had told them, so it misses "
+                    "A COARSE screening signal, not a precise one. At the "
+                    "cut-off used here, roughly two out of every three people "
+                    "it flags do NOT have heart disease -- a high score is a "
+                    "reason to discuss testing with a clinician, never a "
+                    "finding. It learned from what "
+                    "people said a doctor had told them, so it misses "
                     "people not yet identified. Blood pressure, the strongest "
                     "known predictor, is still not collected by VaidyaAI."
                 ),

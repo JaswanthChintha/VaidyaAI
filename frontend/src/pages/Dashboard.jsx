@@ -5,7 +5,8 @@ import { Absent, Risk, Value, WarningList } from '../components/Absent';
 import { isPresent } from '../lib/absence';
 import RiskGauge from '../components/RiskGauge';
 import CoverageRadar from '../components/CoverageRadar';
-import RangeChart from '../components/RangeChart';
+import RangeChart, { hasComparableRange } from '../components/RangeChart';
+import { PATIENT_LABEL } from '../lib/labels';
 
 /**
  * Module 27 -- the health dashboard.
@@ -167,6 +168,25 @@ const RISK_FACTOR_STATUS = {
 };
 
 /**
+ * The same verdicts again, for a topic ONLY the statistical model flagged.
+ *
+ * "These results point to this" describes a comparison of measured values,
+ * and on a model-only topic no comparison found anything -- the threshold
+ * check returned `Not Indicated`. On the live report that sentence sat above
+ * `creatinine 1.1 mg/dl`, a value in range, under a verdict of High. It is the
+ * same fault RISK_FACTOR_STATUS exists to fix, in a third basis: a headline
+ * describing a kind of reasoning the card did not use.
+ *
+ * Only the two statuses that differ are defined. `statusText` falls back to
+ * PATIENT_STATUS for the rest, so the three lines these tables would otherwise
+ * hold identically cannot drift apart in three places.
+ */
+const MODEL_STATUS = {
+  'Indicated': 'A statistical model flagged this — worth discussing with a doctor',
+  'Borderline': 'A statistical model flagged this as borderline — worth keeping an eye on',
+};
+
+/**
  * Was this verdict reached by counting risk factors rather than by comparing
  * a value to a cut-off?
  *
@@ -187,43 +207,36 @@ function countsRiskFactors(evidence) {
   return counted && !compared;
 }
 
-const statusText = (status, riskFactorBasis = false) => {
+/**
+ * `basis` is 'model' | 'risk_factors' | anything else for the default.
+ *
+ * THE MODEL CASE OUTRANKS THE RISK-FACTOR CASE, and the shape where that
+ * matters is real: a rule that counted risk factors and found NONE returns
+ * `Not Indicated` with no threshold comparison anywhere, so `countsRiskFactors`
+ * is true at the same time as `flaggedByModelAlone`. Describing that card as
+ * "several things here are known to raise this risk" would state the opposite
+ * of what the count found. Whichever analysis actually produced the verdict
+ * gets to name it.
+ *
+ * An unrecognised basis falls through to PATIENT_STATUS, and an unrecognised
+ * STATUS to the raw word -- a missing gloss is cosmetic, a guessed one is
+ * clinical.
+ */
+const statusText = (status, basis = 'default') => {
   if (!isPresent(status)) return null;
-  const table = riskFactorBasis ? RISK_FACTOR_STATUS : PATIENT_STATUS;
+  const table =
+    basis === 'model' ? MODEL_STATUS : basis === 'risk_factors' ? RISK_FACTOR_STATUS : PATIENT_STATUS;
   return table[status] || PATIENT_STATUS[status] || status;
 };
 
-/**
- * Did the contributing analyses actually reach DIFFERENT verdicts?
- *
- * `basisConflict` does NOT mean they disagreed -- it means they answer
- * different questions (a risk-factor tally is not a probability). Module 16
- * stamps it so the two are shown side by side instead of being averaged into
- * one number, which is a real and important guarantee.
- *
- * But it fires even when both said the same thing, and a paragraph beginning
- * "the analyses answer different questions" under a calm verdict reads as a
- * warning that something is wrong. On a patient screen that is worse than
- * unhelpful. So the methodological note is shown when the verdicts DIFFER --
- * where the reader genuinely needs to know why one says one thing and one says
- * another -- and stays on the clinician summary the rest of the time.
- *
- * THE TEST IS "CAN WE PROVE THEY AGREED", NOT "DID THEY DISAGREE". A first
- * version asked the second question and was wrong in a way that matters: when
- * the evidence section carried no per-source verdicts at all, it concluded
- * "no disagreement" and silently dropped a note Module 16 had deliberately
- * stamped. Missing information is not agreement. So the note is suppressed
- * ONLY where two or more assessed sources are present and every one of them
- * reached the same verdict; anything less certain shows it.
- */
-function shouldShowBasisNote(evidence) {
-  const verdicts = (evidence?.sources || [])
-    .filter((source) => source.assessed !== false && isPresent(source.status))
-    .map((source) => source.status);
-
-  const provablyAgreed = verdicts.length >= 2 && new Set(verdicts).size === 1;
-  return !provablyAgreed;
-}
+/* `shouldShowBasisNote` lived here: it decided when to print the basis-conflict
+   paragraph, by proving the contributing analyses had NOT agreed. The
+   paragraph itself is gone from this screen (see ConditionCard), so the guard
+   went with it rather than being left as an unreachable branch. The reasoning
+   it encoded is worth keeping if it ever comes back: `basisConflict` does not
+   mean the analyses disagreed -- it means they answer different questions --
+   and the test was "can we prove they agreed", never "did they disagree",
+   because missing per-source verdicts are not agreement. */
 
 /**
  * Guidance, grouped by WHY it is there.
@@ -335,6 +348,39 @@ function becausePhrase(item) {
 }
 
 /**
+ * The attribution to print ONCE above the list, or null to print it per item.
+ *
+ * On a report flagging one topic, every bullet carried the identical trailing
+ * "Related to: Obesity." -- the same sentence three times, which is §6ag's
+ * repetition fault and §6w's burial fault arriving in a list.
+ *
+ * HOISTING IS ONLY CORRECT WHEN THE SETS ARE IDENTICAL. If one bullet is there
+ * because of Obesity and another because of Obesity and Diabetes, a single
+ * line above the list is FALSE for one of them -- and it is false in the
+ * direction that announces a condition to a reader whose bullet had nothing to
+ * do with it, which is the exact hazard `matchedConditions` was written to
+ * prevent. So: every item must carry a non-empty `because`, and all of them
+ * must be the same set. Anything else keeps the per-item spans.
+ *
+ * Order is not significance here -- the catalog's list order is incidental --
+ * so the comparison is set-wise, not positional.
+ */
+function sharedBecausePhrase(items) {
+  if (!items?.length) return null;
+  // `groupGuidance` pushes an item ONLY when `matchedConditions` returned a
+  // non-empty list, so every row that reaches here has a reason. An empty-key
+  // guard was written, MUTATION-SURVIVED, and was deleted rather than kept:
+  // it is unreachable from the one caller, and this file already has a
+  // catalogue of branches nobody can find out are wrong. If a future caller
+  // passes unfiltered items, `becausePhrase` returns null for an empty list
+  // and the per-row spans come back -- the safe direction.
+  const key = (item) => [...new Set(item.because || [])].sort().join(' ');
+  const first = key(items[0]);
+  if (!items.every((item) => key(item) === first)) return null;
+  return becausePhrase(items[0]);
+}
+
+/**
  * Module 23's plain-language explanations -- THE MOST PATIENT-FACING THING THE
  * PIPELINE PRODUCES, and until now the dashboard threw it away.
  *
@@ -352,29 +398,76 @@ function becausePhrase(item) {
  * way to know that the cholesterol paragraph is missing rather than
  * unnecessary.
  */
-function Explanations({ explanations }) {
+function Explanations({ explanations, resultFeatures, unassessedCount = 0, unassessedItems = [] }) {
   const entries = explanations?.entries || [];
-  if (!entries.length) return null;
 
   const written = entries.filter((entry) => entry.available === true
     && isPresent(entry.explanation));
   const missing = entries.filter((entry) => entry.available !== true);
 
-  if (!written.length && !missing.length) return null;
+  // NEVER ASKED IS NOT WITHHELD, and the two need separate sentences.
+  //
+  // Module 23 writes up to six explanations per report. A report carrying more
+  // results than that has the rest recorded as skipped -- they were not
+  // refused by the safety layer and nothing went wrong with them; they were
+  // simply not attempted. Reading six cards under "What these results mean"
+  // with no eighth and no ninth is a partial set that looks complete, which is
+  // the same failure as a withheld paragraph rendering as a blank space.
+  //
+  // ONLY THE ROWS THIS PAGE SHOWS AS RESULTS. `skipped` also names `age`,
+  // `gender` and `bmi` -- the profile answers the assessment used. "No
+  // explanation was prepared for your age" is the screen describing its own
+  // mechanics; nobody was waiting to be told what age measures.
+  const notAttempted = (explanations?.notExplained || []).filter(
+    (item) => item && resultFeatures?.has(item.feature)
+  );
+
+  // THE SENTENCE BELOW SAYS "not explained ABOVE", so there has to be an
+  // above. With no explanation on screen there is no partial set to mistake
+  // for a complete one -- the absent section already says nothing was
+  // explained -- and a lone sentence pointing at nothing is §6w's scope-
+  // statement fault ("No line BELOW asserts..." moved to the foot of a page).
+  // THE SECTION ALSO CARRIES THE NOT-ASSESSED DESCRIPTIONS NOW, so it may be
+  // worth rendering even when the pipeline explained nothing: a report whose
+  // every parameter is unassessed still has tests worth describing.
+  const describedUnassessed = (unassessedItems || []).filter(
+    (item) => item.descriptionAvailable === true || item.descriptionAvailable === false
+  );
+  if (!written.length && !missing.length && !describedUnassessed.length) return null;
 
   return (
     <section className="explanations">
       <h2>What these results mean</h2>
 
+      {/* ONE DISCLOSURE PER RESULT, CLOSED BY DEFAULT.
+          Six paragraphs of five to eight lines each is most of this page, and
+          a reader looking for one of them has to scroll past the other five.
+          The SUBJECT stays visible in every summary, so the list still says
+          what is available and the reader chooses what to open.
+
+          NATIVE `<details>`, not a button and a state hook: it is keyboard
+          operable, exposes the right role to a screen reader, and still opens
+          with no JavaScript. The chevron is CSS on `[open]`, and the global
+          `prefers-reduced-motion` block already switches its transition off.
+
+          WHAT IS NOT COLLAPSED, and this is the part that matters: every
+          sentence BELOW is an absence -- a withheld explanation, one never
+          attempted, and the tests this tool does not check. An absence put
+          behind a disclosure is an absence the reader never learns about,
+          which is the one failure this page exists to prevent. They stay on
+          the page whether anything is open or not. */}
       {written.map((entry, index) => (
-        <article className="card explanation" key={entry.feature || index}>
-          <h3 className="explanation__subject">
-            {PATIENT_LABEL[entry.feature] || entry.subject}
-          </h3>
+        <details className="card explanation disclosure" key={entry.feature || index}>
+          <summary className="disclosure__summary">
+            <h3 className="explanation__subject">
+              {PATIENT_LABEL[entry.feature] || entry.subject}
+            </h3>
+            <span className="disclosure__chevron" aria-hidden="true" />
+          </summary>
           <p className="explanation__text">
             {trimClosingAdvice(entry.explanation)}
           </p>
-        </article>
+        </details>
       ))}
 
       {missing.length ? (
@@ -387,6 +480,43 @@ function Explanations({ explanations }) {
           analysis, not by the writing step.
         </p>
       ) : null}
+
+      {notAttempted.length ? (
+        <p className="hint">
+          {/* `andList`, not a plain join: a bare comma reads as a sentence
+              fragment, and a laboratory name containing a comma turns a list
+              of two into a list of four (§6w). */}
+          {andList(notAttempted.map((item) => PATIENT_LABEL[item.feature] || item.feature))}{' '}
+          {notAttempted.length === 1 ? 'has' : 'have'} no explanation above.
+          Only a set number of explanations is written for each report, and
+          this one has more results than that — nothing was wrong with{' '}
+          {notAttempted.length === 1 ? 'this result' : 'these results'}, and{' '}
+          {notAttempted.length === 1 ? 'its value is' : 'their values are'} in
+          the table above.
+        </p>
+      ) : null}
+
+      {/* THE SECTION IS NOT THE WHOLE REPORT, and its title does not say so.
+          This report prints twelve parameters: eight this tool assesses, and
+          four it has no feature for. The four are on the page, higher up and
+          under their own heading -- but a reader who reaches "What these
+          results mean" and finds eight has no reason to think anything is
+          elsewhere, and the heading invites exactly that reading.
+          NOT MERGED, deliberately: those four are described from the test NAME
+          ONLY, with no patient data in the prompt (§6v). Putting them in a
+          list whose other entries interpret the reader's own values would
+          invite the inference the whole architecture exists to prevent. */}
+      {unassessedCount > 0 ? (
+        <p className="hint">
+          The explanations above cover the results this tool checks. Your
+          report lists {unassessedCount} other test
+          {unassessedCount === 1 ? '' : 's'} it does not check;{' '}
+          {unassessedCount === 1 ? 'it is' : 'they are'} in “Your results”
+          above, with your laboratory&rsquo;s own range.
+        </p>
+      ) : null}
+
+      <UnassessedExplanations items={unassessedItems} />
 
       <p className="hint">
         Written by a language model from your measured values and reviewed
@@ -553,124 +683,215 @@ function ParameterDescription({ item }) {
   return null;
 }
 
-function Unanalysed({ unanalysed }) {
-  const items = unanalysed?.items || [];
-  if (!items.length) return null;
-  // Branch on the count derived from the items themselves, so the sentence
-  // explaining the descriptions appears only when there are descriptions.
-  const anyDescribed = items.some((item) => item.descriptionAvailable === true);
+/**
+ * The laboratory's OWN range, for a parameter this tool does not assess.
+ *
+ * THE COMPARISON IS ARITHMETIC, NOT AN ASSESSMENT. The interval is printed on
+ * the reader's own report and the marking is their own laboratory's; this
+ * function carries both forward and compares two numbers. It invents no
+ * threshold, and when the report printed no interval it says so rather than
+ * borrowing one from anywhere -- a model-supplied reference range is a defect
+ * this platform has already shipped once (MEMORY 6v).
+ */
+function labRange(item) {
+  const low = item.labReferenceLow;
+  const high = item.labReferenceHigh;
+  if (isPresent(low) && isPresent(high)) return `${low}–${high}`;
+  if (isPresent(high)) return `up to ${high}`;
+  if (isPresent(low)) return `${low} and above`;
+  return null;
+}
 
-  const labFlagged = items.filter((item) => item.labFlaggedAbnormal === true);
-  const rest = items.filter((item) => item.labFlaggedAbnormal !== true);
-
-  const groups = new Map();
-  for (const item of rest) {
-    const reason = SKIP_REASON[item.reason] || 'this tool does not assess this test';
-    if (!groups.has(reason)) groups.set(reason, []);
-    groups.get(reason).push(item);
-  }
-
-  const range = (item) => {
-    const low = item.labReferenceLow;
-    const high = item.labReferenceHigh;
-    if (isPresent(low) && isPresent(high)) return `${low}–${high}`;
-    if (isPresent(high)) return `up to ${high}`;
-    if (isPresent(low)) return `${low} and above`;
-    return null;
-  };
-
+/**
+ * One row of the not-assessed group in "Your results".
+ *
+ * THE VERDICT COLUMN IS THE LABORATORY'S AND SAYS SO IN THE CELL. It never
+ * reuses `.verdict--high` / `.verdict--low`, which on this page mean THIS
+ * TOOL crossed a threshold it holds. A reader scanning the column must be
+ * able to tell which of the two they are looking at without reading the
+ * heading above.
+ */
+function UnassessedRow({ item }) {
+  const range = labRange(item);
+  const flagged = item.labFlaggedAbnormal === true;
   return (
-    <section className="unanalysed">
-      <h2>Also on your report, but not assessed here</h2>
-      <p>
-        This tool checks a fixed set of measurements. Your report contained{' '}
-        <strong>{items.length}</strong> other result
-        {items.length === 1 ? '' : 's'} that it read but did not assess.{' '}
-        <strong>
-          Nothing above says anything about these — they were not checked, which
-          is not the same as being normal.
-        </strong>
-      </p>
-
-      {/* THE WHOLE SAFETY STORY OF THE DESCRIPTIONS, NEXT TO THE TEXT IT IS
-          ABOUT. Each description was generated from the test's NAME alone —
-          no value, unit, reference range, laboratory flag or profile detail
-          was sent — so it cannot be, and must not be read as, a statement
-          about this reader's result. That sentence is the reason the feature
-          is safe to ship, and it belongs on screen rather than in a comment. */}
-      {anyDescribed ? (
-        <p className="hint">
-          Where a description appears below, it explains what the test measures
-          in general. It was written from the name of the test only — your
-          result was not used and is not interpreted here.
-        </p>
-      ) : null}
-
-      {/* THE LABORATORY'S OWN MARKINGS, WHICH COST NOTHING TO HONOUR.
-          Module 4 already read each parameter's printed range and the lab's
-          own high/low flag, and both were being discarded with the parameter.
-          On one real report that buried nine results the laboratory itself had
-          marked abnormal -- including the urea and potassium that corroborate
-          the raised creatinine the page DID flag. Showing them asserts nothing
-          new: the range is the laboratory's and so is the verdict. This
-          platform has still not assessed them, and says so. */}
-      {labFlagged.length ? (
-        <div className="unanalysed__flagged">
-          <h3>
-            Your laboratory marked {labFlagged.length} of them outside its own
-            reference range
-          </h3>
-          <p className="hint">
-            This is your laboratory&rsquo;s own marking, not an assessment by
-            this tool — it does not check these tests. They are shown so they
-            are not lost. Take them to a qualified healthcare professional.
-          </p>
-          <ul className="unanalysed__list unanalysed__list--flagged">
-            {labFlagged.map((item, index) => (
-              <li key={`${item.testName}-${index}`}>
-                <span className="unanalysed__name">{item.testName}</span>{' '}
-                <span className="unanalysed__value">
-                  {item.value}
-                  {isPresent(item.unit) ? ` ${item.unit}` : ''}
-                </span>{' '}
-                <span className={`verdict verdict--${item.labFlag === 'low' ? 'low' : 'high'}`}>
-                  lab: {item.labFlag}
-                </span>
-                {range(item) ? (
-                  <span className="unanalysed__range"> (range {range(item)})</span>
-                ) : null}
-                <ParameterDescription item={item} />
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      {[...groups.entries()].map(([reason, group]) => (
-        <details className="unanalysed__group" key={reason}>
-          <summary>
-            {group.length} result{group.length === 1 ? '' : 's'} — {reason}
-          </summary>
-          <ul className="unanalysed__list">
-            {group.map((item, index) => (
-              <li key={`${item.testName}-${index}`}>
-                <span className="unanalysed__name">{item.testName}</span>
-                {isPresent(item.value) ? (
-                  <span className="unanalysed__value">
-                    {' '}
-                    {item.value}
-                    {isPresent(item.unit) ? ` ${item.unit}` : ''}
-                  </span>
-                ) : null}
-                <ParameterDescription item={item} />
-              </li>
-            ))}
-          </ul>
-        </details>
-      ))}
-    </section>
+    <tr className="lab-row--unassessed">
+      <th scope="row">
+        {item.testName}
+        <span className="lab__note">not assessed by this tool</span>
+      </th>
+      <td className="lab__value">
+        {isPresent(item.value) ? item.value : '—'}
+        {isPresent(item.unit) ? ` ${item.unit}` : ''}
+      </td>
+      {/* THE FLAG AND THE RANGE ARE INDEPENDENT FACTS, and the first version
+          of this cell tied them together: it printed the comparison only when
+          a range existed, so a result the LABORATORY HAD MARKED ABNORMAL with
+          no printed interval fell through to "no range printed" and lost the
+          marking altogether. An absence swallowing a real finding, in the one
+          cell added to surface real findings. A test caught it.
+          A laboratory can mark a result abnormal against a range it does not
+          print -- sex-specific intervals are the common case (MEMORY 6m) --
+          so the marking is shown whenever it exists, and the range is added
+          to it only when there is one. */}
+      <td>
+        {flagged && isPresent(item.labFlag) ? (
+          <>
+            <span className="lab-flag lab-flag--out">
+              {range ? `${item.labFlag} — outside ${range}` : `${item.labFlag}`}
+            </span>
+            <span className="lab__note">
+              your laboratory&rsquo;s own {range ? 'range' : 'marking'}
+            </span>
+          </>
+        ) : range ? (
+          <>
+            {/* "within" only reads correctly against a two-sided interval.
+                Prefixing it to the one-sided forms produced "within up to
+                100" and "within 15 and above", which are not English -- the
+                one-sided phrases are already complete sentences about where
+                the value sits. */}
+            <span className="lab-flag">
+              {isPresent(item.labReferenceLow) && isPresent(item.labReferenceHigh)
+                ? `within ${range}`
+                : isPresent(item.labReferenceHigh)
+                  ? `at or below ${item.labReferenceHigh}`
+                  : `at or above ${item.labReferenceLow}`}
+            </span>
+            <span className="lab__note">your laboratory&rsquo;s own range</span>
+          </>
+        ) : (
+          /* NOT "in range", and not blank. The report printed no interval and
+             the laboratory marked nothing, so there is nothing to compare
+             against -- and a blank cell in a column headed "Compared with
+             usual limits" reads as "fine". */
+          <span className="lab__note">no range printed on your report</span>
+        )}
+      </td>
+    </tr>
   );
 }
+
+/**
+ * The not-assessed parameters, in "Your results" where the reader is.
+ *
+ * MERGED INTO THE SECTION, NOT INTO THE LIST. A previous session kept these
+ * off this part of the page entirely, on the reasoning that a description
+ * written from a test NAME sitting among entries that interpret the reader's
+ * own values invites exactly the inference the architecture prevents. That
+ * reasoning is right about the LIST and it is why this is a separate group
+ * with its own heading and its own verdict vocabulary -- not interleaved
+ * rows. What changed is the judgement that burying them in a section at the
+ * foot of the page was the safer of the two errors: a laboratory's own
+ * abnormal marking is worth more to a reader than the tidiness of keeping
+ * this section pure.
+ */
+function UnassessedResults({ items }) {
+  if (!items.length) return null;
+  const flaggedCount = items.filter((i) => i.labFlaggedAbnormal === true).length;
+  return (
+    <>
+      <h3 className="lab-group__title">
+        Also on your report — not assessed by this tool
+      </h3>
+      <p className="hint">
+        This tool checks a fixed set of measurements and did not check{' '}
+        {items.length === 1 ? 'this one' : `these ${items.length}`}.{' '}
+        <strong>
+          Not checked is not the same as normal.
+        </strong>{' '}
+        {flaggedCount
+          ? `Your laboratory marked ${flaggedCount} of ${
+              flaggedCount === 1 ? 'them' : 'them'
+            } outside its own range — that is your laboratory's judgement, not this tool's. Take ${
+              flaggedCount === 1 ? 'it' : 'them'
+            } to a qualified healthcare professional.`
+          : ''}
+      </p>
+      <table className="lab-table lab-table--unassessed">
+        <thead>
+          <tr>
+            <th scope="col">Test</th>
+            <th scope="col">Result</th>
+            <th scope="col">Compared with usual limits</th>
+          </tr>
+        </thead>
+        <tbody>
+          {/* The laboratory's own abnormal markings first: they are the reason
+              this group is on the page at all. */}
+          {[...items]
+            .sort(
+              (a, b) =>
+                Number(b.labFlaggedAbnormal === true) -
+                Number(a.labFlaggedAbnormal === true)
+            )
+            .map((item, index) => (
+              <UnassessedRow key={`${item.testName}-${index}`} item={item} />
+            ))}
+        </tbody>
+      </table>
+    </>
+  );
+}
+
+/**
+ * The not-assessed tests, in "What these results mean".
+ *
+ * A SEPARATE GROUP WITH ITS OWN HEADING, and the heading is the safety
+ * control. Every card above this point explains the reader's OWN value
+ * ("Your validated result for HbA1c is 5.2 %..."). These explain what the
+ * test IS -- generated from the test's name alone, with no value, unit,
+ * range, flag or profile field in the prompt (MEMORY 6v). Dropped into the
+ * same list unlabelled they would be read as interpreting the reader's
+ * result, which is the inference the whole architecture exists to prevent;
+ * that is why a previous session kept them off this section entirely.
+ *
+ * Labelling them is what makes including them safe, so the label is not
+ * decoration and may not be quietly dropped -- there is a test.
+ *
+ * ONLY THE DESCRIBED ONES. The glossary is asked only about tests the
+ * laboratory itself marked abnormal, so most parameters have no entry and
+ * were never asked about. A card saying nothing is not a card.
+ */
+function UnassessedExplanations({ items }) {
+  const described = (items || []).filter(
+    (item) => item.descriptionAvailable === true || item.descriptionAvailable === false
+  );
+  if (!described.length) return null;
+
+  return (
+    <>
+      <h3 className="explanations__group">
+        About the tests this tool did not assess
+      </h3>
+      <p className="hint">
+        These describe what the test measures in general. Each was written
+        from the name of the test only — <strong>your result was not used
+        and is not interpreted here.</strong>
+      </p>
+      {described.map((item, index) => (
+        <details className="card explanation disclosure" key={`${item.testName}-${index}`}>
+          <summary className="disclosure__summary">
+            <h3 className="explanation__subject">{item.testName}</h3>
+            <span className="disclosure__chevron" aria-hidden="true" />
+          </summary>
+          <div className="explanation__body">
+            <ParameterDescription item={item} />
+          </div>
+        </details>
+      ))}
+    </>
+  );
+}
+
+/* `Unanalysed` STOOD HERE AND IS DELETED, not left unused.
+   It rendered the whole bottom-of-page section: the lab-flagged list with its
+   ranges, the skip-reason groups, and the descriptions. Every one of those
+   now has a home in the section a reader is already reading. An unused
+   component that still renders a complete version of a screen is the most
+   expensive kind of dead code -- the next person to touch this file cannot
+   tell which of the two is live. `ParameterDescription` above is kept: the
+   new group uses it. */
 
 /**
  * The whole report, in one place, in English -- COMPOSED, NEVER GENERATED.
@@ -776,10 +997,27 @@ function isProfileDerived(evidence) {
  * where a name actually contains a comma, so the ordinary case still reads as
  * ordinary English.
  */
-const nameList = (names) =>
-  names.join(names.some((name) => String(name).includes(',')) ? '; ' : ', ');
+const commaSafeSeparator = (names) =>
+  names.some((name) => String(name).includes(',')) ? '; ' : ', ';
+
+const nameList = (names) => names.join(commaSafeSeparator(names));
 
 const listOfNames = (cards) => nameList(cards.map((card) => card.condition));
+
+/**
+ * The same list, as prose: "A, B and C".
+ *
+ * Comma-aware for the same reason `nameList` is -- a laboratory name with a
+ * comma in it turns two tests into four -- and it exists because a bare
+ * `join(', ')` reads as a fragment mid-sentence: "Total cholesterol,
+ * Triglycerides are not explained above" is not English.
+ */
+const andList = (names) => {
+  if (!names.length) return '';
+  if (names.length === 1) return String(names[0]);
+  // The SAME separator rule as `nameList`, not a second copy of it.
+  return `${names.slice(0, -1).join(commaSafeSeparator(names))} and ${names[names.length - 1]}`;
+};
 
 function InShort({ dashboard, flaggedCards, clearCards, unassessedCards }) {
   const overall = dashboard.overall;
@@ -1007,23 +1245,10 @@ const RADAR_LABEL = {
   'Heart Disease': 'Heart',
 };
 
-/** Patient-facing names. The catalog's own wording is for clinicians. */
-const PATIENT_LABEL = {
-  hba1c: 'HbA1c (average blood sugar)',
-  blood_glucose: 'Blood sugar',
-  cholesterol: 'Total cholesterol',
-  triglycerides: 'Triglycerides',
-  creatinine: 'Creatinine (kidney marker)',
-  hemoglobin: 'Haemoglobin',
-  vitamin_d: 'Vitamin D',
-  vitamin_b12: 'Vitamin B12',
-  bmi: 'BMI',
-  age: 'age',
-  gender: 'sex',
-  smoking_history: 'smoking history',
-  hypertension: 'history of high blood pressure',
-  heart_disease: 'history of heart disease',
-};
+/* PATIENT_LABEL (patient-facing names; the catalog's own wording is for
+   clinicians) moved to ../lib/labels.js, because the timeline's trend charts
+   name the same features and a second copy of that table is how one of them
+   drifts. */
 
 const labelFor = (line) =>
   PATIENT_LABEL[line.feature] || line.displayName || line.feature;
@@ -1117,6 +1342,42 @@ function summariseEvidence(evidence) {
   return { measured, context, missing };
 }
 
+/**
+ * Was this topic flagged by the MODEL, with the threshold check coming back
+ * clear?
+ *
+ * THE CARD CANNOT EXPLAIN ITSELF IN THAT CASE, and it is a real shape rather
+ * than a hypothetical: on the analysed report, Kidney Disease shows
+ * `creatinine 1.1 mg/dl` crossing nothing, under a verdict of High. The
+ * Clinical Rule Engine returned `Not Indicated` for it and the Random Forest
+ * returned `Indicated`. A reader is shown a normal-looking number and a
+ * serious word with nothing connecting them.
+ *
+ * PROOF IN BOTH DIRECTIONS, OR NOTHING. This never infers "no threshold was
+ * crossed" from the absence of a crossing on screen -- that is a clinical
+ * claim and the render layer has no business making it. It reads the
+ * producer's own per-source verdicts, and stays silent unless BOTH are
+ * present and assessed. `shouldShowBasisNote` (removed above) got this exact
+ * reasoning right and it is worth repeating: missing information is not
+ * agreement, and it is not disagreement either.
+ *
+ * A FINDING IS AN EXPLICIT STATUS, never "not Not Indicated". `Insufficient
+ * Data` is an absence and must never be read as the model having found
+ * something, and an unrecognised status must not silently become a finding.
+ */
+const FINDING_STATUS = ['Indicated', 'Borderline'];
+
+function flaggedByModelAlone(evidence) {
+  const sources = (evidence?.sources || []).filter((s) => s.assessed !== false);
+  const rule = sources.find((s) => s.sourceKind === 'clinical_rule');
+  const model = sources.find((s) => s.sourceKind === 'machine_learning');
+  if (!rule || !model) return false;
+
+  const ruleFoundNothing = rule.status === 'Not Indicated';
+  const modelFoundSomething = FINDING_STATUS.includes(model.status);
+  return ruleFoundNothing && modelFoundSomething;
+}
+
 /** How the verdict was reached, said without naming internal components. */
 function plainSources(sourceKinds) {
   const kinds = new Set(sourceKinds || []);
@@ -1135,8 +1396,7 @@ function plainSources(sourceKinds) {
 function contextPhrase(context) {
   const names = context.map(labelFor).filter(Boolean);
   if (!names.length) return null;
-  if (names.length === 1) return names[0];
-  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  return andList(names);
 }
 
 function ConditionCard({ card, evidence }) {
@@ -1144,6 +1404,31 @@ function ConditionCard({ card, evidence }) {
   const { measured, context, missing } = summariseEvidence(evidence);
   const alsoConsidered = contextPhrase(context);
   const notAvailable = contextPhrase(missing);
+
+  // Does this card explain its own verdict? A row reading `268 mg/dl above
+  // 240 mg/dl` does. A card with no crossing shown does not.
+  //
+  // NO `card.flagged === true` CLAUSE HERE, and that is deliberate after
+  // trying one. ConditionCard is rendered ONLY for the flagged group (see the
+  // call site: not unassessed and not clear), so "this card carries a verdict"
+  // is the caller's guarantee and a second copy of it here is unreachable --
+  // an unkillable mutation and a test that passes without asserting anything.
+  // It was also WRONG: `flagged` is not true on every card in that group. A
+  // `Borderline` topic lands there because `isClear` requires the exact status
+  // `Not Indicated`, so gating on `flagged` would have stripped the
+  // explanation from exactly the cards least able to speak for themselves.
+  const verdictUnexplained = !measured.some((line) => crossing(line));
+
+  // Said instead of the generic "how it was checked" line, not alongside it:
+  // this sentence carries everything that one did, and more precisely.
+  const modelAlone = flaggedByModelAlone(evidence);
+
+  // Which kind of reasoning actually reached this verdict, so the headline
+  // describes that one and not a comparison nobody made.
+  const statusWording = statusText(
+    card.status,
+    modelAlone ? 'model' : countsRiskFactors(evidence) ? 'risk_factors' : 'default'
+  );
 
   return (
     <li className="card condition">
@@ -1161,8 +1446,8 @@ function ConditionCard({ card, evidence }) {
       </div>
 
       <p className="condition__status">
-        {statusText(card.status, countsRiskFactors(evidence)) ? (
-          statusText(card.status, countsRiskFactors(evidence))
+        {statusWording ? (
+          statusWording
         ) : (
           <Absent reason="No decision was reached for this condition." />
         )}
@@ -1200,7 +1485,10 @@ function ConditionCard({ card, evidence }) {
       ) : null}
 
       {alsoConsidered ? (
-        <p className="hint">Your {alsoConsidered} were also taken into account.</p>
+        <p className="hint">
+          Your {alsoConsidered} {context.length === 1 ? 'was' : 'were'} also taken
+          into account.
+        </p>
       ) : null}
 
       {card.partiallyAssessed === true ? (
@@ -1210,24 +1498,67 @@ function ConditionCard({ card, evidence }) {
         </p>
       ) : null}
 
-      {/* Shown only when the two checks actually reached different verdicts --
-          see sourcesDisagree. The stored `basisNote` is written for a
-          clinician, so it is replaced here rather than printed. */}
-      {card.basisConflict === true && shouldShowBasisNote(evidence) ? (
-        <p className="caveat">
-          Two checks were made and they did not agree. One counts risk factors
+      {/* THE BASIS-CONFLICT PARAGRAPH IS GONE, and this is the second time
+          this exact shape has been removed from a patient screen.
+          "Two checks were made and they did not agree. One counts risk factors
           from your profile; the other is a statistical estimate. They answer
-          different questions, so neither settles the other — this is worth
-          raising with a doctor.
+          different questions, so neither settles the other" is four lines
+          explaining why two of this screen's OWN FIELDS do not contradict each
+          other -- §6w: when a screen needs that paragraph, the fields are the
+          bug, not the missing paragraph. A patient cannot adjudicate between a
+          risk-factor tally and a model probability; the decision engine
+          already did, and the fused verdict is what this card shows. The
+          sentence ended on "worth raising with a doctor", which the status
+          line above says already.
+          NOT LOST: `basisConflict` and `basisNote` are still in the payload,
+          and the clinician passage still states which kind of check flagged
+          what -- including the model-only case, which is the one a reader can
+          be misled by. */}
+
+      {/* HOW IT WAS CHECKED, ONLY WHEN THE CARD DOES NOT ALREADY SAY SO.
+          Above a row reading `268 mg/dl  above 240 mg/dl`, "checked against
+          standard clinical thresholds" is the screen narrating its own
+          mechanics -- §6u removed "Based on: Clinical Rule Engine, Random
+          Forest" from this very card for that reason, and this is the same
+          sentence in friendlier words.
+          But it cannot go unconditionally. A topic the statistical model
+          flagged where NO measured value crossed a limit has nothing on the
+          card explaining where the verdict came from, and a verdict with no
+          reason is a thing to be believed or not. So it is stated exactly
+          there, and nowhere else. */}
+      {/* WHERE THE VERDICT CAME FROM, when the values on the card do not say.
+          The model author's own framing, in the register of this page: a high
+          score from a pattern model is a reason to discuss something, never a
+          finding. Saying only "a statistical model also looked" leaves the
+          reader to reconcile a normal number with a serious word themselves. */}
+      {modelAlone ? (
+        <p className="caveat">
+          No measured value crossed a standard limit for this. The model
+          compares your results with patterns in population data — it cannot
+          confirm a condition.
         </p>
       ) : null}
 
-      {plainSources(card.sourceKinds) ? (
+      {!modelAlone && verdictUnexplained && plainSources(card.sourceKinds) ? (
         <p className="hint">{plainSources(card.sourceKinds)}</p>
       ) : null}
     </li>
   );
 }
+
+/**
+ * What a reader is told when validation refused a reading.
+ *
+ * NOT the validator's own message. That is written for whoever has to fix the
+ * unit -- "'vitamin_d' was reported in a unit that could not be recognised, so
+ * it was never converted to the canonical ng/ml" -- and it names an internal
+ * feature key, a canonical unit and a conversion step. The fact a patient can
+ * act on is that the number was not used, and that is what this says. The
+ * validator's wording is untouched in the stored analysis and on
+ * GET /reports/:id/analysis.
+ */
+const REJECTED_FOR_READER =
+  'This result could not be used, so nothing on this page is based on it.';
 
 /** The four laboratory states, each rendered as the distinct fact it is. */
 /**
@@ -1261,6 +1592,23 @@ function LabRow({ row, showRange, showFlag, showVerdict, verdict, fromProfile })
   const canonical = friendly
     || (isPresent(row.displayName) ? row.displayName : row.feature);
 
+  // A WORD IS NOT A MEASUREMENT AND MUST NOT BE SET LIKE ONE.
+  //
+  // `.lab-table td` is monospace with tabular numerals, which is right for
+  // the reason design.md §3 gives -- numbers align down the column and that
+  // is what makes a results table scannable. A word aligns with nothing, so
+  // the only thing the treatment carries there is the LOOK of a measured
+  // value: on the profile table, `male` was set in the same face as
+  // `26.42 kg/m2` directly above it, under a heading about results.
+  const numericValue = typeof row.value === 'number' && Number.isFinite(row.value);
+  // First letter only, and only on a string. Not `text-transform: capitalize`,
+  // which would render an absence sentence as "Not Measured", and not a
+  // rewording of the producer's text -- "male" and "Male" are the same answer.
+  const displayValue =
+    !numericValue && typeof row.value === 'string' && row.value.length
+      ? row.value.charAt(0).toUpperCase() + row.value.slice(1)
+      : row.value;
+
   return (
     <tr className={`lab lab--${row.state || 'unknown'}`}>
       <th scope="row">
@@ -1270,14 +1618,24 @@ function LabRow({ row, showRange, showFlag, showVerdict, verdict, fromProfile })
         ) : null}
       </th>
 
-      <td>
+      <td className={numericValue ? undefined : 'lab__word'}>
+        {/* THE REASON A VALUE WAS REFUSED IS NOT WRITTEN FOR THIS READER.
+            `rejectionReason` is the validator's own message -- "'vitamin_d'
+            was reported in a unit that could not be recognised, so it was
+            never converted to the canonical ng/ml" -- naming the internal
+            feature key and the canonical unit. A patient cannot act on it and
+            most will not finish it.
+            WHAT THEY CAN ACT ON IS THE FACT ITSELF, and that is kept: the
+            value was not used, said in one line. The validator's wording stays
+            in the stored analysis and on GET /reports/:id/analysis, which is
+            where someone debugging a bad unit needs it. */}
         <Value
-          value={row.value}
+          value={displayValue}
           unit={row.unit}
           available={usable}
           reason={
-            isPresent(row.rejectionReason)
-              ? row.rejectionReason
+            row.state === 'rejected'
+              ? REJECTED_FOR_READER
               : isPresent(row.availabilityExplanation)
                 ? row.availabilityExplanation
                 : undefined
@@ -1492,20 +1850,69 @@ export default function Dashboard() {
   // the grouped condition cards, `dashboard.overall` -- so nothing on screen
   // is counted twice or counted differently.
 
-  // The radar's five topics, most-serious first. `assessed` is the real flag
-  // from the payload; a topic that could not be checked is NOT given a
-  // coverage number, because the chart pins it to zero and draws it as an
-  // absence rather than a low score.
+  // Declared before the radar, which reads it to work out how much of each
+  // topic the report could actually speak to.
+  const evidenceByCondition = new Map(
+    (dashboard.evidence?.conditions || []).map((item) => [item.condition, item])
+  );
+
+  /**
+   * The radar's five topics, most-serious first.
+   *
+   * COVERAGE IS WHAT THE TITLE SAYS IT IS: of the inputs this assessment
+   * cites, how many the report actually carried. Diabetes cites eight and five
+   * were available; Heart Disease the same; a single-threshold topic like High
+   * Cholesterol cites one and has it.
+   *
+   * IT USED TO BE THE VERDICT -- `isClear(card) ? 0.55 : 0.95` -- and that made
+   * the chart say the opposite of its own title. A flagged topic sat at the
+   * rim, so a report with everything abnormal drew a full pentagon under the
+   * word "Coverage", and a full shape reads as thorough and reassuring. The
+   * radius now says how completely each topic could be examined, which is the
+   * one question the condition cards below do NOT answer.
+   *
+   * A topic whose coverage cannot be computed is left OFF the chart rather
+   * than given a radius. There is no number for "we do not know how much we
+   * saw", and inventing one is the failure this whole screen exists to
+   * prevent; the card below still reports the topic in full.
+   */
+  const coverageFor = (condition) => {
+    const lines = evidenceByCondition.get(condition)?.lines || [];
+    // ONE ENTRY PER FEATURE: two rules citing the same input is one input, and
+    // the same value counted twice would inflate the coverage of exactly the
+    // topics that have several rules. A feature counts as available if ANY of
+    // its lines observed it -- an input the assessment had is an input it had,
+    // and "first line wins" would have made that an accident of ordering.
+    const byFeature = new Map();
+    for (const line of lines) {
+      const seen = byFeature.get(line.feature) === true;
+      byFeature.set(line.feature, seen || line.availability === 'observed');
+    }
+    const cited = byFeature.size;
+    if (!cited) return null;
+    const available = [...byFeature.values()].filter(Boolean).length;
+    return { cited, available, coverage: available / cited };
+  };
+
   const radarTopics = [...flaggedCards, ...clearCards, ...unassessedCards]
-    .slice(0, 5)
-    .map((card) => ({
-      name: card.condition,
-      short: RADAR_LABEL[card.condition] || card.condition,
-      assessed: !isUnassessed(card),
-      // Coverage is "how much of this topic the report could speak to". A
-      // flagged card sits at the rim, a clear one well inside it.
-      coverage: isUnassessed(card) ? 0 : isClear(card) ? 0.55 : 0.95,
-    }));
+    .map((card) => {
+      const assessed = !isUnassessed(card);
+      const counts = coverageFor(card.condition);
+      // An unassessed topic keeps its spoke and its dashed point at zero --
+      // that is the chart's whole reason for existing. An ASSESSED topic with
+      // no citable inputs has no coverage to draw and is dropped.
+      if (assessed && !counts) return null;
+      return {
+        name: card.condition,
+        short: RADAR_LABEL[card.condition] || card.condition,
+        assessed,
+        coverage: assessed ? counts.coverage : 0,
+        cited: counts?.cited,
+        available: counts?.available,
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 5);
 
   // One row per measured value, in the state the payload gave it.
   const rangeRows = measuredLabs.map((row) => {
@@ -1532,7 +1939,9 @@ export default function Dashboard() {
       high: isPresent(row.referenceHigh) ? row.referenceHigh : undefined,
       // The engine's own crossing, never a comparison recomputed here.
       flagged: Boolean(verdict && verdict.direction),
-      note: row.rejectionReason,
+      // The same plain sentence the table shows, not `row.rejectionReason` --
+      // the chart had the validator's message under the row name.
+      note: row.state === 'rejected' ? REJECTED_FOR_READER : undefined,
     };
   });
 
@@ -1544,9 +1953,6 @@ export default function Dashboard() {
     (item) => item.labFlaggedAbnormal === true
   );
 
-  const evidenceByCondition = new Map(
-    (dashboard.evidence?.conditions || []).map((item) => [item.condition, item])
-  );
   const recommendations = dashboard.recommendations || {};
   // Only conditions this report actually flagged. `flagged` is the dashboard's
   // own predicate, so guidance can never claim a finding the cards do not show.
@@ -1556,26 +1962,7 @@ export default function Dashboard() {
       .map((card) => card.condition)
   );
   const guidance = groupGuidance(recommendations.guidance?.items, flaggedConditions);
-
-  // NOTES THE READER CAN DO SOMETHING WITH.
-  //
-  // `warnings` mixes two unrelated things: facts about whether the document
-  // was read properly ("part of this report could not be read"), which change
-  // what the patient should trust, and methodology notes from the fusion stage
-  // about how two analyses relate to each other, which are clinician material.
-  // The second kind was being printed here verbatim -- "Heart Disease: The
-  // analyses contributing to this topic answer different questions..." -- and
-  // it is both unreadable and redundant, because the card itself says it in
-  // plain words on the only occasion it matters, when the two disagree.
-  //
-  // Methodology stages are filtered out of the PATIENT view only. The clinician
-  // summary and the stored report keep every warning untouched.
-  const METHODOLOGY_STAGES = new Set(['fusion', 'decision']);
-  const readerWarnings = (dashboard.warnings || []).filter(
-    (warning) =>
-      !(warning && typeof warning === 'object'
-        && METHODOLOGY_STAGES.has(warning.stage))
-  );
+  const sharedBecause = sharedBecausePhrase(guidance.relevant);
 
   return (
     <main className="dashboard">
@@ -1620,25 +2007,20 @@ export default function Dashboard() {
             <h2>Coverage of the topics checked</h2>
             <CoverageRadar
               topics={radarTopics}
-              caption="A dotted point sits at zero because nothing was measured for that topic — it is not a low score."
+              absenceCaption="A dotted point sits at zero because nothing was measured for that topic — it is not a low score."
             />
           </section>
         ) : null}
       </div>
 
-      {rangeRows.length ? (
+      {/* NO PANEL WHEN THERE IS NOTHING TO COMPARE AGAINST. The guard is
+          `hasComparableRange`, imported from the chart so the rule has one
+          definition -- without it this section renders an empty bordered card
+          around a component that has correctly decided to draw nothing. */}
+      {rangeRows.length && hasComparableRange(rangeRows) ? (
         <section className="card range">
           <RangeChart
             rows={rangeRows}
-            /* SAID ONCE, under the chart. A report that prints no intervals
-               otherwise leaves eleven bandless tracks with nothing explaining
-               why -- and a reader would fairly read a bare marker as "in
-               range". */
-            note={
-              rangeRows.some((row) => typeof row.low === 'number' || typeof row.high === 'number')
-                ? null
-                : 'This report printed no reference intervals, so no result below is placed against a usual range.'
-            }
             footnote={
               labFlaggedElsewhere.length
                 ? `Your laboratory marked ${labFlaggedElsewhere.length} further result${
@@ -1683,18 +2065,57 @@ export default function Dashboard() {
         <>
           <h2>Everything else that was checked</h2>
           {clearCards.length ? (
-            <p className="condition__roundup">
-              <strong>Nothing in these results pointed to:</strong>{' '}
-              {clearCards.map((card) => card.condition).join(', ')}.
-            </p>
+            <div className="roundup">
+              <p className="roundup__lead">
+                <strong>Nothing in these results pointed to</strong> these{' '}
+                {clearCards.length}{' '}
+                {clearCards.length === 1 ? 'topic' : 'topics'}.
+              </p>
+              <ul className="chips">
+                {clearCards.map((card) => (
+                  <li className="chip chip--clear" key={card.condition}>
+                    <span className="chip__mark" aria-hidden="true">
+                      ✓
+                    </span>
+                    {card.condition}
+                  </li>
+                ))}
+              </ul>
+            </div>
           ) : null}
+          {/* THE ABSENCE GROUP GETS THE APP'S ABSENCE TREATMENT, NOT A TINT.
+              This was `color: var(--muted)` on a comma-run -- the two groups
+              differed by one step of grey, on the single distinction this
+              whole screen exists to preserve. `styles.css`'s own header names
+              that failure: "a grey number still reads as a number; a dashed
+              empty outline cannot", and design.md §6 mandates the treatment
+              used here (dashed `--band-line`, NO FILL, `--mono`, the literal
+              words NOT CHECKED). The charts already speak this language, so
+              the page now has one vocabulary for absence instead of three.
+
+              The sentence below the chips is unchanged and may not go: the
+              chips say which topics, and it says what an unchecked topic
+              MEANS. "Could not check" reads as reassurance without it. */}
           {unassessedCards.length ? (
-            <p className="condition__roundup condition__roundup--unassessed">
-              <strong>Not enough information to check:</strong>{' '}
-              {unassessedCards.map((card) => card.condition).join(', ')}. An
-              unchecked topic is an open question, not a negative result — it
-              needs a test this report did not include.
-            </p>
+            <div className="roundup roundup--unassessed">
+              <p className="roundup__lead">
+                <strong>Not enough information to check</strong> these{' '}
+                {unassessedCards.length}{' '}
+                {unassessedCards.length === 1 ? 'topic' : 'topics'}.
+              </p>
+              <ul className="chips">
+                {unassessedCards.map((card) => (
+                  <li className="chip chip--unassessed" key={card.condition}>
+                    {card.condition}
+                    <span className="chip__tag">NOT CHECKED</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="roundup__note">
+                An unchecked topic is an open question, not a negative result —
+                it needs a test this report did not include.
+              </p>
+            </div>
           ) : null}
         </>
       ) : null}
@@ -1709,6 +2130,11 @@ export default function Dashboard() {
       ) : (
         <p className="empty">No laboratory values were read from this report.</p>
       )}
+
+      {/* The parameters this tool does not assess, with the laboratory's own
+          range. Their own group, their own verdict vocabulary -- see
+          `UnassessedResults`. */}
+      <UnassessedResults items={dashboard.unanalysed?.items || []} />
 
       {/* PROFILE ANSWERS ARE NOT LABORATORY VALUES. Age, BMI, sex and smoking
           history came from the questionnaire, not from blood, and listing them
@@ -1728,12 +2154,60 @@ export default function Dashboard() {
 
       {guidance.relevant.length ? (
         <>
-          <h2>Topics you could read about</h2>
-          <ul className="guidance">
+          {/* THE WHOLE GROUP BEHIND ONE DISCLOSURE, not one per row.
+              These items are a line each and reading them as a set is the
+              point -- six separate toggles for six short lines is more
+              chrome than content. The count is in the summary so the reader
+              knows the size of what they are opening.
+
+              NOTHING HERE IS AN ABSENCE, which is why the whole section may
+              close. It is general educational material matched to a flag,
+              and the qualifier that says so travels INSIDE with the items it
+              qualifies -- it has nothing to qualify while the group is shut.
+              The explanations above are the opposite case and are treated as
+              such. */}
+          <details className="disclosure disclosure--section">
+            <summary className="disclosure__summary">
+              <h2>Topics you could read about</h2>
+              {/* THE COUNT BELONGS TO THE HEADING, so it sits against it.
+                  It was reading as a stray number: the heading was `flex: 1`
+                  and stretched to 672px, parking the badge 680px away at the
+                  far right beside the chevron, where it looked like a second
+                  control rather than "there are three of these". The spacer
+                  does the pushing now. */}
+              <span className="disclosure__count">
+                {guidance.relevant.length}
+              </span>
+              <span className="disclosure__spacer" />
+              <span className="disclosure__chevron" aria-hidden="true" />
+            </summary>
+            {/* THE OPENED CONTENT NEEDS AN EDGE. Revealed straight onto the
+                page ground it had no boundary, so the reader could not tell
+                where the disclosure ended and the next section began -- the
+                closing qualifier in particular read as page text that
+                happened to follow. One panel holds the attribution, the
+                topics and the qualifier: opening the toggle produces ONE
+                object, not three loose paragraphs. */}
+            <div className="disclosure__body">
+          {/* ONE ATTRIBUTION ABOVE THE LIST WHEN IT IS THE SAME ONE.
+              Three bullets each ending "Related to: Obesity." is the same
+              sentence three times. Hoisted only when every item's set is
+              identical (see `sharedBecausePhrase`) -- otherwise each keeps its
+              own, because a single line that is true of most bullets is FALSE
+              of the rest, and false here means naming a condition at a reader
+              whose bullet had nothing to do with it. */}
+          {sharedBecause ? (
+            <p className="guidance__shared">
+              Shown because this report flagged {sharedBecause}.
+            </p>
+          ) : null}
+          <ul className="guidance bullets">
             {guidance.relevant.map((item, index) => (
               <li key={item.code || index}>
-                {trimGeneralPrefix(item.text || item.title)}
-                {becausePhrase(item) ? (
+                <span className="guidance__text">
+                  {trimGeneralPrefix(item.text || item.title)}
+                </span>
+                {!sharedBecause && becausePhrase(item) ? (
                   <span className="guidance__because">
                     {' '}
                     Related to: {becausePhrase(item)}.
@@ -1747,24 +2221,52 @@ export default function Dashboard() {
             They are not written for you, are not personalised treatment
             advice, and are not instructions.
           </p>
+            </div>
+          </details>
         </>
       ) : null}
 
-      {readerWarnings.length ? (
-        <>
-          <h2>Worth knowing about this analysis</h2>
-          <WarningList warnings={readerWarnings} />
-        </>
-      ) : null}
+      {/* "WORTH KNOWING ABOUT THIS ANALYSIS" IS GONE FROM THIS PAGE.
+          It printed the pipeline's own stage warnings at a patient:
+          "'25-Hydroxy Vitamin D' reported unit 'ng/dL', which is not a
+          recognised unit for feature 'vitamin_d' (canonical: 'ng/ml'). The
+          value was left unconverted and flagged canonical_unit=false." That is
+          a bug report. A patient cannot act on a field name, a canonical unit
+          or a boolean flag, and the facts they CAN act on are already on the
+          page in their own words -- a value that could not be used says so on
+          its own row, an unreadable page is stated in the summary, and a stage
+          that failed is stated there too.
+          NOT DELETED, RELOCATED: every warning is still in the stored analysis
+          and on GET /reports/:id/analysis, which is where a maintainer looks.
+          `readerWarnings` and its methodology filter went with the section --
+          a filter whose only consumer is gone is a branch nobody can reach. */}
 
-      <Unanalysed unanalysed={dashboard.unanalysed} />
+      {/* THE "Also on your report, but not assessed here" SECTION IS GONE.
+          Everything it carried now sits where the reader already is: the
+          values and the laboratory's own ranges in "Your results", the
+          descriptions in "What these results mean", both as labelled groups
+          of their own. Keeping the section as well would print every one of
+          these parameters TWICE on one page -- the repetition this screen has
+          spent a whole session removing. Its safety sentence ("not checked is
+          not the same as normal") moved to the results group's header, which
+          is the first place a reader meets these rows. */}
 
       {/* LAST, deliberately. The numbers and what was flagged come first --
           that is what the reader opened the page for. The long-form
           explanation is the thing you read once you know which result you
           care about, so it sits at the end rather than pushing the findings
           below the fold. */}
-      <Explanations explanations={recommendations.explanations} />
+      <Explanations
+        explanations={recommendations.explanations}
+        /* The features this page shows as RESULTS, so a skipped profile answer
+           (age, sex, BMI) is not announced as a missing explanation. */
+        resultFeatures={new Set(measuredLabs.map((row) => row.feature))}
+        /* The tests on the report this tool has no feature for. Counted off
+           the items list, not `unanalysed.count` -- §6u: `unmapped_count` said
+           0 on a report with 63 of them, and the dashboard repeated it. */
+        unassessedCount={(dashboard.unanalysed?.items || []).length}
+        unassessedItems={dashboard.unanalysed?.items || []}
+      />
 
       {/* THE LAST THING ON THE PAGE, and the only place the whole report is
           said in one breath. It comes after the detail rather than before it

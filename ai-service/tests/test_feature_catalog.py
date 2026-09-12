@@ -433,3 +433,73 @@ def test_a_comma_name_with_no_known_segment_is_still_unmapped():
     match, reason = lookup_test_name("Widget Count, Deluxe")
     assert match is None
     assert reason == UnmappedReason.NO_SYNONYM
+
+
+# ==========================================================================
+# `description` IS A LABEL, AND IS RENDERED TO READERS
+# ==========================================================================
+#
+# It reaches the comparison table, the clinician summary, the progress table
+# and the explanation prompt, and it is fed to the RAG retriever as a search
+# term. Four profile entries carried an internal note instead, and a patient
+# comparing two reports was shown:
+#
+#     "Self-described gender as stored by Module 2."
+#     "Smoking history, diabetes-dataset categories."
+#
+# -- a module number and the name of a training dataset. The `hypertension`
+# and `heart_disease` entries would have printed
+# "TRI-STATE: true / false / absent(unknown)" the moment they appeared.
+#
+# This is the fourth place this platform has leaked its own vocabulary onto a
+# reader-facing surface (MEMORY.md 6u, 6w, 6af, 6an-e). Every previous fix was
+# applied to the SURFACE. This one is at the source, so the guard belongs here
+# too -- a scan of the table itself, which no rendering test can substitute
+# for because a label is only wrong once someone renders it.
+
+
+_FORBIDDEN_IN_A_LABEL = (
+    "module",          # "as stored by Module 2"
+    "tri-state",       # an implementation contract
+    "dataset",         # "diabetes-dataset categories"
+    "absent(unknown)",
+    "true / false",
+)
+
+
+def test_no_feature_label_names_this_platform_s_own_machinery():
+    from app.data.feature_catalog import FEATURES
+
+    offenders = []
+    for name, definition in FEATURES.items():
+        lowered = definition.description.lower()
+        for banned in _FORBIDDEN_IN_A_LABEL:
+            if banned in lowered:
+                offenders.append(f"{name}: {definition.description!r} contains {banned!r}")
+    assert offenders == []
+
+
+def test_every_feature_label_reads_as_a_name_not_a_sentence():
+    """A label is a noun phrase. A full stop is the tell that a note crept in.
+
+    Both of the strings this test was written for ended in one, and neither
+    was a label: they were sentences explaining the field to a maintainer.
+    """
+    from app.data.feature_catalog import FEATURES
+
+    offenders = [
+        f"{name}: {d.description!r}"
+        for name, d in FEATURES.items()
+        if d.description.rstrip().endswith(".")
+    ]
+    assert offenders == []
+
+
+def test_every_feature_has_a_non_empty_label():
+    """The floor. An empty label renders as nothing at all, which is worse
+    than a clumsy one -- a row with no name is a row a reader cannot act on.
+    """
+    from app.data.feature_catalog import FEATURES
+
+    assert [n for n, d in FEATURES.items() if not d.description.strip()] == []
+

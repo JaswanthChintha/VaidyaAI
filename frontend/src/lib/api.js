@@ -253,6 +253,20 @@ async function openReportFile(id, mimeType) {
 }
 
 
+/**
+ * `?baseline=…&comparison=…`, or nothing at all.
+ *
+ * BOTH OR NEITHER. The backend refuses exactly one of the pair rather than
+ * guessing the other, so sending a half-pair would turn a user's half-finished
+ * choice into an error instead of into the default comparison.
+ */
+function pairQuery(pair) {
+  const baseline = pair && pair.baseline;
+  const comparison = pair && pair.comparison;
+  if (!baseline || !comparison) return '';
+  return `?baseline=${encodeURIComponent(baseline)}&comparison=${encodeURIComponent(comparison)}`;
+}
+
 export const api = {
   register: (payload) => request('POST', '/auth/register', { body: payload }),
   login: (payload) => request('POST', '/auth/login', { body: payload }),
@@ -279,8 +293,20 @@ export const api = {
   getPopulationContext: (id) => request('GET', `/reports/${id}/population-context`),
 
   getTrends: () => request('GET', '/timeline/trends'),
-  getComparison: () => request('GET', '/timeline/comparison'),
-  getProgress: () => request('GET', '/timeline/progress'),
+  /**
+   * Modules 29 and 30, for a NAMED pair of reports or the service's own choice.
+   *
+   * `pair` is `{ baseline, comparison }` or nothing. Both endpoints have taken
+   * these query parameters since they were written; sending neither is what
+   * produces `selection: "first_vs_latest"`, and sending one without the other
+   * is refused by the backend rather than half-applied.
+   *
+   * THE TWO ARE ALWAYS ASKED THE SAME QUESTION. A comparison table describing
+   * one pair beside a progress score computed from another is two answers to
+   * different questions presented as one screen.
+   */
+  getComparison: (pair) => request('GET', `/timeline/comparison${pairQuery(pair)}`),
+  getProgress: (pair) => request('GET', `/timeline/progress${pairQuery(pair)}`),
 };
 
 export { refreshSession };
