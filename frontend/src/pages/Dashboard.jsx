@@ -445,6 +445,30 @@ function Explanations({
   // sentence to make -- but nothing the writer had explained -- rendered
   // neither. The section stopped being only about explanations when the
   // ranges moved into it.
+  // ONE LIST, BUILT ONCE. The written explanations interpret the reader's own
+  // value; the descriptions say what a test measures and were written from its
+  // NAME alone. They are rendered identically on the reader's instruction, so
+  // the difference between them is stated in the provenance sentence instead
+  // of in a heading above a group.
+  const disclosures = [
+    ...written.map((entry, index) => ({
+      key: entry.feature || `written-${index}`,
+      subject: PATIENT_LABEL[entry.feature] || entry.subject,
+      body: (
+        <p className="explanation__text">{trimClosingAdvice(entry.explanation)}</p>
+      ),
+    })),
+    ...describedUnassessed.map((item, index) => ({
+      key: `${item.testName}-${index}`,
+      subject: item.testName,
+      body: (
+        <div className="explanation__body">
+          <ParameterDescription item={item} />
+        </div>
+      ),
+    })),
+  ];
+
   const hasProvenance = totalResultCount > assessedResultCount;
   const hasRangeNotice =
     assessedResultCount > 0 && !rangeLines.some((entry) => entry.assessed);
@@ -480,17 +504,22 @@ function Explanations({
           behind a disclosure is an absence the reader never learns about,
           which is the one failure this page exists to prevent. They stay on
           the page whether anything is open or not. */}
-      {written.map((entry, index) => (
-        <details className="card explanation disclosure" key={entry.feature || index}>
+      {/* ONE LIST. The tests this tool does not assess had their own heading
+          and their own paragraph of qualification; they are ordinary entries
+          here now, in the same position and the same shape as the rest.
+          WHAT THE HEADING CARRIED IS NOT DROPPED -- these are written from
+          the NAME of the test alone, with no patient data in the prompt
+          (§6v), and a reader who took one for an interpretation of their own
+          value would be making exactly the inference the architecture exists
+          to prevent. It is said once, in the provenance sentence below, and
+          not as a label on a group. */}
+      {disclosures.map((entry) => (
+        <details className="card explanation disclosure" key={entry.key}>
           <summary className="disclosure__summary">
-            <h3 className="explanation__subject">
-              {PATIENT_LABEL[entry.feature] || entry.subject}
-            </h3>
+            <h3 className="explanation__subject">{entry.subject}</h3>
             <span className="disclosure__chevron" aria-hidden="true" />
           </summary>
-          <p className="explanation__text">
-            {trimClosingAdvice(entry.explanation)}
-          </p>
+          {entry.body}
         </details>
       ))}
 
@@ -525,28 +554,6 @@ function Explanations({
         </p>
       ) : null}
 
-      {/* THE SECTION IS NOT THE WHOLE REPORT, and its title does not say so.
-          This report prints twelve parameters: eight this tool assesses, and
-          four it has no feature for. The four are on the page, higher up and
-          under their own heading -- but a reader who reaches "What these
-          results mean" and finds eight has no reason to think anything is
-          elsewhere, and the heading invites exactly that reading.
-          NOT MERGED, deliberately: those four are described from the test NAME
-          ONLY, with no patient data in the prompt (§6v). Putting them in a
-          list whose other entries interpret the reader's own values would
-          invite the inference the whole architecture exists to prevent. */}
-      {unassessedCount > 0 ? (
-        <p className="hint">
-          The explanations above cover the results this tool checks. Your
-          report lists {unassessedCount} other test
-          {unassessedCount === 1 ? '' : 's'} it does not check;{' '}
-          {unassessedCount === 1 ? 'it is' : 'they are'} in “Your results”
-          above, with your laboratory&rsquo;s own range.
-        </p>
-      ) : null}
-
-      <UnassessedExplanations items={unassessedItems} />
-
       {/* WHICH OF THE ROWS ABOVE THIS TOOL ACTUALLY ASSESSED.
           The results table is deliberately uniform -- one list, one set of
           columns, no badge on any row -- because which engine formed an
@@ -565,6 +572,13 @@ function Explanations({
           {assessedResultCount} of the {totalResultCount} results listed above;
           the others are shown with your laboratory&rsquo;s own comparison and
           did not contribute to the topics on this page.{' '}
+          {describedUnassessed.length ? (
+            <>
+              Where one of those has a note above, the note says what the test
+              measures in general — it was written from the name of the test
+              alone and does not interpret your result.{' '}
+            </>
+          ) : null}
           <strong>Not checked is not the same as normal.</strong> Take anything
           your laboratory marked to a qualified healthcare professional.
         </p>
@@ -789,55 +803,6 @@ function labRange(item) {
   return null;
 }
 
-/**
- * The not-assessed tests, in "What these results mean".
- *
- * A SEPARATE GROUP WITH ITS OWN HEADING, and the heading is the safety
- * control. Every card above this point explains the reader's OWN value
- * ("Your validated result for HbA1c is 5.2 %..."). These explain what the
- * test IS -- generated from the test's name alone, with no value, unit,
- * range, flag or profile field in the prompt (MEMORY 6v). Dropped into the
- * same list unlabelled they would be read as interpreting the reader's
- * result, which is the inference the whole architecture exists to prevent;
- * that is why a previous session kept them off this section entirely.
- *
- * Labelling them is what makes including them safe, so the label is not
- * decoration and may not be quietly dropped -- there is a test.
- *
- * ONLY THE DESCRIBED ONES. The glossary is asked only about tests the
- * laboratory itself marked abnormal, so most parameters have no entry and
- * were never asked about. A card saying nothing is not a card.
- */
-function UnassessedExplanations({ items }) {
-  const described = (items || []).filter(
-    (item) => item.descriptionAvailable === true || item.descriptionAvailable === false
-  );
-  if (!described.length) return null;
-
-  return (
-    <>
-      <h3 className="explanations__group">
-        About the tests this tool did not assess
-      </h3>
-      <p className="hint">
-        These describe what the test measures in general. Each was written
-        from the name of the test only — <strong>your result was not used
-        and is not interpreted here.</strong>
-      </p>
-      {described.map((item, index) => (
-        <details className="card explanation disclosure" key={`${item.testName}-${index}`}>
-          <summary className="disclosure__summary">
-            <h3 className="explanation__subject">{item.testName}</h3>
-            <span className="disclosure__chevron" aria-hidden="true" />
-          </summary>
-          <div className="explanation__body">
-            <ParameterDescription item={item} />
-          </div>
-        </details>
-      ))}
-    </>
-  );
-}
 
 /* `Unanalysed` STOOD HERE AND IS DELETED, not left unused.
    It rendered the whole bottom-of-page section: the lab-flagged list with its

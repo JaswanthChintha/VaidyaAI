@@ -967,7 +967,7 @@ describe('what the charts and the table are told about each row', () => {
       expect(screen.queryByText(/no explanation above/)).not.toBeInTheDocument();
     });
 
-    it('says the report has tests this tool does not check, and where they are', async () => {
+    it('accounts for the tests this tool does not check, and shows them', async () => {
       // A READER'S COMPLAINT, on a real report: "this section doesn't contain
       // all parameters listed in the report". True -- the report prints
       // twelve, this tool assesses eight, and the other four are on the page
@@ -988,24 +988,27 @@ describe('what the charts and the table are told about each row', () => {
       renderDashboard();
 
       await screen.findAllByText(/average blood sugar/);
-      expect(
-        screen.getByText(/lists 4 other tests it does not check/)
-      ).toBeInTheDocument();
+      // THE SIGNPOST IS GONE BECAUSE THE PLACE IT POINTED TO IS. These tests
+      // are ordinary entries of this very list now, so "they are in Your
+      // results above" would be sending the reader away from them. The fact
+      // it existed to carry -- that the section is NOT the whole report --
+      // is the provenance sentence's job now.
+      const said = screen.getByText(/of the \d+ results listed above/i);
+      const [, assessed, total] = said.textContent.match(
+        /assessed (\d+) of the (\d+) results/i
+      );
+      expect(Number(total) - Number(assessed)).toBe(4);
       // THE INVARIANT IS UNCHANGED: the pointer must name a place that
       // exists. The place moved -- these rows are a labelled group inside
       // "Your results" now, rather than a section of their own further down
       // -- so the signpost points there and the group heading is asserted to
       // be on the page. A signpost to a section that does not exist is worse
       // than none, which is exactly what this test is for.
-      expect(
-        screen.getByText(/in .Your results. above, with your laboratory/)
-      ).toBeInTheDocument();
-      // THE INVARIANT IS STILL "the pointer names a place that exists" -- what
-      // changed is that the place is no longer a heading of its own. These
-      // rows are ordinary rows of the one results table now, so what is
-      // asserted is that they are actually THERE.
-      expect(screen.getByText('Blood Urea')).toBeInTheDocument();
-      expect(screen.getByText('Potassium, Serum')).toBeInTheDocument();
+      // THE INVARIANT IS STILL "a reader must be able to find them". They are
+      // ordinary rows of the one results table now, and ordinary entries of
+      // this list, so what is asserted is that they are actually THERE.
+      expect(screen.getAllByText('Blood Urea').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('Potassium, Serum').length).toBeGreaterThan(0);
     });
 
     it('does not mention other tests when the report has none', async () => {
@@ -1030,9 +1033,14 @@ describe('what the charts and the table are told about each row', () => {
       renderDashboard();
 
       await screen.findAllByText(/average blood sugar/);
-      expect(
-        screen.getByText(/lists 2 other tests it does not check/)
-      ).toBeInTheDocument();
+      // `unanalysed.count` is 0 in this fixture and there are two items. The
+      // count on screen must come from the LIST. Read as a difference so the
+      // assertion cannot pass by coincidence of a changed sentence.
+      const said = screen.getByText(/of the \d+ results listed above/i);
+      const [, assessed, total] = said.textContent.match(
+        /assessed (\d+) of the (\d+) results/i
+      );
+      expect(Number(total) - Number(assessed)).toBe(2);
     });
 
     it('joins two names with "and", not a bare comma', async () => {
@@ -1805,9 +1813,17 @@ describe('descriptions of tests this platform does not assess', () => {
     withDashboard({ unanalysed });
     renderDashboard();
 
-    expect(
-      await screen.findByText(/your result was not used and is not interpreted here/)
-    ).toBeInTheDocument();
+    // THE SAFETY ARGUMENT SURVIVED THE MERGE, AS A SENTENCE. The group
+    // heading and its qualifying paragraph went on the reader's instruction;
+    // what they carried did not. The prompt held a test name and nothing
+    // else, so the text in these entries cannot be a reading of anyone's
+    // result -- and they now sit in one list with entries that ARE, which is
+    // precisely why it still has to be said.
+    const said = await screen.findByText(
+      /written from the name of the test alone and does not interpret your result/
+    );
+    // And not behind a disclosure a reader may never open.
+    expect(said.closest('details')).toBeNull();
   });
 
   it('says nothing at all about a test nobody asked about', async () => {
@@ -2526,13 +2542,15 @@ describe('parameters this tool does not assess', () => {
     );
     renderDashboard();
 
-    await screen.findByText(/About the tests this tool did not assess/);
-    expect(
-      screen.getByText(/your result was not used and is not interpreted here/)
-    ).toBeInTheDocument();
+    await screen.findAllByText('Potassium, Serum');
+    // No heading over a group any more -- one sentence, in the section.
+    const said = screen.getByText(
+      /written from the name of the test alone and does not interpret your result/
+    );
+    expect(said.closest('details')).toBeNull();
   });
 
-  it('offers no description group when nothing was described', async () => {
+  it('offers no entry, and no qualifier, when nothing was described', async () => {
     // The glossary is only asked about tests the lab flagged, so most reports
     // have no entries at all. A heading over nothing is a section that says
     // there is something to read when there is not.
@@ -2564,12 +2582,16 @@ describe('parameters this tool does not assess', () => {
 
     // The section itself IS on screen...
     await screen.findByText(/What these results mean/);
-    // ...and the group for undescribed extras is not.
+    // ...and nothing claims a description that was never written. Urine
+    // Colour was never sent to the model, so it gets no entry of its own...
+    const subjects = [...document.querySelectorAll('.explanation__subject')]
+      .map((node) => node.textContent.trim());
+    expect(subjects).toContain('HbA1c (average blood sugar)');
+    expect(subjects).not.toContain('Urine Colour');
+    // ...and the sentence qualifying those entries is not offered either,
+    // because with none of them on screen it has nothing to qualify.
     expect(
-      screen.queryByText(/About the tests this tool did not assess/)
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByText(/your result was not used and is not interpreted here/)
+      screen.queryByText(/written from the name of the test alone/)
     ).not.toBeInTheDocument();
   });
 
