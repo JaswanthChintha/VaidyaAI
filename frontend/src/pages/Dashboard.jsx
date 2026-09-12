@@ -5,7 +5,6 @@ import { Absent, Risk, Value, WarningList } from '../components/Absent';
 import { isPresent } from '../lib/absence';
 import RiskGauge from '../components/RiskGauge';
 import CoverageRadar from '../components/CoverageRadar';
-import RangeChart, { hasComparableRange } from '../components/RangeChart';
 import { PATIENT_LABEL } from '../lib/labels';
 
 /**
@@ -1914,45 +1913,6 @@ export default function Dashboard() {
     .filter(Boolean)
     .slice(0, 5);
 
-  // One row per measured value, in the state the payload gave it.
-  const rangeRows = measuredLabs.map((row) => {
-    const verdict = verdicts.get(row.feature);
-    // THE PAYLOAD'S OWN STATE, not a guess from `usable`.
-    //
-    // `usable === false` covers two completely different things and mapping
-    // both to "rejected" mislabelled three rows on a real report: a profile
-    // question the patient never answered came out as "NOT USABLE", which
-    // claims a reading was taken and refused. `unavailable` means it was never
-    // there at all.
-    const state =
-      row.state === 'rejected'
-        ? 'rejected'
-        : isPresent(row.value) && row.usable !== false
-          ? 'measured'
-          : 'not_on_report';
-    return {
-      name: PATIENT_LABEL[row.feature] || row.displayName || row.feature,
-      state,
-      value: row.value,
-      unit: row.unit,
-      low: isPresent(row.referenceLow) ? row.referenceLow : undefined,
-      high: isPresent(row.referenceHigh) ? row.referenceHigh : undefined,
-      // The engine's own crossing, never a comparison recomputed here.
-      flagged: Boolean(verdict && verdict.direction),
-      // The same plain sentence the table shows, not `row.rejectionReason` --
-      // the chart had the validator's message under the row name.
-      note: row.state === 'rejected' ? REJECTED_FOR_READER : undefined,
-    };
-  });
-
-  // The laboratory's own abnormal markings on tests this platform does not
-  // assess. Never plotted -- they belong to no scale on this chart -- but
-  // counted underneath, because leaving them out entirely is how section 6u's
-  // defect happened in the first place.
-  const labFlaggedElsewhere = (dashboard.unanalysed?.items || []).filter(
-    (item) => item.labFlaggedAbnormal === true
-  );
-
   const recommendations = dashboard.recommendations || {};
   // Only conditions this report actually flagged. `flagged` is the dashboard's
   // own predicate, so guidance can never claim a finding the cards do not show.
@@ -2013,28 +1973,6 @@ export default function Dashboard() {
         ) : null}
       </div>
 
-      {/* NO PANEL WHEN THERE IS NOTHING TO COMPARE AGAINST. The guard is
-          `hasComparableRange`, imported from the chart so the rule has one
-          definition -- without it this section renders an empty bordered card
-          around a component that has correctly decided to draw nothing. */}
-      {rangeRows.length && hasComparableRange(rangeRows) ? (
-        <section className="card range">
-          <RangeChart
-            rows={rangeRows}
-            footnote={
-              labFlaggedElsewhere.length
-                ? `Your laboratory marked ${labFlaggedElsewhere.length} further result${
-                    labFlaggedElsewhere.length === 1 ? '' : 's'
-                  } outside its own range on tests this tool does not check, so ${
-                    labFlaggedElsewhere.length === 1 ? 'it is' : 'they are'
-                  } not plotted above: ${labFlaggedElsewhere
-                    .map((item) => item.testName)
-                    .join('; ')}.`
-                : null
-            }
-          />
-        </section>
-      ) : null}
 
       {/* FLAGGED FIRST, AND ONLY FLAGGED AS FULL CARDS.
           The pipeline evaluates the same fixed list of topics on every report,

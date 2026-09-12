@@ -732,7 +732,7 @@ describe('what a condition card says it took into account', () => {
   });
 });
 
-describe('what the range chart is told about each row', () => {
+describe('what the charts and the table are told about each row', () => {
   it('measures radar coverage as inputs AVAILABLE, never as the verdict', async () => {
     // IT USED TO BE THE VERDICT -- flagged 0.95, clear 0.55 -- so a report with
     // everything abnormal drew a full pentagon under the word "Coverage", and
@@ -1111,32 +1111,6 @@ describe('what the range chart is told about each row', () => {
     });
   });
 
-  it('renders no empty panel when no result has a reference range', async () => {
-    // The live report prints no intervals at all. Guarding only inside the
-    // chart leaves the page drawing a bordered card around a component that
-    // has correctly decided to draw nothing -- an empty box with a heading.
-    withDashboard({
-      overall: { statusLabel: 'Attention Needed', anyAssessed: true, risk: 'High' },
-      laboratory: [
-        {
-          feature: 'hba1c',
-          displayName: 'HbA1c',
-          value: 8.4,
-          unit: '%',
-          state: 'measured',
-          usable: true,
-        },
-      ],
-    });
-    renderDashboard();
-
-    await screen.findAllByText(/HbA1c/i);
-    expect(document.querySelector('.card.range')).toBeNull();
-    expect(
-      screen.queryByText(/Where each result sits against its reference range/)
-    ).not.toBeInTheDocument();
-  });
-
   it('calls an unanswered profile question absent, NOT rejected', async () => {
     // `usable: false` covers two different things, and mapping both to
     // "rejected" put NOT USABLE against three rows of a real report --
@@ -1146,9 +1120,9 @@ describe('what the range chart is told about each row', () => {
     withDashboard({
       overall: { statusLabel: 'Healthy', anyAssessed: true, risk: 'Low' },
       laboratory: [
-        // A row carrying a printed interval, because the chart draws nothing
-        // at all unless something on it can be compared -- and a row nobody
-        // answered is only ever seen beside rows that were.
+        // A measured row alongside it: a row nobody answered is only ever
+        // seen beside rows that were, and the rule is about telling the two
+        // apart.
         {
           feature: 'vitamin_b12',
           displayName: 'Vitamin B12',
@@ -1172,9 +1146,10 @@ describe('what the range chart is told about each row', () => {
     renderDashboard();
 
     await screen.findAllByText(/Smoking history/i);
-    expect(document.querySelector('.range__row')).not.toBeNull();
     expect(screen.queryByText('Not usable')).not.toBeInTheDocument();
-    expect(screen.getAllByText('Not on report').length).toBeGreaterThan(0);
+    // The table's own word for never-there. `Not usable` above is the one
+    // it must never be, because that claims a reading was taken and refused.
+    expect(screen.getAllByText('Not measured').length).toBeGreaterThan(0);
   });
 });
 
