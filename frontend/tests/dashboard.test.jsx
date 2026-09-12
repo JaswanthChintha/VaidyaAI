@@ -950,8 +950,13 @@ describe('what the charts and the table are told about each row', () => {
       renderDashboard();
 
       await screen.findAllByText(/Total Cholesterol/i);
-      expect(screen.queryByText(/What these results mean/)).not.toBeInTheDocument();
+      // THE INVARIANT IS THE POINTER, NOT THE SECTION. Asserting the whole
+      // section was absent was a proxy for it, and the proxy stopped holding
+      // when the ranges and the provenance sentence moved in -- both worth
+      // rendering with nothing explained. What must never happen is still
+      // exactly what it was: "not explained above" with no above.
       expect(screen.queryByText(/no explanation above/)).not.toBeInTheDocument();
+      expect(document.querySelector('.explanation__text')).toBeNull();
     });
 
     it('says nothing at all when every result was explained', async () => {
@@ -995,9 +1000,12 @@ describe('what the charts and the table are told about each row', () => {
       expect(
         screen.getByText(/in .Your results. above, with your laboratory/)
       ).toBeInTheDocument();
-      expect(
-        screen.getByText(/Also on your report — not assessed by this tool/)
-      ).toBeInTheDocument();
+      // THE INVARIANT IS STILL "the pointer names a place that exists" -- what
+      // changed is that the place is no longer a heading of its own. These
+      // rows are ordinary rows of the one results table now, so what is
+      // asserted is that they are actually THERE.
+      expect(screen.getByText('Blood Urea')).toBeInTheDocument();
+      expect(screen.getByText('Potassium, Serum')).toBeInTheDocument();
     });
 
     it('does not mention other tests when the report has none', async () => {
@@ -1282,11 +1290,10 @@ describe('laboratory rows', () => {
     });
     renderDashboard();
 
-    // Said ONCE for the table, not repeated on every row. A report that prints
-    // no ranges used to pay for a whole column of identical "No range printed"
-    // cells, which buried the results it was meant to qualify. The guarantee
-    // is unchanged: the reader must be told, so they understand why nothing is
-    // marked high or low.
+    // Said ONCE, and the guarantee is unchanged: the reader must be told, so
+    // they understand why nothing is marked against their laboratory's own
+    // numbers. Only the place moved -- the table has no range column now, so
+    // it sits with the ranges in "What these results mean".
     expect(
       await screen.findByText(/did not print normal ranges/i)
     ).toBeInTheDocument();
@@ -1749,24 +1756,14 @@ describe('descriptions of tests this platform does not assess', () => {
     expect(
       await screen.findByText(/A mineral your body uses for nerve and muscle function./)
     ).toBeInTheDocument();
-    // And the laboratory's own facts are still on the page, unchanged - both
-    // flagged results keep their marking, description or not. The marking now
-    // lives in the results table's own column and names the range it is
-    // outside; what is pinned is that it is still THE LABORATORY'S verdict
-    // and still attributed, not the wording of the cell.
-    // BOTH FLAGGED RESULTS KEEP THEIR MARKING -- that is the invariant, and
-    // it does NOT depend on a printed range. Asserting "high — outside ..."
-    // on both was the test being over-specific: one fixture row has no
-    // printed interval, and demanding the range there would re-create the
-    // bug this pair of assertions exists to prevent (a lab-marked abnormal
-    // result going silent because its range was missing).
-    const markings = [...document.querySelectorAll('.lab-flag--out')];
-    expect(markings).toHaveLength(2);
-    for (const mark of markings) expect(mark.textContent).toMatch(/high/);
-    // ...and whose judgement it is stays attached to every one of them.
-    expect(
-      document.querySelectorAll('.lab-table--unassessed .lab__note').length
-    ).toBeGreaterThanOrEqual(2);
+    // BOTH FLAGGED RESULTS KEEP THEIR MARKING -- the invariant, and it does
+    // NOT depend on a printed range: one fixture row has no interval, and a
+    // lab-marked abnormal going silent for want of a range is the bug this
+    // pair exists to prevent. The rows share one table and one verdict
+    // vocabulary now, so the marking is read from the shared class.
+    const markings = [...document.querySelectorAll('.verdict--high')];
+    expect(markings.length).toBeGreaterThanOrEqual(2);
+    for (const mark of markings) expect(mark.textContent).toMatch(/high/i);
   });
 
   it('says a description was WITHHELD rather than showing an empty space', async () => {
@@ -1841,9 +1838,7 @@ describe('descriptions of tests this platform does not assess', () => {
     });
     renderDashboard();
 
-    expect(
-      await screen.findByText(/Also on your report — not assessed by this tool/)
-    ).toBeInTheDocument();
+    expect((await screen.findAllByText('Urine Colour')).length).toBeGreaterThan(0);
     expect(screen.queryByText(/your result was not used/)).not.toBeInTheDocument();
     expect(
       screen.queryByText(/No description of this test was produced/)
@@ -2371,7 +2366,7 @@ describe('parameters this tool does not assess', () => {
   });
 
   const cellFor = (testName) => {
-    const row = [...document.querySelectorAll('.lab-row--unassessed')].find((tr) =>
+    const row = [...document.querySelectorAll('.lab-table tr')].find((tr) =>
       tr.querySelector('th').textContent.includes(testName)
     );
     return row ? row.children[2].textContent.replace(/\s+/g, ' ').trim() : null;
@@ -2393,12 +2388,12 @@ describe('parameters this tool does not assess', () => {
     );
     renderDashboard();
 
-    await screen.findByText(/Also on your report — not assessed by this tool/);
-    const cell = cellFor('Ferritin');
-    expect(cell).toMatch(/low/);
-    expect(cell).toMatch(/15–150/);
-    // Whose judgement it is, in the cell, not only in a heading far above.
-    expect(cell).toMatch(/your laboratory/i);
+    await screen.findAllByText('Ferritin');
+    // THE DIRECTION IS STILL THE LABORATORY'S AND IS STILL SHOWN. What moved
+    // is the interval: it is a line in "Normal ranges for these results" now
+    // rather than a second sentence inside the cell.
+    expect(cellFor('Ferritin')).toMatch(/low/i);
+    expect(document.querySelector('.range-list').textContent).toMatch(/15–150/);
   });
 
   it('says NO RANGE rather than implying the result is fine', async () => {
@@ -2409,8 +2404,11 @@ describe('parameters this tool does not assess', () => {
     );
     renderDashboard();
 
-    await screen.findByText(/Also on your report — not assessed by this tool/);
-    expect(cellFor('Urine Colour')).toMatch(/no range printed/i);
+    await screen.findAllByText('Urine Colour');
+    // The same words an assessed row gets when no rule read it. What matters
+    // is that the cell is NOT BLANK -- in a column headed "Compared with
+    // usual limits" a blank reads as "in range".
+    expect(cellFor('Urine Colour')).toMatch(/not checked/i);
   });
 
   it('KEEPS a laboratory marking that arrives with no printed range', async () => {
@@ -2433,15 +2431,29 @@ describe('parameters this tool does not assess', () => {
     );
     renderDashboard();
 
-    await screen.findByText(/Also on your report — not assessed by this tool/);
+    await screen.findAllByText('Blood Urea');
     const cell = cellFor('Blood Urea');
-    expect(cell).toMatch(/high/);
-    expect(cell).not.toMatch(/no range printed/i);
+    expect(cell).toMatch(/high/i);
+    expect(cell).not.toMatch(/not checked/i);
   });
 
-  it('never dresses a laboratory marking as this tool’s own verdict', async () => {
-    // `.verdict--high` on this page means THIS TOOL crossed a threshold it
-    // holds. Nothing in this group was assessed by this tool.
+  it('says how many of the listed results it actually assessed', async () => {
+    // THE GUARANTEE THAT REPLACED A PER-ROW ONE.
+    // This test used to assert that a laboratory's marking never borrowed
+    // `.verdict--high`, which on this page means THIS TOOL crossed a
+    // threshold it holds -- one table, two vocabularies, so a reader scanning
+    // the column could tell them apart without reading a heading.
+    //
+    // The tables were merged on the reader's instruction: one list, one set
+    // of columns, no badge on any row. That is a real loss and it needs a
+    // real replacement, because the topics on this page rest on a SUBSET of
+    // the rows. On the report this came from, SGPT, CRP and ESR were all
+    // well outside their laboratory's own range and fed no verdict at all --
+    // a uniform table with nothing said would imply an assessment nobody
+    // made.
+    //
+    // So the fact survives as ONE SENTENCE, outside every disclosure, and
+    // this is the test that keeps it there.
     withDashboard(
       withUnassessed([
         {
@@ -2457,45 +2469,45 @@ describe('parameters this tool does not assess', () => {
     );
     renderDashboard();
 
-    await screen.findByText(/Also on your report — not assessed by this tool/);
-    const table = document.querySelector('.lab-table--unassessed');
-    expect(table.querySelectorAll('.verdict')).toHaveLength(0);
-    expect(table.querySelector('.lab-flag--out')).not.toBeNull();
+    const said = await screen.findByText(/of the .* results listed above/i);
+    expect(said.textContent).toMatch(/assessed/i);
+    expect(said.textContent).toMatch(/did not contribute to the topics/i);
+    // AND IT IS NOT BEHIND A DISCLOSURE. A sentence reporting the limit of
+    // what was assessed is an absence, and §6an's rule is that an absence
+    // never goes behind a toggle a reader may never open.
+    expect(said.closest('details')).toBeNull();
   });
 
-  it('says "not checked is not the same as normal" where the rows are', async () => {
+  it('says "not checked is not the same as normal" alongside the provenance', async () => {
     withDashboard(
       withUnassessed([{ testName: 'Urine Colour', value: 'Yellow' }])
     );
     renderDashboard();
 
-    const heading = await screen.findByText(
-      /Also on your report — not assessed by this tool/
+    // THE SENTENCE SURVIVED THE MERGE. It used to introduce a group of its
+    // own; there is no such group now, so it travels with the provenance
+    // sentence in "What these results mean" -- and it must still be OUTSIDE
+    // every disclosure, for the reason §6an gives.
+    //
+    // SCOPED, for the reason the original was scoped: the closing "In short"
+    // summary legitimately says the same thing again, so a page-wide query
+    // finds two and proves nothing about WHERE this one is.
+    await screen.findAllByText(/Not checked is not the same as normal/);
+    const section = document.querySelector('.explanations');
+    const said = [...section.querySelectorAll('p')].find((node) =>
+      /Not checked is not the same as normal/.test(node.textContent)
     );
-    // SCOPED TO THIS GROUP. The closing "In short" summary legitimately says
-    // the same thing again -- restating an absence at the foot of the page is
-    // that section's job -- so a page-wide query finds two and proves
-    // nothing about whether the sentence is WHERE THE ROWS ARE.
-    const groupIntro = heading.nextElementSibling;
-    expect(groupIntro.textContent).toMatch(/Not checked is not the same as normal/);
+    expect(said).toBeTruthy();
+    expect(said.closest('details')).toBeNull();
   });
 
-  it('marks every row as not assessed, on the row itself', async () => {
-    withDashboard(
-      withUnassessed([
-        { testName: 'Ferritin', value: 12, unit: 'ng/ml' },
-        { testName: 'Blood Urea', value: 58, unit: 'mg/dl' },
-      ])
-    );
-    renderDashboard();
-
-    await screen.findByText(/Also on your report — not assessed by this tool/);
-    const rows = [...document.querySelectorAll('.lab-row--unassessed')];
-    expect(rows).toHaveLength(2);
-    for (const row of rows) {
-      expect(row.querySelector('th').textContent).toMatch(/not assessed by this tool/);
-    }
-  });
+  // REMOVED: 'marks every row as not assessed, on the row itself'.
+  // The per-row badge was taken off on the reader's instruction -- one list,
+  // no badge, no special mention. The fact it carried did not go with it: it
+  // is asserted by 'says how many of the listed results it actually
+  // assessed' above, which pins the replacement sentence and pins that it is
+  // not behind a disclosure. A deleted test is only safe when something else
+  // still fails if the guarantee goes.
 
   it('labels the descriptions as being about the TEST, not the reader', async () => {
     // The reason a previous session kept these out of this section entirely:
@@ -2579,12 +2591,15 @@ describe('parameters this tool does not assess', () => {
     );
     renderDashboard();
 
-    await screen.findByText(/Also on your report — not assessed by this tool/);
-    // Once in the results group, once as a description heading -- and those
-    // are different things. What must not happen is the whole old section
-    // reappearing with its own copy of both.
+    await screen.findAllByText('Potassium, Serum');
     expect(screen.queryByText(/Also on your report, but not assessed here/)).not.toBeInTheDocument();
-    expect(document.querySelectorAll('.lab-row--unassessed')).toHaveLength(1);
+    // ONE RESULTS ROW. The name legitimately appears again as the heading of
+    // its description, and again in the range list -- different things saying
+    // different things. What must not happen is a second ROW.
+    const rows = [...document.querySelectorAll('.lab-table tr')].filter((tr) =>
+      tr.querySelector('th')?.textContent.startsWith('Potassium, Serum')
+    );
+    expect(rows).toHaveLength(1);
     expect(
       screen.getAllByText(/A mineral your body uses for nerve and muscle function./)
     ).toHaveLength(1);
@@ -2599,11 +2614,15 @@ describe('the laboratory range, in readable English', () => {
     ],
     unanalysed: { count: 1, items: [item] },
   });
+  // THE INTERVAL'S ENGLISH IS STILL `labRange`'s AND STILL MATTERS -- it just
+  // reads out of "Normal ranges for these results" now instead of a table
+  // cell. The one-sided forms are the point: "within up to 100" was the first
+  // version of this and it is not English.
   const limits = async () => {
-    await screen.findByText(/Also on your report — not assessed by this tool/);
+    await screen.findByText(/Normal ranges for these results/);
     return document
-      .querySelector('.lab-row--unassessed')
-      .children[2].textContent.replace(/\s+/g, ' ')
+      .querySelector('.range-list')
+      .textContent.replace(/\s+/g, ' ')
       .trim();
   };
 
@@ -2612,7 +2631,7 @@ describe('the laboratory range, in readable English', () => {
       one({ testName: 'Albumin', value: 4.2, unit: 'g/dl', labReferenceLow: 3.5, labReferenceHigh: 5 })
     );
     renderDashboard();
-    expect(await limits()).toMatch(/within 3.5–5/);
+    expect(await limits()).toMatch(/3\.5–5/);
   });
 
   it('reads correctly when the laboratory printed only a ceiling', async () => {
@@ -2622,7 +2641,7 @@ describe('the laboratory range, in readable English', () => {
     );
     renderDashboard();
     const text = await limits();
-    expect(text).toMatch(/at or below 100/);
+    expect(text).toMatch(/up to 100/);
     expect(text).not.toMatch(/within up to/);
   });
 
@@ -2632,7 +2651,7 @@ describe('the laboratory range, in readable English', () => {
     );
     renderDashboard();
     const text = await limits();
-    expect(text).toMatch(/at or above 15/);
+    expect(text).toMatch(/15 and above/);
     expect(text).not.toMatch(/within 15 and above/);
   });
 });

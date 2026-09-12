@@ -397,7 +397,15 @@ function sharedBecausePhrase(items) {
  * way to know that the cholesterol paragraph is missing rather than
  * unnecessary.
  */
-function Explanations({ explanations, resultFeatures, unassessedCount = 0, unassessedItems = [] }) {
+function Explanations({
+  explanations,
+  resultFeatures,
+  unassessedCount = 0,
+  unassessedItems = [],
+  rangeLines = [],
+  assessedResultCount = 0,
+  totalResultCount = 0,
+}) {
   const entries = explanations?.entries || [];
 
   const written = entries.filter((entry) => entry.available === true
@@ -432,7 +440,24 @@ function Explanations({ explanations, resultFeatures, unassessedCount = 0, unass
   const describedUnassessed = (unassessedItems || []).filter(
     (item) => item.descriptionAvailable === true || item.descriptionAvailable === false
   );
-  if (!written.length && !missing.length && !describedUnassessed.length) return null;
+  // THE GATE HAS TO KNOW EVERYTHING THIS SECTION NOW CARRIES. It listed only
+  // the explanation entries, so a report with ranges to show and a provenance
+  // sentence to make -- but nothing the writer had explained -- rendered
+  // neither. The section stopped being only about explanations when the
+  // ranges moved into it.
+  const hasProvenance = totalResultCount > assessedResultCount;
+  const hasRangeNotice =
+    assessedResultCount > 0 && !rangeLines.some((entry) => entry.assessed);
+  if (
+    !written.length
+    && !missing.length
+    && !describedUnassessed.length
+    && !rangeLines.length
+    && !hasProvenance
+    && !hasRangeNotice
+  ) {
+    return null;
+  }
 
   return (
     <section className="explanations">
@@ -480,7 +505,12 @@ function Explanations({ explanations, resultFeatures, unassessedCount = 0, unass
         </p>
       ) : null}
 
-      {notAttempted.length ? (
+      {/* "has no explanation ABOVE" NEEDS AN ABOVE. This used to be guaranteed
+          by the section's own early return, which fired whenever nothing had
+          been explained. The section renders for ranges and the provenance
+          sentence now, so the gate has to be stated here or the sentence
+          points at an empty list -- §6w's scope-statement fault exactly. */}
+      {notAttempted.length && written.length ? (
         <p className="hint">
           {/* `andList`, not a plain join: a bare comma reads as a sentence
               fragment, and a laboratory name containing a comma turns a list
@@ -516,6 +546,64 @@ function Explanations({ explanations, resultFeatures, unassessedCount = 0, unass
       ) : null}
 
       <UnassessedExplanations items={unassessedItems} />
+
+      {/* WHICH OF THE ROWS ABOVE THIS TOOL ACTUALLY ASSESSED.
+          The results table is deliberately uniform -- one list, one set of
+          columns, no badge on any row -- because which engine formed an
+          opinion about a result is this platform's business and not the
+          reader's. But the topics on this page rest on a SUBSET of that
+          table, and on a real report the gap was wide: SGPT, CRP and ESR were
+          all markedly outside their laboratory's own range and fed no verdict
+          at all. Saying nothing would let a uniform table imply an assessment
+          nobody made.
+          ONE SENTENCE, in the section that can carry it, and OUTSIDE every
+          disclosure -- it reports a limit on what was assessed, and §6an's
+          rule is that an absence never goes behind a toggle. */}
+      {hasProvenance ? (
+        <p className="hint">
+          This tool checks a fixed set of measurements. It assessed{' '}
+          {assessedResultCount} of the {totalResultCount} results listed above;
+          the others are shown with your laboratory&rsquo;s own comparison and
+          did not contribute to the topics on this page.{' '}
+          <strong>Not checked is not the same as normal.</strong> Take anything
+          your laboratory marked to a qualified healthcare professional.
+        </p>
+      ) : null}
+
+      {/* THE REPORT PRINTED NO INTERVALS OF ITS OWN. Said once, and it has
+          to be said somewhere: without it a reader cannot tell why nothing is
+          marked against their laboratory's numbers. It used to sit under the
+          results table; the table has no range column now, so it belongs with
+          the ranges. */}
+      {hasRangeNotice ? (
+        <p className="hint">
+          This report did not print normal ranges for the results this tool
+          assessed, so they are compared with standard clinical thresholds
+          instead of the laboratory&rsquo;s own.
+        </p>
+      ) : null}
+
+      {rangeLines.length ? (
+        <details className="card explanation disclosure">
+          <summary className="disclosure__summary">
+            <h3 className="explanation__subject">
+              Normal ranges for these results
+            </h3>
+            <span className="disclosure__chevron" aria-hidden="true" />
+          </summary>
+          <ul className="range-list">
+            {rangeLines.map((entry, index) => (
+              <li key={`${entry.name}-${index}`}>
+                <span className="range-list__name">{entry.name}</span>
+                <span className="range-list__range">
+                  {entry.range}
+                  {isPresent(entry.unit) ? ` ${entry.unit}` : ''}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
 
       <p className="hint">
         Written by a language model from your measured values and reviewed
@@ -699,138 +787,6 @@ function labRange(item) {
   if (isPresent(high)) return `up to ${high}`;
   if (isPresent(low)) return `${low} and above`;
   return null;
-}
-
-/**
- * One row of the not-assessed group in "Your results".
- *
- * THE VERDICT COLUMN IS THE LABORATORY'S AND SAYS SO IN THE CELL. It never
- * reuses `.verdict--high` / `.verdict--low`, which on this page mean THIS
- * TOOL crossed a threshold it holds. A reader scanning the column must be
- * able to tell which of the two they are looking at without reading the
- * heading above.
- */
-function UnassessedRow({ item }) {
-  const range = labRange(item);
-  const flagged = item.labFlaggedAbnormal === true;
-  return (
-    <tr className="lab-row--unassessed">
-      <th scope="row">
-        {item.testName}
-        <span className="lab__note">not assessed by this tool</span>
-      </th>
-      <td className="lab__value">
-        {isPresent(item.value) ? item.value : '—'}
-        {isPresent(item.unit) ? ` ${item.unit}` : ''}
-      </td>
-      {/* THE FLAG AND THE RANGE ARE INDEPENDENT FACTS, and the first version
-          of this cell tied them together: it printed the comparison only when
-          a range existed, so a result the LABORATORY HAD MARKED ABNORMAL with
-          no printed interval fell through to "no range printed" and lost the
-          marking altogether. An absence swallowing a real finding, in the one
-          cell added to surface real findings. A test caught it.
-          A laboratory can mark a result abnormal against a range it does not
-          print -- sex-specific intervals are the common case (MEMORY 6m) --
-          so the marking is shown whenever it exists, and the range is added
-          to it only when there is one. */}
-      <td>
-        {flagged && isPresent(item.labFlag) ? (
-          <>
-            <span className="lab-flag lab-flag--out">
-              {range ? `${item.labFlag} — outside ${range}` : `${item.labFlag}`}
-            </span>
-            <span className="lab__note">
-              your laboratory&rsquo;s own {range ? 'range' : 'marking'}
-            </span>
-          </>
-        ) : range ? (
-          <>
-            {/* "within" only reads correctly against a two-sided interval.
-                Prefixing it to the one-sided forms produced "within up to
-                100" and "within 15 and above", which are not English -- the
-                one-sided phrases are already complete sentences about where
-                the value sits. */}
-            <span className="lab-flag">
-              {isPresent(item.labReferenceLow) && isPresent(item.labReferenceHigh)
-                ? `within ${range}`
-                : isPresent(item.labReferenceHigh)
-                  ? `at or below ${item.labReferenceHigh}`
-                  : `at or above ${item.labReferenceLow}`}
-            </span>
-            <span className="lab__note">your laboratory&rsquo;s own range</span>
-          </>
-        ) : (
-          /* NOT "in range", and not blank. The report printed no interval and
-             the laboratory marked nothing, so there is nothing to compare
-             against -- and a blank cell in a column headed "Compared with
-             usual limits" reads as "fine". */
-          <span className="lab__note">no range printed on your report</span>
-        )}
-      </td>
-    </tr>
-  );
-}
-
-/**
- * The not-assessed parameters, in "Your results" where the reader is.
- *
- * MERGED INTO THE SECTION, NOT INTO THE LIST. A previous session kept these
- * off this part of the page entirely, on the reasoning that a description
- * written from a test NAME sitting among entries that interpret the reader's
- * own values invites exactly the inference the architecture prevents. That
- * reasoning is right about the LIST and it is why this is a separate group
- * with its own heading and its own verdict vocabulary -- not interleaved
- * rows. What changed is the judgement that burying them in a section at the
- * foot of the page was the safer of the two errors: a laboratory's own
- * abnormal marking is worth more to a reader than the tidiness of keeping
- * this section pure.
- */
-function UnassessedResults({ items }) {
-  if (!items.length) return null;
-  const flaggedCount = items.filter((i) => i.labFlaggedAbnormal === true).length;
-  return (
-    <>
-      <h3 className="lab-group__title">
-        Also on your report — not assessed by this tool
-      </h3>
-      <p className="hint">
-        This tool checks a fixed set of measurements and did not check{' '}
-        {items.length === 1 ? 'this one' : `these ${items.length}`}.{' '}
-        <strong>
-          Not checked is not the same as normal.
-        </strong>{' '}
-        {flaggedCount
-          ? `Your laboratory marked ${flaggedCount} of ${
-              flaggedCount === 1 ? 'them' : 'them'
-            } outside its own range — that is your laboratory's judgement, not this tool's. Take ${
-              flaggedCount === 1 ? 'it' : 'them'
-            } to a qualified healthcare professional.`
-          : ''}
-      </p>
-      <table className="lab-table lab-table--unassessed">
-        <thead>
-          <tr>
-            <th scope="col">Test</th>
-            <th scope="col">Result</th>
-            <th scope="col">Compared with usual limits</th>
-          </tr>
-        </thead>
-        <tbody>
-          {/* The laboratory's own abnormal markings first: they are the reason
-              this group is on the page at all. */}
-          {[...items]
-            .sort(
-              (a, b) =>
-                Number(b.labFlaggedAbnormal === true) -
-                Number(a.labFlaggedAbnormal === true)
-            )
-            .map((item, index) => (
-              <UnassessedRow key={`${item.testName}-${index}`} item={item} />
-            ))}
-        </tbody>
-      </table>
-    </>
-  );
 }
 
 /**
@@ -1578,7 +1534,7 @@ const REJECTED_FOR_READER =
  * repeats the same two lines ten times and buries the results. The table drops
  * the column instead and says it once underneath.
  */
-function LabRow({ row, showRange, showFlag, showVerdict, verdict, fromProfile }) {
+function LabRow({ row, showVerdict, verdict, fromProfile }) {
   const usable = row.usable === true;
   const friendly = PATIENT_LABEL[row.feature];
   // A PROFILE ROW HAS NO LABORATORY NAME. Its `originalTestName` is the
@@ -1599,7 +1555,18 @@ function LabRow({ row, showRange, showFlag, showVerdict, verdict, fromProfile })
   // the only thing the treatment carries there is the LOOK of a measured
   // value: on the profile table, `male` was set in the same face as
   // `26.42 kg/m2` directly above it, under a heading about results.
-  const numericValue = typeof row.value === 'number' && Number.isFinite(row.value);
+  // A NUMBER PRINTED AS A STRING IS STILL A NUMBER. The laboratory's own
+  // rows arrive as text ("4.04", "7,290", "05"), and deciding on `typeof`
+  // alone set them in the word face while the assessed rows beside them kept
+  // tabular numerals -- the two kinds of row looking different in a table
+  // whose point is that they do not. The printed text is shown UNCHANGED;
+  // only the treatment is decided here.
+  const numericText =
+    typeof row.value === 'string' &&
+    row.value.trim() !== '' &&
+    Number.isFinite(Number(row.value.replace(/,/g, '')));
+  const numericValue =
+    (typeof row.value === 'number' && Number.isFinite(row.value)) || numericText;
   // First letter only, and only on a string. Not `text-transform: capitalize`,
   // which would render an absence sentence as "Not Measured", and not a
   // rewording of the producer's text -- "male" and "Male" are the same answer.
@@ -1659,29 +1626,6 @@ function LabRow({ row, showRange, showFlag, showVerdict, verdict, fromProfile })
         </td>
       ) : null}
 
-      {showRange ? (
-        <td className="lab__range">
-          {isPresent(row.referenceLow) || isPresent(row.referenceHigh) ? (
-            <span>
-              {isPresent(row.referenceLow) ? row.referenceLow : '—'} to{' '}
-              {isPresent(row.referenceHigh) ? row.referenceHigh : '—'}
-              {isPresent(row.unit) ? ` ${row.unit}` : ''}
-            </span>
-          ) : (
-            <span className="absent">not printed</span>
-          )}
-        </td>
-      ) : null}
-
-      {showFlag ? (
-        <td>
-          {isPresent(row.flag) ? (
-            <span className={`flag flag--${row.flag}`}>{row.flag}</span>
-          ) : (
-            <span className="absent">—</span>
-          )}
-        </td>
-      ) : null}
     </tr>
   );
 }
@@ -1701,10 +1645,12 @@ function LabTable({ rows, caption, verdicts, fromProfile = false }) {
   // shortcoming where there is nothing to check. A reference interval and a
   // laboratory flag are equally meaningless for something no laboratory
   // measured.
-  const showRange = !fromProfile && rows.some(
-    (row) => isPresent(row.referenceLow) || isPresent(row.referenceHigh)
-  );
-  const showFlag = !fromProfile && rows.some((row) => isPresent(row.flag));
+  // THREE COLUMNS, ALWAYS. The reference interval and the laboratory's flag
+  // used to be columns of their own, appearing only when some row could fill
+  // them -- so the same report rendered a three-column table or a five-column
+  // one depending on what its laboratory chose to print. The ranges are in
+  // "What these results mean" now, said once per test, where a range is a
+  // sentence rather than a cell that is empty on most rows.
   const showVerdict = !fromProfile;
 
   return (
@@ -1717,8 +1663,6 @@ function LabTable({ rows, caption, verdicts, fromProfile = false }) {
             {showVerdict ? (
               <th scope="col">Compared with usual limits</th>
             ) : null}
-            {showRange ? <th scope="col">Normal range</th> : null}
-            {showFlag ? <th scope="col">Lab&rsquo;s note</th> : null}
           </tr>
         </thead>
         <tbody>
@@ -1726,8 +1670,6 @@ function LabTable({ rows, caption, verdicts, fromProfile = false }) {
             <LabRow
               key={`${row.feature}-${row.state}`}
               row={row}
-              showRange={showRange}
-              showFlag={showFlag}
               showVerdict={showVerdict}
               verdict={verdicts?.get(row.feature)}
               fromProfile={fromProfile}
@@ -1735,14 +1677,6 @@ function LabTable({ rows, caption, verdicts, fromProfile = false }) {
           ))}
         </tbody>
       </table>
-      {/* Said ONCE, not on every row. It is a fact about the report, and the
-          reader needs it to understand why nothing is marked high or low. */}
-      {!showRange && !fromProfile ? (
-        <p className="hint">
-          This report did not print normal ranges, so results are compared with
-          standard clinical thresholds instead of the laboratory&rsquo;s own.
-        </p>
-      ) : null}
       {caption ? <p className="hint">{caption}</p> : null}
     </>
   );
@@ -1810,6 +1744,84 @@ export default function Dashboard() {
   const reportedLabs = measuredLabs.filter(
     (row) => isPresent(row.value) || row.state === 'rejected'
   );
+
+  // ---- ONE TABLE ---------------------------------------------------------
+  //
+  // The tests this tool does not assess used to sit in a second table under
+  // their own heading, each row tagged "not assessed by this tool" and each
+  // comparison footnoted "your laboratory's own range". On a real report that
+  // was three rows above and eighteen below, and the reader asked for one
+  // list -- a result is a result, and which engine formed an opinion about it
+  // is this platform's business, not theirs.
+  //
+  // WHAT THAT FACT IS STILL WORTH IS KEPT, and moved to "What these results
+  // mean", which is where a sentence can carry it. It has to be somewhere:
+  // SGPT, CRP and ESR are markedly abnormal on this report and fed no verdict
+  // at all, so a page implying the overall status weighed all twenty-one rows
+  // would be claiming an assessment nobody made.
+  const labFlagVerdict = (item) => {
+    if (item.labFlaggedAbnormal === true && isPresent(item.labFlag)) {
+      return { label: titleCase(item.labFlag), direction: item.labFlag };
+    }
+    // A laboratory that marked the row normal, or printed an interval the
+    // value sits inside, has compared it -- and said it is not out.
+    if (item.labFlag === 'normal' || isPresent(item.labReferenceLow)
+        || isPresent(item.labReferenceHigh)) {
+      return { label: 'In range', direction: 'normal' };
+    }
+    // NOTHING COMPARED IT. Falls through to the same "not checked" the
+    // assessed rows show when no rule read them -- never to a blank cell,
+    // which in a column headed "Compared with usual limits" reads as fine.
+    return undefined;
+  };
+
+  const unassessedItems = dashboard.unanalysed?.items || [];
+  const unassessedRows = unassessedItems.map((item, index) => ({
+    feature: `lab:${item.testName}:${index}`,
+    displayName: item.testName,
+    value: item.value,
+    unit: item.unit,
+    state: 'measured',
+    usable: true,
+  }));
+  // ---- WHAT MOVED OUT OF THE TABLE ---------------------------------------
+  //
+  // The reference interval is a sentence, not a cell. As a column it was
+  // empty on most rows of most reports; as a line per test it is readable and
+  // it can say WHOSE range it is, which the column never did.
+  const rangeLines = [
+    ...reportedLabs
+      .map((row) => ({
+        name: PATIENT_LABEL[row.feature] || row.displayName || row.feature,
+        range: labRange({
+          labReferenceLow: row.referenceLow,
+          labReferenceHigh: row.referenceHigh,
+        }),
+        unit: row.unit,
+        assessed: true,
+      }))
+      .filter((entry) => entry.range),
+    ...unassessedItems
+      .map((item) => ({
+        name: item.testName,
+        range: labRange(item),
+        unit: item.unit,
+        assessed: false,
+      }))
+      .filter((entry) => entry.range),
+  ];
+
+  // The laboratory's own abnormal markings lead: they are the reason these
+  // rows are on the page at all.
+  const allResultRows = [
+    ...reportedLabs,
+    ...unassessedRows.filter(
+      (_, i) => unassessedItems[i].labFlaggedAbnormal === true
+    ),
+    ...unassessedRows.filter(
+      (_, i) => unassessedItems[i].labFlaggedAbnormal !== true
+    ),
+  ];
   // Module 20's Input -> Evidence -> Decision chain, keyed by condition, so
   // each card can say which measured value produced its verdict.
   // Three groups, never merged -- and ONLY A PROVABLY CLEAR CARD IS COLLAPSED.
@@ -1843,6 +1855,15 @@ export default function Dashboard() {
   // High / Low / In range per measured value, read back from the engine's own
   // threshold crossings.
   const verdicts = valueVerdicts(dashboard.evidence?.conditions);
+
+  // The laboratory's own comparison, entered in the SAME map the assessed
+  // rows read from, so one row component renders both and the column cannot
+  // drift into two vocabularies. Set here rather than where the rows are
+  // built, because `verdicts` does not exist until this line.
+  unassessedItems.forEach((item, index) => {
+    const verdict = labFlagVerdict(item);
+    if (verdict) verdicts.set(`lab:${item.testName}:${index}`, verdict);
+  });
 
   // ---- chart data -------------------------------------------------------
   //
@@ -2083,16 +2104,11 @@ export default function Dashboard() {
           to be told -- dropping it would let a value that exists disappear
           without a word. So the test is "has a value, or had one taken and
           refused", never `usable`. */}
-      {reportedLabs.length ? (
-        <LabTable rows={reportedLabs} verdicts={verdicts} />
+      {allResultRows.length ? (
+        <LabTable rows={allResultRows} verdicts={verdicts} />
       ) : (
         <p className="empty">No laboratory values were read from this report.</p>
       )}
-
-      {/* The parameters this tool does not assess, with the laboratory's own
-          range. Their own group, their own verdict vocabulary -- see
-          `UnassessedResults`. */}
-      <UnassessedResults items={dashboard.unanalysed?.items || []} />
 
       {/* PROFILE ANSWERS ARE NOT LABORATORY VALUES. Age, BMI, sex and smoking
           history came from the questionnaire, not from blood, and listing them
@@ -2223,6 +2239,9 @@ export default function Dashboard() {
            the items list, not `unanalysed.count` -- §6u: `unmapped_count` said
            0 on a report with 63 of them, and the dashboard repeated it. */
         unassessedCount={(dashboard.unanalysed?.items || []).length}
+        rangeLines={rangeLines}
+        assessedResultCount={reportedLabs.length}
+        totalResultCount={allResultRows.length}
         unassessedItems={dashboard.unanalysed?.items || []}
       />
 

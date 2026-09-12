@@ -855,7 +855,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
   margin: 24px 0 2px;
   font-size: 14px;
 }
-.lab-table--unassessed th[scope="row"] { font-weight: 600; }
 .lab__note {
   display: block;
   font-family: var(--font-mono);
@@ -865,12 +864,32 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
   font-weight: 400;
   margin-top: 2px;
 }
-.lab-flag { font-weight: 600; color: var(--ink); }
-/* Outside the laboratory's own range. Weight and the words carry it; the
-   colour does not, for the reason in the block comment above. */
-.lab-flag--out { font-weight: 700; color: var(--ink); }
-.lab-row--unassessed > th,
-.lab-row--unassessed > td { vertical-align: top; }
+/* NORMAL RANGES, moved out of the results table.
+   The interval was a COLUMN, empty on most rows of most reports, so a report
+   whose laboratory printed nothing paid for a column of "not printed". As a
+   list it costs nothing when it is empty and reads as a sentence when it is
+   not. */
+.range-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.range-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--panel-line);
+}
+.range-list li:last-child { border-bottom: 0; }
+.range-list__name { color: var(--body); }
+.range-list__range {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
 
 /* The description group in "What these results mean". */
 .explanations__group { margin: 22px 0 2px; font-size: 14px; }
