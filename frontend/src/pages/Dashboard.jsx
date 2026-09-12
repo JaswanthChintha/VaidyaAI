@@ -938,7 +938,6 @@ function InShort({ dashboard, flaggedCards, clearCards, unassessedCards }) {
   // The skipped results the laboratory did NOT mark. Counted off the same
   // items list rather than from `unanalysed.count` alone, so the two
   // paragraphs about skipped tests can never overlap or double-count.
-  const unflagged = (unanalysed.items || []).length - labFlagged.length;
   const unreadable = dashboard.document?.pagesUnreadable || [];
 
   // WHICH FLAGGED FINDINGS CAME FROM THE FORM RATHER THAN THE REPORT.
@@ -995,7 +994,7 @@ function InShort({ dashboard, flaggedCards, clearCards, unassessedCards }) {
       {/* WHAT WAS CHECKED AND WHAT CAME BACK. Counted off the cards above. */}
       {checked > 0 ? (
         <p>
-          This tool checked <strong>{checked}</strong> topic
+          This tool checked <strong>{checked}</strong> condition
           {checked === 1 ? '' : 's'} against a fixed set of thresholds.{' '}
           {flaggedCards.length ? (
             <>
@@ -1050,7 +1049,7 @@ function InShort({ dashboard, flaggedCards, clearCards, unassessedCards }) {
       {unassessedCards.length ? (
         <p className="caveat">
           <strong>
-            {unassessedCards.length} topic
+            {unassessedCards.length} condition
             {unassessedCards.length === 1 ? '' : 's'} could not be checked
           </strong>{' '}
           — {listOfNames(unassessedCards)}. Your report did not contain the
@@ -1069,22 +1068,17 @@ function InShort({ dashboard, flaggedCards, clearCards, unassessedCards }) {
             Your laboratory marked {labFlagged.length} further result
             {labFlagged.length === 1 ? '' : 's'} outside its own range
           </strong>{' '}
-          — {nameList(labFlagged.map((item) => item.testName))}. This tool does
-          not check {labFlagged.length === 1 ? 'that test' : 'those tests'} at
-          all, so nothing above takes {labFlagged.length === 1 ? 'it' : 'them'}{' '}
-          into account. That is your laboratory&rsquo;s judgement, not this
-          tool&rsquo;s, and it is worth raising.
+          — {nameList(labFlagged.map((item) => item.testName))}. Worth raising
+          with a qualified healthcare professional.
         </p>
       ) : null}
 
-      {unflagged > 0 ? (
-        <p className="hint">
-          {unflagged === 1
-            ? 'One further result on your report was read but not assessed, and your laboratory did not mark it as abnormal.'
-            : `A further ${unflagged} results on your report were read but not assessed, and your laboratory did not mark them as abnormal.`}{' '}
-          Not checked is not the same as normal.
-        </p>
-      ) : null}
+      {/* REMOVED ON THE READER'S INSTRUCTION. A paragraph stood here saying
+          how many further results had been read but not assessed, and that
+          not checked is not the same as normal. The reader asked for the
+          summary to read as a summary and not as an account of what this tool
+          does and does not do. The laboratory's own flagged results are still
+          named above, which is the part a doctor is asked to look at. */}
 
       {/* ABSENCE #3: the document itself. A test missing from the analysis
           because its page could not be read is not a test that was absent

@@ -988,12 +988,15 @@ describe('what the charts and the table are told about each row', () => {
       renderDashboard();
 
       await screen.findAllByText(/average blood sugar/);
-      // THE SIGNPOST AND THE PROVENANCE SENTENCE ARE BOTH GONE, the second on
-      // the reader's instruction. What the section must still do is SHOW
-      // these tests, and the closing summary still accounts for them.
-      expect(
-        screen.getByText(/A further 4 results on your report were read but not assessed/)
-      ).toBeInTheDocument();
+      // §6u's INVARIANT, AND IT OUTLIVED EVERY SENTENCE THAT CARRIED IT.
+      // What mattered was never the wording but that the payload's own
+      // counter can lie: `unmapped_count` said 0 over a list of sixty-three.
+      // Every item on the list must reach the screen, so the list itself is
+      // what is asserted.
+      for (const name of ['LDL Cholesterol, Direct', 'HDL Cholesterol',
+                          'Blood Urea', 'Potassium, Serum']) {
+        expect(screen.getAllByText(name).length).toBeGreaterThan(0);
+      }
       // THE INVARIANT IS UNCHANGED: the pointer must name a place that
       // exists. The place moved -- these rows are a labelled group inside
       // "Your results" now, rather than a section of their own further down
@@ -1029,12 +1032,10 @@ describe('what the charts and the table are told about each row', () => {
       renderDashboard();
 
       await screen.findAllByText(/average blood sugar/);
-      // `unanalysed.count` is 0 in this fixture and there are two items, so a
-      // screen reading 0 would be repeating the payload's own bad counter.
-      // The surviving count is the closing summary's.
-      expect(
-        screen.getByText(/A further 2 results on your report were read but not assessed/)
-      ).toBeInTheDocument();
+      // `unanalysed.count` is 0 in this fixture and there are two items. A
+      // screen driven by that counter would show neither.
+      expect(screen.getAllByText('Blood Urea').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('Potassium, Serum').length).toBeGreaterThan(0);
     });
 
     it('joins two names with "and", not a bare comma', async () => {
@@ -1437,7 +1438,7 @@ describe('the closing "In short" summary', () => {
     renderDashboard();
 
     await screen.findByText(/In short/);
-    expect(summaryText()).toMatch(/1 topic could not be checked/);
+    expect(summaryText()).toMatch(/1 condition could not be checked/);
     expect(summaryText()).toMatch(/Kidney Disease/);
     expect(summaryText()).toMatch(/open question, not a clear result/);
     // A partial clean result must not read as a clean bill of health.
@@ -1467,10 +1468,15 @@ describe('the closing "In short" summary', () => {
     renderDashboard();
 
     await screen.findByText(/In short/);
+    // THE LABORATORY'S OWN FLAGGED RESULT MUST REACH THE SUMMARY. It sits
+    // outside every condition count above, so dropping it would let the
+    // reader take the flagged conditions for the whole story.
     expect(summaryText()).toMatch(/marked 1 further result outside its own range/);
     expect(summaryText()).toMatch(/Potassium/);
-    // And the unflagged one is reported as unchecked, not as normal.
-    expect(summaryText()).toMatch(/Not checked is not the same as normal/);
+    // The unflagged remainder is no longer counted here -- the reader asked
+    // for the summary to stop accounting for what this tool does not check.
+    // It is still a ROW on the page, which the results table guards.
+    expect(screen.getAllByText('Urine Colour').length).toBeGreaterThan(0);
   });
 
   // Both cases below were reported by a reader looking at a real screen, and
@@ -2450,22 +2456,18 @@ describe('parameters this tool does not assess', () => {
   // reader's own value (§6v). They sit in one list with entries that DO
   // interpret it.
 
-  it('says "not checked is not the same as normal" in the closing summary', async () => {
-    withDashboard(
-      withUnassessed([{ testName: 'Urine Colour', value: 'Yellow' }])
-    );
-    renderDashboard();
+  // REMOVED ON THE READER'S INSTRUCTION: 'says "not checked is not the same
+  // as normal" in the closing summary'. The sentence it asserted is gone from
+  // the page, along with the count of results read but not assessed. The
+  // reader asked for the summary to read as a summary rather than as an
+  // account of what this tool does and does not check.
+  //
+  // WHAT IS LEFT, and still tested above: the laboratory's own flagged
+  // results are named in the summary, and every unassessed test is a row in
+  // the results table. What is GONE, recorded so it is a known choice: no
+  // sentence anywhere now tells the reader that a test this tool did not
+  // check is not thereby normal.
 
-    // The group that introduced this sentence is gone, and so is the
-    // provenance paragraph that carried it next. The closing summary said it
-    // all along and is now the only place that does -- so this test follows
-    // it there rather than being deleted with the paragraph.
-    const said = await screen.findByText(/Not checked is not the same as normal/);
-    expect(said.closest('.in-short')).not.toBeNull();
-    // Still outside every disclosure: §6an's rule about absences holds
-    // wherever the sentence lives.
-    expect(said.closest('details')).toBeNull();
-  });
 
   // REMOVED: 'marks every row as not assessed, on the row itself'.
   // The per-row badge was taken off on the reader's instruction -- one list,
