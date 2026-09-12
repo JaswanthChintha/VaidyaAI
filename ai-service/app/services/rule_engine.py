@@ -741,12 +741,25 @@ def evaluate_rules(
             continue
         # An always-assessed condition is one Modules 10-12 will also emit.
         # Silence there would leave Module 16 unable to tell "not assessed"
-        # from "nothing found". Everything else is only mentioned when the
-        # document was partially unreadable, in which case absence may mean
-        # UNREAD -- which must never read as normal.
-        if not definition.always_assessed:
-            if not (partial_document and definition.report_when_unread):
-                continue
+        # from "nothing found".
+        #
+        # EVERY OTHER CONDITION IS REPORTED TOO, AND NOT ONLY WHEN THE DOCUMENT
+        # WAS UNREADABLE. It used to require `partial_document`, on the reading
+        # that a fully-read report simply lacking a test is the laboratory's
+        # choice and not this tool's failure. That is true about the CAUSE and
+        # wrong about the READER: a real report produced eight of the thirteen
+        # topics, the payload then said `unassessedConditionCount: 0`, and the
+        # dashboard offered "nothing pointed to these 5 topics" as though the
+        # list were the whole of what this tool assesses. Cholesterol,
+        # triglycerides, vitamin D and B12 were never looked at and appeared
+        # nowhere -- absence rendered as a closed, complete list, which is the
+        # one thing this platform exists not to do.
+        #
+        # `report_when_unread=False` still suppresses a SECONDARY reading of a
+        # test another condition already reports, so one missing test produces
+        # one line and not two.
+        if not definition.always_assessed and not definition.report_when_unread:
+            continue
         note = NOTE_UNREADABLE if partial_document else NOTE_NOT_AVAILABLE
         metadata = _base_metadata(
             f"CONDITION_NOT_ASSESSABLE:{condition}", RULE_TABLE_VERSION, condition

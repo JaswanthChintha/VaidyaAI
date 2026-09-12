@@ -191,9 +191,15 @@ def test_the_ada_hba1c_thresholds_are_the_ones_the_brief_named():
 
 def test_a_rule_with_no_input_does_not_fire_at_all():
     data = evaluate_rules(validated({"hba1c": vf("hba1c", 5.0)}))
-    # No vitamin D was measured, so there is no vitamin D decision of any kind.
-    assert for_condition(data, C.VITAMIN_D_DEFICIENCY) == []
+    # No vitamin D was measured, so the THRESHOLD RULE never fires...
     assert for_rule(data, "RULE_VITAMIN_D_DEFICIENCY") is None
+    # ...but the topic is still accounted for, as an absence and never as a
+    # finding. A rule that did not fire and a topic nobody looked at are two
+    # different things, and only the second one reaches the reader.
+    decisions = for_condition(data, C.VITAMIN_D_DEFICIENCY)
+    assert len(decisions) == 1
+    assert decisions[0].status is DecisionStatus.INSUFFICIENT_DATA
+    assert decisions[0].risk is None
 
 
 def test_absent_inputs_never_produce_a_not_indicated_decision():
@@ -731,10 +737,31 @@ def test_an_unread_page_turns_absence_into_insufficient_data():
     assert any("only partially readable" in w for w in data.warnings)
 
 
-def test_a_clean_document_does_not_flood_the_report_with_non_findings():
+def test_a_fully_read_report_still_reports_the_tests_it_did_not_contain():
+    """The defect this replaced a test for.
+
+    This used to assert SILENCE -- a fully-read report lacking vitamin D
+    produced no vitamin D decision at all, on the reading that the laboratory
+    simply had not ordered it. True about the cause, wrong about the reader: a
+    real report produced eight of thirteen topics, `unassessed_condition_count`
+    then said 0, and the dashboard offered the eight as though they were the
+    whole of what this tool checks.
+
+    An unordered test and an unremarkable one are not the same thing, and the
+    difference is the entire subject of this platform.
+    """
     data = evaluate_rules(validated({"hba1c": vf("hba1c", 5.0)}))
-    assert for_condition(data, C.VITAMIN_D_DEFICIENCY) == []
     assert data.summary.partial_document is False
+
+    decisions = for_condition(data, C.VITAMIN_D_DEFICIENCY)
+    assert len(decisions) == 1
+    assert decisions[0].status is DecisionStatus.INSUFFICIENT_DATA
+    # NEVER a risk level: a topic nobody looked at has no risk to report.
+    assert decisions[0].risk is None
+
+    # And still ONE line per missing test -- the secondary reading of the same
+    # absent vitamin D stays suppressed even now that the primary is reported.
+    assert for_condition(data, C.ELEVATED_VITAMIN_D) == []
 
 
 def test_secondary_readings_are_not_duplicated_when_unread():

@@ -130,13 +130,38 @@ def test_decisions_carry_the_module_14_shape(api):
     assert first["source_kind"] == "clinical_rule"
 
 
-def test_an_empty_body_is_accepted_and_assesses_nothing(api):
+def test_an_empty_body_is_accepted_and_accounts_for_every_topic(api):
+    """Nothing supplied means nothing was CHECKED -- not that nothing is there.
+
+    This used to assert that only the three fusion conditions came back. The
+    other ten were dropped in silence, so a caller could not tell a topic this
+    tool never looked at from one it has no opinion about.
+    """
     response = post(api, {})
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["summary"]["highest_risk"] is None
+
     conditions = {d["condition"] for d in data["decisions"]}
-    assert conditions == set(C.FUSION_CONDITIONS)
+    # Every topic that declares inputs is accounted for...
+    expected = {
+        name
+        for name, definition in C.CONDITIONS.items()
+        if definition.always_assessed or definition.report_when_unread
+    }
+    assert conditions == expected
+    assert set(C.FUSION_CONDITIONS) <= conditions
+
+    # ...and a SECONDARY reading of a test another topic already reports is
+    # not a second line about the same absence.
+    for name, definition in C.CONDITIONS.items():
+        if not definition.always_assessed and not definition.report_when_unread:
+            assert name not in conditions
+
+    # Not one of them carries a status or a risk that could read as a result.
+    for decision in data["decisions"]:
+        assert decision["status"] == "Insufficient Data"
+        assert decision["risk"] is None
 
 
 # --------------------------------------------------------------------------
