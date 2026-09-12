@@ -988,16 +988,12 @@ describe('what the charts and the table are told about each row', () => {
       renderDashboard();
 
       await screen.findAllByText(/average blood sugar/);
-      // THE SIGNPOST IS GONE BECAUSE THE PLACE IT POINTED TO IS. These tests
-      // are ordinary entries of this very list now, so "they are in Your
-      // results above" would be sending the reader away from them. The fact
-      // it existed to carry -- that the section is NOT the whole report --
-      // is the provenance sentence's job now.
-      const said = screen.getByText(/of the \d+ results listed above/i);
-      const [, assessed, total] = said.textContent.match(
-        /assessed (\d+) of the (\d+) results/i
-      );
-      expect(Number(total) - Number(assessed)).toBe(4);
+      // THE SIGNPOST AND THE PROVENANCE SENTENCE ARE BOTH GONE, the second on
+      // the reader's instruction. What the section must still do is SHOW
+      // these tests, and the closing summary still accounts for them.
+      expect(
+        screen.getByText(/A further 4 results on your report were read but not assessed/)
+      ).toBeInTheDocument();
       // THE INVARIANT IS UNCHANGED: the pointer must name a place that
       // exists. The place moved -- these rows are a labelled group inside
       // "Your results" now, rather than a section of their own further down
@@ -1033,14 +1029,12 @@ describe('what the charts and the table are told about each row', () => {
       renderDashboard();
 
       await screen.findAllByText(/average blood sugar/);
-      // `unanalysed.count` is 0 in this fixture and there are two items. The
-      // count on screen must come from the LIST. Read as a difference so the
-      // assertion cannot pass by coincidence of a changed sentence.
-      const said = screen.getByText(/of the \d+ results listed above/i);
-      const [, assessed, total] = said.textContent.match(
-        /assessed (\d+) of the (\d+) results/i
-      );
-      expect(Number(total) - Number(assessed)).toBe(2);
+      // `unanalysed.count` is 0 in this fixture and there are two items, so a
+      // screen reading 0 would be repeating the payload's own bad counter.
+      // The surviving count is the closing summary's.
+      expect(
+        screen.getByText(/A further 2 results on your report were read but not assessed/)
+      ).toBeInTheDocument();
     });
 
     it('joins two names with "and", not a bare comma', async () => {
@@ -1805,26 +1799,6 @@ describe('descriptions of tests this platform does not assess', () => {
     ).toBeInTheDocument();
   });
 
-  it('states that a description is about the TEST, not about the reader', async () => {
-    // This sentence is the entire safety argument for the feature: the
-    // prompt held a test name and nothing else, so the text below it cannot
-    // be a reading of anyone's result. Without it the paragraph sits under a
-    // number flagged abnormal and invites exactly that reading.
-    withDashboard({ unanalysed });
-    renderDashboard();
-
-    // THE SAFETY ARGUMENT SURVIVED THE MERGE, AS A SENTENCE. The group
-    // heading and its qualifying paragraph went on the reader's instruction;
-    // what they carried did not. The prompt held a test name and nothing
-    // else, so the text in these entries cannot be a reading of anyone's
-    // result -- and they now sit in one list with entries that ARE, which is
-    // precisely why it still has to be said.
-    const said = await screen.findByText(
-      /written from the name of the test alone and does not interpret your result/
-    );
-    // And not behind a disclosure a reader may never open.
-    expect(said.closest('details')).toBeNull();
-  });
 
   it('says nothing at all about a test nobody asked about', async () => {
     withDashboard({ unanalysed });
@@ -2453,67 +2427,43 @@ describe('parameters this tool does not assess', () => {
     expect(cell).not.toMatch(/not checked/i);
   });
 
-  it('says how many of the listed results it actually assessed', async () => {
-    // THE GUARANTEE THAT REPLACED A PER-ROW ONE.
-    // This test used to assert that a laboratory's marking never borrowed
-    // `.verdict--high`, which on this page means THIS TOOL crossed a
-    // threshold it holds -- one table, two vocabularies, so a reader scanning
-    // the column could tell them apart without reading a heading.
-    //
-    // The tables were merged on the reader's instruction: one list, one set
-    // of columns, no badge on any row. That is a real loss and it needs a
-    // real replacement, because the topics on this page rest on a SUBSET of
-    // the rows. On the report this came from, SGPT, CRP and ESR were all
-    // well outside their laboratory's own range and fed no verdict at all --
-    // a uniform table with nothing said would imply an assessment nobody
-    // made.
-    //
-    // So the fact survives as ONE SENTENCE, outside every disclosure, and
-    // this is the test that keeps it there.
-    withDashboard(
-      withUnassessed([
-        {
-          testName: 'Potassium, Serum',
-          value: 5.9,
-          unit: 'mmol/l',
-          labFlag: 'high',
-          labFlaggedAbnormal: true,
-          labReferenceLow: 3.5,
-          labReferenceHigh: 5.1,
-        },
-      ])
-    );
-    renderDashboard();
 
-    const said = await screen.findByText(/of the .* results listed above/i);
-    expect(said.textContent).toMatch(/assessed/i);
-    expect(said.textContent).toMatch(/did not contribute to the topics/i);
-    // AND IT IS NOT BEHIND A DISCLOSURE. A sentence reporting the limit of
-    // what was assessed is an absence, and §6an's rule is that an absence
-    // never goes behind a toggle a reader may never open.
-    expect(said.closest('details')).toBeNull();
-  });
+  // REMOVED ON THE READER'S INSTRUCTION: three tests of a paragraph that no
+  // longer exists --
+  //   'says how many of the listed results it actually assessed'
+  //   'states that a description is about the TEST, not about the reader'
+  //   'labels the descriptions as being about the TEST, not the reader'
+  //
+  // The paragraph said how many of the listed results were assessed, that the
+  // rest fed no topic, and that the notes on them describe the test and not
+  // the reader's value. It was kept back twice while the tables and the
+  // explanation lists were merged; the reader asked for it to go both times.
+  //
+  // WHAT SURVIVES ELSEWHERE, and is still tested: the closing "In short"
+  // summary says the laboratory marked N further results, that this tool does
+  // not check those tests at all so nothing above takes them into account,
+  // and that not checked is not the same as normal.
+  //
+  // WHAT DOES NOT SURVIVE ANYWHERE, recorded so it is a known choice and not
+  // an oversight: nothing on the page now says that the notes on unassessed
+  // tests were written from the test's NAME alone and do not interpret the
+  // reader's own value (§6v). They sit in one list with entries that DO
+  // interpret it.
 
-  it('says "not checked is not the same as normal" alongside the provenance', async () => {
+  it('says "not checked is not the same as normal" in the closing summary', async () => {
     withDashboard(
       withUnassessed([{ testName: 'Urine Colour', value: 'Yellow' }])
     );
     renderDashboard();
 
-    // THE SENTENCE SURVIVED THE MERGE. It used to introduce a group of its
-    // own; there is no such group now, so it travels with the provenance
-    // sentence in "What these results mean" -- and it must still be OUTSIDE
-    // every disclosure, for the reason §6an gives.
-    //
-    // SCOPED, for the reason the original was scoped: the closing "In short"
-    // summary legitimately says the same thing again, so a page-wide query
-    // finds two and proves nothing about WHERE this one is.
-    await screen.findAllByText(/Not checked is not the same as normal/);
-    const section = document.querySelector('.explanations');
-    const said = [...section.querySelectorAll('p')].find((node) =>
-      /Not checked is not the same as normal/.test(node.textContent)
-    );
-    expect(said).toBeTruthy();
+    // The group that introduced this sentence is gone, and so is the
+    // provenance paragraph that carried it next. The closing summary said it
+    // all along and is now the only place that does -- so this test follows
+    // it there rather than being deleted with the paragraph.
+    const said = await screen.findByText(/Not checked is not the same as normal/);
+    expect(said.closest('.in-short')).not.toBeNull();
+    // Still outside every disclosure: §6an's rule about absences holds
+    // wherever the sentence lives.
     expect(said.closest('details')).toBeNull();
   });
 
@@ -2525,30 +2475,6 @@ describe('parameters this tool does not assess', () => {
   // not behind a disclosure. A deleted test is only safe when something else
   // still fails if the guarantee goes.
 
-  it('labels the descriptions as being about the TEST, not the reader', async () => {
-    // The reason a previous session kept these out of this section entirely:
-    // every other card here interprets the reader's own value. The label is
-    // what makes including them safe, so it is not decoration.
-    withDashboard(
-      withUnassessed([
-        {
-          testName: 'Potassium, Serum',
-          value: 5.9,
-          unit: 'mmol/l',
-          descriptionAvailable: true,
-          description: 'A mineral your body uses for nerve and muscle function.',
-        },
-      ])
-    );
-    renderDashboard();
-
-    await screen.findAllByText('Potassium, Serum');
-    // No heading over a group any more -- one sentence, in the section.
-    const said = screen.getByText(
-      /written from the name of the test alone and does not interpret your result/
-    );
-    expect(said.closest('details')).toBeNull();
-  });
 
   it('offers no entry, and no qualifier, when nothing was described', async () => {
     // The glossary is only asked about tests the lab flagged, so most reports

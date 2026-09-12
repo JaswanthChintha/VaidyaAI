@@ -404,7 +404,6 @@ function Explanations({
   unassessedItems = [],
   rangeLines = [],
   assessedResultCount = 0,
-  totalResultCount = 0,
 }) {
   const entries = explanations?.entries || [];
 
@@ -469,7 +468,6 @@ function Explanations({
     })),
   ];
 
-  const hasProvenance = totalResultCount > assessedResultCount;
   const hasRangeNotice =
     assessedResultCount > 0 && !rangeLines.some((entry) => entry.assessed);
   if (
@@ -477,7 +475,6 @@ function Explanations({
     && !missing.length
     && !describedUnassessed.length
     && !rangeLines.length
-    && !hasProvenance
     && !hasRangeNotice
   ) {
     return null;
@@ -554,36 +551,17 @@ function Explanations({
         </p>
       ) : null}
 
-      {/* WHICH OF THE ROWS ABOVE THIS TOOL ACTUALLY ASSESSED.
-          The results table is deliberately uniform -- one list, one set of
-          columns, no badge on any row -- because which engine formed an
-          opinion about a result is this platform's business and not the
-          reader's. But the topics on this page rest on a SUBSET of that
-          table, and on a real report the gap was wide: SGPT, CRP and ESR were
-          all markedly outside their laboratory's own range and fed no verdict
-          at all. Saying nothing would let a uniform table imply an assessment
-          nobody made.
-          ONE SENTENCE, in the section that can carry it, and OUTSIDE every
-          disclosure -- it reports a limit on what was assessed, and §6an's
-          rule is that an absence never goes behind a toggle. */}
-      {hasProvenance ? (
-        <p className="hint">
-          This tool checks a fixed set of measurements. It assessed{' '}
-          {assessedResultCount} of the {totalResultCount} results listed above;
-          the others are shown with your laboratory&rsquo;s own comparison and
-          did not contribute to the topics on this page.{' '}
-          {describedUnassessed.length ? (
-            <>
-              Where one of those has a note above, the note says what the test
-              measures in general — it was written from the name of the test
-              alone and does not interpret your result.{' '}
-            </>
-          ) : null}
-          <strong>Not checked is not the same as normal.</strong> Take anything
-          your laboratory marked to a qualified healthcare professional.
-        </p>
-      ) : null}
-
+      {/* REMOVED ON THE READER'S INSTRUCTION, TWICE GIVEN.
+         A paragraph stood here saying how many of the listed results this
+         tool had assessed, that the rest did not contribute to the topics
+         above, that the notes on them describe the test rather than the
+         reader's value, and that not checked is not the same as normal. It
+         was kept back when the tables were merged and again when the
+         explanation lists were, on the argument that a uniform page would
+         otherwise imply an assessment nobody made. The reader has asked for
+         it to go both times. It is their page and their call; this note
+         records what was removed and why it was there, so the next person to
+         read this file does not reintroduce it by accident. */}
       {/* THE REPORT PRINTED NO INTERVALS OF ITS OWN. Said once, and it has
           to be said somewhere: without it a reader cannot tell why nothing is
           marked against their laboratory's numbers. It used to sit under the
@@ -2206,7 +2184,6 @@ export default function Dashboard() {
         unassessedCount={(dashboard.unanalysed?.items || []).length}
         rangeLines={rangeLines}
         assessedResultCount={reportedLabs.length}
-        totalResultCount={allResultRows.length}
         unassessedItems={dashboard.unanalysed?.items || []}
       />
 
