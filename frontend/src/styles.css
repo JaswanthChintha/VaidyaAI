@@ -1116,6 +1116,17 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
 .in-short p { line-height: 1.6; }
 /* The closing line is set apart from the findings above it: it is a statement
    about what this whole page is, not another finding. */
+/* Module 34 on the clinician page. Same treatment as the patient summary's:
+   set apart, because these sentences are about the TEST and not about this
+   patient, and a reader must be able to tell the two kinds apart. */
+.passage__context {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border-left: 2px solid var(--band-line);
+}
+.passage__context p { margin: 0 0 8px; }
+.passage__context p:last-child { margin-bottom: 0; }
+
 /* Module 34 -- what an out-of-range result is generally associated with.
    Set apart from the composed summary above it, because these sentences are
    about the TEST and not about this reader: same rule as every other place

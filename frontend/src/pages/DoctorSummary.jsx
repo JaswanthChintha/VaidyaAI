@@ -128,21 +128,68 @@ export default function DoctorSummary() {
   const { id } = useParams();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [findingContext, setFindingContext] = useState([]);
 
   useEffect(() => {
     let cancelled = false;
+    // A LOCAL FLAG, NOT THE `data` STATE. The catch below runs inside the
+    // closure this effect was created in, where `data` is null for the whole
+    // life of the effect however many times `setData` has been called -- so
+    // reading it would make every context failure replace a rendered summary
+    // with an error page. A test caught exactly that.
+    let summaryRendered = false;
     (async () => {
       try {
         const result = await api.getDoctorSummary(id);
-        if (!cancelled) setData(result);
+        if (cancelled) return;
+        setData(result);
+        summaryRendered = true;
+
+        /* MODULE 34 -- what the values the LABORATORY marked are generally
+           associated with.
+           DERIVED FROM `printed_flag`, which is the reporting laboratory's own
+           marking and the only direction on this page that is not this tool's
+           own verdict. Profile rows are excluded upstream by `measured`'s own
+           filter, so a questionnaire answer can never reach it. The request
+           carries a printed NAME and the word raised/lowered; no value goes
+           with it, which is what keeps the answer about the test.
+           IT LIVES IN THIS EFFECT because `labFlagged` is computed after the
+           early returns below, and a second hook cannot follow them. */
+        const rows = result?.doctorSummary?.laboratory?.rows || [];
+        const direction = (word) => {
+          const w = String(word || '').toLowerCase();
+          if (w.includes('high') || w.includes('raised')) return 'raised';
+          if (w.includes('low') || w.includes('lowered')) return 'lowered';
+          return null;
+        };
+        const findings = [];
+        for (const row of rows) {
+          if (row?.provenance?.source === 'patient_profile') continue;
+          if (row?.usable === false) continue;
+          const d = direction(row?.printed_flag);
+          if (!d) continue;
+          const name = parameterName(row);
+          if (name) findings.push({ test_name: name, direction: d });
+        }
+        if (!findings.length) return;
+
+        const ctx = await api.describeFindings(id, findings);
+        const entries = (ctx?.context?.entries || []).filter(
+          (e) => e && e.available === true && typeof e.text === 'string' && e.text.trim()
+        );
+        if (!cancelled && entries.length) setFindingContext(entries);
       } catch (err) {
-        if (!cancelled) setError(err.message);
+        // ONLY THE SUMMARY ITSELF IS AN ERROR. A missing context block is not
+        // something a clinician has any use for being told about, and the
+        // document is complete without it -- so a failure after `setData` must
+        // not replace a rendered summary with an error.
+        if (!cancelled && !summaryRendered) setError(err.message);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (error) return <p className="error" role="alert">{error}</p>;
   if (!data) return <p className="loading">Preparing the clinical summary…</p>;
@@ -415,6 +462,26 @@ export default function DoctorSummary() {
               : ''}
             None of this is a negative finding.
           </p>
+        ) : null}
+
+        {/* WHAT THE LABORATORY'S OWN MARKINGS ARE GENERALLY ASSOCIATED WITH.
+            Above the closing line, which keeps the last word, and outside
+            everything the narrative may rewrite. Each sentence is about the
+            TEST and the DIRECTION -- the same sentence for any report with a
+            raised neutrophil count -- so it carries no attribution: there is
+            no claim about this patient in it to attribute. */}
+        {findingContext.length ? (
+          <div className="passage__context">
+            {findingContext.map((entry, index) => (
+              <p key={`${entry.test_name}-${index}`}>
+                <strong>
+                  {entry.test_name}
+                  {entry.direction === 'raised' ? ' (raised)' : ' (lowered)'}
+                </strong>{' '}
+                {entry.text}
+              </p>
+            ))}
+          </div>
         ) : null}
 
         <p className="passage__close">
