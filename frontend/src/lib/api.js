@@ -290,6 +290,18 @@ export const api = {
   openReportFile: (id, mimeType) => openReportFile(id, mimeType),
   getDashboard: (id) => request('GET', `/reports/${id}/dashboard`),
   getDoctorSummary: (id) => request('GET', `/reports/${id}/doctor-summary`),
+  /**
+   * Module 33 -- rewrite the summary sentences THIS PAGE composed.
+   *
+   * POST, and the sentences go out in the body, because the page composes
+   * them from the cards it is rendering. A server-side recomposition would be
+   * a second implementation of those rules that could disagree with the
+   * first, and the screen would then argue with its own summary.
+   */
+  rewriteSummary: (id, sentences, names) =>
+    request('POST', `/reports/${id}/summary-prose`, {
+      body: { sentences, names },
+    }),
   getPopulationContext: (id) => request('GET', `/reports/${id}/population-context`),
 
   getTrends: () => request('GET', '/timeline/trends'),

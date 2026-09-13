@@ -279,6 +279,25 @@ const reportSchema = new mongoose.Schema(
     },
 
     /**
+     * Module 33's rewrite of the PATIENT's closing summary.
+     *
+     * Cached exactly like `doctorNarrative` and for the same reason: one model
+     * call per analysis, never one per page view, on a free tier of twenty a
+     * day. Keyed on the analysis version AND on a hash of the sentences that
+     * were sent -- the page composes those from what it is rendering, so a
+     * changed composition must not be served last week's prose about it.
+     *
+     * `text` is the ONLY renderable field and is absent on every refusal. A
+     * caller that finds no text renders the sentences it already had, which
+     * is what the page shows today.
+     */
+    summaryProse: {
+      type: mongoose.Schema.Types.Mixed,
+      select: false,
+      default: undefined,
+    },
+
+    /**
      * Module 23's `ReportExplanationSet` - THE PATIENT-FACING EXPLANATION.
      *
      * The clinical report above is written for a reader who already knows what

@@ -93,7 +93,14 @@ describe('the overall card', () => {
     // The bare word must not appear as this card's headline on its own.
     expect(overallCardText()).toContain('Healthy (partial assessment)');
     expect(overallCardText()).not.toMatch(/Healthy(?! \(partial assessment\))/);
-    expect(screen.getByText(/assessment is incomplete/)).toBeInTheDocument();
+    // THE "assessment is incomplete" SENTENCE WAS REMOVED on the reader's
+    // instruction, along with the producer's caveat paragraph under it. The
+    // guarantee this test exists for is untouched and is the assertion above:
+    // Module 18's five-valued LABEL carries "(partial assessment)" itself, so
+    // a partial clean result is still not byte-identical to a full one.
+    // `complete` and `caveat` are still in the payload; this card no longer
+    // prints them.
+    expect(screen.queryByText(/assessment is incomplete/)).not.toBeInTheDocument();
   });
 
   it('never renders a missing risk as Low', async () => {

@@ -103,6 +103,12 @@ ROUTES = [
     ("post", "/api/v1/explain/glossary", {"test_names": ["Blood Urea"]}),
     # Listed HERE on the day it was written, not after it shipped dead.
     ("post", "/api/v1/explain/clinician-summary", {"summary": {}}),
+    # Same day, same reason.
+    (
+        "post",
+        "/api/v1/explain/summary-prose",
+        {"sentences": ["This tool checked 8 conditions."], "names": []},
+    ),
 ]
 
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import { Absent, Risk, Value, WarningList } from '../components/Absent';
@@ -65,19 +65,15 @@ function OverallCard({ overall }) {
         Overall risk: <Risk risk={overall.risk} assessed={assessed} />
       </p>
 
-      {/* `complete: false` is a real fact and is stated, not hidden. */}
-      {overall.complete === false ? (
-        <p className="caveat">
-          This assessment is incomplete
-          {isPresent(overall.unassessedConditionCount) &&
-          overall.unassessedConditionCount > 0
-            ? ` — ${overall.unassessedConditionCount} condition(s) could not be assessed`
-            : ''}
-          .
-        </p>
-      ) : null}
+      {/* REMOVED ON THE READER'S INSTRUCTION: "This assessment is incomplete"
+          and the producer's `overall.caveat` paragraph beneath it. Both said
+          the overall status rests only on what could be assessed.
 
-      {isPresent(overall.caveat) ? <p className="caveat">{overall.caveat}</p> : null}
+          `complete` and `caveat` are STILL IN THE PAYLOAD and are still
+          produced, so nothing upstream changed and the clinician summary is
+          untouched -- this card simply no longer prints them. The list of
+          conditions that could not be assessed stays below, because that
+          names them rather than qualifying the verdict in the abstract. */}
 
       {overall.unassessedConditions?.length ? (
         <p className="hint">
@@ -917,8 +913,63 @@ const andList = (names) => {
   return `${names.slice(0, -1).join(commaSafeSeparator(names))} and ${names[names.length - 1]}`;
 };
 
-function InShort({ dashboard, flaggedCards, clearCards, unassessedCards }) {
+function InShort({
+  dashboard,
+  flaggedCards,
+  clearCards,
+  unassessedCards,
+  reportId,
+}) {
+  const bodyRef = useRef(null);
+  const [prose, setProse] = useState(null);
   const overall = dashboard.overall;
+
+  /* MODULE 33, AND EVERY PATH THROUGH IT ENDS AT THE COMPOSED TEXT.
+     The sentences are read out of the rendered body, so what is sent is
+     exactly what the reader would otherwise see. `prose` stays null on a
+     refusal, on a transport failure, and on a response whose shape is not
+     what this expects -- and null renders the composed body, which is what
+     this panel shows today. There is no error state because there is nothing
+     to report: the page is complete either way. */
+  useEffect(() => {
+    let cancelled = false;
+    if (!reportId || !overall || !bodyRef.current) return undefined;
+    const sentences = [...bodyRef.current.querySelectorAll('p')]
+      .map((node) => node.textContent.replace(/\s+/g, ' ').trim())
+      .filter(Boolean);
+    if (!sentences.length) return undefined;
+    // Every name that must survive the rewrite. The caller knows which tokens
+    // are names; the service must not guess at them.
+    const names = [
+      ...[...flaggedCards, ...clearCards, ...unassessedCards].map(
+        (card) => card.condition
+      ),
+      ...(dashboard.unanalysed?.items || [])
+        .filter((item) => item.labFlaggedAbnormal === true)
+        .map((item) => item.testName),
+    ].filter(Boolean);
+
+    (async () => {
+      try {
+        const res = await api.rewriteSummary(reportId, sentences, names);
+        const text = res?.prose?.text;
+        if (!cancelled && typeof text === 'string' && text.trim()) {
+          setProse(text.trim());
+        }
+      } catch {
+        // Deliberately swallowed. A rewrite that did not happen is not an
+        // error the reader has any use for -- they are reading the composed
+        // sentences, which say the same things.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Recomposed only when the report changes. The sentences are derived from
+    // the same payload, so a dependency on them would re-request on every
+    // render for no new input.
+  }, [reportId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!overall) return null;
 
   const label = isPresent(overall.statusLabel) ? overall.statusLabel : null;
@@ -977,6 +1028,17 @@ function InShort({ dashboard, flaggedCards, clearCards, unassessedCards }) {
           />
         )}
       </p>
+
+      {/* THE COMPOSED BODY, AND THE ONLY PART A REWRITE MAY TOUCH.
+          The sentences sent to Module 33 are read back out of THIS element,
+          not composed a second time: the DOM is what the page actually says,
+          so there is no second implementation of the counting rules that
+          could disagree with the first. The headline above and the closing
+          line below sit outside it deliberately -- the closing line is the
+          one sentence on this panel that states what this tool is, and a
+          model may not reword it. `clinician_narrative` appends its own
+          closing line verbatim for the same reason. */}
+      <div className="in-short__body" ref={bodyRef} hidden={Boolean(prose)}>
 
       {/* NO "Recorded as Needs Monitoring · overall risk: Low" LINE HERE.
           It restated two internal labels the card at the top of the page
@@ -1101,6 +1163,15 @@ function InShort({ dashboard, flaggedCards, clearCards, unassessedCards }) {
           is missing from everything above.
         </p>
       ) : null}
+
+      </div>
+
+      {/* THE REWRITE, WHEN THERE IS ONE. It replaces the composed paragraphs
+          and never the closing line. The composed body stays in the DOM,
+          hidden -- removing it would leave nothing to read the sentences back
+          out of if this ever needs to re-ask, and `hidden` keeps it out of
+          the accessibility tree so a screen reader does not hear both. */}
+      {prose ? <p className="in-short__prose">{prose}</p> : null}
 
       {/* THE CLOSING LINE IS NOT OPTIONAL and is deliberately not conditional
           on anything having been flagged: a reader whose report came back
@@ -2196,6 +2267,7 @@ export default function Dashboard() {
         flaggedCards={flaggedCards}
         clearCards={clearCards}
         unassessedCards={unassessedCards}
+        reportId={id}
       />
     </main>
   );

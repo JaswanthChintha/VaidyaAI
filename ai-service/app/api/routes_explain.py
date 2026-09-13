@@ -60,6 +60,10 @@ from app.services.lifestyle import (
     guidance_policy_document,
     lifestyle_guidance,
 )
+from app.services.summary_prose import (
+    SummaryProse,
+    rewrite_summary,
+)
 from app.services.clinician_narrative import (
     ClinicianNarrative,
     write_clinician_summary,
@@ -511,6 +515,60 @@ def clinician_summary_endpoint(
     """
     return ClinicianSummaryResponse(
         data=write_clinician_summary(request.summary, llm=llm)
+    )
+
+
+class SummaryProseRequest(BaseModel):
+    """The sentences the page has ALREADY composed, in the order it shows them.
+
+    NOT A REPORT, AND THAT IS THE ENTIRE CONTRACT. This endpoint rewrites
+    finished patient-facing text and derives no finding of its own; handing it
+    a payload to summarise instead would make it the one thing
+    `Dashboard.jsx`'s `InShort` comment exists to refuse.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    sentences: List[str] = Field(
+        min_length=1,
+        description="Composed summary sentences, verbatim and in order.",
+    )
+    names: List[str] = Field(
+        default_factory=list,
+        description="Condition and test names that must survive the rewrite. "
+        "Supplied by the caller because it knows which tokens are names; this "
+        "service must not guess at them.",
+    )
+
+
+class SummaryProseResponse(BaseModel):
+    """The `{success, data}` envelope. See `ClinicianSummaryResponse`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    success: bool = True
+    data: SummaryProse
+
+
+@router.post(
+    "/summary-prose",
+    response_model=SummaryProseResponse,
+    response_model_exclude_none=False,
+    summary="Rewrite already-composed summary sentences for flow",
+)
+def summary_prose_endpoint(
+    request: SummaryProseRequest,
+    llm: Any = Depends(get_explanation_llm),
+) -> SummaryProseResponse:
+    """Make composed sentences read better, or say why they were not changed.
+
+    NO MODEL IS NOT AN ERROR, for the same reason the clinician summary says:
+    the caller's fallback is the composed text it already has, which is what
+    the page shows today. A 200 carrying `outcome: model_unavailable` keeps a
+    configuration state out of the page's error path.
+    """
+    return SummaryProseResponse(
+        data=rewrite_summary(request.sentences, names=request.names, llm=llm)
     )
 
 

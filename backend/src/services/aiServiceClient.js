@@ -125,6 +125,7 @@ const PATHS = Object.freeze({
   guidance: '/api/v1/explain/guidance',
   glossary: '/api/v1/explain/glossary',
   clinicianSummary: '/api/v1/explain/clinician-summary',
+  summaryProse: '/api/v1/explain/summary-prose',
   timeline: '/api/v1/timeline/trends',
   comparison: '/api/v1/comparison/reports',
   progress: '/api/v1/progress/score',
@@ -1113,6 +1114,25 @@ async function writeClinicianSummary({ summary, requestId }) {
   });
 }
 
+/**
+ * Module 33 - rewrite the patient's composed summary sentences for flow.
+ *
+ * REWRITES TEXT THAT ALREADY EXISTS, and sends no report. The sentences the
+ * page would otherwise render go out and better-reading ones come back, or
+ * none do. Nothing here inspects `outcome`: no model, a safety rejection, a
+ * dropped fact and an invented one all arrive as HTTP 200 with no text, and
+ * the caller renders what it already had.
+ */
+async function rewriteSummaryProse({ sentences, names, requestId }) {
+  return postJson({
+    path: PATHS.summaryProse,
+    stage: STAGES.EXPLANATION,
+    payload: { sentences, names: names || [] },
+    requestId,
+    timeoutMs: config.aiService.explainTimeoutMs,
+  });
+}
+
 async function generateDoctorSummary({
   report,
   reportRef,
@@ -1294,6 +1314,7 @@ module.exports = {
   scoreProgress,
   generateDoctorSummary,
   writeClinicianSummary,
+  rewriteSummaryProse,
   populationContext,
   health,
   resetClient,

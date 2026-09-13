@@ -7,6 +7,7 @@ const analysisController = require('../controllers/analysisController');
 const dashboardController = require('../controllers/dashboardController');
 const doctorSummaryController = require('../controllers/doctorSummaryController');
 const populationController = require('../controllers/populationController');
+const summaryProseController = require('../controllers/summaryProseController');
 const validate = require('../middleware/validate');
 const { protect } = require('../middleware/auth');
 const { uploadLimiter, analysisLimiter, historyLimiter } = require('../middleware/rateLimiter');
@@ -134,6 +135,26 @@ router.get('/:id/dashboard', validate(reportIdValidator), dashboardController.ge
  * Module 32. Both named ids are re-checked for ownership in the controller -
  * naming a report is not permission to read it.
  */
+/**
+ * Module 33 - rewrite the patient's own composed summary sentences for flow.
+ *
+ * POST, not GET, because the caller SENDS the sentences: the page composes
+ * them from the cards it is rendering and this service rewrites exactly those,
+ * rather than recomposing them from the payload and risking a summary that
+ * disagrees with the screen above it.
+ *
+ * `historyLimiter` for the reason `/doctor-summary` and `/population` carry
+ * it: this makes an outbound ai-service call, which is the line `/dashboard`
+ * (one document, no call) sits on the other side of. It is also what stops a
+ * caller spending the day's model quota by reposting different sentences.
+ */
+router.post(
+  '/:id/summary-prose',
+  historyLimiter,
+  validate(reportIdValidator),
+  summaryProseController.getSummaryProse
+);
+
 router.get(
   '/:id/doctor-summary',
   historyLimiter,
