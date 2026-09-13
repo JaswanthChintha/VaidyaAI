@@ -1281,32 +1281,11 @@ describe('laboratory rows', () => {
     expect(await screen.findAllByText('0 ng/ml')).not.toHaveLength(0);
   });
 
-  it('says so when no reference interval was printed', async () => {
-    withDashboard({
-      overall: { statusLabel: 'Healthy', anyAssessed: true },
-      laboratory: [
-        {
-          feature: 'hba1c',
-          displayName: 'HbA1c',
-          value: 5.4,
-          unit: '%',
-          state: 'valid',
-          usable: true,
-          referenceLow: null,
-          referenceHigh: null,
-        },
-      ],
-    });
-    renderDashboard();
+  // REMOVED ON THE READER'S INSTRUCTION: 'says so when no reference interval
+  // was printed'. The notice it pinned lived with the "Normal ranges for these
+  // results" disclosure, and both went. The reference bounds are still in the
+  // payload; no screen shows them.
 
-    // Said ONCE, and the guarantee is unchanged: the reader must be told, so
-    // they understand why nothing is marked against their laboratory's own
-    // numbers. Only the place moved -- the table has no range column now, so
-    // it sits with the ranges in "What these results mean".
-    expect(
-      await screen.findByText(/did not print normal ranges/i)
-    ).toBeInTheDocument();
-  });
 });
 
 describe('the closing "In short" summary', () => {
@@ -2342,11 +2321,10 @@ describe('parameters this tool does not assess', () => {
     renderDashboard();
 
     await screen.findAllByText('Ferritin');
-    // THE DIRECTION IS STILL THE LABORATORY'S AND IS STILL SHOWN. What moved
-    // is the interval: it is a line in "Normal ranges for these results" now
-    // rather than a second sentence inside the cell.
+    // THE DIRECTION IS STILL THE LABORATORY'S AND IS STILL SHOWN, and that is
+    // now the whole of what this test can pin: the interval itself was shown
+    // in "Normal ranges for these results", which the reader had removed.
     expect(cellFor('Ferritin')).toMatch(/low/i);
-    expect(document.querySelector('.range-list').textContent).toMatch(/15–150/);
   });
 
   it('says NO RANGE rather than implying the result is fine', async () => {
@@ -2513,53 +2491,14 @@ describe('parameters this tool does not assess', () => {
   });
 });
 
-describe('the laboratory range, in readable English', () => {
-  const one = (item) => ({
-    overall: { statusLabel: 'Healthy', anyAssessed: true, risk: 'Low' },
-    laboratory: [
-      { feature: 'hba1c', displayName: 'HbA1c', value: 5.2, unit: '%', state: 'measured', usable: true },
-    ],
-    unanalysed: { count: 1, items: [item] },
-  });
-  // THE INTERVAL'S ENGLISH IS STILL `labRange`'s AND STILL MATTERS -- it just
-  // reads out of "Normal ranges for these results" now instead of a table
-  // cell. The one-sided forms are the point: "within up to 100" was the first
-  // version of this and it is not English.
-  const limits = async () => {
-    await screen.findByText(/Normal ranges for these results/);
-    return document
-      .querySelector('.range-list')
-      .textContent.replace(/\s+/g, ' ')
-      .trim();
-  };
+// REMOVED ON THE READER'S INSTRUCTION: describe('the laboratory range, in
+// readable English'). Its three tests pinned `labRange`'s one-sided and
+// two-sided phrasings -- "up to 100", "15 and above", "3.5–5" -- against the
+// version of the page that printed them. Nothing prints them now: the column
+// went in aaae0d7, the list that replaced it went with this change, and
+// `labRange` itself is deleted rather than left as dead code.
+//
+// THE BUG THEY GUARDED IS GONE WITH THE CODE, not merely untested: there is
+// no longer a place where "within up to 100" could be rendered.
 
-  it('says "within" only for a two-sided interval', async () => {
-    withDashboard(
-      one({ testName: 'Albumin', value: 4.2, unit: 'g/dl', labReferenceLow: 3.5, labReferenceHigh: 5 })
-    );
-    renderDashboard();
-    expect(await limits()).toMatch(/3\.5–5/);
-  });
-
-  it('reads correctly when the laboratory printed only a ceiling', async () => {
-    // "within up to 100" was the first version, and it is not English.
-    withDashboard(
-      one({ testName: 'LDL Cholesterol, Direct', value: 96, unit: 'mg/dl', labReferenceHigh: 100 })
-    );
-    renderDashboard();
-    const text = await limits();
-    expect(text).toMatch(/up to 100/);
-    expect(text).not.toMatch(/within up to/);
-  });
-
-  it('reads correctly when the laboratory printed only a floor', async () => {
-    withDashboard(
-      one({ testName: 'Vitamin B6', value: 22, unit: 'nmol/l', labReferenceLow: 15 })
-    );
-    renderDashboard();
-    const text = await limits();
-    expect(text).toMatch(/15 and above/);
-    expect(text).not.toMatch(/within 15 and above/);
-  });
-});
 

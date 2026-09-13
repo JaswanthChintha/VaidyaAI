@@ -391,7 +391,6 @@ function Explanations({
   resultFeatures,
   unassessedCount = 0,
   unassessedItems = [],
-  rangeLines = [],
   assessedResultCount = 0,
 }) {
   const entries = explanations?.entries || [];
@@ -457,14 +456,10 @@ function Explanations({
     })),
   ];
 
-  const hasRangeNotice =
-    assessedResultCount > 0 && !rangeLines.some((entry) => entry.assessed);
   if (
     !written.length
     && !missing.length
     && !describedUnassessed.length
-    && !rangeLines.length
-    && !hasRangeNotice
   ) {
     return null;
   }
@@ -551,41 +546,12 @@ function Explanations({
          it to go both times. It is their page and their call; this note
          records what was removed and why it was there, so the next person to
          read this file does not reintroduce it by accident. */}
-      {/* THE REPORT PRINTED NO INTERVALS OF ITS OWN. Said once, and it has
-          to be said somewhere: without it a reader cannot tell why nothing is
-          marked against their laboratory's numbers. It used to sit under the
-          results table; the table has no range column now, so it belongs with
-          the ranges. */}
-      {hasRangeNotice ? (
-        <p className="hint">
-          This report did not print normal ranges for the results this tool
-          assessed, so they are compared with standard clinical thresholds
-          instead of the laboratory&rsquo;s own.
-        </p>
-      ) : null}
-
-      {rangeLines.length ? (
-        <details className="card explanation disclosure">
-          <summary className="disclosure__summary">
-            <h3 className="explanation__subject">
-              Normal ranges for these results
-            </h3>
-            <span className="disclosure__chevron" aria-hidden="true" />
-          </summary>
-          <ul className="range-list">
-            {rangeLines.map((entry, index) => (
-              <li key={`${entry.name}-${index}`}>
-                <span className="range-list__name">{entry.name}</span>
-                <span className="range-list__range">
-                  {entry.range}
-                  {isPresent(entry.unit) ? ` ${entry.unit}` : ''}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </details>
-      ) : null}
-
+      {/* REMOVED ON THE READER'S INSTRUCTION: a "Normal ranges for these
+          results" disclosure listing each test against its interval, and the
+          notice above it saying a report had printed none of its own. The
+          ranges came out of the results table in aaae0d7 and landed here;
+          they are simply not shown now. `referenceLow` / `referenceHigh` and
+          the laboratory's own bounds are untouched in the payload. */}
       <p className="hint">
         Written by a language model from your measured values and reviewed
         reference material, and checked before being shown. They explain what
@@ -751,24 +717,6 @@ function ParameterDescription({ item }) {
   return null;
 }
 
-/**
- * The laboratory's OWN range, for a parameter this tool does not assess.
- *
- * THE COMPARISON IS ARITHMETIC, NOT AN ASSESSMENT. The interval is printed on
- * the reader's own report and the marking is their own laboratory's; this
- * function carries both forward and compares two numbers. It invents no
- * threshold, and when the report printed no interval it says so rather than
- * borrowing one from anywhere -- a model-supplied reference range is a defect
- * this platform has already shipped once (MEMORY 6v).
- */
-function labRange(item) {
-  const low = item.labReferenceLow;
-  const high = item.labReferenceHigh;
-  if (isPresent(low) && isPresent(high)) return `${low}–${high}`;
-  if (isPresent(high)) return `up to ${high}`;
-  if (isPresent(low)) return `${low} and above`;
-  return null;
-}
 
 
 /* `Unanalysed` STOOD HERE AND IS DELETED, not left unused.
@@ -1774,33 +1722,6 @@ export default function Dashboard() {
     state: 'measured',
     usable: true,
   }));
-  // ---- WHAT MOVED OUT OF THE TABLE ---------------------------------------
-  //
-  // The reference interval is a sentence, not a cell. As a column it was
-  // empty on most rows of most reports; as a line per test it is readable and
-  // it can say WHOSE range it is, which the column never did.
-  const rangeLines = [
-    ...reportedLabs
-      .map((row) => ({
-        name: PATIENT_LABEL[row.feature] || row.displayName || row.feature,
-        range: labRange({
-          labReferenceLow: row.referenceLow,
-          labReferenceHigh: row.referenceHigh,
-        }),
-        unit: row.unit,
-        assessed: true,
-      }))
-      .filter((entry) => entry.range),
-    ...unassessedItems
-      .map((item) => ({
-        name: item.testName,
-        range: labRange(item),
-        unit: item.unit,
-        assessed: false,
-      }))
-      .filter((entry) => entry.range),
-  ];
-
   // The laboratory's own abnormal markings lead: they are the reason these
   // rows are on the page at all.
   const allResultRows = [
@@ -2207,7 +2128,6 @@ export default function Dashboard() {
            the items list, not `unanalysed.count` -- §6u: `unmapped_count` said
            0 on a report with 63 of them, and the dashboard repeated it. */
         unassessedCount={(dashboard.unanalysed?.items || []).length}
-        rangeLines={rangeLines}
         assessedResultCount={reportedLabs.length}
         unassessedItems={dashboard.unanalysed?.items || []}
       />

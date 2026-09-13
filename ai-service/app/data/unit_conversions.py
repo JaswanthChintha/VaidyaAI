@@ -40,6 +40,10 @@ UNIT_ALIASES: Dict[str, str] = {
     "mg%": "mg/dl",  # Indian labs commonly print "mg%" for mg/dL
     "mgpercent": "mg/dl",
     "mgdl": "mg/dl",
+    "milligram/dl": "mg/dl",
+    "milligrams/dl": "mg/dl",
+    "milligrams/decilitre": "mg/dl",
+    "milligrams/deciliter": "mg/dl",
     # grams per decilitre
     "g/dl": "g/dl",
     "gm/dl": "g/dl",
@@ -48,20 +52,44 @@ UNIT_ALIASES: Dict[str, str] = {
     "g%": "g/dl",
     "gm%": "g/dl",
     "gdl": "g/dl",
+    # SPELLED OUT IN FULL. A real report printed "Grams/dL" for a
+    # haemoglobin of 12.5 -- the same unit as `g/dl` in words -- and the
+    # value was REJECTED as NON_CANONICAL_UNIT. That cost the whole Anemia
+    # assessment: `Insufficient Data`, on a report that measured it.
+    # `_unit_key_raw` turns " per " into "/", so each of these also covers
+    # the "grams per decilitre" spelling.
+    "gram/dl": "g/dl",
+    "grams/dl": "g/dl",
+    "grams/decilitre": "g/dl",
+    "grams/deciliter": "g/dl",
+    "gram%": "g/dl",
+    "grams%": "g/dl",
     # grams / milligrams per litre
     "g/l": "g/l",
     "gm/l": "g/l",
     "mg/l": "mg/l",
+    "gram/l": "g/l",
+    "grams/l": "g/l",
+    "milligram/l": "mg/l",
+    "milligrams/l": "mg/l",
     # micro / nano / pico per volume
     "ug/l": "ug/l",
     "mcg/l": "ug/l",
     "ug/dl": "ug/dl",
     "mcg/dl": "ug/dl",
+    "microgram/l": "ug/l",
+    "micrograms/l": "ug/l",
+    "microgram/dl": "ug/dl",
+    "micrograms/dl": "ug/dl",
     "ng/ml": "ng/ml",
     "ngml": "ng/ml",
     "ng/l": "ng/l",
     "pg/ml": "pg/ml",
     "pgml": "pg/ml",
+    "nanogram/ml": "ng/ml",
+    "nanograms/ml": "ng/ml",
+    "picogram/ml": "pg/ml",
+    "picograms/ml": "pg/ml",
     # molar
     "mmol/l": "mmol/l",
     "mmoll": "mmol/l",
@@ -70,6 +98,13 @@ UNIT_ALIASES: Dict[str, str] = {
     "nmol/l": "nmol/l",
     "pmol/l": "pmol/l",
     "mmol/mol": "mmol/mol",
+    "millimol/l": "mmol/l",
+    "millimols/l": "mmol/l",
+    "millimoles/l": "mmol/l",
+    "micromol/l": "umol/l",
+    "micromoles/l": "umol/l",
+    "nanomoles/l": "nmol/l",
+    "picomoles/l": "pmol/l",
     # dimensionless / other
     "%": "%",
     "percent": "%",

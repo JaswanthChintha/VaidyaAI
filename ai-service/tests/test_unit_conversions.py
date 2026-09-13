@@ -271,3 +271,68 @@ def test_unit_conversion_dataclass_is_frozen():
     conv = UnitConversion("a", "b", 2.0)
     with pytest.raises(Exception):
         conv.factor = 3.0  # type: ignore[misc]
+
+
+# --------------------------------------------------------------------------
+# A UNIT WRITTEN OUT IN WORDS IS STILL THE UNIT
+#
+# Found on Test 3.pdf. The laboratory printed a haemoglobin of 12.5 in
+# "Grams/dL" -- `g/dl` spelled out -- and the table held `gms/dl` but not
+# `grams/dl`, so the value was refused as NON_CANONICAL_UNIT. The number was
+# perfectly ordinary; what it cost was the whole Anemia assessment, which came
+# back `Insufficient Data` on a report that had measured it.
+#
+# Same shape as the HbA1c parenthetical (§6aq): a laboratory's own spelling
+# defeating a lookup, and the patient's page reporting the consequence as an
+# absence.
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "printed,expected",
+    [
+        # The exact string off Test 3.pdf.
+        ("Grams/dL", "g/dl"),
+        ("grams/dl", "g/dl"),
+        ("Gram/dL", "g/dl"),
+        ("Grams%", "g/dl"),
+        # `_unit_key_raw` turns " per " into "/", so the long form comes free.
+        ("grams per dL", "g/dl"),
+        ("Milligrams/dL", "mg/dl"),
+        ("milligrams per decilitre", "mg/dl"),
+        ("Micrograms/L", "ug/l"),
+        ("nanograms/mL", "ng/ml"),
+        ("picograms/mL", "pg/ml"),
+        ("millimoles/L", "mmol/l"),
+        ("micromoles/L", "umol/l"),
+    ],
+)
+def test_a_unit_spelled_out_in_words_resolves_to_the_canonical_spelling(printed, expected):
+    assert normalize_unit(printed) == expected
+
+
+def test_the_abbreviated_spellings_still_resolve_exactly_as_before():
+    """PURELY ADDITIVE. The new entries may not disturb the old ones."""
+    for printed, expected in (
+        ("g/dL", "g/dl"),
+        ("gms/dl", "g/dl"),
+        ("gm%", "g/dl"),
+        ("mg/dl", "mg/dl"),
+        ("mg%", "mg/dl"),
+        ("mcg/dl", "ug/dl"),
+        ("%", "%"),
+        ("kg/m2", "kg/m2"),
+    ):
+        assert normalize_unit(printed) == expected, printed
+
+
+def test_an_unrecognised_unit_is_still_refused_and_never_guessed_at():
+    """THE GUARANTEE THAT MAKES THE TABLE SAFE TO GROW.
+
+    Adding spellings must not turn the normaliser into something that assumes.
+    An unknown key comes back UNCHANGED, which callers treat as unrecognised --
+    a value in a unit nobody recognises must never be compared against a range.
+    """
+    canonical = set(UNIT_ALIASES.values())
+    for nonsense in ("furlongs/fortnight", "bananas", "gg/dl"):
+        assert normalize_unit(nonsense) not in canonical, nonsense
