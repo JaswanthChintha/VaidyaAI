@@ -30,25 +30,29 @@ about any of them. That is the fifth time on this project.
 
 | | Tests |
 |---|---|
-| `backend/` (Node/Express) | **636** passing + 3 opt-in live |
-| `ai-service/` (Python/FastAPI) | **3,770** passing + 7 skipped |
-| `frontend/` (React/Vitest) | **312** passing |
-| **Total** | **4,718** -- ALL THREE re-run green 2026-09-12 |
+| `backend/` (Node/Express) | **649** passing + 3 opt-in live |
+| `ai-service/` (Python/FastAPI) | **3,804** passing + 7 skipped |
+| `frontend/` (React/Vitest) | **317** passing |
+| **Total** | **4,770** -- ALL THREE re-run green 2026-09-13 |
 
-> ### ▶ NEW CHAT? START AT §6ap.
+> ### ▶ NEW CHAT? START AT §6aq.
 >
-> It has the run commands, the test account **as it actually is today**, the
-> full list of all 45 uncommitted files with the section each belongs to, a
-> commit split, and what to pick up. §6ai is the PREVIOUS handover and its
-> account description is now STALE — read §6ap instead.
+> It has the run commands, the state of the repository, what `Test 2.pdf` is
+> and why it matters, and what is open. **§6ap and §6ai are PREVIOUS handovers
+> and both are now stale in the way that matters most: §6ap opens with "45
+> files uncommitted, no recovery point", and that is history.** Everything is
+> committed; the working tree is clean.
 >
-> **THREE sessions of work are in the working tree and `origin/master` has
-> none of it.** §6y's list was never committed, §6ai's sat on top of that, and
-> §6aj–§6ao sit on top of both. There is still no recovery point.
+> **THE REPOSITORY IS ONE BRANCH NOW.** `origin/main` and `origin/master` were
+> two UNRELATED histories — separate roots, no merge base — with the real work
+> on `master` and a squashed snapshot on GitHub's default. They were
+> consolidated onto `main`, and the commit messages were then rewritten to
+> carry no co-author trailer. 12 commits are not yet pushed.
 >
-> Everything runs and all 4,718 tests pass, all three suites run 2026-09-12.
-> §6x is the design system; §6z–§6ah are the second session; §6aj–§6ao are the
-> third (a design pass, a WCAG pass, and an internal-vocabulary sweep).
+> All 4,770 tests pass, all three suites run 2026-09-13. §6x is the design
+> system; §6z–§6ah and §6aj–§6ao are the earlier sessions; **§6aq is this one**
+> — a real laboratory report finally driven through the app, the mapping
+> defect it exposed, Module 33, and a page stripped of its own commentary.
 
 > ### ✅ THE HALF-BUILT FEATURE IS FINISHED (§6v design · §6w completion)
 >
@@ -6471,7 +6475,7 @@ report. Re-analysing `06` would close it and costs Gemini quota.
 Verified otherwise: zero colour offenders and zero AA failures across 27
 elements in both themes; zero `.verdict` elements in the group.
 
-## 6ap. STATE AT THE END OF THE 2026-09-12 SESSION — READ THIS FIRST
+## 6ap. STATE AT THE END OF THE 2026-09-12 SESSION — **SUPERSEDED BY §6aq**
 
 **Everything runs. All three suites are green, all three run today.
 NOTHING IS COMMITTED — this is now THREE sessions of work in the tree.**
@@ -6639,6 +6643,260 @@ costs Gemini quota.
    restarted earlier in the session and still got caught by a later edit.
 6. **A green suite said nothing about a broken API contract** that changed a
    field a dozen consumers index by. Found by reading the page.
+
+---
+
+## 6aq. STATE AT THE END OF THE 2026-09-13 SESSION — READ THIS FIRST
+
+**Everything from §6ap's uncommitted mass IS NOW COMMITTED AND PUSHED, the
+two GitHub lineages are one branch, and twelve further commits sit on top.**
+§6ap is the previous handover and its "45 files uncommitted, no recovery
+point" opening is now HISTORY — do not act on it.
+
+| | Tests | Last run |
+|---|---|---|
+| `backend/` | **649** passed, 3 skipped | 2026-09-13 ✅ |
+| `ai-service/` | **3,804** passed, 7 skipped | 2026-09-13 ✅ (`.env` moved aside) |
+| `frontend/` | **317** passed | 2026-09-13 ✅ |
+| **Total** | **4,770** | |
+
+### THE REPOSITORY, WHICH WAS TWO UNRELATED HISTORIES
+
+`origin/main` and `origin/master` had **separate root commits** — no merge
+base at all. `main` was GitHub's default and held a single squashed snapshot
+("VaidyaAI: AI-powered health intelligence platform" plus a file deletion);
+`master` held the real 22-commit history and all the work. Anyone visiting the
+repository saw the snapshot.
+
+Fixed by renaming `master` to `main` and force-pushing over it, then deleting
+`origin/master` and the local `github-publish`. **Checked before overwriting:
+`origin/main` had ZERO files `master` lacked**, and its 555 unique lines were
+older versions of files `master` later rewrote. One branch now, local and
+remote, carrying the real history.
+
+**Then the user asked to be the sole contributor.** 21 of 23 commits carried a
+`Co-Authored-By:` trailer; author and committer were already theirs alone.
+They ran `git filter-branch --msg-filter` themselves and force-pushed.
+Verified two ways: no commit matches the trailer, and `git diff` against a
+pre-rewrite backup tag was EMPTY — messages only, not one line of code moved.
+**No trailer on any commit from that point on.**
+
+> **`git filter-branch` is blocked by the permission classifier in this
+> session.** If history needs rewriting again, hand the user the command.
+> PowerShell has no inline `VAR=value cmd` prefix — the first attempt failed
+> on exactly that.
+
+### 12 COMMITS SINCE THE PUSH, NOT YET PUSHED
+
+```
+f3d0963 dashboard: remove the reference-range panel
+b4d14ad rule engine: report the topics a report had no test for
+3ff9b6d dashboard: a test that was never on the report gets no row
+aaae0d7 dashboard: one results table, three columns
+e53e1b7 dashboard: one explanation list, no group heading
+55d501d dashboard: remove the provenance paragraph
+c9de19b dashboard: the summary reads as a summary
+95ac452 ai-service: rewrite the patient summary for flow, never compose it
+4385cfa Module 33 wired end to end, + the overall card's self-description
+d2771df frontend: tests for the summary rewrite
+1d3460b ai-service: a misspelled outer half no longer discards a parenthetical
+251c971 dashboard: stop naming the conditions this tool could not check
+```
+
+### ▶ THE DEFECT THIS SESSION EXISTS FOR (1d3460b)
+
+A real laboratory report printed **`GLYSOLATED HAEMOGLOBIN ( HBA1C)`** — the
+laboratory's own misspelling of GLYCOSYLATED. `lookup_test_name` builds four
+candidates and every one of them either KEEPS the parenthetical or THROWS IT
+AWAY; nothing ever tried its contents. The outer half matched nothing, and
+`( HBA1C)` — an exact synonym — went in the bin with it.
+
+**Both halves of the contradiction were published in the same payload:**
+`unanalysed.items[].reason: no_canonical_feature` carrying the test at 5.9%
+flagged HIGH by the laboratory, and `laboratory[hba1c].state: "unavailable"`.
+The dashboard told a reader with a prediabetic-range result that the test was
+**NOT ON THEIR REPORT**.
+
+`feature_catalog.py` had already solved this for COMMAS, after the identical
+failure on `"GLYCOSYLATED HEMOGLOBIN, HbA1c"`. The parenthetical form now uses
+the same rule through a shared `_agreeing_segment_match`: split into the text
+outside the brackets and the text inside each, look each up, **and return only
+if they agree on one feature**. It is reachable only by names that map to
+NOTHING today, so it can turn a refusal into a mapping and never one mapping
+into another — `Creatinine (HbA1c)` proves it and there is a test.
+`DISTINCT_ANALYTE_TOKENS` is checked against the whole name further up, so
+`Cholesterol (LDL)` is refused before any segment is tried.
+
+**Live-verified by re-analysing Test 2.pdf on 2026-09-13**, after restarting
+the ai-service and confirming the RUNNING process mapped the string:
+`hba1c` is `state: valid`, 5.9 %, out of the unassessed list (18 → 17 items,
+labFlagged 11 → 10) — and **Diabetes moved `Not Indicated` → `Borderline`,
+risk Medium**, because 5.9 sits in the engine's own prediabetic band. A
+correction that changed a clinical verdict.
+
+### Module 33 — the patient summary, rewritten and never composed
+
+`InShort` carries a thirty-line comment refusing "summarise this report for
+the patient", and the refusal is right. The user asked for Gemini anyway, so
+it is built as a **REWRITE**: the model never sees the report, only the
+sentences the page has ALREADY composed — read back out of the rendered DOM,
+so there is no second implementation of §6u's counting rules to disagree with
+the first.
+
+`app/services/summary_prose.py`, five gates, and **the worst case is the
+composed text exactly as it is today**: no key means no network call at all;
+Module 24 as usual; nothing may be LOST; **nothing may be ADDED** (every
+figure in the output must have been in the input, and no verdict or
+reassurance word that was not already there); and `text` is None on every
+refusal.
+
+Gate 4 is the one the clinician narrative does not have and this one needs.
+*"Summarise this payload"* lets a model decide what matters — on this report
+SGPT 101.9, CRP 12.1 and ESR 35 are all abnormal and fed no verdict, so
+"broadly reassuring" is available **with no false statement in it**.
+
+> **GATE 4 HAS FIRED ON REAL OUTPUT.** 2026-09-13, live:
+> `outcome: facts_invented, added: 2` — Module 24 APPROVED the text and this
+> gate threw it away anyway. The page fell back to the composed sentences.
+> That is the designed worst case working, not a failure.
+
+Wired: `POST /api/v1/explain/summary-prose` (listed in the route walk the same
+day — §6w's lesson), and `POST /reports/:id/summary-prose` (owner-scoped,
+cached on the report keyed on the analysis version **and a hash of the
+sentences**, because the page can change what it composes without the analysis
+changing). `model_unavailable` is never cached: a configuration state would
+otherwise leave the page permanently plain after a key outage.
+
+### WHAT THE READER ASKED FOR ALL SESSION: ONE PAGE, NO SPECIAL MENTIONS
+
+A single direction, asked repeatedly, and it cost several rounds because the
+first answer each time was a compromise rather than the thing asked for.
+**When the same request comes back a second time, do it.** §6af recorded this
+exact lesson; this session paid for it again, and the user's words were "how
+many times should I tell you".
+
+| Removed | Was |
+|---|---|
+| the reference-range panel (f3d0963) | the chart and its 11-lab-flagged footnote |
+| never-measured rows (3ff9b6d) | 4 of 7 rows said "not found in the submitted report" |
+| the second results table (aaae0d7) | now 21 rows in one table, 3 columns, no badges |
+| the description group (e53e1b7) | one explanation list, no "not assessed" label |
+| the provenance paragraph (55d501d) | "It assessed 3 of the 21 results…" |
+| the summary's meta-commentary (c9de19b) | "this tool does not check those tests at all…" |
+| the overall card's caveat (4385cfa) | "This assessment is incomplete" and `overall.caveat` |
+| every not-checked mention (251c971) | the chip group, the card line, the summary sentence |
+
+Also c9de19b: **"topics" became "conditions"** in the summary, which is what
+the rule engine, the condition catalog and the payload all call them.
+
+**NOTHING UPSTREAM WAS WEAKENED.** `complete`, `caveat`,
+`unassessed_conditions` and the unassessed items are all still produced, so
+the clinician summary and every other consumer are untouched. It is the
+PATIENT screen that is silent about them.
+
+> **b4d14ad IS WHY THE LAST ONE WAS NEEDED.** Making the rule engine report
+> topics with no test on the report was correct and is still in — but it gave
+> §6aj's never-rendered NOT CHECKED chips data for the first time, and the
+> re-analysis then produced three new paragraphs of exactly what the reader
+> had twice asked to be rid of. **A fix at the producer can manufacture the
+> thing the consumer was just cleared of.**
+
+### WHAT NO LONGER APPEARS ANYWHERE, RECORDED AS A CHOICE
+
+These are decisions, not oversights. Each is written into a file comment at
+the point it was removed:
+
+* nothing says a test this tool did not check is **not thereby normal**;
+* nothing says the notes on unassessed tests were written from the test's
+  NAME alone and do not interpret the reader's own value (§6v);
+* nothing states which of the listed results the topic assessment used.
+
+### THE LESSONS THIS SESSION PAID FOR
+
+1. **A JSX comment must be braced.** A 400-word maintainer's note written as a
+   bare `/* … */` inside JSX is not a comment, it is literal text — and it
+   **rendered on the patient's page**. All 307 tests passed with it there:
+   none of them asks what a section CONTAINS, only whether given sentences are
+   in it. Second time an internal note reached a reader (§6ae), and the first
+   time a green suite said nothing. **Look at the rendered panel before
+   committing.**
+2. **KILLED can be a claim about a module that never loaded.** One mutation
+   reported KILLED because the mutant broke the module's indentation and
+   pytest failed at IMPORT — one module-level error in the junit, read as a
+   kill. Every mutant since is checked to `import` cleanly BEFORE its result
+   is believed.
+3. **A test fake that returns nothing when exhausted makes tests pass for the
+   wrong reason.** A fake LLM returning `""` on the retry made eleven
+   fact-check tests report `withheld_by_safety`, because empty text fails the
+   SAFETY gate first. It repeats its last reply now — which is also what a
+   real model does.
+4. **A surviving mutation is a question, not a verdict.** Removing
+   `typeof text === 'string' && text.trim()` survived honestly: whitespace
+   sets `''`, which is falsy downstream, and a wrong type throws into the
+   effect's own catch, so every input still lands on the composed text.
+   Recorded in the test file as untestable rather than faked.
+5. **A probe's output is a claim about the probe — again.** A scratch script
+   printed a THROWN string as though it were a value and concluded a mutant
+   would show prose. It would not; the throw propagates to the catch. Nearly
+   reported as a defect.
+6. **Write the route's test before the controller.** `summaryProseController`
+   called `ownerScopedFilter(req, …)` instead of `(req.user, …)` — which
+   throws rather than building an unscoped filter — so **every call 500'd**.
+   Caught by the first test through the route, which is §6w exactly.
+7. **Do not borrow the session's refresh token.** Calling `/auth/refresh` by
+   hand to mint an access token ROTATES it, which invalidated the copy in
+   `localStorage` and signed the user out on their next reload. Drive the page
+   instead.
+
+### Running it
+
+```
+cd ai-service && .venv/Scripts/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+cd backend   && npm start          # :5000, Mongo Atlas, non-SRV URI
+cd frontend  && npm run dev        # :5173
+```
+
+Health: `curl http://127.0.0.1:5000/api/v1/health` and
+`curl http://127.0.0.1:8000/openapi.json`.
+**Use `http://localhost:5173`** — Vite binds `::1` only, and 127.0.0.1 looks
+like a dead server.
+
+Tests: `cd backend && npm test` · `cd frontend && npx vitest run` (FROM
+`frontend/`) · `cd ai-service && .venv/Scripts/python.exe -m pytest -q` **with
+`.env` moved aside**. On this machine pytest's summary does not always reach a
+redirected stream — **use `--junitxml` and parse it**, and use vitest's
+`--reporter=json`; a grep over the pretty reporter printed NOTHING for two
+mutation rounds this session and would have been read as SURVIVED.
+
+### The account and the data
+
+Signed in as **`JASWANTH`** in the browser this session. `Test 2.pdf` is a
+**real 4-page laboratory report** (21 extracted parameters, extraction
+confidence 0.98) and is now the most valuable fixture on the project — it is
+the only one that has ever exercised the range chart, the unassessed group,
+the parenthetical mapping and the summary rewrite. **Re-analysed 2026-09-13**
+against the current code.
+
+The six synthetic reports in `backend/storage/samples/generated/` print no
+reference intervals and carry no unmapped tests, which is why none of the
+above was ever reachable on them.
+
+### KNOWN AND OPEN
+
+* **12 commits are not pushed.** `main` is ahead of `origin/main`.
+* **`--rust` is 4.38:1 on `--header`** — below AA, though no verdict word is
+  painted there today (§6am).
+* **"stability band"** still appears in one trend sentence (§6an-i).
+* **`origin: report_transcription`** on profile rows (§6w) still open.
+* **`MISSING_PROFESSIONAL_REFERRAL` does not block** (§6r, §6k D1).
+* **Module 32's payload still nests `present` two ways** (§6w).
+* **Frontend fixtures are still not generated from real responses** — and
+  Test 2.pdf's payload is now the obvious source for real ones.
+* **The ai-service suite still needs `.env` moved aside.** Fix `conftest.py`.
+* **`RangeChart.jsx` is orphaned** — no page imports it since f3d0963, though
+  its ~20 tests still pass.
+* Gemini free tier is 20/day/model. This session spent one full re-analysis
+  (four extraction calls plus explanations) and a handful of summary rewrites.
 
 ---
 
