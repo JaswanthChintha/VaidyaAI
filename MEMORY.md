@@ -30,29 +30,38 @@ about any of them. That is the fifth time on this project.
 
 | | Tests |
 |---|---|
-| `backend/` (Node/Express) | **649** passing + 3 opt-in live |
-| `ai-service/` (Python/FastAPI) | **3,804** passing + 7 skipped |
-| `frontend/` (React/Vitest) | **317** passing |
-| **Total** | **4,770** -- ALL THREE re-run green 2026-09-13 |
+| `backend/` (Node/Express) | **661** passing + 3 opt-in live |
+| `ai-service/` (Python/FastAPI) | **3,842** passing + 7 skipped |
+| `frontend/` (React/Vitest) | **325** passing, 0 suites failed |
+| **Total** | **4,828** -- ALL THREE re-run green 2026-09-13 |
 
-> ### ▶ NEW CHAT? START AT §6aq.
+> ### ▶ NEW CHAT? START AT §6ar, THEN §6aq.
 >
-> It has the run commands, the state of the repository, what `Test 2.pdf` is
-> and why it matters, and what is open. **§6ap and §6ai are PREVIOUS handovers
-> and both are now stale in the way that matters most: §6ap opens with "45
-> files uncommitted, no recovery point", and that is history.** Everything is
-> committed; the working tree is clean.
+> Between them they have the run commands, the state of the repository, what
+> `Test 2.pdf` and `Test 3.pdf` are and why they matter, and what is open --
+> INCLUDING ONE DECISION THE READER IS WAITING ON, at the foot of §6ar.
+>
+> **§6ap and §6ai are PREVIOUS handovers and both are stale in the way that
+> matters most: §6ap opens with "45 files uncommitted, no recovery point", and
+> that is history.** Everything is committed and pushed; the tree is clean.
 >
 > **THE REPOSITORY IS ONE BRANCH NOW.** `origin/main` and `origin/master` were
 > two UNRELATED histories — separate roots, no merge base — with the real work
 > on `master` and a squashed snapshot on GitHub's default. They were
 > consolidated onto `main`, and the commit messages were then rewritten to
-> carry no co-author trailer. 12 commits are not yet pushed.
+> carry no co-author trailer. **Nothing carries one; do not add one.**
 >
-> All 4,770 tests pass, all three suites run 2026-09-13. §6x is the design
-> system; §6z–§6ah and §6aj–§6ao are the earlier sessions; **§6aq is this one**
-> — a real laboratory report finally driven through the app, the mapping
-> defect it exposed, Module 33, and a page stripped of its own commentary.
+> All 4,828 tests pass, all three suites run 2026-09-13, and EVERYTHING IS
+> PUSHED — `main` and `origin/main` are identical. §6x is the design system;
+> §6z–§6ah and §6aj–§6ao are the earlier sessions; **§6aq and §6ar are the two
+> 2026-09-13 ones** — two real laboratory reports driven through the app, the
+> three lookup defects they exposed (a parenthetical, a misspelling and a unit
+> spelled out in words), Modules 33 and 34, and a page stripped of its own
+> commentary.
+>
+> **§6ar carries the runner fault worth reading before you trust any suite
+> here:** a frontend run reported 288 passed / 0 failed when a whole file had
+> failed to compile and its 32 tests did not exist.
 
 > ### ✅ THE HALF-BUILT FEATURE IS FINISHED (§6v design · §6w completion)
 >
@@ -6646,7 +6655,7 @@ costs Gemini quota.
 
 ---
 
-## 6aq. STATE AT THE END OF THE 2026-09-13 SESSION — READ THIS FIRST
+## 6aq. THE FIRST 2026-09-13 SESSION — **SEE ALSO §6ar**
 
 **Everything from §6ap's uncommitted mass IS NOW COMMITTED AND PUSHED, the
 two GitHub lineages are one branch, and twelve further commits sit on top.**
@@ -6897,6 +6906,205 @@ above was ever reachable on them.
   its ~20 tests still pass.
 * Gemini free tier is 20/day/model. This session spent one full re-analysis
   (four extraction calls plus explanations) and a handful of summary rewrites.
+
+---
+
+## 6ar. THE SECOND 2026-09-13 SESSION — READ THIS FIRST
+
+**Everything is committed and PUSHED.** `main` and `origin/main` are identical,
+the working tree is clean, and there is one branch. §6aq is the previous
+handover; its own body is still accurate, but its counts and its open list are
+superseded by this section.
+
+| | Tests | Last run |
+|---|---|---|
+| `backend/` | **661** passed, 3 skipped | 2026-09-13 ✅ |
+| `ai-service/` | **3,842** passed, 7 skipped | 2026-09-13 ✅ (`.env` moved aside) |
+| `frontend/` | **325** passed, **0 suites failed** | 2026-09-13 ✅ |
+| **Total** | **4,828** | |
+
+```
+aae791e a unit spelled out in words was refused, and it cost the Anemia assessment
+7d94f29 Module 34: what a raised or lowered test is generally associated with
+983c46e Module 34 wired into the closing summary
+aa96642 Module 34: not for profile answers, and never cache a total refusal
+19fd8d6 Module 34 on the clinician page, and a stale closure its test found
+```
+
+### ▶ THE DEFECT: "Grams/dL" (aae791e)
+
+`Test 3.pdf` printed a haemoglobin of **12.5 in "Grams/dL"** — `g/dl` written
+out in words. `UNIT_ALIASES` held `gms/dl`, `gm/dl`, `g%` and `gdl` but not
+`grams/dl`, so the validator refused the value as `NON_CANONICAL_UNIT`. It was
+right to: a validator that guesses at a unit is worse than one that refuses.
+
+**The cost was not the row.** The page showed "Not usable" against a perfectly
+ordinary number, and **ANEMIA CAME BACK `Insufficient Data` on a report that
+had measured it**. The reader is the one who noticed: *"hemoglobin is there on
+report but here it is not showing"*.
+
+Re-analysed after the fix: `state: valid`, 12.5, unit normalised to `g/dl`,
+`rejectedLaboratoryValues` 1 → 0, and **Anemia `Insufficient Data` →
+`Indicated`, risk Low** — 12.5 is mildly low for a 20-year-old male, so a real
+finding had been invisible.
+
+> **THIRD IN A ROW OF THE SAME SHAPE.** §6aq's HbA1c parenthetical, then this.
+> A laboratory's own spelling defeats a lookup table, and the consequence
+> reaches the patient's page as an ABSENCE — "not on your report", "not
+> usable", "insufficient data" — about something the report contained. **When
+> a reader says a result is missing, check the lookup before checking the
+> renderer.**
+
+Swept rather than patched: the table carried abbreviations everywhere and had
+no spelled-out form anywhere, so the same hole existed for milligrams,
+micrograms, nanograms, picograms, millimoles and micromoles. `_unit_key_raw`
+turns " per " into "/", so "grams per decilitre" comes free with "grams/dl".
+The refusal itself is unchanged and there is a test that nonsense units still
+never resolve to a canonical one.
+
+### Module 34 — what a raised or lowered test is generally associated with
+
+The reader asked, of the results already marked out of range, to say what they
+may cause, with **no attribution line**. `app/services/finding_context.py`.
+
+**THE FORM OF THE QUESTION IS THE WHOLE SAFETY ARGUMENT.** "Your CRP of 38.9
+suggests significant inflammation" is one prompt away and is what this
+architecture exists to prevent. So the question is narrowed exactly as
+`parameter_glossary` narrows its own (§6v): **the prompt carries a test NAME
+and a DIRECTION** — the word "raised" or "lowered" that the rule engine or the
+laboratory already decided and the page already prints — **and nothing else.**
+No value, no range, no age, no sex.
+
+Five gates, two of them local because the shared one cannot help:
+
+1. **no number.** `_check_numeric_grounding` is INACTIVE for a context with no
+   grounding and no permitted numbers — exactly this one — so it offers no
+   control rather than a total prohibition. §6v documents that trap.
+2. **NO SECOND PERSON.** "you", "your", "yours", "yourself" are refused. This
+   is the gate that makes "general" MECHANICAL rather than aspirational: *a
+   sentence that cannot address the reader cannot be a statement about the
+   reader's health.* It is checkable. "Is this inference correct" is not, which
+   is exactly why the gate is this one.
+3. **no certainty:** "means", "indicates", "confirms", "diagnoses", "is caused
+   by". "Commonly associated with" is what a general statement sounds like.
+4. an unrecognised test name yields nothing, never a guess.
+5. Module 24, as every other model text.
+
+A refusal carries **no text and no placeholder** — the page renders nothing, so
+the reader loses a paragraph they never saw and no absence is created. Capped
+at **6 per report**. A direction the module does not know is SKIPPED, because
+the prompt turns on that one word and inventing it would be inventing the
+finding.
+
+Wired to both reader-facing pages: the dashboard's `In short` (findings from
+this tool's verdict directions plus the laboratory's flags) and the clinician
+summary (findings from `printed_flag` only — the one direction on that page
+that is not this tool's own verdict). Both render **above the closing line**,
+which keeps the last word, and outside anything Module 33 may rewrite.
+
+**VERIFIED LIVE ON TEST 3** before the quota ran out — four entries, all
+through the gates:
+
+> *"A raised neutrophil count is commonly associated with the body's response
+> to bacterial infections or physical stress. It can also be a sign of
+> inflammation or tissue injury."*
+
+**NO VALUE CAN REACH THE MODEL, BY CONSTRUCTION AT THREE LAYERS**: the frontend
+builds the `{test_name, direction}` pair, the backend REBUILDS the body rather
+than forwarding it, and the ai-service schema sets `extra="forbid"`. There is a
+backend test that attaches a value, a unit and an age and asserts none arrives.
+
+### THREE DEFECTS FOUND BY RUNNING IT, NOT BY READING IT
+
+1. **BMI appeared among the findings, as "bmi (raised)".** Two faults in one
+   line: BMI is a PROFILE answer, so presenting it among this report's results
+   is §6t's category error, and "bmi" is the internal feature key §6an-i swept
+   off every reader-facing screen. Profile-sourced rows are excluded now, on
+   both pages.
+2. **A TOTAL REFUSAL WAS BEING CACHED, and it would have hidden until the next
+   day.** The Gemini quota ran out mid-session: every model in the chain
+   refused, `generated_count` came back 0, and the controller stored that. The
+   cache key is the analysis version plus a hash of the findings and **neither
+   changes when a quota resets** — so an empty result would have been pinned to
+   that report forever and the feature would never have worked on it again.
+   `summaryProse` already makes this exception for `model_unavailable`. A
+   PARTIAL result is still cached: those refusals came from the gates and
+   asking again produces the same ones.
+3. **A STALE CLOSURE ON THE CLINICIAN PAGE.** The catch read the `data` STATE
+   to decide whether a failure should surface as an error. That closure is
+   created once and `data` is null in it for the effect's whole life however
+   many times `setData` has run — so ANY failure of the context request would
+   have replaced a fully rendered clinical summary with an error page. A local
+   flag now, set where the summary is actually handed over. Caught by a test
+   written for the opposite property.
+
+### ⚠ THE RUNNER FAULT TO REMEMBER: 288 GREEN WAS 32 TESTS MISSING
+
+A full frontend run reported **288 passed, 0 failed** — and that was **32 fewer
+tests than the run before it**. `clinical.test.jsx` had failed to TRANSFORM on
+a name collision (`context` was already the subject-line array), so the file
+never loaded and its assertions did not exist. `numFailedTests` was honestly
+zero.
+
+> **THE COUNT TO CHECK IS `numFailedTestSuites` AND THE PER-FILE COLLECTION
+> TOTALS, NOT THE FAILURE COUNT.** A file that does not compile has no failures
+> in it. This is §6aq's lesson 2 in a new form — there it was a pytest module
+> that failed at import and reported KILLED; here it is a vitest file that
+> failed to transform and reported green.
+
+Every run after that one checks both, and the parse this file uses is:
+
+```python
+d['numTotalTests'], d['numPassedTests'], d['numFailedTests'], d['numFailedTestSuites']
+# and per file: len(tr['assertionResults']) for tr in d['testResults']
+```
+
+### GEMINI QUOTA, AND WHAT IT LOOKS LIKE WHEN IT GOES
+
+The free tier is 20/day/model with a fallback chain. This session exhausted it:
+`gemini_model_exhausted ... cooldown_seconds: 1800` for `gemini-3.6-flash`,
+`gemini-3.5-flash` and `gemini-3.1-flash-lite` in turn. The chain worked —
+extraction fell back from 3.6-flash to 3.5-flash and completed, just slower
+(44s/page rather than 20s).
+
+**Module 34's blocks are therefore EMPTY ON SCREEN at the end of this session,
+and that is the quota rather than the code.** Every refusal path renders
+nothing, which is the designed behaviour.
+
+### The account and the data
+
+Two real laboratory reports now, and they are the only fixtures that reach any
+of this:
+
+| report | pages | what it is the only exercise of |
+|---|---|---|
+| `Test 2.pdf` | 4 | the parenthetical mapping, the summary rewrite, the range chart |
+| `Test 3.pdf` | 2 | the unit-spelling defect, Module 34, a rejected value |
+
+`Test 3.pdf` was re-analysed 2026-09-13 (analysis version 3) against the fixed
+unit table. Its haemoglobin is accepted and Anemia is `Indicated`.
+
+### KNOWN AND OPEN
+
+* **A DECISION IS WAITING.** "What these results mean" shows 7 of 21
+  parameters: explanations for the assessed features, and descriptions only
+  for unassessed tests the LABORATORY flagged abnormal. The 14 it marked
+  normal are never sent to the model, because asking about every test on every
+  report would spend the day's quota on one upload. The reader asked why many
+  are missing; **whether to describe all of them is unanswered.**
+* `--rust` is 4.38:1 on `--header` (§6am), no verdict word painted there today.
+* "stability band" still appears in one trend sentence (§6an-i).
+* `origin: report_transcription` on profile rows (§6w).
+* `MISSING_PROFESSIONAL_REFERRAL` does not block (§6r, §6k D1).
+* Module 32's payload still nests `present` two ways (§6w).
+* **Frontend fixtures are still hand-written** — and there are now two real
+  payloads to generate them from.
+* The ai-service suite still needs `.env` moved aside. Fix `conftest.py`.
+* `RangeChart.jsx` is orphaned — no page imports it since f3d0963.
+* **`TaskStop` does not kill an `npm start` child.** Stopping the backend task
+  left node holding port 5000 and the restart failed `EADDRINUSE`; the fix is
+  `Get-NetTCPConnection -LocalPort 5000` then `Stop-Process`. Worth knowing
+  before concluding a restart happened.
 
 ---
 
