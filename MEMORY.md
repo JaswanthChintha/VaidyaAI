@@ -31,9 +31,9 @@ about any of them. That is the fifth time on this project.
 | | Tests |
 |---|---|
 | `backend/` (Node/Express) | **661** passing + 3 opt-in live |
-| `ai-service/` (Python/FastAPI) | **3,842** passing + 7 skipped |
+| `ai-service/` (Python/FastAPI) | **3,846** passing + 7 skipped |
 | `frontend/` (React/Vitest) | **325** passing, 0 suites failed |
-| **Total** | **4,828** -- ALL THREE re-run green 2026-09-13 |
+| **Total** | **4,829** -- ALL THREE re-run green 2026-09-13 |
 
 > ### ▶ NEW CHAT? START AT §6ar, THEN §6aq.
 >
@@ -51,7 +51,7 @@ about any of them. That is the fifth time on this project.
 > consolidated onto `main`, and the commit messages were then rewritten to
 > carry no co-author trailer. **Nothing carries one; do not add one.**
 >
-> All 4,828 tests pass, all three suites run 2026-09-13, and EVERYTHING IS
+> All 4,829 tests pass, all three suites run 2026-09-13, and EVERYTHING IS
 > PUSHED — `main` and `origin/main` are identical. §6x is the design system;
 > §6z–§6ah and §6aj–§6ao are the earlier sessions; **§6aq and §6ar are the two
 > 2026-09-13 ones** — two real laboratory reports driven through the app, the
@@ -6919,7 +6919,7 @@ superseded by this section.
 | | Tests | Last run |
 |---|---|---|
 | `backend/` | **661** passed, 3 skipped | 2026-09-13 ✅ |
-| `ai-service/` | **3,842** passed, 7 skipped | 2026-09-13 ✅ (`.env` moved aside) |
+| `ai-service/` | **3,846** passed, 7 skipped | 2026-09-13 ✅ (`.env` moved aside) |
 | `frontend/` | **325** passed, **0 suites failed** | 2026-09-13 ✅ |
 | **Total** | **4,828** | |
 
@@ -7086,12 +7086,28 @@ unit table. Its haemoglobin is accepted and Anemia is `Indicated`.
 
 ### KNOWN AND OPEN
 
-* **A DECISION IS WAITING.** "What these results mean" shows 7 of 21
-  parameters: explanations for the assessed features, and descriptions only
-  for unassessed tests the LABORATORY flagged abnormal. The 14 it marked
-  normal are never sent to the model, because asking about every test on every
-  report would spend the day's quota on one upload. The reader asked why many
-  are missing; **whether to describe all of them is unanswered.**
+* ~~A DECISION IS WAITING about describing all 21 parameters.~~ **ANSWERED
+  AND DONE (358ba92): describe every unassessed test.** `unmappedTestNames`
+  (was `labFlaggedUnmappedNames`) no longer filters on the laboratory's flag,
+  and `MAX_PER_REQUEST` went 8 → 24.
+
+  The old filter was reasoning about COST, and the reader's question was the
+  better one: in a section titled "What these results mean", a test listed
+  with no explanation reads as one nobody could explain. A ceiling below a
+  real report's count would have been the worst option of the three --
+  describing some tests and not others, with "whatever came first in the
+  extraction" as the rule deciding which.
+
+  **The ceiling still exists and still matters**: twenty calls a day per model
+  is the real budget. What makes 24 affordable is the cache that was already
+  there — keyed on the NORMALISED TEST NAME, holding no patient data, so a
+  common panel is described once per process and every later report reuses it,
+  and **a cache hit does not consume the budget**. That last property is what
+  the whole change rests on and it now has its own test.
+
+  Nothing about the prompt changed: a test NAME with no value, no interval and
+  no flag (§6v). **Needs a re-analysis to be visible**, and the quota was spent
+  when this landed.
 * `--rust` is 4.38:1 on `--header` (§6am), no verdict word painted there today.
 * "stability band" still appears in one trend sentence (§6an-i).
 * `origin: report_transcription` on profile rows (§6w).
