@@ -503,3 +503,91 @@ def test_every_feature_has_a_non_empty_label():
 
     assert [n for n, d in FEATURES.items() if not d.description.strip()] == []
 
+
+
+# --------------------------------------------------------------------------
+# THE PARENTHETICAL WHOSE GOOD HALF IS INSIDE THE BRACKETS
+#
+# Found on a real laboratory report, and the cost was not a missing row. The
+# dashboard told a reader with a prediabetic-range HbA1c that the test was NOT
+# ON THEIR REPORT, while the same page listed it among the tests the
+# laboratory had flagged HIGH. An absence reported as a fact about the
+# document, about a test that was in it.
+# --------------------------------------------------------------------------
+
+
+def test_the_misspelled_outer_half_no_longer_throws_away_the_good_inner_half():
+    """The exact string off the report, not a tidied version of it.
+
+    "GLYSOLATED" is the laboratory's own misspelling of GLYCOSYLATED, so the
+    outer half matches nothing. The inner "( HBA1C)" -- leading space and all
+    -- is an exact synonym, and every candidate before this branch either kept
+    the parenthetical or discarded it without ever trying its contents.
+    """
+    from app.data.feature_catalog import lookup_test_name
+
+    match, reason = lookup_test_name("GLYSOLATED HAEMOGLOBIN ( HBA1C)")
+    assert reason is None
+    assert match is not None
+    assert match.feature == "hba1c"
+    # NEVER `exact`: the printed name is not the synonym, a part of it is.
+    assert match.exact is False
+
+
+def test_segments_naming_different_features_are_refused():
+    """THE AGREEMENT RULE, and the whole safety of the branch.
+
+    The fixture is shaped to reach this branch and nothing else: the outer
+    half is meaningless, so no earlier candidate can resolve it, and the two
+    parentheticals name different features. A name this module does not
+    understand is reported, never guessed at.
+    """
+    from app.data.feature_catalog import UnmappedReason, lookup_test_name
+
+    match, reason = lookup_test_name("ZZZ (Creatinine) (HbA1c)")
+    assert match is None
+    assert reason == UnmappedReason.NO_SYNONYM
+
+
+def test_a_lipid_subfraction_is_still_refused_before_any_segment_is_tried():
+    """The case where a wrong guess would be clinically serious.
+
+    Mapping an LDL value into TOTAL cholesterol puts a number against a
+    threshold it was never measured for. `DISTINCT_ANALYTE_TOKENS` is checked
+    against the WHOLE name above, so this returns before the parenthetical
+    branch exists -- and it must stay above it.
+    """
+    from app.data.feature_catalog import UnmappedReason, lookup_test_name
+
+    for name in ("Cholesterol (LDL)", "Cholesterol (HDL)", "Cholesterol (VLDL)"):
+        match, reason = lookup_test_name(name)
+        assert match is None, name
+        assert reason == UnmappedReason.DISTINCT_ANALYTE, name
+
+
+def test_a_parenthetical_that_names_nothing_stays_unmapped():
+    """The branch may not turn "no idea" into a guess."""
+    from app.data.feature_catalog import UnmappedReason, lookup_test_name
+
+    match, reason = lookup_test_name("GLYSOLATED HAEMOGLOBIN (SPECIMEN 4)")
+    assert match is None
+    assert reason == UnmappedReason.NO_SYNONYM
+
+
+def test_names_that_already_mapped_are_decided_exactly_as_before():
+    """PURELY ADDITIVE, and this is what makes the change safe to ship.
+
+    The branch runs only after all four candidates miss, so it can turn a
+    refusal into a mapping and can never turn one mapping into another.
+    `Creatinine (HbA1c)` is the case that proves it: the outer half is a valid
+    synonym, so the candidate loop resolves it to creatinine and the agreement
+    rule never sees it.
+    """
+    from app.data.feature_catalog import lookup_test_name
+
+    assert lookup_test_name("Creatinine (HbA1c)")[0].feature == "creatinine"
+    assert lookup_test_name("Glycosylated Haemoglobin (HbA1c)")[0].feature == "hba1c"
+    # A bare synonym is still an EXACT match, which consumers rank on.
+    bare = lookup_test_name("HbA1c")[0]
+    assert bare.feature == "hba1c"
+    assert bare.exact is True

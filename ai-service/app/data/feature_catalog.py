@@ -461,6 +461,37 @@ class UnmappedReason:
     UNRECOGNISED_CATEGORY = "unrecognised_category"
 
 
+def _agreeing_segment_match(segments: List[str]) -> Optional[SynonymMatch]:
+    """One feature from several name fragments, or nothing.
+
+    THE SEGMENTS MUST AGREE, and that is the whole safety of every caller.
+    Two segments naming different features is a name this module does not
+    understand, and picking either one would be a guess.
+
+    Never `exact`: the printed name is not the synonym, a PART of it is, and a
+    consumer weighing two candidates for the same feature must be able to
+    prefer the one that matched outright.
+    """
+    found: Dict[str, SynonymMatch] = {}
+    for segment in segments:
+        normalised = normalize_test_name(segment)
+        for key in (normalised, strip_qualifiers(normalised)):
+            hit = SYNONYM_INDEX.get(key) if key else None
+            if hit is not None:
+                found.setdefault(hit.feature, hit)
+                break
+    if len(found) != 1:
+        return None
+    hit = next(iter(found.values()))
+    return SynonymMatch(
+        feature=hit.feature,
+        preference=hit.preference,
+        matched_term=hit.matched_term,
+        matched_key=hit.matched_key,
+        exact=False,
+    )
+
+
 def lookup_test_name(name: str) -> Tuple[Optional[SynonymMatch], Optional[str]]:
     """Map a printed test name to a canonical feature.
 
@@ -504,6 +535,33 @@ def lookup_test_name(name: str) -> Tuple[Optional[SynonymMatch], Optional[str]]:
                 ),
                 None,
             )
+
+    # A PARENTHETICAL WHOSE GOOD HALF IS THE ONE INSIDE THE BRACKETS.
+    #
+    # Every candidate above either keeps the parenthetical or THROWS IT AWAY --
+    # `strip_parentheticals` discards it and nothing ever tries its contents.
+    # That is fine while the outer half is the valid synonym, which is the case
+    # the comment below assumed. It fails the other way round, and a real
+    # report found it: "GLYSOLATED HAEMOGLOBIN ( HBA1C)" is a laboratory's
+    # misspelling of GLYCOSYLATED, so the outer half matches nothing and the
+    # inner "( HBA1C)" -- an exact synonym -- was thrown away with it.
+    #
+    # The cost was not a missing row. `hba1c` came back `state: unavailable`
+    # while the same report's unassessed list carried the test at 5.9% flagged
+    # HIGH by the laboratory, so the dashboard told a reader with a
+    # prediabetic-range result that the test was NOT ON THEIR REPORT. An
+    # absence reported as a fact about the document, on a test that was in it.
+    #
+    # Same agreement rule as the comma branch, and the same reason. Lipid
+    # sub-fractions never reach here: `DISTINCT_ANALYTE_TOKENS` is checked
+    # against the whole name above and returns first, so "Cholesterol (LDL)"
+    # is refused before any segment is tried.
+    if _PARENTHETICAL_RE.search(name or ""):
+        segments = [strip_parentheticals(name)]
+        segments += _PARENTHETICAL_RE.findall(name or "")
+        match = _agreeing_segment_match(segments)
+        if match is not None:
+            return match, None
 
     # A COMMA-SEPARATED QUALIFIER, which is how many laboratories print the
     # same thing a parenthetical says.
