@@ -1326,14 +1326,17 @@ function explanationWarnings(set) {
  * 422 if exceeded.
  */
 /**
- * Test names the LABORATORY flagged abnormal that this platform does not assess.
+ * Every test on the report that this platform does not assess.
  *
- * Joins Module 5's `unmapped` list back to Module 4's extraction, which is the
- * only place the laboratory's own reference interval and high/low marking
- * survive. Feature engineering drops both along with the parameter, so without
- * this join the flags are simply gone.
+ * Joins Module 5's `unmapped` list back to Module 4's extraction, which is
+ * where the printed name survives -- feature engineering drops the parameter
+ * and everything on it.
+ *
+ * NAMES ONLY, AND THAT IS THE CONTRACT DOWNSTREAM. What goes to the model is
+ * a test NAME with no value, no interval and no flag attached (§6v), so the
+ * description it produces is about the test and never about this reader.
  */
-function labFlaggedUnmappedNames(features, extraction) {
+function unmappedTestNames(features, extraction) {
   const unmapped = Array.isArray(features?.unmapped) ? features.unmapped : [];
   if (!unmapped.length) return [];
 
@@ -1352,10 +1355,18 @@ function labFlaggedUnmappedNames(features, extraction) {
   for (const parameter of parameters) {
     const name = parameter && typeof parameter.test_name === 'string' ? parameter.test_name : null;
     if (!name || !skipped.has(name)) continue;
-    const flag = typeof parameter.flag === 'string' ? parameter.flag.toLowerCase() : null;
-    // Only an explicit abnormal marking. A missing flag is not an abnormal
-    // one, and describing every unflagged test is what blows the quota.
-    if (flag && flag !== 'normal' && !names.includes(name)) names.push(name);
+    // EVERY UNASSESSED TEST, on the reader's instruction. This used to take
+    // only the ones the laboratory had marked abnormal -- the values a reader
+    // stops on -- because describing all of them is what spends a free-tier
+    // day. The reader asked why so many parameters had no description, which
+    // is a fair question about a section titled "What these results mean":
+    // a test listed with no explanation reads as one nobody could explain.
+    //
+    // The cost is bounded in two places, not here: the ai-service caps a
+    // single request (`MAX_PER_REQUEST`) and caches every answer under the
+    // normalised test NAME, so a common panel is described once and reused by
+    // every later report.
+    if (!names.includes(name)) names.push(name);
   }
   return names;
 }
@@ -1692,7 +1703,7 @@ async function runDownstreamStages({ features, extraction = null, requestId }) {
   // ITSELF marked outside its own range -- those are the values a reader will
   // stop on, and the ones a doctor will want raised. Everything else is still
   // listed on the dashboard, just without a description.
-  const glossaryAsk = labFlaggedUnmappedNames(features, extraction);
+  const glossaryAsk = unmappedTestNames(features, extraction);
 
   const [explanationRun, guidanceRun, glossaryRun] = await Promise.all([
     runStage(() => aiService.explainReport({ report: clinicalReport, requestId })),
@@ -1989,7 +2000,7 @@ module.exports = {
   // the glossary stage, and both of its failure modes are expensive -- too
   // wide burns a free-tier day's quota, too narrow silently drops the
   // laboratory's own abnormal markings from the description it deserves.
-  labFlaggedUnmappedNames,
+  unmappedTestNames,
   runDownstreamStages,
   buildProfilePayload,
   loadOwnProfile,

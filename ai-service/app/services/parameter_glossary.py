@@ -76,9 +76,22 @@ GLOSSARY_VERSION = "1.0.0"
 _CACHE: Dict[str, "GlossaryEntry"] = {}
 _CACHE_LOCK = threading.Lock()
 
-#: Hard ceiling per request. Twenty free-tier calls a day is the real budget,
-#: and one report should not be able to spend it all.
-MAX_PER_REQUEST = 8
+#: Hard ceiling per request.
+#:
+#: RAISED FROM 8 ON THE READER'S INSTRUCTION: every test on the report is to
+#: be described, not only the ones the laboratory marked abnormal. A real
+#: report carries around twenty unassessed tests, and a ceiling below that
+#: silently describes some of them and not others -- which is worse than the
+#: old behaviour, because the rule deciding WHICH would be "whatever came
+#: first in the extraction".
+#:
+#: THE CEILING IS STILL HERE, AND STILL MATTERS. The free tier is twenty calls
+#: a day per model, so this is the one thing standing between a sixty-parameter
+#: report and a spent day. What makes the higher number affordable is the cache
+#: below: it is keyed on the NORMALISED TEST NAME and holds no patient data, so
+#: "PCV" is described once for this process and every later report reuses it.
+#: A cache hit does not consume the budget.
+MAX_PER_REQUEST = 24
 
 _WHITESPACE = re.compile(r"\s+")
 

@@ -217,3 +217,52 @@ def test_duplicate_names_in_one_request_cost_one_call():
     client = StubClient(CLEAN)
     describe_parameters(["Urea", "urea", "UREA "], client)
     assert len(client.prompts) == 1
+
+
+def test_the_ceiling_covers_a_real_report_but_still_exists():
+    """RAISED FROM 8 when every test came to be described rather than only the
+    ones the laboratory flagged.
+
+    A ceiling BELOW a real report's test count is the worst of the three
+    options: it describes some and not others, and the rule deciding which is
+    "whatever came first in the extraction". The two real reports on this
+    project carry 17 and 18 unassessed tests.
+
+    It still exists, and it must: the free tier is twenty calls a day per
+    model, so this is the one thing between a sixty-parameter report and a
+    spent day.
+    """
+    from app.services.parameter_glossary import MAX_PER_REQUEST
+
+    assert MAX_PER_REQUEST >= 21, "below a real report's unassessed-test count"
+    assert MAX_PER_REQUEST <= 40, "no longer a meaningful ceiling"
+
+
+def test_a_cache_hit_does_not_spend_the_ceiling():
+    """WHAT MAKES THE HIGHER CEILING AFFORDABLE. The cache is keyed on the
+    normalised test NAME and holds no patient data, so a common panel is
+    described once for this process and every later report reuses it. If a hit
+    consumed the budget, the ceiling would bite on reports that cost nothing.
+    """
+    from app.services.parameter_glossary import describe_parameters, reset_cache
+
+    reset_cache()
+    calls = []
+
+    class Client:
+        def generate_text(self, prompt, system_instruction=""):
+            calls.append(prompt)
+            return "This test measures something in the blood."
+
+    names = ["PCV", "MCV", "MCH"]
+    first = describe_parameters(names, Client(), max_calls=3)
+    assert first.generated_count == 3
+    assert len(calls) == 3
+
+    # Same names again, plus one new, with a budget of ONE. The three cached
+    # ones must not consume it.
+    again = describe_parameters([*names, "ESR"], Client(), max_calls=1)
+    assert again.cached_count == 3
+    assert again.generated_count == 1
+    assert again.skipped_over_limit == 0
+    reset_cache()

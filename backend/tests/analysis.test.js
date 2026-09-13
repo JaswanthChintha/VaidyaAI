@@ -777,43 +777,72 @@ const getExplanation = (token, id) =>
 
 // --- suite ------------------------------------------------------------------
 
-describe('labFlaggedUnmappedNames - which skipped tests get described', () => {
-  // THIS SELECTOR SPENDS MONEY AND CAN LOSE EVIDENCE. Too wide and one report
-  // exhausts a twenty-call-a-day quota on "Urine Colour: Pale Yellow"; too
-  // narrow and a result the laboratory itself marked abnormal is listed with
-  // no indication of what the test even measures. Both directions are asserted.
-  const { labFlaggedUnmappedNames } = analysisService;
+describe('unmappedTestNames - which skipped tests get described', () => {
+  // THIS SELECTOR SPENDS MONEY. It used to take only the tests the laboratory
+  // had marked abnormal, because describing all of them is what exhausts a
+  // twenty-call-a-day quota. The reader asked for EVERY unassessed test to be
+  // described -- a test listed with no explanation, in a section titled "What
+  // these results mean", reads as one nobody could explain.
+  //
+  // THE COST IS BOUNDED ELSEWHERE, DELIBERATELY, and that is what makes this
+  // selector's job simple: the ai-service caps one request at
+  // `MAX_PER_REQUEST` and caches every answer under the normalised test NAME,
+  // so a common panel is described once for the process and reused. This
+  // function's only remaining duty is to return the right NAMES, once each.
+  const { unmappedTestNames } = analysisService;
 
   const features = (names) => ({ unmapped: names.map((test_name) => ({ test_name })) });
   const extraction = (rows) => ({ extracted_parameters: rows });
 
   it('asks about a test the laboratory flagged and this platform skipped', () => {
     expect(
-      labFlaggedUnmappedNames(
+      unmappedTestNames(
         features(['Potassium']),
         extraction([{ test_name: 'Potassium', flag: 'high' }])
       )
     ).toEqual(['Potassium']);
   });
 
-  it('does NOT ask about an unflagged test, whatever else it carries', () => {
-    // The quota case. `flag: null` and a missing flag are both "the laboratory
-    // said nothing", and neither is an abnormal marking.
+  it('ASKS ABOUT AN UNFLAGGED TEST TOO, which is the change', () => {
+    // These were the excluded case and are now the point: a reader looking at
+    // "Urine Colour: Pale Yellow" with nothing beside it has no way to tell
+    // whether it was unremarkable or unexplainable.
     expect(
-      labFlaggedUnmappedNames(
+      unmappedTestNames(
         features(['Urine Colour', 'Urine Clarity']),
         extraction([
           { test_name: 'Urine Colour', flag: null, value_raw: 'Pale Yellow' },
           { test_name: 'Urine Clarity', reference_low: 1, reference_high: 2 },
         ])
       )
-    ).toEqual([]);
+    ).toEqual(['Urine Colour', 'Urine Clarity']);
+  });
+
+  it('sends a NAME and nothing else, whatever the row carries', () => {
+    // The §6v contract downstream: the model is given a test name with no
+    // value, no interval and no flag, so its description is about the test and
+    // never about this reader. A selector that returned rows would break it.
+    const out = unmappedTestNames(
+      features(['Potassium']),
+      extraction([
+        {
+          test_name: 'Potassium',
+          flag: 'high',
+          value_raw: '5.9',
+          unit: 'mmol/l',
+          reference_low: 3.5,
+          reference_high: 5.1,
+        },
+      ])
+    );
+    expect(out).toEqual(['Potassium']);
+    expect(typeof out[0]).toBe('string');
   });
 
   it('does not ask about a test this platform DID assess', () => {
     // Not in `unmapped`, so it has a card of its own and a real explanation.
     expect(
-      labFlaggedUnmappedNames(
+      unmappedTestNames(
         features(['Potassium']),
         extraction([
           { test_name: 'HbA1c', flag: 'high' },
@@ -823,9 +852,9 @@ describe('labFlaggedUnmappedNames - which skipped tests get described', () => {
     ).toEqual(['Potassium']);
   });
 
-  it('treats every non-normal marking as abnormal, in any casing', () => {
+  it('takes every unassessed test, whatever its marking says', () => {
     expect(
-      labFlaggedUnmappedNames(
+      unmappedTestNames(
         features(['A', 'B', 'C', 'D']),
         extraction([
           { test_name: 'A', flag: 'HIGH' },
@@ -834,12 +863,12 @@ describe('labFlaggedUnmappedNames - which skipped tests get described', () => {
           { test_name: 'D', flag: 'Normal' },
         ])
       )
-    ).toEqual(['A', 'B', 'C']);
+    ).toEqual(['A', 'B', 'C', 'D']);
   });
 
   it('never repeats a name, even when the report prints it twice', () => {
     expect(
-      labFlaggedUnmappedNames(
+      unmappedTestNames(
         features(['Potassium']),
         extraction([
           { test_name: 'Potassium', flag: 'high', page_number: 1 },
@@ -858,7 +887,7 @@ describe('labFlaggedUnmappedNames - which skipped tests get described', () => {
       [features(['A']), null],
       [{ unmapped: [null, 7, {}] }, extraction([null, 7, {}])],
     ]) {
-      expect(labFlaggedUnmappedNames(f, e)).toEqual([]);
+      expect(unmappedTestNames(f, e)).toEqual([]);
     }
   });
 });
