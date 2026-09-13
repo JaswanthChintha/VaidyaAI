@@ -155,6 +155,20 @@ router.post(
   summaryProseController.getSummaryProse
 );
 
+/**
+ * Module 34 - general context for the findings this report already carries.
+ *
+ * POST and `historyLimiter` for the same reasons `/summary-prose` carries
+ * them: the caller sends what it is rendering, and this makes an outbound
+ * ai-service call that spends model quota.
+ */
+router.post(
+  '/:id/finding-context',
+  historyLimiter,
+  validate(reportIdValidator),
+  summaryProseController.getFindingContext
+);
+
 router.get(
   '/:id/doctor-summary',
   historyLimiter,

@@ -298,6 +298,16 @@ export const api = {
    * a second implementation of those rules that could disagree with the
    * first, and the screen would then argue with its own summary.
    */
+  /**
+   * Module 34 -- general context for tests already marked out of range.
+   *
+   * A NAME AND A DIRECTION, and there is nowhere to put anything else. The
+   * backend rebuilds the body and the ai-service forbids extra fields, so a
+   * value cannot reach the model even by accident -- which is what keeps the
+   * answer about the TEST rather than about the reader.
+   */
+  describeFindings: (id, findings) =>
+    request('POST', `/reports/${id}/finding-context`, { body: { findings } }),
   rewriteSummary: (id, sentences, names) =>
     request('POST', `/reports/${id}/summary-prose`, {
       body: { sentences, names },

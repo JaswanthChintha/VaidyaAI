@@ -119,4 +119,73 @@ const getSummaryProse = asyncHandler(async (req, res) => {
   return sendSuccess(res, 200, { prose: stored });
 });
 
-module.exports = { getSummaryProse };
+/**
+ * Module 34 - general context for the tests already marked out of range.
+ *
+ *   POST /reports/:id/finding-context   { findings: [{test_name, direction}] }
+ *
+ * Same shape as `getSummaryProse` above and cached the same way, because it
+ * has the same problem: one model call per finding, and a free tier of twenty
+ * a day. The page derives the findings from the rows it is rendering, so the
+ * key is the analysis version AND a hash of what was asked.
+ *
+ * THE BODY CARRIES NO VALUES AND CANNOT. The ai-service forbids extra fields;
+ * this controller forwards only `test_name` and `direction`, rebuilt here
+ * rather than passed through, so a client cannot widen the payload by sending
+ * more.
+ */
+const getFindingContext = asyncHandler(async (req, res) => {
+  const filter = ownerScopedFilter(req.user, { ...OWNER_ONLY, base: { _id: req.params.id } });
+  const report = await Report.findOne(filter).select('+findingContext');
+  assertCanAccess(req.user, report, { ...OWNER_ONLY });
+
+  // REBUILT, NEVER FORWARDED. Two fields, both strings, nothing else -- so a
+  // caller cannot reach the model with a value attached.
+  const findings = (Array.isArray(req.body?.findings) ? req.body.findings : [])
+    .map((item) => ({
+      test_name: String(item?.test_name ?? item?.testName ?? '').trim(),
+      direction: String(item?.direction ?? '').trim(),
+    }))
+    .filter((item) => item.test_name && item.direction);
+
+  const version = report.analysis?.version || report.analysisVersion || null;
+  const key = fingerprint(findings.map((f) => `${f.test_name}|${f.direction}`), []);
+
+  const cached = report.findingContext;
+  if (cached && cached.findingsHash === key && cached.analysisVersion === version) {
+    return sendSuccess(res, 200, { context: cached });
+  }
+
+  if (!findings.length) return sendSuccess(res, 200, { context: null });
+
+  let written = null;
+  try {
+    written = await aiService.describeFindings({
+      findings,
+      requestId: aiService.newRequestId(report._id.toString()),
+    });
+  } catch (err) {
+    if (!config.isTest) {
+      // eslint-disable-next-line no-console
+      console.warn(`[finding-context] reportId=${report._id} outcome=unavailable ${err.message}`);
+    }
+    return sendSuccess(res, 200, { context: null });
+  }
+
+  if (!written || typeof written !== 'object') {
+    return sendSuccess(res, 200, { context: null });
+  }
+
+  const stored = { ...written, analysisVersion: version, findingsHash: key };
+  try {
+    await Report.updateOne({ _id: report._id }, { $set: { findingContext: stored } });
+  } catch (err) {
+    if (!config.isTest) {
+      // eslint-disable-next-line no-console
+      console.warn(`[finding-context] reportId=${report._id} outcome=not_cached ${err.message}`);
+    }
+  }
+  return sendSuccess(res, 200, { context: stored });
+});
+
+module.exports = { getSummaryProse, getFindingContext };

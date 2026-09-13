@@ -298,6 +298,20 @@ const reportSchema = new mongoose.Schema(
     },
 
     /**
+     * Module 34's general context for the tests marked out of range.
+     *
+     * Cached like `summaryProse` and for the same reason: one model call per
+     * finding per analysis, never one per page view. Keyed on the analysis
+     * version AND a hash of the findings sent, because the page derives those
+     * from what it is rendering.
+     */
+    findingContext: {
+      type: mongoose.Schema.Types.Mixed,
+      select: false,
+      default: undefined,
+    },
+
+    /**
      * Module 23's `ReportExplanationSet` - THE PATIENT-FACING EXPLANATION.
      *
      * The clinical report above is written for a reader who already knows what

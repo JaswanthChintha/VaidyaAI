@@ -109,6 +109,12 @@ ROUTES = [
         "/api/v1/explain/summary-prose",
         {"sentences": ["This tool checked 8 conditions."], "names": []},
     ),
+    # And this one.
+    (
+        "post",
+        "/api/v1/explain/finding-context",
+        {"findings": [{"test_name": "CRP", "direction": "raised"}]},
+    ),
 ]
 
 

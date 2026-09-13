@@ -60,6 +60,10 @@ from app.services.lifestyle import (
     guidance_policy_document,
     lifestyle_guidance,
 )
+from app.services.finding_context import (
+    FindingContextData,
+    describe_findings,
+)
 from app.services.summary_prose import (
     SummaryProse,
     rewrite_summary,
@@ -570,6 +574,52 @@ def summary_prose_endpoint(
     return SummaryProseResponse(
         data=rewrite_summary(request.sentences, names=request.names, llm=llm)
     )
+
+
+class FindingContextRequest(BaseModel):
+    """Tests already marked out of range, by NAME and DIRECTION only.
+
+    THE SHAPE IS THE SAFETY ARGUMENT. There is deliberately no field for a
+    value, a reference range, an age or a sex: this endpoint answers what a
+    raised or lowered result is GENERALLY associated with, and a payload that
+    could carry the reader's own numbers would make that answer about them.
+    `extra="forbid"` so a caller cannot smuggle one in.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    findings: List[Dict[str, str]] = Field(
+        default_factory=list,
+        description='[{"test_name": "...", "direction": "raised"|"lowered"}]. '
+        "A direction this service does not know is skipped, never guessed at.",
+    )
+
+
+class FindingContextResponse(BaseModel):
+    """The `{success, data}` envelope. See `ClinicianSummaryResponse`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    success: bool = True
+    data: FindingContextData
+
+
+@router.post(
+    "/finding-context",
+    response_model=FindingContextResponse,
+    response_model_exclude_none=False,
+    summary="What a raised or lowered test is generally associated with",
+)
+def finding_context_endpoint(
+    request: FindingContextRequest,
+    llm: Any = Depends(get_explanation_llm),
+) -> FindingContextResponse:
+    """General context for findings something else already made.
+
+    NO MODEL IS NOT AN ERROR: 200 with no entries, and the caller renders
+    nothing. Every refusal is per-entry and carries no text.
+    """
+    return FindingContextResponse(data=describe_findings(request.findings, llm=llm))
 
 
 __all__ = ["get_explanation_llm", "router"]

@@ -301,3 +301,112 @@ describe('what is sent is what is rendered', () => {
     expect(spy).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('Module 34 -- general context in the summary', () => {
+  const ctx = () => document.querySelector('.in-short__context');
+
+  function withContext(entries) {
+    return vi.spyOn(api, 'describeFindings').mockResolvedValue({
+      context: { entries },
+    });
+  }
+
+  const GOOD = {
+    test_name: 'C-REACTIVE PROTEIN',
+    direction: 'raised',
+    text: 'A raised result of this kind is commonly associated with inflammation.',
+    available: true,
+  };
+
+  it('shows an approved entry, outside the rewritable body', async () => {
+    withDashboard();
+    vi.spyOn(api, 'rewriteSummary').mockResolvedValue({ prose: null });
+    withContext([GOOD]);
+    renderDashboard();
+
+    await waitFor(() => expect(ctx()).not.toBeNull());
+    expect(ctx()).toBeVisible();
+    expect(ctx().textContent).toMatch(/commonly associated with inflammation/);
+    // A SUMMARY REWRITE MAY NOT REWORD OR SWALLOW THESE. They sit outside the
+    // body Module 33 replaces, by construction.
+    expect(ctx().closest('.in-short__body')).toBeNull();
+  });
+
+  it('stays visible when the summary rewrite replaces the composed body', async () => {
+    withDashboard();
+    vi.spyOn(api, 'rewriteSummary').mockResolvedValue({
+      prose: { outcome: 'generated', text: 'A rewritten summary.' },
+    });
+    withContext([GOOD]);
+    renderDashboard();
+
+    await waitFor(() => expect(document.querySelector('.in-short__prose')).not.toBeNull());
+    expect(ctx()).toBeVisible();
+    expect(closing()).toBeVisible();
+  });
+
+  it('renders NOTHING when every entry was refused', async () => {
+    // No notice and no placeholder: the reader loses a paragraph they never
+    // saw, and an absence is not created by withholding one.
+    withDashboard();
+    vi.spyOn(api, 'rewriteSummary').mockResolvedValue({ prose: null });
+    withContext([
+      { test_name: 'CRP', direction: 'raised', text: null, available: false },
+    ]);
+    renderDashboard();
+
+    await screen.findByText(/In short/);
+    await waitFor(() => expect(api.describeFindings).toHaveBeenCalled());
+    expect(ctx()).toBeNull();
+    expect(document.body.textContent).not.toMatch(/could not be prepared/i);
+  });
+
+  it('renders nothing when the request fails', async () => {
+    withDashboard();
+    vi.spyOn(api, 'rewriteSummary').mockResolvedValue({ prose: null });
+    vi.spyOn(api, 'describeFindings').mockRejectedValue(new Error('network'));
+    renderDashboard();
+
+    await screen.findByText(/In short/);
+    await waitFor(() => expect(api.describeFindings).toHaveBeenCalled());
+    expect(ctx()).toBeNull();
+    expect(closing()).toBeVisible();
+  });
+
+  it('SENDS A NAME AND A DIRECTION, AND NO VALUE', async () => {
+    // The contract the whole module rests on. Nothing about the reader may
+    // reach the model, or "generally associated with" becomes a statement
+    // about a named person.
+    withDashboard();
+    vi.spyOn(api, 'rewriteSummary').mockResolvedValue({ prose: null });
+    const spy = withContext([GOOD]);
+    renderDashboard();
+
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+    const [, findings] = spy.mock.calls[0];
+    expect(findings.length).toBeGreaterThan(0);
+    for (const f of findings) {
+      expect(Object.keys(f).sort()).toEqual(['direction', 'test_name']);
+      expect(['raised', 'lowered']).toContain(f.direction);
+    }
+    // The laboratory's own flagged test is in there, by name.
+    expect(findings.some((f) => /Potassium/i.test(f.test_name))).toBe(true);
+  });
+
+  it('asks for nothing when no result is out of range', async () => {
+    withDashboard({
+      overall: { statusLabel: 'Healthy', risk: 'Low', anyAssessed: true, complete: true },
+      conditions: [
+        { condition: 'Anemia', status: 'Not Indicated', risk: 'Low', flagged: false, assessed: true },
+      ],
+      unanalysed: { count: 0, items: [] },
+    });
+    vi.spyOn(api, 'rewriteSummary').mockResolvedValue({ prose: null });
+    const spy = withContext([GOOD]);
+    renderDashboard();
+
+    await screen.findByText(/In short/);
+    expect(spy).not.toHaveBeenCalled();
+    expect(ctx()).toBeNull();
+  });
+});

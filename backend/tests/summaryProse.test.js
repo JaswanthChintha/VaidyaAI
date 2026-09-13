@@ -219,3 +219,114 @@ describe('the cache', () => {
     expect(mockAxios.post).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('Module 34 -- general context for out-of-range findings', () => {
+  const FINDINGS = [
+    { test_name: 'C-REACTIVE PROTEIN', direction: 'raised' },
+    { test_name: 'LYMPHOCYTES', direction: 'lowered' },
+  ];
+
+  function postCtx(id, token, body = { findings: FINDINGS }) {
+    return request(app)
+      .post(`${REPORTS}/${id}/finding-context`)
+      .set('Authorization', `Bearer ${token}`)
+      .send(body);
+  }
+
+  it('refuses another patient’s report with the same 404 a random id gets', async () => {
+    const owner = await makeUser('ctx.owner@example.com');
+    const other = await makeUser('ctx.other@example.com');
+    const id = await seedReport(owner.id);
+    serviceReplies({ entries: [] });
+
+    const theirs = await postCtx(id, other.token);
+    const random = await postCtx(new mongoose.Types.ObjectId().toString(), other.token);
+    expect(theirs.status).toBe(404);
+    expect(theirs.body.error.code).toBe(random.body.error.code);
+    expect(mockAxios.post).not.toHaveBeenCalled();
+  });
+
+  it('SENDS NO VALUE, because the body is rebuilt and not forwarded', async () => {
+    // THE CONTRACT THIS ENDPOINT EXISTS UNDER. A client that attaches the
+    // reader's own number must not be able to get it to the model -- that is
+    // what would turn "generally associated with" into a statement about a
+    // named person.
+    const owner = await makeUser('ctx.novalue@example.com');
+    const id = await seedReport(owner.id);
+    serviceReplies({ entries: [] });
+
+    await postCtx(id, owner.token, {
+      findings: [
+        {
+          test_name: 'C-REACTIVE PROTEIN',
+          direction: 'raised',
+          value: 38.9,
+          unit: 'mg/L',
+          referenceHigh: 5,
+          age: 20,
+        },
+      ],
+    });
+
+    const [, body] = mockAxios.post.mock.calls[0];
+    expect(body.findings).toEqual([
+      { test_name: 'C-REACTIVE PROTEIN', direction: 'raised' },
+    ]);
+    const sent = JSON.stringify(body);
+    for (const leaked of ['38.9', 'mg/L', '"age"', 'referenceHigh']) {
+      expect(sent).not.toContain(leaked);
+    }
+  });
+
+  it('drops an entry with no name or no direction rather than sending it', async () => {
+    const owner = await makeUser('ctx.partial@example.com');
+    const id = await seedReport(owner.id);
+    serviceReplies({ entries: [] });
+
+    await postCtx(id, owner.token, {
+      findings: [
+        { test_name: 'CRP', direction: 'raised' },
+        { test_name: 'FERRITIN' },
+        { direction: 'lowered' },
+      ],
+    });
+    const [, body] = mockAxios.post.mock.calls[0];
+    expect(body.findings).toHaveLength(1);
+  });
+
+  it('never calls the model when there is nothing to ask about', async () => {
+    const owner = await makeUser('ctx.empty@example.com');
+    const id = await seedReport(owner.id);
+    serviceReplies({ entries: [] });
+
+    const res = await postCtx(id, owner.token, { findings: [] });
+    expect(res.status).toBe(200);
+    expect(res.body.data.context).toBeNull();
+    expect(mockAxios.post).not.toHaveBeenCalled();
+  });
+
+  it('answers 200 with no context when the ai-service cannot be reached', async () => {
+    const owner = await makeUser('ctx.down@example.com');
+    const id = await seedReport(owner.id);
+    mockAxios.post.mockRejectedValue(new Error('ECONNREFUSED'));
+
+    const res = await postCtx(id, owner.token);
+    expect(res.status).toBe(200);
+    expect(res.body.data.context).toBeNull();
+  });
+
+  it('asks once for the same findings, and again when they change', async () => {
+    const owner = await makeUser('ctx.cache@example.com');
+    const id = await seedReport(owner.id);
+    serviceReplies({ entries: [{ test_name: 'CRP', direction: 'raised', available: true }] });
+
+    await postCtx(id, owner.token);
+    await postCtx(id, owner.token);
+    expect(mockAxios.post).toHaveBeenCalledTimes(1);
+
+    await postCtx(id, owner.token, {
+      findings: [...FINDINGS, { test_name: 'ESR', direction: 'raised' }],
+    });
+    expect(mockAxios.post).toHaveBeenCalledTimes(2);
+  });
+});

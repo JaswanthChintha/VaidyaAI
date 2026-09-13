@@ -860,10 +860,66 @@ function InShort({
   clearCards,
   unassessedCards,
   reportId,
+  // PASSED, NOT RECOMPUTED. These are the engine's own threshold crossings as
+  // the page read them; deriving them a second time here would be a second
+  // implementation free to disagree with the table above.
+  verdicts,
 }) {
   const bodyRef = useRef(null);
   const [prose, setProse] = useState(null);
+  const [context, setContext] = useState([]);
   const overall = dashboard.overall;
+
+  /* MODULE 34 -- what the results already marked out of range are GENERALLY
+     associated with.
+     THE FINDINGS ARE DERIVED FROM WHAT THE PAGE ALREADY SHOWS: a verdict
+     direction this tool reached, or a direction the laboratory marked. No
+     value is collected here and none is sent -- the request carries a test
+     NAME and the word "raised" or "lowered", which is what keeps the answer
+     about the test rather than about the reader.
+     Anything that comes back empty renders NOTHING. There is no notice and no
+     placeholder: the reader loses a paragraph they never saw. */
+  useEffect(() => {
+    let cancelled = false;
+    if (!reportId || !overall) return undefined;
+
+    const direction = (word) => {
+      const w = String(word || '').toLowerCase();
+      if (w === 'high' || w === 'raised') return 'raised';
+      if (w === 'low' || w === 'lowered') return 'lowered';
+      return null;
+    };
+
+    const findings = [];
+    for (const [feature, verdict] of (verdicts || new Map()).entries()) {
+      const d = direction(verdict?.direction || verdict?.label);
+      if (!d) continue;
+      const row = (dashboard.laboratory || []).find((r) => r.feature === feature);
+      const name = row?.originalTestName || PATIENT_LABEL[feature] || row?.displayName;
+      if (name) findings.push({ test_name: name, direction: d });
+    }
+    for (const item of dashboard.unanalysed?.items || []) {
+      if (item.labFlaggedAbnormal !== true) continue;
+      const d = direction(item.labFlag);
+      if (d && item.testName) findings.push({ test_name: item.testName, direction: d });
+    }
+    if (!findings.length) return undefined;
+
+    (async () => {
+      try {
+        const res = await api.describeFindings(reportId, findings);
+        const entries = (res?.context?.entries || []).filter(
+          (e) => e && e.available === true && typeof e.text === 'string' && e.text.trim()
+        );
+        if (!cancelled && entries.length) setContext(entries);
+      } catch {
+        // Nothing to report. The page is complete without this.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [reportId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* MODULE 33, AND EVERY PATH THROUGH IT ENDS AT THE COMPOSED TEXT.
      The sentences are read out of the rendered body, so what is sent is
@@ -1102,6 +1158,27 @@ function InShort({
           out of if this ever needs to re-ask, and `hidden` keeps it out of
           the accessibility tree so a screen reader does not hear both. */}
       {prose ? <p className="in-short__prose">{prose}</p> : null}
+
+      {/* WHAT THE OUT-OF-RANGE RESULTS ARE GENERALLY ASSOCIATED WITH.
+          OUTSIDE the rewritable body, so a summary rewrite can neither reword
+          these nor swallow them, and above the closing line, which still has
+          the last word. Each sentence is about the TEST and the DIRECTION --
+          the same sentence for every reader with a raised CRP -- so it
+          carries no attribution: there is no claim about this reader in it to
+          attribute. */}
+      {context.length ? (
+        <div className="in-short__context">
+          {context.map((entry, index) => (
+            <p key={`${entry.test_name}-${index}`}>
+              <strong>
+                {entry.test_name}
+                {entry.direction === 'raised' ? ' (raised)' : ' (lowered)'}
+              </strong>{' '}
+              {entry.text}
+            </p>
+          ))}
+        </div>
+      ) : null}
 
       {/* THE CLOSING LINE IS NOT OPTIONAL and is deliberately not conditional
           on anything having been flagged: a reader whose report came back
@@ -2148,6 +2225,7 @@ export default function Dashboard() {
         clearCards={clearCards}
         unassessedCards={unassessedCards}
         reportId={id}
+        verdicts={verdicts}
       />
     </main>
   );

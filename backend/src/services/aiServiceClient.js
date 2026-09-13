@@ -126,6 +126,7 @@ const PATHS = Object.freeze({
   glossary: '/api/v1/explain/glossary',
   clinicianSummary: '/api/v1/explain/clinician-summary',
   summaryProse: '/api/v1/explain/summary-prose',
+  findingContext: '/api/v1/explain/finding-context',
   timeline: '/api/v1/timeline/trends',
   comparison: '/api/v1/comparison/reports',
   progress: '/api/v1/progress/score',
@@ -1133,6 +1134,24 @@ async function rewriteSummaryProse({ sentences, names, requestId }) {
   });
 }
 
+/**
+ * Module 34 - what a raised or lowered test is generally associated with.
+ *
+ * SENDS A NAME AND A DIRECTION, AND THERE IS NOWHERE TO PUT ANYTHING ELSE.
+ * The ai-service forbids extra fields on this body for the same reason: a
+ * payload that could carry the reader's own value would make the answer about
+ * them, which is the one thing the module exists not to do.
+ */
+async function describeFindings({ findings, requestId }) {
+  return postJson({
+    path: PATHS.findingContext,
+    stage: STAGES.EXPLANATION,
+    payload: { findings },
+    requestId,
+    timeoutMs: config.aiService.explainTimeoutMs,
+  });
+}
+
 async function generateDoctorSummary({
   report,
   reportRef,
@@ -1315,6 +1334,7 @@ module.exports = {
   generateDoctorSummary,
   writeClinicianSummary,
   rewriteSummaryProse,
+  describeFindings,
   populationContext,
   health,
   resetClient,

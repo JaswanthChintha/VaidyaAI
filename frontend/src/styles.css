@@ -1116,6 +1116,19 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
 .in-short p { line-height: 1.6; }
 /* The closing line is set apart from the findings above it: it is a statement
    about what this whole page is, not another finding. */
+/* Module 34 -- what an out-of-range result is generally associated with.
+   Set apart from the composed summary above it, because these sentences are
+   about the TEST and not about this reader: same rule as every other place
+   where two kinds of statement share a panel. */
+.in-short__context {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border-left: 2px solid var(--band-line);
+  background: transparent;
+}
+.in-short__context p { margin: 0 0 8px; }
+.in-short__context p:last-child { margin-bottom: 0; }
+
 .in-short__closing {
   margin: 16px 0 0; padding-top: 14px; border-top: 1px solid var(--line);
   color: var(--muted); font-size: 14px;
