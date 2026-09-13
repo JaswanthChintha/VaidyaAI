@@ -157,17 +157,16 @@ describe('condition cards', () => {
     });
     renderDashboard();
 
-    // An unassessed topic is now summarised in one line rather than given a
-    // full card, so it is matched inside its sentence. The guarantee is
-    // unchanged and is the whole point of this test: it must be reported as
-    // NOT CHECKED, and must never carry a risk level -- "we could not look"
-    // must not be renderable as "we looked and it was fine".
-    // Named in the round-up above AND in the closing summary -- both are
-    // correct, and both matter: an unchecked topic must not go quiet in
-    // either place.
-    expect(await screen.findAllByText(/Kidney Disease/)).not.toHaveLength(0);
-    expect(screen.getByText(/Not enough information to check/i)).toBeInTheDocument();
+    // THE HALF THAT SURVIVES IS THE HALF THAT MATTERS. On the reader's
+    // instruction this screen no longer NAMES the topics it could not check
+    // -- the round-up group, the Overall card line and the summary sentence
+    // are all gone. What may never happen is the other thing, and it is
+    // asserted here: an absence must not be renderable as a low risk. "We
+    // could not look" is not "we looked and it was fine".
+    await screen.findByText(/In short/);
     expect(riskWordShown('Low')).toBe(false);
+    // And it is not quietly filed under the topics that came back clear.
+    expect(screen.queryByText(/Nothing in these results pointed to/)).not.toBeInTheDocument();
   });
 
   it('keeps the two-checks-disagreed lecture OFF the patient card', async () => {
@@ -1431,26 +1430,23 @@ describe('the closing "In short" summary', () => {
     expect(summaryText()).not.toMatch(/showed nothing: Mystery Condition/);
   });
 
-  it('never lets an unchecked topic vanish into the summary', async () => {
-    withDashboard({
-      overall: {
-        statusLabel: 'Healthy (partial assessment)',
-        risk: 'Low',
-        anyAssessed: true,
-        complete: false,
-        unassessedConditionCount: 1,
-      },
-      conditions: [clear('Anemia'), unassessed('Kidney Disease')],
-    });
-    renderDashboard();
 
-    await screen.findByText(/In short/);
-    expect(summaryText()).toMatch(/1 condition could not be checked/);
-    expect(summaryText()).toMatch(/Kidney Disease/);
-    expect(summaryText()).toMatch(/open question, not a clear result/);
-    // A partial clean result must not read as a clean bill of health.
-    expect(summaryText()).toMatch(/not a clean bill of health/);
-  });
+  // REMOVED ON THE READER'S INSTRUCTION, WHO ASKED MORE THAN ONCE --
+  //   'never lets an unchecked topic vanish into the summary'
+  //   'gives a cleared topic and an unchecked topic DIFFERENT chips'
+  //   'says NOT CHECKED on an unchecked topic, and never on a cleared one'
+  //   'keeps the sentence saying what "could not check" MEANS'
+  //
+  // All four pinned renderings this screen no longer has: the dashed
+  // NOT CHECKED chip group, the Overall card's "Not assessed:" line, and the
+  // closing summary's sentence naming the topics with no test on the report.
+  //
+  // WHAT STILL FAILS IF THE REAL GUARANTEE GOES, and it is the reason these
+  // could be deleted rather than argued about: 'renders an unassessed
+  // condition as unassessed, not as low risk' asserts that an absence never
+  // acquires a risk level and never joins the cleared group. The engine still
+  // emits these topics and `overall.unassessedConditions` still names them,
+  // so the clinician summary is untouched; it is this screen that is silent.
 
   it('carries the laboratory-flagged tests it does not assess into the summary', async () => {
     // These sit outside every condition count, so omitting them would let the
@@ -1901,54 +1897,8 @@ describe('the round-up of everything else', () => {
   const chipText = (selector) =>
     [...document.querySelectorAll(selector)].map((el) => el.textContent);
 
-  it('gives a cleared topic and an unchecked topic DIFFERENT chips', async () => {
-    // The core guarantee. Both topics are named; what separates them is the
-    // class the reader can actually see, not a five-percent tint.
-    withDashboard({
-      overall: { statusLabel: 'Attention Needed', anyAssessed: true, risk: 'High' },
-      conditions: [clear('Anemia'), unassessed('Kidney Disease')],
-    });
-    renderDashboard();
 
-    await screen.findByText(/Everything else that was checked/);
-    expect(chipText('.chip--clear').join()).toMatch(/Anemia/);
-    expect(chipText('.chip--unassessed').join()).toMatch(/Kidney Disease/);
-    // ...and neither has leaked into the other group.
-    expect(chipText('.chip--clear').join()).not.toMatch(/Kidney Disease/);
-    expect(chipText('.chip--unassessed').join()).not.toMatch(/Anemia/);
-  });
 
-  it('says NOT CHECKED on an unchecked topic, and never on a cleared one', async () => {
-    // design.md section 6 requires the literal words. A dashed border is
-    // invisible to a screen reader; the tag is the half of the signal that is
-    // not visual.
-    withDashboard({
-      overall: { statusLabel: 'Attention Needed', anyAssessed: true, risk: 'High' },
-      conditions: [clear('Anemia'), unassessed('Kidney Disease')],
-    });
-    renderDashboard();
-
-    await screen.findByText(/Everything else that was checked/);
-    const tags = [...document.querySelectorAll('.chip--unassessed .chip__tag')];
-    expect(tags).toHaveLength(1);
-    expect(tags[0].textContent).toBe('NOT CHECKED');
-    expect(document.querySelectorAll('.chip--clear .chip__tag')).toHaveLength(0);
-  });
-
-  it('keeps the sentence saying what "could not check" MEANS', async () => {
-    // The chips say WHICH topics. This says an absence is not a negative
-    // result -- without it, "could not check" reads as reassurance. It has
-    // been removed from this page by a redesign once already.
-    withDashboard({
-      overall: { statusLabel: 'Not Assessed', anyAssessed: false },
-      conditions: [unassessed('Kidney Disease')],
-    });
-    renderDashboard();
-
-    expect(
-      await screen.findByText(/open question, not a negative result/)
-    ).toBeInTheDocument();
-  });
 
   it('counts the cleared topics, and agrees with the chips it drew', async () => {
     // A printed count that disagrees with the list beside it is worse than no

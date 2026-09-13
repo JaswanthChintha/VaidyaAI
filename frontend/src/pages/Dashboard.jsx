@@ -75,13 +75,6 @@ function OverallCard({ overall }) {
           conditions that could not be assessed stays below, because that
           names them rather than qualifying the verdict in the abstract. */}
 
-      {overall.unassessedConditions?.length ? (
-        <p className="hint">
-          Not assessed: {overall.unassessedConditions.join(', ')}. An
-          unassessed condition is an open question, not a negative result.
-        </p>
-      ) : null}
-
       {overall.sourcesFailed?.length ? (
         <p className="caveat">
           Some analysis stages did not complete: {overall.sourcesFailed.join(', ')}.
@@ -1108,17 +1101,6 @@ function InShort({
       ) : null}
 
       {/* ABSENCE #1: topics that could not be checked at all. */}
-      {unassessedCards.length ? (
-        <p className="caveat">
-          <strong>
-            {unassessedCards.length} condition
-            {unassessedCards.length === 1 ? '' : 's'} could not be checked
-          </strong>{' '}
-          — {listOfNames(unassessedCards)}. Your report did not contain the
-          tests needed. Each of those is an open question, not a clear result.
-        </p>
-      ) : null}
-
       {/* ABSENCE #2: the laboratory's own flags on tests never assessed here.
           These are results a reader will stop on and a doctor will want
           raised, and they sit outside every count above -- so leaving them
@@ -2034,7 +2016,7 @@ export default function Dashboard() {
         </>
       ) : null}
 
-      {clearCards.length || unassessedCards.length ? (
+      {clearCards.length ? (
         <>
           <h2>Everything else that was checked</h2>
           {clearCards.length ? (
@@ -2056,40 +2038,19 @@ export default function Dashboard() {
               </ul>
             </div>
           ) : null}
-          {/* THE ABSENCE GROUP GETS THE APP'S ABSENCE TREATMENT, NOT A TINT.
-              This was `color: var(--muted)` on a comma-run -- the two groups
-              differed by one step of grey, on the single distinction this
-              whole screen exists to preserve. `styles.css`'s own header names
-              that failure: "a grey number still reads as a number; a dashed
-              empty outline cannot", and design.md §6 mandates the treatment
-              used here (dashed `--band-line`, NO FILL, `--mono`, the literal
-              words NOT CHECKED). The charts already speak this language, so
-              the page now has one vocabulary for absence instead of three.
+          {/* REMOVED ON THE READER'S INSTRUCTION, AND THEY HAD TO ASK MORE
+              THAN ONCE. A group of dashed NOT CHECKED chips stood here for
+              the topics with no test on the report, with a line underneath
+              saying an unchecked topic is an open question rather than a
+              negative result. The same fact was also on the Overall card and
+              in the closing summary; all three are gone.
 
-              The sentence below the chips is unchanged and may not go: the
-              chips say which topics, and it says what an unchecked topic
-              MEANS. "Could not check" reads as reassurance without it. */}
-          {unassessedCards.length ? (
-            <div className="roundup roundup--unassessed">
-              <p className="roundup__lead">
-                <strong>Not enough information to check</strong> these{' '}
-                {unassessedCards.length}{' '}
-                {unassessedCards.length === 1 ? 'topic' : 'topics'}.
-              </p>
-              <ul className="chips">
-                {unassessedCards.map((card) => (
-                  <li className="chip chip--unassessed" key={card.condition}>
-                    {card.condition}
-                    <span className="chip__tag">NOT CHECKED</span>
-                  </li>
-                ))}
-              </ul>
-              <p className="roundup__note">
-                An unchecked topic is an open question, not a negative result —
-                it needs a test this report did not include.
-              </p>
-            </div>
-          ) : null}
+              It only ever rendered because b4d14ad made the rule engine emit
+              those topics at all -- before that they were dropped in silence
+              and this group had never had data. The engine still emits them
+              and `overall.unassessedConditions` still names them, so the
+              clinician summary and every other consumer are unchanged. This
+              screen does not show them. */}
         </>
       ) : null}
 
@@ -2104,8 +2065,7 @@ export default function Dashboard() {
           hoped for and a table that is mostly about what is not in front of
           you. The absence is still reported, in the places that can say
           something useful about it: the condition card names the input it
-          could not take into account, and a topic with no input at all now
-          comes back NOT CHECKED from the rule engine.
+          could not take into account.
 
           A REJECTED READING IS NOT AN ABSENT ONE AND KEEPS ITS ROW. It was
           printed on the report and this tool refused it, which the reader has
