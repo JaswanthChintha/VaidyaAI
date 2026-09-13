@@ -393,6 +393,37 @@ describe('Module 34 -- general context in the summary', () => {
     expect(findings.some((f) => /Potassium/i.test(f.test_name))).toBe(true);
   });
 
+  it('never asks about a PROFILE answer, and never sends a feature key', async () => {
+    // Found on the live page: "bmi (raised)" appeared among the findings. BMI
+    // comes from the questionnaire, so "a raised body mass index is commonly
+    // associated with..." under a heading about this report's results is a
+    // finding computed from what the reader typed, presented as something the
+    // laboratory measured -- §6t's category error. And "bmi" is the internal
+    // feature key, which §6an-i swept off every reader-facing screen.
+    withDashboard({
+      ...DASHBOARD,
+      laboratory: [
+        { feature: 'bmi', displayName: 'Body mass index', value: 31, unit: 'kg/m2', state: 'valid', usable: true, source: 'patient_profile' },
+        { feature: 'hemoglobin', originalTestName: 'HEMOGLOBIN', displayName: 'Haemoglobin', value: 12.5, unit: 'g/dl', state: 'valid', usable: true, source: 'lab_report' },
+      ],
+      evidence: {
+        conditions: [
+          { condition: 'Obesity', lines: [{ feature: 'bmi', value: 31, threshold: 30, comparator: '>=', classification: 'high', availability: 'observed' }] },
+          { condition: 'Anemia', lines: [{ feature: 'hemoglobin', value: 12.5, threshold: 13, comparator: '<', classification: 'low', availability: 'observed' }] },
+        ],
+      },
+    });
+    vi.spyOn(api, 'rewriteSummary').mockResolvedValue({ prose: null });
+    const spy = withContext([GOOD]);
+    renderDashboard();
+
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+    const names = spy.mock.calls[0][1].map((f) => f.test_name);
+    expect(names).not.toContain('bmi');
+    expect(names.some((n) => /body mass index/i.test(n))).toBe(false);
+    expect(names).toContain('HEMOGLOBIN');
+  });
+
   it('asks for nothing when no result is out of range', async () => {
     withDashboard({
       overall: { statusLabel: 'Healthy', risk: 'Low', anyAssessed: true, complete: true },

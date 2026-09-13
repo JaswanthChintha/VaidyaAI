@@ -315,10 +315,43 @@ describe('Module 34 -- general context for out-of-range findings', () => {
     expect(res.body.data.context).toBeNull();
   });
 
+  it('NEVER caches a result where nothing at all was generated', async () => {
+    // FOUND LIVE, and it would have hidden until the next day. When the Gemini
+    // quota is spent every model in the chain refuses and `generated_count` is
+    // 0. Caching that pins an empty result to this report and these findings
+    // forever: the quota resets, the cache key has not changed, and nothing
+    // ever asks again.
+    const owner = await makeUser('ctx.quota@example.com');
+    const id = await seedReport(owner.id);
+    serviceReplies({ entries: [], generated_count: 0, withheld_count: 2 });
+
+    await postCtx(id, owner.token);
+    await postCtx(id, owner.token);
+    expect(mockAxios.post).toHaveBeenCalledTimes(2);
+  });
+
+  it('DOES cache a partial result, because those refusals will recur', async () => {
+    // A gate refusal is an answer about this text, not about the service.
+    const owner = await makeUser('ctx.partial2@example.com');
+    const id = await seedReport(owner.id);
+    serviceReplies({
+      entries: [{ test_name: 'CRP', direction: 'raised', text: 'x', available: true }],
+      generated_count: 1,
+      withheld_count: 1,
+    });
+
+    await postCtx(id, owner.token);
+    await postCtx(id, owner.token);
+    expect(mockAxios.post).toHaveBeenCalledTimes(1);
+  });
+
   it('asks once for the same findings, and again when they change', async () => {
     const owner = await makeUser('ctx.cache@example.com');
     const id = await seedReport(owner.id);
-    serviceReplies({ entries: [{ test_name: 'CRP', direction: 'raised', available: true }] });
+    serviceReplies({
+      entries: [{ test_name: 'CRP', direction: 'raised', available: true }],
+      generated_count: 1,
+    });
 
     await postCtx(id, owner.token);
     await postCtx(id, owner.token);

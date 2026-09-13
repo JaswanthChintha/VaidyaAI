@@ -895,7 +895,16 @@ function InShort({
       const d = direction(verdict?.direction || verdict?.label);
       if (!d) continue;
       const row = (dashboard.laboratory || []).find((r) => r.feature === feature);
-      const name = row?.originalTestName || PATIENT_LABEL[feature] || row?.displayName;
+      // A PROFILE ANSWER IS NOT A LABORATORY RESULT. BMI, age, sex and smoking
+      // history come from the questionnaire, and "a raised BMI is commonly
+      // associated with..." under a heading about this report's results is the
+      // same category error §6t found in the summary: a finding computed from
+      // what the reader typed, presented as something the laboratory measured.
+      if (!row || row.source === 'patient_profile') continue;
+      // The laboratory's own printed name first, then this page's own label --
+      // never the internal feature key, which is what §6an-i swept off every
+      // reader-facing screen.
+      const name = row.originalTestName || PATIENT_LABEL[feature] || row.displayName;
       if (name) findings.push({ test_name: name, direction: d });
     }
     for (const item of dashboard.unanalysed?.items || []) {

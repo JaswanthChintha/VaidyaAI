@@ -177,6 +177,20 @@ const getFindingContext = asyncHandler(async (req, res) => {
   }
 
   const stored = { ...written, analysisVersion: version, findingsHash: key };
+
+  // A TOTAL REFUSAL IS NOT CACHED, and the reason is a real outage rather
+  // than a hypothetical one: when the Gemini quota is spent, every model in
+  // the chain refuses and `generated_count` is 0. Storing that would pin an
+  // empty result to this report and this set of findings FOREVER -- the quota
+  // resets tomorrow and nothing would ever ask again, because the cache key
+  // has not changed. Same exception `summaryProse` makes for
+  // `model_unavailable`: a transport or quota state is not an answer about
+  // this report. A PARTIAL result is cached, because those refusals came from
+  // the gates and asking again would produce the same ones.
+  if (!written.generated_count && !written.generatedCount) {
+    return sendSuccess(res, 200, { context: stored });
+  }
+
   try {
     await Report.updateOne({ _id: report._id }, { $set: { findingContext: stored } });
   } catch (err) {
