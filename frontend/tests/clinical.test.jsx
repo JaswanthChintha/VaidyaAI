@@ -904,38 +904,69 @@ describe('Module 32 - reported, not assessed', () => {
     vi.restoreAllMocks();
   });
 
-  it('shows every skipped parameter with its value and unit', async () => {
+  it('shows the out-of-range parameters with their values and units', async () => {
     mountSummary(MINIMAL, {}, null, UNASSESSED);
-    await screen.findByText(/Reported, not assessed by this tool \(3\)/);
+    // TWO of the three, because ESR is flagged `normal` by the laboratory.
+    await screen.findByText(/Out of range \(2\)/);
 
     expect(screen.getByText('CRP (C-REACTIVE PROTEIN)')).toBeInTheDocument();
     expect(screen.getByText('12.1 mg/L')).toBeInTheDocument();
     expect(screen.getByText('101.9 U/L')).toBeInTheDocument();
-    expect(screen.getByText('35 mm/hr')).toBeInTheDocument();
   });
 
-  it('says SET ASIDE, not found normal', async () => {
-    // THE WHOLE POINT. "We did not look" must not render as "we looked and
-    // found nothing" -- least of all on the page a clinician may act on.
+  it('leaves out a parameter the laboratory did NOT mark', async () => {
     mountSummary(MINIMAL, {}, null, UNASSESSED);
-    const text = await screen.findByText(/set aside because no assessment rule/i);
-    expect(text.textContent).toMatch(/not.{0,10}found normal/i);
+    await screen.findByText(/Out of range \(2\)/);
+    // ESR is present in the payload and flagged "normal". It is not out of
+    // range and must not be listed as though it were.
+    expect(screen.queryByText('35 mm/hr')).toBeNull();
+  });
+
+  it('says nothing about what this tool did or did not assess', async () => {
+    // THE READER'S INSTRUCTION: present them as out of range, and do not
+    // label the section by this platform's coverage. A clinician wants the
+    // results, not a statement about our scope.
+    mountSummary(MINIMAL, {}, null, UNASSESSED);
+    await screen.findByText(/Out of range \(2\)/);
+    const page = document.body.textContent.toLowerCase();
+    for (const banned of [
+      'not assessed',
+      'does not assess',
+      'set aside',
+      'not found normal',
+      'no assessment rule',
+    ]) {
+      expect(page).not.toContain(banned);
+    }
   });
 
   it("attributes the flag and the interval to the LABORATORY", async () => {
     mountSummary(MINIMAL, {}, null, UNASSESSED);
-    await screen.findByText(/Reported, not assessed/);
+    await screen.findByText(/Out of range/);
     expect(
-      screen.getByText(/Values,\s*units and flags are the laboratory/i)
+      screen.getByText(/Values,\s*units and intervals are the laboratory/i)
     ).toBeInTheDocument();
     expect(screen.getByText('0–6')).toBeInTheDocument();
     expect(screen.getByText('≤ 50')).toBeInTheDocument();
   });
 
-  it('renders nothing at all when every parameter was assessed', async () => {
+  it('renders nothing when the laboratory marked none of them', async () => {
     mountSummary(MINIMAL, {}, null, { count: 0, items: [], labFlaggedCount: 0 });
     await waitFor(() => expect(document.querySelector('.passage')).toBeTruthy());
-    expect(screen.queryByText(/Reported, not assessed/)).toBeNull();
+    expect(screen.queryByText(/Out of range/)).toBeNull();
+  });
+
+  it('renders nothing when every skipped parameter is in range', async () => {
+    // A SECTION HEADED "Out of range" MUST NOT APPEAR OVER AN EMPTY TABLE.
+    mountSummary(MINIMAL, {}, null, {
+      count: 1,
+      labFlaggedCount: 0,
+      items: [
+        { testName: 'MCV', value: '85.1', unit: 'fL', labFlag: 'normal', labFlaggedAbnormal: false },
+      ],
+    });
+    await waitFor(() => expect(document.querySelector('.passage')).toBeTruthy());
+    expect(screen.queryByText(/Out of range/)).toBeNull();
   });
 
   it('renders nothing when the section is absent from the payload', async () => {
@@ -943,7 +974,7 @@ describe('Module 32 - reported, not assessed', () => {
     // and neither may invent a claim that something was skipped.
     mountSummary(MINIMAL, {}, null, undefined);
     await waitFor(() => expect(document.querySelector('.passage')).toBeTruthy());
-    expect(screen.queryByText(/Reported, not assessed/)).toBeNull();
+    expect(screen.queryByText(/Out of range/)).toBeNull();
   });
 });
 
@@ -1041,13 +1072,13 @@ describe('Module 32 - sections that survive a generated narrative', () => {
   it('keeps the unassessed table when a narrative WAS generated', async () => {
     mountSummary(MINIMAL, {}, NARRATIVE, UNASSESSED);
     await screen.findByText(/This tool flagged Diabetes/);
-    await screen.findByText(/Reported, not assessed by this tool \(1\)/);
+    await screen.findByText(/Out of range \(1\)/);
     expect(screen.getByText('12.1 mg/L')).toBeInTheDocument();
   });
 
   it('still shows both when there is NO narrative', async () => {
     mountSummary(MINIMAL, {}, null, UNASSESSED);
     await screen.findByText(/commonly associated with infection/);
-    await screen.findByText(/Reported, not assessed by this tool \(1\)/);
+    await screen.findByText(/Out of range \(1\)/);
   });
 });

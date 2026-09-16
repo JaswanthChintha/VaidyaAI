@@ -200,6 +200,20 @@ export default function DoctorSummary() {
   // is never absent from the payload, so "none" and "not computed" stay
   // distinguishable here rather than collapsing into one blank space.
   const unassessed = data.unassessed || null;
+  // ONLY THE ONES OUT OF RANGE, AND PRESENTED AS THAT.
+  //
+  // The payload carries every parameter this platform does not assess; the
+  // page shows the ones the LABORATORY marked outside its own interval. The
+  // reader asked for exactly that and for the section not to be labelled by
+  // what this tool did or did not do with them: a clinician wants the out-of-
+  // range results, not a statement about our coverage.
+  //
+  // `labFlaggedAbnormal` is the producer's own boolean -- true only for a flag
+  // that is present and not "normal" -- so "unflagged" and "flagged normal"
+  // stay distinct from "flagged abnormal" here, as they do on the patient page.
+  const outOfRange = (unassessed?.items || []).filter(
+    (item) => item.labFlaggedAbnormal === true
+  );
   const narrative = data.narrative || null;
   const patient = summary.patient || {};
   const laboratory = summary.laboratory || {};
@@ -519,20 +533,16 @@ export default function DoctorSummary() {
 
           No descriptions. The patient page explains what ESR measures;
           this reader knows. */}
-      {unassessed && unassessed.count > 0 ? (
+      {outOfRange.length ? (
         <div className="passage__unassessed">
-          <h3>
-            Reported, not assessed by this tool ({unassessed.count})
-          </h3>
+          <h3>Out of range ({outOfRange.length})</h3>
           <p>
-            Read from the document and set aside because no assessment rule
-            here covers them &mdash; <strong>not</strong> found normal. Values,
-            units and flags are the laboratory&rsquo;s own.
+            Marked outside the reference interval by the laboratory. Values,
+            units and intervals are the laboratory&rsquo;s own.
           </p>
           <table className="lab-table">
             <caption className="visually-hidden">
-              Parameters reported by the laboratory that this tool does not
-              assess
+              Parameters the laboratory marked outside its reference interval
             </caption>
             <thead>
               <tr>
@@ -543,7 +553,7 @@ export default function DoctorSummary() {
               </tr>
             </thead>
             <tbody>
-              {unassessed.items.map((item, index) => (
+              {outOfRange.map((item, index) => (
                 <tr key={`${item.testName}-${index}`}>
                   <th scope="row">{item.testName}</th>
                   <td>

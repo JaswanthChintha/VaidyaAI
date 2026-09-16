@@ -35,8 +35,8 @@ about any of them. That is the fifth time on this project.
 |---|---|
 | `backend/` (Node/Express) | **670** passing + 3 opt-in live |
 | `ai-service/` (Python/FastAPI) | **3,903** passing + 7 skipped (3,910 collected) |
-| `frontend/` (React/Vitest) | **333** passing, 0 suites failed |
-| **Total** | **4,906** -- ALL THREE re-run green 2026-09-16 |
+| `frontend/` (React/Vitest) | **335** passing, 0 suites failed |
+| **Total** | **4,908** -- ALL THREE re-run green 2026-09-16 |
 
 > **⚠ THE 4,852 IN EVERY EARLIER SECTION WAS 7 TOO HIGH.** §6as recorded
 > ai-service's COLLECTED total (3,865) as its PASSED count; that day's real
@@ -73,7 +73,7 @@ about any of them. That is the fifth time on this project.
 > consolidated onto `main`, and the commit messages were then rewritten to
 > carry no co-author trailer. **Nothing carries one; do not add one.**
 >
-> All 4,906 tests pass and all three suites ran 2026-09-16. §6x is the design
+> All 4,908 tests pass and all three suites ran 2026-09-16. §6x is the design
 > system; §6z–§6ah and §6aj–§6ao are the earlier sessions; **§6aq, §6ar, §6as
 > and §6at are the recent ones** — two real laboratory reports driven through
 > the app, the three lookup defects they exposed (a parenthetical, a
@@ -7330,8 +7330,8 @@ described including the CRP that was being dropped. See the ✅ section below.
 |---|---|---|
 | `backend/` | **670** passed, 3 skipped, 0 suites failed | 2026-09-16 ✅ |
 | `ai-service/` | **3,903** passed, 7 skipped, 0 failures (3,910 collected) | 2026-09-16 ✅ (`.env` moved aside) |
-| `frontend/` | **333** passed, **0 suites failed** | 2026-09-16 ✅ |
-| **Total** | **4,906** | |
+| `frontend/` | **335** passed, **0 suites failed** | 2026-09-16 ✅ |
+| **Total** | **4,908** | |
 
 One task: settle Module 34's six-finding ceiling, which §6as left open as a
 decision about a hypothetical report. **It was not hypothetical and it was not
@@ -8043,6 +8043,38 @@ could not see it.
 
 Both sections are lifted out of the ternary now. Three tests, and a mutant that
 re-hides them is killed by exactly the two written for it.
+
+### THE TABLE IS "OUT OF RANGE", NOT "NOT ASSESSED"
+
+> *"just mention these are out of ranges for those unassessed parameters that
+> it and dont mention like these are unassessed parameters like that"*
+
+The section listed all seventeen skipped parameters under **"Reported, not
+assessed by this tool"**, with a paragraph about their being *"set aside …
+not found normal"*. Both are statements about this platform's coverage in a
+document that is supposed to carry findings.
+
+It is now **"Out of range (N)"**, listing only the rows the LABORATORY marked
+outside its own interval, above one neutral line: *"Marked outside the
+reference interval by the laboratory. Values, units and intervals are the
+laboratory's own."*
+
+| | skipped | shown |
+|---|---|---|
+| `Test 3.pdf` | 17 | **4** — NEUTROPHILS 82 %, LYMPHOCYTES 14 %, ESR 45 mm/hr, CRP 38.9 mg/L |
+| `Test 2.pdf` | 17 | **10** — T.RBC, Polymorphs, Lymphocytes, Monocytes, PCV, MCH, MCHC, ESR, CRP, SGPT |
+
+Four is the same four the patient page reports as *"your laboratory marked 4
+further results outside its own range"*, which is the check that the two pages
+agree: both filter on `labFlaggedAbnormal`, the producer's own boolean, and
+neither re-derives it.
+
+> **THE PAYLOAD STILL CARRIES ALL SEVENTEEN.** The filter is in the renderer,
+> not the controller, so nothing was thrown away at the source — a later reader
+> of that endpoint still gets the full list. **A section headed "Out of range"
+> must not appear over an empty table**, so a report whose skipped parameters
+> are all in range renders nothing at all; that has its own test, as does a
+> parameter flagged `normal` being left out.
 
 ### STILL TO DO ON THIS
 
