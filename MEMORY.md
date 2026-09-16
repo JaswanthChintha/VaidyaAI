@@ -34,9 +34,9 @@ about any of them. That is the fifth time on this project.
 | | Tests |
 |---|---|
 | `backend/` (Node/Express) | **666** passing + 3 opt-in live |
-| `ai-service/` (Python/FastAPI) | **3,865** passing + 7 skipped (3,872 collected) |
+| `ai-service/` (Python/FastAPI) | **3,892** passing + 7 skipped (3,899 collected) |
 | `frontend/` (React/Vitest) | **325** passing, 0 suites failed |
-| **Total** | **4,856** -- ALL THREE re-run green 2026-09-16 |
+| **Total** | **4,883** -- ALL THREE re-run green 2026-09-16 |
 
 > **⚠ THE 4,852 IN EVERY EARLIER SECTION WAS 7 TOO HIGH.** §6as recorded
 > ai-service's COLLECTED total (3,865) as its PASSED count; that day's real
@@ -47,10 +47,15 @@ about any of them. That is the fifth time on this project.
 >
 > Between them they have the run commands, the state of the repository, what
 > `Test 2.pdf` and `Test 3.pdf` are and why they matter, and what is open.
-> **ONE decision is waiting, at the foot of §6at** -- the certainty gate's
-> `indicate` gap. Module 34's six-finding ceiling is settled: it was not a
-> decision about a hypothetical report, it was **already dropping a raised CRP
-> on Test 3**, and §6at is that defect.
+> **NO DECISION IS WAITING. §6as's two open questions were BOTH defects, and
+> both were framed as decisions because nobody had probed them.** The
+> six-finding ceiling was already dropping a raised CRP on Test 3; the certainty
+> gate's `indicate` gap was a plural subject evading the gate in every verb,
+> seven of seven flat assertions passing. §6at is both, with the measurements.
+>
+> **THE TRANSFERABLE PART: a "wording decision" in a handover is a claim about
+> a gate that someone described without running.** Probe it first — both probes
+> took two minutes and both said something other than what was written down.
 >
 > **§6at is verified live on BOTH real reports, through the real page to
 > Mongo** — Test 3's seven findings with the CRP that was being dropped, and
@@ -68,7 +73,7 @@ about any of them. That is the fifth time on this project.
 > consolidated onto `main`, and the commit messages were then rewritten to
 > carry no co-author trailer. **Nothing carries one; do not add one.**
 >
-> All 4,856 tests pass and all three suites ran 2026-09-16. §6x is the design
+> All 4,883 tests pass and all three suites ran 2026-09-16. §6x is the design
 > system; §6z–§6ah and §6aj–§6ao are the earlier sessions; **§6aq, §6ar, §6as
 > and §6at are the recent ones** — two real laboratory reports driven through
 > the app, the three lookup defects they exposed (a parenthetical, a
@@ -7324,9 +7329,9 @@ described including the CRP that was being dropped. See the ✅ section below.
 | | Tests | Last run |
 |---|---|---|
 | `backend/` | **666** passed, 3 skipped, 0 suites failed | 2026-09-16 ✅ |
-| `ai-service/` | **3,865** passed, 7 skipped, 0 failures (3,872 collected) | 2026-09-16 ✅ (`.env` moved aside) |
+| `ai-service/` | **3,892** passed, 7 skipped, 0 failures (3,899 collected) | 2026-09-16 ✅ (`.env` moved aside) |
 | `frontend/` | **325** passed, **0 suites failed** | 2026-09-16 ✅ |
-| **Total** | **4,856** | |
+| **Total** | **4,883** | |
 
 One task: settle Module 34's six-finding ceiling, which §6as left open as a
 decision about a hypothetical report. **It was not hypothetical and it was not
@@ -7558,6 +7563,84 @@ the old cap. The process cache is what makes the second one free now.
 > Anyone measuring quota burn from a dev session and dividing by one will be
 > out by a factor of two.
 
+### ▶ THE `indicate` GAP WAS NOT A WORDING DECISION, IT WAS THE WHOLE GATE
+
+§6as left this open as a hedging question: `_CERTAINTY` matched `indicates` and
+`indicating` but not `indicate`, so "may indicate" passed, and being hedged that
+was arguably fine.
+
+**Measured before touching anything: SEVEN OF SEVEN flat assertions passed.**
+
+```
+"A raised result indicates a bacterial infection."   refused
+"Raised results indicate a bacterial infection."     ALLOWED
+```
+
+and the same for `mean`, `confirm`, `diagnose`, `prove`, `demonstrate` and
+`shows that`. **Every verb in the list was in the third-person singular and
+nothing else, so a PLURAL SUBJECT walked past the entire gate.** The base form
+is not the hedged form — it is the form the verb takes after a plural subject,
+and it is exactly as assertive. `may indicate` was the least interesting thing
+the gap allowed.
+
+> **A ONE-WORD SYMPTOM WAS THE SHAPE OF THE LIST.** Swept to base forms,
+> participles and past tense rather than patched at `indicate`, for §6ar's
+> reason on `UNIT_ALIASES`: the hole was not the entry that exposed it. The
+> handover's own framing sent me looking at hedging; the probe took two minutes
+> and said something else. **Probe the gate before accepting a description of
+> it, even one this file wrote.**
+
+### ⚠ `mean` COULD NOT BE ADDED BARE: MCH IS "MEAN CORPUSCULAR HAEMOGLOBIN"
+
+Adding `mean` to the list refused **four of six** real laboratory phrases. MCH
+and MCHC are `Mean Corpuscular Haemoglobin` and its concentration, and **both
+are findings on `Test 2.pdf`** — so a description that spells either acronym
+out would be thrown away, not occasionally but every time the model expanded
+the name.
+
+So the noun-adjunct use is excused before `corpuscular`, `cell`, `platelet` and
+`arterial` — words that cannot begin a claim.
+
+> **THE FIRST DRAFT OF THAT EXCEPTION LIST LEAKED, AND I WROTE IT.** It also
+> excused `blood` and `value`, which allowed *"Raised results mean BLOOD sugar
+> is high"* — a flat assertion about a person, let through by the exception
+> meant to protect a test name. **An exception list on a safety gate needs its
+> own adversarial case, not just its motivating one.** If the list is
+> INCOMPLETE the cost is a refusal, which renders nothing and creates no
+> absence; if it is too BROAD the cost is an assertion reaching a patient. The
+> two are not comparable, so it errs at the first.
+
+**Word boundaries are load-bearing here too** (§6v's `bone`/`hormone`, again):
+`prove` is a substring of **improve**, which is an entirely likely word in this
+vocabulary. `improve`, `improved`, `meaning` and `demeanour` are all allowed,
+and a test pins that.
+
+**Known over-refusals, both costing a paragraph rather than a leak:** the noun
+use in *"a means of assessing inflammation"* (pre-existing — `means` was always
+on the list) and `proven`. Neither fires on any live description.
+
+### THE REGRESSION TEST THIS GATE SHOULD HAVE HAD ALL ALONG
+
+`LIVE_APPROVED` in `test_finding_context.py` is **the 19 descriptions actually
+stored on Test 2 and Test 3**, generated from the database rather than written
+by hand. They came back from Gemini, passed Module 24, passed the gates, and are
+what the two readers see today.
+
+> **A TIGHTENED GATE THAT REFUSES LIVE TEXT HAS REMOVED A PARAGRAPH FROM A
+> PAGE** — the failure this module exists to avoid, arriving through the safety
+> layer rather than past it. Every candidate pattern was scored against these 19
+> before anything was chosen, and the one that shipped has zero regressions.
+
+**Seven mutants, all killed**: the gate reverted to singular-only (16 tests),
+the `mean` exception removed (5), the exception widened back to the leaking
+draft (3), `indicate` and `confirm` base forms dropped (3 and 2), the leading
+word boundary dropped (2), and the prompt no longer naming the words (1).
+
+The prompt now names these words in every form, and says "including after a
+plural subject" — §6as's lesson applied to this gate rather than the treatment
+one: a prompt forbidding `indicates` while the gate refuses `indicate` refuses
+the model for obeying it.
+
 ### STILL TO DO ON THIS
 
 Nothing on Module 34's ceiling. Both real reports are described, stored and
@@ -7580,10 +7663,11 @@ session to leave the analysis version, `clinicalReport`, `summaryProse` and
 
 ### KNOWN AND OPEN
 
-* **The certainty gate's `indicate` gap** — `_CERTAINTY` matches `indicates`
-  and `indicating` but not `indicate`, so "may indicate" passes. Hedged, so a
-  WORDING DECISION rather than a defect, but the inconsistency is unintended.
-  Carried forward from §6as, untouched.
+* ~~**The certainty gate's `indicate` gap** — hedged, so a WORDING DECISION
+  rather than a defect.~~ **WRONG ON BOTH COUNTS: A PLURAL SUBJECT EVADED THE
+  WHOLE GATE, IN EVERY VERB.** Seven of seven flat assertions passed. **ANSWERED
+  AND FIXED** — swept to base forms, with `mean` excused only before a
+  measurement noun. See the ▶ section above.
 * `--rust` is 4.38:1 on `--header` (§6am).
 * "stability band" in one trend sentence (§6an-i).
 * `origin: report_transcription` on profile rows (§6w).

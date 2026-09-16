@@ -75,6 +75,102 @@ GOOD = "A raised result of this kind is commonly associated with inflammation or
 RAISED = [{"test_name": "C-REACTIVE PROTEIN", "direction": "raised"}]
 
 
+#: THE 19 DESCRIPTIONS ACTUALLY STORED ON `Test 2.pdf` AND `Test 3.pdf`.
+#:
+#: Generated from the database, not written by hand. They came back from
+#: Gemini, passed Module 24 and passed the gates, and they are what the two
+#: readers see today -- so any gate this project tightens has to keep letting
+#: them through. Tightening a gate until it refuses live text removes a
+#: paragraph from a page, which is the failure this module exists to avoid.
+LIVE_APPROVED = (
+    # GLYSOLATED HAEMOGLOBIN ( HBA1C) -- Test 2.pdf
+    "A raised glycated hemoglobin result is commonly associated with "
+    "persistently elevated blood sugar levels over time. It can be a sign of "
+    "diabetes mellitus.",
+    # Haemoglobin -- Test 2.pdf
+    "A lowered haemoglobin result is commonly associated with anemia, which "
+    "can occur due to low iron levels or blood loss. It can also be a sign of "
+    "various underlying nutritional deficiencies or chronic health "
+    "conditions.",
+    # T.RBC -- Test 2.pdf
+    "A lowered total red blood cell count is commonly associated with anemia "
+    "or blood loss. It can also be a sign of nutritional deficiencies or "
+    "various chronic conditions.",
+    # Polymorphs -- Test 2.pdf
+    "A raised level of polymorphs, a type of white blood cell, is commonly "
+    "associated with the body's response to acute bacterial infections or "
+    "tissue inflammation. It can also be a sign of physical stress or injury.",
+    # Lymphocytes -- Test 2.pdf
+    "A lowered lymphocyte count can be a sign of a recent viral infection or "
+    "periods of significant physical stress. It is also commonly associated "
+    "with certain long-term health conditions or issues affecting the immune "
+    "system.",
+    # Monocytes -- Test 2.pdf
+    "A lowered monocyte count can be associated with certain conditions "
+    "affecting the bone marrow or acute physical stress on the body. It can "
+    "also sometimes be observed following specific types of infections or "
+    "prolonged illness.",
+    # PCV -- Test 2.pdf
+    "A lowered packed cell volume can be a sign of anemia, where the blood "
+    "has a reduced proportion of red blood cells. It is also commonly "
+    "associated with recent blood loss or certain nutritional shortages.",
+    # MCH -- Test 2.pdf
+    "A lowered MCH result is commonly associated with iron deficiency anemia "
+    "or other conditions where red blood cells contain less hemoglobin than "
+    "normal. It can also be a sign of certain inherited blood disorders, such "
+    "as thalassemia.",
+    # MCHC -- Test 2.pdf
+    "A lowered MCHC result is commonly associated with iron deficiency, where "
+    "red blood cells contain less hemoglobin than usual. It can also be a "
+    "sign of certain inherited blood conditions, such as thalassemia.",
+    # ESR -- Test 2.pdf
+    "A raised erythrocyte sedimentation rate is commonly associated with "
+    "inflammation in the body. It can be a sign of various underlying issues, "
+    "such as infections, autoimmune disorders, or tissue injury.",
+    # CRP (C-REACTIVE PROTEIN) -- Test 2.pdf
+    "A raised C-reactive protein level is commonly associated with "
+    "inflammation somewhere in the body. This response can be triggered by "
+    "various factors such as infections, tissue injury, or immune system "
+    "activity.",
+    # SGPT -- Test 2.pdf
+    "A raised SGPT level is commonly associated with inflammation or stress "
+    "affecting the liver. This finding can be a sign of various liver "
+    "conditions, such as fatty liver or hepatitis.",
+    # GLYCATED HAEMOGLOBIN (HBA1C) -- Test 3.pdf
+    "A raised glycated haemoglobin (HbA1c) result is commonly associated with "
+    "prediabetes or diabetes, reflecting higher average blood sugar levels "
+    "over the preceding two to three months. It can also be a sign of an "
+    "increased risk of developing cardiovascular complications.",
+    # RANDOM BLOOD GLUCOSE ( RBS ) -- Test 3.pdf
+    "A raised random blood glucose level is commonly associated with diabetes "
+    "or prediabetes, which affect how the body processes sugar. It can also "
+    "be a sign of recent food intake, physical stress, acute illness, or "
+    "certain hormonal imbalances.",
+    # HEMOGLOBIN -- Test 3.pdf
+    "A lowered hemoglobin level is commonly associated with anemia, which can "
+    "be a sign of iron deficiency, blood loss, or chronic kidney disease. It "
+    "is also frequently associated with nutritional deficiencies, bone marrow "
+    "disorders, and ongoing inflammatory conditions.",
+    # NEUTROPHILS -- Test 3.pdf
+    "A raised neutrophil count is commonly associated with bacterial "
+    "infections, acute inflammation, or physical stress. It can also be a "
+    "sign of tissue injury or various underlying medical conditions.",
+    # LYMPHOCYTES -- Test 3.pdf
+    "A lowered lymphocyte count can be a sign of a recent viral infection or "
+    "periods of significant physical stress. It is also commonly associated "
+    "with certain long-term health conditions or issues affecting the immune "
+    "system.",
+    # ESR -- Test 3.pdf
+    "A raised erythrocyte sedimentation rate is commonly associated with "
+    "inflammation in the body. It can be a sign of various underlying issues, "
+    "such as infections, autoimmune disorders, or tissue injury.",
+    # C-REACTIVE PROTEIN(CRP) -- Test 3.pdf
+    "A raised C-reactive protein level is commonly associated with "
+    "inflammation somewhere in the body. It can be a sign of infections, "
+    "tissue injury, or various inflammatory conditions.",
+)
+
+
 # --------------------------------------------------------------------------
 # GATE 0 -- no patient data ever reaches the prompt
 # --------------------------------------------------------------------------
@@ -173,11 +269,144 @@ def test_a_statement_of_certainty_is_refused(guard, reply):
     assert out.entries[0].refused_by == "certainty"
 
 
+@pytest.mark.parametrize(
+    "reply",
+    [
+        # THE GATE WAS WRITTEN IN THE THIRD-PERSON SINGULAR AND NOTHING ELSE,
+        # so every one of these passed. Only the subject is plural; the claim
+        # is identical to the singular cases above and just as assertive.
+        "Raised results indicate a bacterial infection.",
+        "Raised results mean inflammation is present.",
+        "Lowered results confirm iron deficiency.",
+        "Raised results diagnose diabetes.",
+        "Raised results prove an infection.",
+        "Raised results demonstrate liver injury.",
+        "Raised results show that the liver is inflamed.",
+        "Raised results are caused by infection.",
+        # Past tense and participles, swept at the same time.
+        "A raised result indicated an infection.",
+        "The infection was confirmed by the result.",
+        "An infection has been proven by this result.",
+        "These results showed that the liver is inflamed.",
+        # §6as named this one and called it a wording decision. It is refused
+        # now, with the rest -- but note it was never the interesting case.
+        "A raised result may indicate an infection.",
+    ],
+)
+def test_a_plural_subject_does_not_evade_the_certainty_gate(guard, reply):
+    """`indicates` was listed and `indicate` was not, in EVERY verb.
+
+    Measured before the fix: seven of seven flat assertions passed as soon as
+    the subject was plural. The base form is not the hedged form -- it is the
+    form the verb takes after a plural subject.
+    """
+    out = fc.describe_findings(RAISED, llm=FakeLLM(reply))
+    assert out.entries[0].available is False
+    assert out.entries[0].refused_by == "certainty"
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        # MCH AND MCHC ARE FINDINGS ON Test 2.pdf and their names ARE the word
+        # "mean". A description that spells the acronym out must survive.
+        "MCH stands for mean corpuscular haemoglobin, a measure of the average "
+        "amount of haemoglobin carried in a red blood cell.",
+        "MCHC refers to mean corpuscular haemoglobin concentration.",
+        "Mean platelet volume describes the average size of platelets.",
+        "Mean cell volume is a measure of red blood cell size.",
+        "Mean arterial pressure is an average over the cardiac cycle.",
+    ],
+)
+def test_mean_in_a_measurement_name_is_not_a_claim(guard, reply):
+    """Adding `mean` bare refused four of six real laboratory phrases.
+
+    The exception is narrow on purpose: only words that cannot begin a claim
+    follow "mean" here. If it is ever incomplete the cost is a refusal, which
+    renders nothing and creates no absence.
+    """
+    out = fc.describe_findings(
+        [{"test_name": "MCH", "direction": "lowered"}], llm=FakeLLM(reply)
+    )
+    assert out.entries[0].available is True, out.entries[0].refused_by
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        # THE LEAK A FIRST DRAFT OF THE EXCEPTION LIST ALLOWED. It excused
+        # `mean` before `blood` and `value` as well, which let a flat assertion
+        # about a person through the exception meant to protect a test name.
+        "Raised results mean blood sugar is high.",
+        "Lowered results mean blood loss has occurred.",
+        "Raised results mean value judgements are needed.",
+    ],
+)
+def test_the_mean_exception_does_not_excuse_a_claim(guard, reply):
+    out = fc.describe_findings(RAISED, llm=FakeLLM(reply))
+    assert out.entries[0].available is False
+    assert out.entries[0].refused_by == "certainty"
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        # WORD BOUNDARIES ARE LOAD-BEARING, and this is the glossary's
+        # `bone`/`hormone` lesson in a new vocabulary (§6v). `prove` is a
+        # substring of IMPROVE, which is an entirely likely word here; `mean`
+        # sits inside `meaning` and `demeanour`. Without the boundaries a
+        # perfectly general sentence is thrown away.
+        "Levels often improve once the underlying cause is addressed.",
+        "An improved result is commonly seen after the cause resolves.",
+        "The meaning of this test is often misunderstood.",
+    ],
+)
+def test_a_listed_word_inside_a_longer_word_is_not_a_claim(guard, reply):
+    out = fc.describe_findings(RAISED, llm=FakeLLM(reply))
+    assert out.entries[0].available is True, out.entries[0].refused_by
+
+
+def test_the_certainty_pattern_carries_no_backspace():
+    """The backspace accident, twice in this codebase (§6as).
+
+    `\\b` written through a shell heredoc arrives as `\\x08` and the pattern
+    matches nothing, silently. A regex cannot be reviewed by eye -- the two are
+    indistinguishable in a diff -- so the COMPILED pattern is asserted instead.
+    """
+    assert "\x08" not in fc._CERTAINTY.pattern
+
+
+def test_the_prompt_names_the_certainty_words_the_gate_measures():
+    """§6as's lesson, applied to this gate instead of the treatment one.
+
+    The gate refuses base forms now. A prompt that forbade only "indicates"
+    while the gate refused "indicate" would refuse the model for obeying it --
+    which is exactly how four of six findings were lost on a real report.
+    """
+    prompt = fc._prompt("FERRITIN", "raised")
+    for word in ("mean", "indicate", "confirm", "diagnose", "prove",
+                 "demonstrate", "shows that", "is caused by"):
+        assert word in prompt, word
+    assert "plural" in prompt.lower(), "the prompt does not mention the form that evaded the gate"
+
+
 def test_an_association_is_allowed_through(guard):
     out = fc.describe_findings(RAISED, llm=FakeLLM(GOOD))
     assert out.entries[0].available is True
     assert "commonly associated with" in out.entries[0].text
     assert out.generated_count == 1
+
+
+def test_every_live_approved_description_still_passes_the_gate(guard):
+    """REGRESSION, from the 19 descriptions actually stored on the two real
+    reports. A tightened gate that refuses text a reader is seeing today has
+    removed a paragraph, and that is the failure this module exists to avoid.
+
+    These are the real approved texts, not paraphrases -- the ones that came
+    back from Gemini, passed Module 24 and are in Mongo now.
+    """
+    for text in LIVE_APPROVED:
+        assert fc._check(text) is None, text
 
 
 # --------------------------------------------------------------------------

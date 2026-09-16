@@ -37,9 +37,15 @@ So the question is narrowed until it is safe to ask, exactly as
      address the reader cannot be a statement about the reader's health. It
      is checkable, unlike "is this inference correct", which is not.
 
-  4. NO CERTAINTY ABOUT A PERSON. "means", "indicates", "confirms",
-     "diagnoses" and "is caused by" are refused; "associated with", "can be a
-     sign of", "commonly seen in" are what a general statement sounds like.
+  4. NO CERTAINTY ABOUT A PERSON. "mean", "indicate", "confirm", "diagnose",
+     "prove", "demonstrate", "shows that" and "is caused by" are refused, IN
+     EVERY FORM -- the base form as well as the third-person singular, because
+     "raised levels indicate infection" is a flat assertion in which only the
+     subject is plural. "Associated with", "can be a sign of" and "commonly
+     seen in" are what a general statement sounds like. The one excused use is
+     "mean" immediately before a measurement noun, because MCH and MCHC are
+     "Mean Corpuscular Haemoglobin" and a description that spells either out
+     must not be thrown away.
 
   5. MODULE 24, the same validator every other model text passes.
 
@@ -170,9 +176,51 @@ _SPELLED_NUMBER = re.compile(
 _SECOND_PERSON = re.compile(r"\b(you|your|yours|yourself|you're|youre)\b", re.IGNORECASE)
 
 #: Words that turn an association into a finding about a person.
+#:
+#: EVERY VERB WAS LISTED IN THE THIRD-PERSON SINGULAR ONLY, SO A PLURAL SUBJECT
+#: WALKED PAST THE WHOLE GATE. §6as recorded the symptom as a wording decision
+#: -- `indicates` and `indicating` were here but not `indicate`, so "may
+#: indicate" passed, and being hedged that was arguably fine. It was not one
+#: word and it was not about hedging: measured, SEVEN OF SEVEN flat assertions
+#: passed as soon as the subject was plural.
+#:
+#:     "A raised result indicates a bacterial infection."  refused
+#:     "Raised results indicate a bacterial infection."    ALLOWED
+#:
+#: and the same for mean, confirm, diagnose, prove, demonstrate and show that.
+#: The base form is not the hedged form -- it is the form the verb takes after
+#: a plural subject, which is exactly as assertive. Swept to base forms rather
+#: than patched at `indicate`, for the reason §6ar swept `UNIT_ALIASES`: the
+#: hole was the shape of the list, not the one entry that exposed it.
+#:
+#: ⚠ `mean` CANNOT BE ADDED BARE, AND THE REASON IS ON THIS PROJECT'S OWN
+#: FIXTURES. MCH and MCHC are `Mean Corpuscular Haemoglobin` and its
+#: concentration, and both are findings on `Test 2.pdf`. A description that
+#: expands either acronym contains "mean corpuscular" and would be refused --
+#: not occasionally, but every time the model spells the name out. So the
+#: noun-adjunct use is excused before the words that only ever continue a
+#: MEASUREMENT NAME.
+#:
+#: THE EXCEPTION LIST IS DELIBERATELY NARROW, AND A FIRST DRAFT OF IT LEAKED.
+#: It also had `blood` and `value`, which excused "Raised results mean BLOOD
+#: sugar is high" -- a flat assertion about a person, allowed by the very
+#: exception meant to protect a test name. Only words that cannot begin a claim
+#: are listed. If the list is INCOMPLETE the cost is a refusal, and a refusal
+#: here renders nothing and creates no absence; if it were too BROAD the cost
+#: is an assertion reaching a patient. The two failures are not comparable, so
+#: this errs at the first.
 _CERTAINTY = re.compile(
-    r"\b(means|indicates|indicating|confirms|confirming|diagnoses|diagnosis|"
-    r"diagnostic|proves|demonstrates|shows that|is caused by|you have)\b",
+    r"\b(?:"
+    r"mean(?!\s+(?:corpuscular|cell|platelet|arterial))s?|meant|"
+    r"indicate[sd]?|indicating|"
+    r"confirm(?:s|ed)?|confirming|"
+    r"diagnose[sd]?|diagnosing|diagnosis|diagnostic|"
+    r"prove[sdn]?|proving|"
+    r"demonstrate[sd]?|demonstrating|"
+    r"shows? that|showed that|"
+    r"is caused by|are caused by|"
+    r"you have"
+    r")\b",
     re.IGNORECASE,
 )
 
@@ -256,8 +304,17 @@ def _prompt(test_name: str, direction: str, feedback: Optional[str] = None) -> s
         "Rules you must follow:\n"
         "- Write in general terms. Do NOT address the reader. Never use the "
         "words 'you' or 'your'.\n"
-        "- Say what it is COMMONLY ASSOCIATED WITH or CAN BE A SIGN OF. Never "
-        "say what it means, indicates, confirms or is caused by.\n"
+        "- Say what it is COMMONLY ASSOCIATED WITH or CAN BE A SIGN OF.\n"
+        # NAMING THESE WORDS TOO, and in every form, for the same reason the
+        # treatment list below names its own: the gate measures WORDS. It now
+        # refuses the base form as well as the third-person singular, because
+        # "raised levels indicate infection" is a flat assertion and only the
+        # subject was plural. A prompt that forbade "indicates" while the gate
+        # refused "indicate" would refuse the model for obeying it.
+        "- Never use any of these words, in any form -- including after a "
+        "plural subject: mean, means, indicate, indicates, confirm, confirms, "
+        "diagnose, diagnoses, diagnosis, prove, proves, demonstrate, "
+        "demonstrates, 'shows that', 'is caused by'.\n"
         "- Do not state any number, range, threshold or cut-off.\n"
         "- Do not say anyone has, likely has, or does not have a condition.\n"
         "- Do not give advice or recommend a test or next step.\n"
