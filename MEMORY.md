@@ -35,8 +35,8 @@ about any of them. That is the fifth time on this project.
 |---|---|
 | `backend/` (Node/Express) | **670** passing + 3 opt-in live |
 | `ai-service/` (Python/FastAPI) | **3,903** passing + 7 skipped (3,910 collected) |
-| `frontend/` (React/Vitest) | **329** passing, 0 suites failed |
-| **Total** | **4,902** -- ALL THREE re-run green 2026-09-16 |
+| `frontend/` (React/Vitest) | **332** passing, 0 suites failed |
+| **Total** | **4,905** -- ALL THREE re-run green 2026-09-16 |
 
 > **⚠ THE 4,852 IN EVERY EARLIER SECTION WAS 7 TOO HIGH.** §6as recorded
 > ai-service's COLLECTED total (3,865) as its PASSED count; that day's real
@@ -73,7 +73,7 @@ about any of them. That is the fifth time on this project.
 > consolidated onto `main`, and the commit messages were then rewritten to
 > carry no co-author trailer. **Nothing carries one; do not add one.**
 >
-> All 4,902 tests pass and all three suites ran 2026-09-16. §6x is the design
+> All 4,905 tests pass and all three suites ran 2026-09-16. §6x is the design
 > system; §6z–§6ah and §6aj–§6ao are the earlier sessions; **§6aq, §6ar, §6as
 > and §6at are the recent ones** — two real laboratory reports driven through
 > the app, the three lookup defects they exposed (a parenthetical, a
@@ -7330,8 +7330,8 @@ described including the CRP that was being dropped. See the ✅ section below.
 |---|---|---|
 | `backend/` | **670** passed, 3 skipped, 0 suites failed | 2026-09-16 ✅ |
 | `ai-service/` | **3,903** passed, 7 skipped, 0 failures (3,910 collected) | 2026-09-16 ✅ (`.env` moved aside) |
-| `frontend/` | **329** passed, **0 suites failed** | 2026-09-16 ✅ |
-| **Total** | **4,902** | |
+| `frontend/` | **332** passed, **0 suites failed** | 2026-09-16 ✅ |
+| **Total** | **4,905** | |
 
 One task: settle Module 34's six-finding ceiling, which §6as left open as a
 decision about a hypothetical report. **It was not hypothetical and it was not
@@ -8185,6 +8185,93 @@ Result: `requested 17, generated 17, cached 0, withheld 0, skipped 0`, 82.9s.
 
 > **GEMINI IS SPENT FOR THE DAY.** All three models in the chain — 3.6-flash,
 > 3.5-flash and 3.5-flash-lite — hit their daily limits during this session.
+
+### ▶ "NO DIRECTION" OVER A LINE THAT CLIMBS — AND THE REFUSAL WAS RIGHT
+
+The reader, of their own blood-sugar chart: *"why no direction as the graph is
+changing?"* The line runs 88 → 168. Module 28's actual answer:
+
+```
+blood_glucose   NOT_COMPARABLE_SAMPLE_TIMING   trend: null
+   92    mg/dl  fasting    9 Sept
+   88    mg/dl  fasting   11 Sept
+  134.7  mg/dl  random    12 Sept
+  168    mg/dl  random    13 Sept
+```
+
+**The first two readings are FASTING and the last two are RANDOM.** Most of the
+climb is the change of test, not a change in the reader — so the refusal is
+correct, and naming a direction there would have been the invention this
+project exists to avoid.
+
+> **THE SERVICE HAD ALREADY EXPLAINED ITSELF AND THE PAGE PUT IT SOMEWHERE
+> ELSE.** `trend.reason` carried the whole sentence — *"Blood glucose readings
+> were taken under different sample timings (fasting, random). Those are not
+> comparable quantities, so no trend is reported."* — and `Timeline.jsx`
+> rendered it **in the table below the charts**. Which is no use to somebody
+> looking at the picture: the panel said "no direction", the chart drew a
+> rising line, and the two contradicted each other with the reconciliation a
+> scroll away.
+
+The sentence is now on the panel it belongs to. Nothing was generated and
+nothing was reworded — it was in the payload the whole time, rendered in the
+wrong place.
+
+> **AN EXPLANATION IN THE WRONG PLACE IS CLOSER TO A MISSING ONE THAN IT
+> LOOKS.** Every check this project runs said this was working: the payload had
+> the reason, the page rendered the reason, a test asserted the reason. It took
+> a reader looking at a picture to find that none of that put it where the
+> question is asked.
+
+### STILL OPEN ON THAT CHART
+
+**The line is still drawn across all four points.** If two of them are fasting
+and two are random, connecting them asserts a continuous series that the panel
+immediately refuses to characterise. The text now resolves the contradiction;
+the picture still states it. Not comparable readings arguably should not be
+joined by one stroke at all — that is a chart change and it was not made here.
+
+### WHAT MODULE 28 ANSWERS FOR THIS ACCOUNT, IN FULL
+
+```
+hba1c            TREND_CLASSIFIED               worsening
+vitamin_d        TREND_CLASSIFIED               improving
+vitamin_b12      TREND_CLASSIFIED               improving
+creatinine       TREND_CLASSIFIED               improving
+cholesterol      TREND_CLASSIFIED               stable
+triglycerides    TREND_CLASSIFIED               stable
+bmi              TREND_CLASSIFIED               stable
+blood_glucose    NOT_COMPARABLE_SAMPLE_TIMING   --
+hemoglobin       CLINICAL_DIRECTION_UNKNOWN     --
+age              NOT_TRENDABLE                  --
+smoking_history  NOT_NUMERIC                    --
+gender           NOT_NUMERIC                    --
+```
+
+### AND WHAT POPULATION CONTEXT COVERS, CHECKED AT THE SAME TIME
+
+Seven features have a published distribution — `bmi`, `cholesterol`,
+`creatinine`, `hba1c`, `hemoglobin`, `vitamin_b12`, `vitamin_d`. On Test 3 that
+is **8 examined, 4 banded, 4 refused**, and the page accounts for every one:
+four cards, a card for `blood_glucose` carrying its full message, and the three
+non-measurements named in a single line. **Nothing is dropped**, and the
+backend deliberately forwards uncovered features rather than filtering them, so
+a second coverage table cannot drift from the service's.
+
+> ⚠ **BUT THE GLUCOSE EXCLUSION MESSAGE IS WRONG ABOUT WHY.** It says *"neither
+> this service nor the uploaded report reliably records fasting status"* —
+> and `clinical_rules.sample_timing()` recovers exactly that from the printed
+> name (`RANDOM BLOOD GLUCOSE ( RBS )` → `random`), which is how Module 20 knew
+> to use the 140 post-load boundary instead of the 126 fasting one, and how the
+> trend refusal above was reached.
+>
+> The OUTCOME is still right for two other reasons: no glucose distribution is
+> shipped at all, and the backend sends Module 31 only `feature/value/unit`, so
+> the timing never reaches it. But *"the information does not exist"* forecloses
+> the option, while *"we ship no table and do not forward the timing"* is a
+> choice someone could revisit. **The same wording appears in three places**
+> (`policy.py`'s message, `populationController.js:122`, `Population.jsx:178`)
+> and is unfixed.
 
 ### STILL TO DO ON THIS
 

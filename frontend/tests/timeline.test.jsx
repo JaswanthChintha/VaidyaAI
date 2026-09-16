@@ -1002,3 +1002,111 @@ describe('the trend charts collapse', () => {
   });
 });
 
+
+/**
+ * WHY A CHART HAS NO DIRECTION, ON THE CHART.
+ *
+ * Found by a reader looking at their own blood-sugar chart: a line climbing
+ * from 88 to 168 under the words "no direction". The service had already
+ * explained itself -- Module 28 returned
+ *
+ *   NOT_COMPARABLE_SAMPLE_TIMING
+ *   "Blood glucose readings were taken under different sample timings
+ *    (fasting, random). Those are not comparable quantities, so no trend is
+ *    reported."
+ *
+ * -- and the page was already rendering that sentence, in the TABLE further
+ * down. Which is no use at all to someone looking at the picture.
+ *
+ * The refusal itself is correct: on that account the first two readings are
+ * fasting and the last two random, so most of the climb is the change of
+ * test rather than a change in the reader.
+ */
+describe('Module 28 -- the chart says why it has no direction', () => {
+  const noDirection = (feature, outcome, reason) => ({
+    feature,
+    outcome,
+    trend: null,
+    reason,
+    canonical_unit: 'mg/dl',
+    points: [
+      { date: '2026-09-09', value: 88, unit: 'mg/dl' },
+      { date: '2026-09-13', value: 168, unit: 'mg/dl' },
+    ],
+  });
+
+  const TIMING = 'Blood glucose readings were taken under different sample '
+    + 'timings (fasting, random). Those are not comparable quantities, so no '
+    + 'trend is reported.';
+
+  it('puts the service sentence on the panel, not only in the table', async () => {
+    mount({
+      trends: {
+        trends: {
+          features: {
+            blood_glucose: noDirection(
+              'blood_glucose',
+              'NOT_COMPARABLE_SAMPLE_TIMING',
+              TIMING
+            ),
+          },
+        },
+        history: { included: 4, considered: 4 },
+      },
+    });
+
+    await screen.findByText(/Trends over time/);
+    const block = [...document.querySelectorAll('.trend-chart__block')][0];
+    const why = block.querySelector('.trend-chart__why');
+    expect(why).not.toBeNull();
+    expect(why.textContent).toMatch(/different sample timings/);
+    expect(why.textContent).toMatch(/fasting, random/);
+  });
+
+  it('says nothing extra when the direction WAS classified', async () => {
+    // A panel that explains itself when there is nothing to explain is noise.
+    mount({
+      trends: {
+        trends: {
+          features: {
+            hba1c: {
+              feature: 'hba1c',
+              outcome: 'TREND_CLASSIFIED',
+              trend: 'improving',
+              reason: 'A sentence the panel must NOT show, because there is a direction.',
+              canonical_unit: '%',
+              points: [
+                { date: '2026-09-07', value: 8.4, unit: '%' },
+                { date: '2026-09-11', value: 5.2, unit: '%' },
+              ],
+            },
+          },
+        },
+        history: { included: 2, considered: 2 },
+      },
+    });
+
+    await screen.findByText(/Trends over time/);
+    const block = [...document.querySelectorAll('.trend-chart__block')][0];
+    expect(block.querySelector('.trend-chart__why')).toBeNull();
+  });
+
+  it('adds nothing when the service gave no sentence', async () => {
+    // The fallback wording belongs to the table row, which has a column to
+    // fill. A panel invents nothing.
+    mount({
+      trends: {
+        trends: {
+          features: {
+            blood_glucose: noDirection('blood_glucose', 'INSUFFICIENT_DATA', undefined),
+          },
+        },
+        history: { included: 1, considered: 1 },
+      },
+    });
+
+    await screen.findByText(/Trends over time/);
+    const block = [...document.querySelectorAll('.trend-chart__block')][0];
+    expect(block.querySelector('.trend-chart__why')).toBeNull();
+  });
+});

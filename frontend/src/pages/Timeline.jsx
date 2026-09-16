@@ -231,6 +231,20 @@ function Trends({ data, history }) {
               )}
               <span className="disclosure__chevron" aria-hidden="true" />
             </summary>
+            {/* WHY THERE IS NO DIRECTION, ON THE CHART ITSELF.
+                The service's own sentence was already in the payload and was
+                already shown -- in the TABLE, further down the page. So a
+                reader looking at the picture saw a line climbing from 88 to
+                168 under the words "no direction" and had nothing to
+                reconcile the two with until they scrolled.
+                On this account that chart is four glucose readings of which
+                the first two are FASTING and the last two RANDOM: the climb
+                is mostly the change of test, not a change in the reader. The
+                refusal is right and it was the only thing on screen that was
+                not explained. */}
+            {!declared && isPresent(trend.reason) ? (
+              <p className="trend-chart__why">{trend.reason}</p>
+            ) : null}
             <TrendChart {...props} />
           </details>
         );

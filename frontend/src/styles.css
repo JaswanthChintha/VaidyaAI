@@ -1521,3 +1521,19 @@ code, kbd, samp, pre { font-family: var(--font-mono); }
 .page-link::after { content: "\2192"; color: var(--mono); }
 .page-link:hover { border-color: var(--mono); color: var(--ink); }
 .page-link:hover::after { color: var(--brand); }
+
+/* WHY A CHART HAS NO DIRECTION, stated on the chart.
+   The service's sentence was already rendered in the table below the charts,
+   which is no use to a reader looking at the picture: on this project's own
+   data that meant a line climbing from 88 to 168 under the words "no
+   direction", with the explanation a scroll away. Quiet, because it qualifies
+   the panel rather than competing with it. */
+.trend-chart__why {
+  margin: 0 14px 10px;
+  padding: 9px 12px;
+  background: var(--header);
+  border-radius: 8px;
+  color: var(--mono);
+  font-size: 13px;
+  line-height: 1.45;
+}
