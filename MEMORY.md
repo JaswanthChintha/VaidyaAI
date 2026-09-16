@@ -35,8 +35,8 @@ about any of them. That is the fifth time on this project.
 |---|---|
 | `backend/` (Node/Express) | **670** passing + 3 opt-in live |
 | `ai-service/` (Python/FastAPI) | **3,903** passing + 7 skipped (3,910 collected) |
-| `frontend/` (React/Vitest) | **330** passing, 0 suites failed |
-| **Total** | **4,903** -- ALL THREE re-run green 2026-09-16 |
+| `frontend/` (React/Vitest) | **333** passing, 0 suites failed |
+| **Total** | **4,906** -- ALL THREE re-run green 2026-09-16 |
 
 > **⚠ THE 4,852 IN EVERY EARLIER SECTION WAS 7 TOO HIGH.** §6as recorded
 > ai-service's COLLECTED total (3,865) as its PASSED count; that day's real
@@ -73,7 +73,7 @@ about any of them. That is the fifth time on this project.
 > consolidated onto `main`, and the commit messages were then rewritten to
 > carry no co-author trailer. **Nothing carries one; do not add one.**
 >
-> All 4,903 tests pass and all three suites ran 2026-09-16. §6x is the design
+> All 4,906 tests pass and all three suites ran 2026-09-16. §6x is the design
 > system; §6z–§6ah and §6aj–§6ao are the earlier sessions; **§6aq, §6ar, §6as
 > and §6at are the recent ones** — two real laboratory reports driven through
 > the app, the three lookup defects they exposed (a parenthetical, a
@@ -7330,8 +7330,8 @@ described including the CRP that was being dropped. See the ✅ section below.
 |---|---|---|
 | `backend/` | **670** passed, 3 skipped, 0 suites failed | 2026-09-16 ✅ |
 | `ai-service/` | **3,903** passed, 7 skipped, 0 failures (3,910 collected) | 2026-09-16 ✅ (`.env` moved aside) |
-| `frontend/` | **330** passed, **0 suites failed** | 2026-09-16 ✅ |
-| **Total** | **4,903** | |
+| `frontend/` | **333** passed, **0 suites failed** | 2026-09-16 ✅ |
+| **Total** | **4,906** | |
 
 One task: settle Module 34's six-finding ceiling, which §6as left open as a
 decision about a hypothetical report. **It was not hypothetical and it was not
@@ -7994,6 +7994,55 @@ third time on this project.
 > **USE Write/Edit FOR FILE CONTENT. Not `python -c`, not a heredoc.** The
 > assertion that caught it was `chr(8) in source`, which every change to this
 > file should keep running.
+
+### ▶ THE SECTIONS THAT VANISHED WHEN THE NARRATIVE STARTED WORKING
+
+The reader: *"those points are gone, which are out of range parameters … where
+are those, before it was there now it was gone, why?"* — the Module 34 general
+context blocks, missing from the clinician page.
+
+Two different causes, and the second is the defect.
+
+**1. THE PATIENT DASHBOARD WAS NOT BROKEN — IT WAS SLOW.** Restarting the
+ai-service wiped its process cache, so the next request regenerated all seven
+findings: **48.5 seconds**, logged as `200 ... 48485.989 ms`. The screenshot was
+taken before it landed; the following request took 169 ms. `Dashboard.jsx` was
+untouched this session and its rendering is correct — `context.length` sits
+outside the `prose` ternary, exactly as §6ar describes.
+
+> **§6as's FIRST LESSON, ARRIVING AS A QUESTION INSTEAD OF A MISTAKE.** An
+> empty result during a slow request is not a result. The stored document had
+> all seven entries with text, the right analysis version and the right hash;
+> checking that BEFORE looking at the renderer is what kept this from being
+> reported as a second defect.
+
+**2. THE CLINICIAN PAGE GENUINELY LOST THEM, AND THE REASON IS A TERNARY.**
+
+`DoctorSummary.jsx` renders a written narrative OR the composed passage. **The
+Module 34 blocks and the unassessed table both sat inside the ELSE**, so they
+rendered only when the narrative FAILED.
+
+The block's own comment said:
+
+> *"Above the closing line … and outside everything the narrative may rewrite."*
+
+That was the intent. The ternary was the code.
+
+> **IT STAYED INVISIBLE BECAUSE THE FEATURE IT DEPENDED ON WAS USUALLY
+> BROKEN.** While the narrative was mostly refused — quota, safety, a failed
+> fact check — the composed branch rendered and everything showed. The moment
+> the narrative generated reliably, both sections disappeared. **A bug that
+> only appears once something else starts working will not be found by the
+> tests that were written while it was failing.**
+
+And every existing test on that page mounts with `narrative: null`. All of them
+exercised the branch that worked. **The unassessed table added earlier in this
+same session had therefore never rendered on a page with a narrative at all** —
+it was built, tested, verified against the payload, and placed where the reader
+could not see it.
+
+Both sections are lifted out of the ternary now. Three tests, and a mutant that
+re-hides them is killed by exactly the two written for it.
 
 ### STILL TO DO ON THIS
 

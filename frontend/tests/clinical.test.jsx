@@ -946,3 +946,108 @@ describe('Module 32 - reported, not assessed', () => {
     expect(screen.queryByText(/Reported, not assessed/)).toBeNull();
   });
 });
+
+/**
+ * Module 32 -- THE SECTIONS THAT ARE NOT PART OF THE NARRATIVE.
+ *
+ * THE DEFECT: this page is a ternary -- the written narrative, OR the composed
+ * passage -- and the Module 34 context blocks and the unassessed table both
+ * sat inside the ELSE. They rendered only when the narrative FAILED.
+ *
+ * The block's own comment said "outside everything the narrative may rewrite",
+ * which was the intent and not the code. It stayed invisible while the
+ * narrative was usually refused; the moment it generated reliably, both
+ * sections vanished and the reader asked where they had gone.
+ *
+ * Every existing test on this page mounts with `narrative: null`, so all of
+ * them exercised the branch that worked.
+ */
+describe('Module 32 - sections that survive a generated narrative', () => {
+  const MINIMAL = {
+    overall: { status_label: 'Needs Medical Attention', clean_bill_of_health: false },
+    attribution: { report_date: '2026-09-07T04:00:14.776000Z' },
+    patient: { age: 20, gender: 'male' },
+    data_quality: { page_count: 2, pages_unreadable: [], partial_document: false },
+    // A ROW THE LABORATORY ITSELF MARKED. The context effect derives its
+    // findings from printed_flag, so a fixture with no rows never asks and
+    // the test would pass with the section absent for the wrong reason.
+    laboratory: {
+      total: 1,
+      rows: [
+        {
+          feature: 'neutrophils',
+          display_name: 'Neutrophils',
+          value: 78,
+          unit: '%',
+          usable: true,
+          printed_flag: 'high',
+          provenance: {
+            source: 'lab_report',
+            original_test_name: { text: 'NEUTROPHILS', state: 'CLEAN' },
+          },
+        },
+      ],
+    },
+    assessments: [],
+  };
+
+  const UNASSESSED = {
+    count: 1,
+    labFlaggedCount: 1,
+    items: [
+      {
+        testName: 'CRP (C-REACTIVE PROTEIN)',
+        value: '12.1',
+        unit: 'mg/L',
+        labFlag: 'high',
+        labFlaggedAbnormal: true,
+        labReferenceLow: 0,
+        labReferenceHigh: 6,
+      },
+    ],
+  };
+
+  const NARRATIVE = {
+    outcome: 'generated',
+    text: 'This tool flagged Diabetes because HbA1c was 7 %.',
+  };
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.spyOn(api, 'describeFindings').mockResolvedValue({
+      context: {
+        entries: [
+          {
+            test_name: 'NEUTROPHILS',
+            direction: 'raised',
+            available: true,
+            text: 'A raised neutrophil count is commonly associated with infection.',
+          },
+        ],
+      },
+    });
+  });
+
+  it('keeps the general-context blocks when a narrative WAS generated', async () => {
+    mountSummary(MINIMAL, {}, NARRATIVE, UNASSESSED);
+    // The narrative renders...
+    await screen.findByText(/This tool flagged Diabetes/);
+    // ...and so does the context that has nothing to do with it.
+    await screen.findByText(/commonly associated with infection/);
+    // The name carries its direction in the same element.
+    expect(screen.getByText(/NEUTROPHILS \(raised\)/)).toBeInTheDocument();
+  });
+
+  it('keeps the unassessed table when a narrative WAS generated', async () => {
+    mountSummary(MINIMAL, {}, NARRATIVE, UNASSESSED);
+    await screen.findByText(/This tool flagged Diabetes/);
+    await screen.findByText(/Reported, not assessed by this tool \(1\)/);
+    expect(screen.getByText('12.1 mg/L')).toBeInTheDocument();
+  });
+
+  it('still shows both when there is NO narrative', async () => {
+    mountSummary(MINIMAL, {}, null, UNASSESSED);
+    await screen.findByText(/commonly associated with infection/);
+    await screen.findByText(/Reported, not assessed by this tool \(1\)/);
+  });
+});

@@ -470,94 +470,107 @@ export default function DoctorSummary() {
           </p>
         ) : null}
 
-        {/* WHAT THE LABORATORY'S OWN MARKINGS ARE GENERALLY ASSOCIATED WITH.
-            Above the closing line, which keeps the last word, and outside
-            everything the narrative may rewrite. Each sentence is about the
-            TEST and the DIRECTION -- the same sentence for any report with a
-            raised neutrophil count -- so it carries no attribution: there is
-            no claim about this patient in it to attribute. */}
-        {findingContext.length ? (
-          <div className="passage__context">
-            {findingContext.map((entry, index) => (
-              <p key={`${entry.test_name}-${index}`}>
-                <strong>
-                  {entry.test_name}
-                  {entry.direction === 'raised' ? ' (raised)' : ' (lowered)'}
-                </strong>{' '}
-                {entry.text}
-              </p>
-            ))}
-          </div>
-        ) : null}
-
-        {/* THE PARAMETERS THIS PLATFORM DOES NOT ASSESS, WITH THEIR VALUES.
-            The paragraphs above state how many; a clinician needs to read
-            them. These are the laboratory's own values, units, flags and
-            printed intervals, carried forward untouched -- this tool asserts
-            nothing about any of them, which is exactly why they are here
-            rather than in the assessed table.
-
-            No descriptions. The patient page explains what ESR measures;
-            this reader knows. */}
-        {unassessed && unassessed.count > 0 ? (
-          <div className="passage__unassessed">
-            <h3>
-              Reported, not assessed by this tool ({unassessed.count})
-            </h3>
-            <p>
-              Read from the document and set aside because no assessment rule
-              here covers them &mdash; <strong>not</strong> found normal. Values,
-              units and flags are the laboratory&rsquo;s own.
-            </p>
-            <table className="lab-table">
-              <caption className="visually-hidden">
-                Parameters reported by the laboratory that this tool does not
-                assess
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col">Parameter</th>
-                  <th scope="col">Value</th>
-                  <th scope="col">Reference</th>
-                  <th scope="col">Lab flag</th>
-                </tr>
-              </thead>
-              <tbody>
-                {unassessed.items.map((item, index) => (
-                  <tr key={`${item.testName}-${index}`}>
-                    <th scope="row">{item.testName}</th>
-                    <td>
-                      {item.value}
-                      {item.unit ? ` ${item.unit}` : ''}
-                    </td>
-                    <td>
-                      {item.labReferenceLow !== undefined &&
-                      item.labReferenceHigh !== undefined
-                        ? `${item.labReferenceLow}–${item.labReferenceHigh}`
-                        : item.labReferenceHigh !== undefined
-                          ? `≤ ${item.labReferenceHigh}`
-                          : item.labReferenceLow !== undefined
-                            ? `≥ ${item.labReferenceLow}`
-                            : '—'}
-                    </td>
-                    <td>
-                      {/* THE LABORATORY'S VERDICT, NAMED AS THEIRS. This tool
-                          has no opinion on these rows and must not appear to. */}
-                      {item.labFlag ? item.labFlag : '—'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : null}
-
         <p className="passage__close">
           Not a diagnosis and not a clinical conclusion. The original laboratory
           report remains the primary record.
         </p>
       </article>
       )}
+
+      {/* SHARED BY BOTH VERSIONS OF THE DOCUMENT, AND THAT IS THE POINT.
+
+          These two sections were inside the composed branch, so they
+          rendered ONLY when the written narrative failed. The comment
+          below already said "outside everything the narrative may
+          rewrite" -- that was the intent; the ternary was the code. It
+          went unnoticed while the narrative was usually refused, and the
+          moment it started generating reliably both sections disappeared
+          from the page.
+
+          Neither depends on the narrative: one is general context for a
+          direction the laboratory or this tool already decided, the other
+          is the laboratory's own rows. */}
+      {/* WHAT THE LABORATORY'S OWN MARKINGS ARE GENERALLY ASSOCIATED WITH.
+          Above the closing line, which keeps the last word, and outside
+          everything the narrative may rewrite. Each sentence is about the
+          TEST and the DIRECTION -- the same sentence for any report with a
+          raised neutrophil count -- so it carries no attribution: there is
+          no claim about this patient in it to attribute. */}
+      {findingContext.length ? (
+        <div className="passage__context">
+          {findingContext.map((entry, index) => (
+            <p key={`${entry.test_name}-${index}`}>
+              <strong>
+                {entry.test_name}
+                {entry.direction === 'raised' ? ' (raised)' : ' (lowered)'}
+              </strong>{' '}
+              {entry.text}
+            </p>
+          ))}
+        </div>
+      ) : null}
+
+      {/* THE PARAMETERS THIS PLATFORM DOES NOT ASSESS, WITH THEIR VALUES.
+          The paragraphs above state how many; a clinician needs to read
+          them. These are the laboratory's own values, units, flags and
+          printed intervals, carried forward untouched -- this tool asserts
+          nothing about any of them, which is exactly why they are here
+          rather than in the assessed table.
+
+          No descriptions. The patient page explains what ESR measures;
+          this reader knows. */}
+      {unassessed && unassessed.count > 0 ? (
+        <div className="passage__unassessed">
+          <h3>
+            Reported, not assessed by this tool ({unassessed.count})
+          </h3>
+          <p>
+            Read from the document and set aside because no assessment rule
+            here covers them &mdash; <strong>not</strong> found normal. Values,
+            units and flags are the laboratory&rsquo;s own.
+          </p>
+          <table className="lab-table">
+            <caption className="visually-hidden">
+              Parameters reported by the laboratory that this tool does not
+              assess
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Parameter</th>
+                <th scope="col">Value</th>
+                <th scope="col">Reference</th>
+                <th scope="col">Lab flag</th>
+              </tr>
+            </thead>
+            <tbody>
+              {unassessed.items.map((item, index) => (
+                <tr key={`${item.testName}-${index}`}>
+                  <th scope="row">{item.testName}</th>
+                  <td>
+                    {item.value}
+                    {item.unit ? ` ${item.unit}` : ''}
+                  </td>
+                  <td>
+                    {item.labReferenceLow !== undefined &&
+                    item.labReferenceHigh !== undefined
+                      ? `${item.labReferenceLow}–${item.labReferenceHigh}`
+                      : item.labReferenceHigh !== undefined
+                        ? `≤ ${item.labReferenceHigh}`
+                        : item.labReferenceLow !== undefined
+                          ? `≥ ${item.labReferenceLow}`
+                          : '—'}
+                  </td>
+                  <td>
+                    {/* THE LABORATORY'S VERDICT, NAMED AS THEIRS. This tool
+                        has no opinion on these rows and must not appear to. */}
+                    {item.labFlag ? item.labFlag : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
     </main>
   );
 }
