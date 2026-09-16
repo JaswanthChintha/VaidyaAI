@@ -559,3 +559,123 @@ describe('TrendChart -- the significance span sets the scale', () => {
     expect(dropHeight()).toBe(plain);
   });
 });
+
+/**
+ * THE SAME FIX FOR THE CHARTS THAT HAVE NO BAND.
+ *
+ * The parameters this platform does not assess have no polarity and no
+ * stability figure, so neither `band` nor `stability` exists for them and
+ * their axes still spanned the readings alone. What they DO have is the
+ * interval their own laboratory printed beside the value, and `scaleOnly`
+ * carries it in.
+ *
+ * It SETS THE SCALE AND IS NEVER DRAWN, for two independent reasons: the
+ * reader's reports disagree about the range on most parameters, so there is
+ * no single interval a band could represent; and `band` is this platform's
+ * own declared optimal range, so drawing a laboratory's interval in the same
+ * ink would merge two authors' claims into one rectangle.
+ */
+describe('TrendChart -- a printed interval sets the scale and is not drawn', () => {
+  // Lymphocytes 15 -> 14 % against a union range of 20-45: a one-point move
+  // in a test whose usual range is 25 points wide.
+  const POINTS = [
+    { date: '2026-09-09', value: 15, unit: '%' },
+    { date: '2026-09-11', value: 14, unit: '%' },
+  ];
+
+  const dropHeight = () => {
+    const dots = [...document.querySelectorAll('circle')].filter(
+      (c) => c.getAttribute('r') && !c.getAttribute('stroke-dasharray')
+    );
+    const ys = dots.map((c) => Number(c.getAttribute('cy'))).filter(Number.isFinite);
+    return ys.length >= 2 ? Math.abs(Math.max(...ys) - Math.min(...ys)) : null;
+  };
+
+  const rects = () => [...document.querySelectorAll('rect')].length;
+
+  it('draws a small move as a shallow line once the printed range is the scale', () => {
+    const { unmount } = render(<TrendChart label="LYMPHOCYTES" unit="%" points={POINTS} />);
+    const unscaled = dropHeight();
+    unmount();
+
+    render(
+      <TrendChart
+        label="LYMPHOCYTES"
+        unit="%"
+        points={POINTS}
+        scaleOnly={{ low: 20, high: 45 }}
+      />
+    );
+    expect(unscaled).toBeGreaterThan(0);
+    expect(dropHeight()).toBeLessThan(unscaled / 2);
+  });
+
+  it('DRAWS NOTHING for it -- no band rectangle appears', () => {
+    const { unmount } = render(<TrendChart label="LYMPHOCYTES" unit="%" points={POINTS} />);
+    const before = rects();
+    unmount();
+
+    render(
+      <TrendChart
+        label="LYMPHOCYTES"
+        unit="%"
+        points={POINTS}
+        scaleOnly={{ low: 20, high: 45 }}
+      />
+    );
+    // A `band` of the same numbers WOULD add one; this must not.
+    expect(rects()).toBe(before);
+  });
+
+  it('labels the axis with readings only, never the printed range', () => {
+    render(
+      <TrendChart
+        label="LYMPHOCYTES"
+        unit="%"
+        points={POINTS}
+        scaleOnly={{ low: 20, high: 45 }}
+      />
+    );
+    const text = document.body.textContent;
+    expect(text).toMatch(/15/);
+    expect(text).toMatch(/14/);
+    // Neither bound is a reading anybody took.
+    expect(text).not.toMatch(/\b45\b/);
+    expect(text).not.toMatch(/\b20\b/);
+  });
+
+  it('uses a one-sided range without inventing the missing half', () => {
+    // `< 6 mg/l` is a high and no low. The high must still widen the scale.
+    const crp = [
+      { date: '2026-09-09', value: 12.1, unit: 'mg/L' },
+      { date: '2026-09-11', value: 38.9, unit: 'mg/L' },
+    ];
+    const { unmount } = render(<TrendChart label="CRP" unit="mg/L" points={crp} />);
+    const unscaled = dropHeight();
+    unmount();
+
+    render(
+      <TrendChart label="CRP" unit="mg/L" points={crp} scaleOnly={{ low: null, high: 6 }} />
+    );
+    const scaled = dropHeight();
+
+    // Lower than before, because the domain now reaches down to 6 -- but a
+    // tripling is a real change and must still read as one.
+    expect(scaled).toBeLessThan(unscaled);
+    expect(scaled).toBeGreaterThan(unscaled / 2);
+  });
+
+  it('is unchanged when no printed range reached the page', () => {
+    const { unmount } = render(<TrendChart label="PCV" unit="%" points={POINTS} />);
+    const plain = dropHeight();
+    unmount();
+
+    for (const scaleOnly of [null, undefined, { low: null, high: null }]) {
+      const view = render(
+        <TrendChart label="PCV" unit="%" points={POINTS} scaleOnly={scaleOnly} />
+      );
+      expect(dropHeight()).toBe(plain);
+      view.unmount();
+    }
+  });
+});

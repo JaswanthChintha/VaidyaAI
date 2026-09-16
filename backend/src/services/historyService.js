@@ -325,6 +325,125 @@ async function describeExcluded({ user, limit = 50 }) {
   return { count, reports, listed: reports.length };
 }
 
+// ------------------------------------------- the laboratory's printed ranges --
+
+/**
+ * Fields read for the printed reference intervals. FOUR, not a payload.
+ *
+ * `extraction` is `select: false` and is a large document -- every parameter
+ * row with its raw text, plus report metadata and warnings. This projects
+ * into the array and takes only what a scale needs, so the narrowness
+ * `HISTORY_PROJECTION` argues for is not quietly abandoned one function down.
+ *
+ * ⚠ NO `+` PREFIX, AND THAT IS NOT AN OVERSIGHT. `+path` re-includes a
+ * deselected path BY ITS OWN NAME; written on a SUBPATH of one
+ * (`+extraction.extracted_parameters.test_name`) mongoose returns
+ * `extraction: undefined` -- no error, no warning, just an absent payload and
+ * every chart silently back to spanning its own readings. It was caught here
+ * only because a test asserted on the loaded value. Naming a subpath plainly
+ * is what re-includes it; measured against this schema, not assumed.
+ */
+const PRINTED_PROJECTION = [
+  'user',
+  'extraction.extracted_parameters.test_name',
+  'extraction.extracted_parameters.reference_low',
+  'extraction.extracted_parameters.reference_high',
+  'extraction.extracted_parameters.reference_range_raw',
+].join(' ');
+
+/**
+ * THE REFERENCE INTERVAL EACH REPORT PRINTED BESIDE EACH VALUE.
+ *
+ * ==========================================================================
+ * WHY THIS IS A SEPARATE QUERY
+ * ==========================================================================
+ *
+ * Module 4 extracts every parameter's printed reference interval, and feature
+ * engineering discards it along with the parameter: `UnmappedItem` keeps the
+ * name, the raw value and the unit, and nothing else. So the readings that
+ * reach `labSeriesService` have no scale, and their charts spanned only the
+ * readings themselves -- which makes any change fill the box, the exact
+ * defect fixed for the assessed charts.
+ *
+ * Reuniting them is the same move `dashboardService.buildUnanalysedSection`
+ * already makes for a single report, and it asserts nothing new: the range is
+ * the laboratory's own and this only carries it forward.
+ *
+ * IT IS A SEPARATE, OPTIONAL QUERY for the same reason `describeExcluded` is
+ * one. `assembleHistory` is the expensive path, it is shared by four
+ * endpoints, and three of them have no use for this at all. Widening
+ * `HISTORY_PROJECTION` would make every trend, comparison, progress-score and
+ * doctor-summary call drag extraction rows through the app to serve one
+ * section of one page.
+ *
+ * ==========================================================================
+ * WHAT IT DOES NOT DO
+ * ==========================================================================
+ *
+ * It does not reach the ai-service. The snapshots `assembleHistory` builds
+ * are untouched, so `TimelineReportInput` is unchanged and Module 28 receives
+ * exactly what it received before. The join happens in this backend, at read
+ * time, on the way to one page.
+ *
+ * It computes nothing. Same rule as the rest of this module: rows in, rows
+ * out, no clinical judgement and no arithmetic on a patient value.
+ *
+ * @param {object} args
+ * @param {object} args.user The AUTHENTICATED user. Ownership is enforced
+ *        here and re-checked per row, exactly as everywhere else in this
+ *        file -- being handed a report id is not permission to read it, and
+ *        these ids arrive from a caller's own history rather than from the
+ *        request, which is a reason to keep the check, not to drop it.
+ *
+ *        ⚠ THE PER-ROW `assertCanAccess` BELOW SURVIVES MUTATION, AND SO DOES
+ *        THE ONE IN `assembleHistory` -- checked, not assumed. The query is
+ *        already owner-scoped, so neither can fire today. That is the same
+ *        deliberate redundancy this file and every report controller applies,
+ *        and the reason is a filter someone widens later. Do not delete it as
+ *        dead code on the strength of a surviving mutant without deleting
+ *        every other one in this backend first.
+ * @param {string[]} args.reportIds Reports to load, normally
+ *        `assembleHistory`'s own `snapshots.map(s => s.report_id)`.
+ * @returns {Promise<Map<string, Map<string, object>>>} reportId -> test_name
+ *        as printed -> `{test_name, reference_low, reference_high,
+ *        reference_range_raw}`. Reports with no extraction are simply absent,
+ *        and a caller that finds nothing gets a series with no scale rather
+ *        than a series with a wrong one.
+ */
+async function loadPrintedParameters({ user, reportIds }) {
+  const ids = Array.isArray(reportIds) ? reportIds.filter(Boolean) : [];
+  const byReport = new Map();
+  if (!ids.length) return byReport;
+
+  const rows = await Report.find(
+    ownerScopedFilter(user, { ...OWNER_ONLY, base: { _id: { $in: ids } } })
+  )
+    .select(PRINTED_PROJECTION)
+    .lean();
+
+  for (const row of rows) {
+    assertCanAccess(user, row, { ...OWNER_ONLY });
+    const params =
+      (row.extraction && Array.isArray(row.extraction.extracted_parameters)
+        ? row.extraction.extracted_parameters
+        : []) || [];
+    const byName = new Map();
+    for (const param of params) {
+      // FIRST WINS, matching `buildUnanalysedSection`'s own join. A report
+      // that prints the same test name twice is a duplicate the extraction
+      // preserved; picking between them is a question this function is not
+      // equipped to answer, and answering it differently from the dashboard
+      // would put two different ranges on one reader's two screens.
+      if (typeof param.test_name === 'string' && param.test_name && !byName.has(param.test_name)) {
+        byName.set(param.test_name, param);
+      }
+    }
+    byReport.set(String(row._id), byName);
+  }
+
+  return byReport;
+}
+
 // ------------------------------------------------- explicitly named reports --
 
 /**
@@ -484,8 +603,10 @@ module.exports = {
   EXCLUSION_REASONS,
   INCLUSION_FILTER,
   HISTORY_PROJECTION,
+  PRINTED_PROJECTION,
   assembleHistory,
   describeExcluded,
+  loadPrintedParameters,
   resolveNamedPair,
   summariseHistory,
 };

@@ -17,7 +17,13 @@
  * starts depending on knowing what a test IS, these break.
  */
 
-const { buildLabSeries, nameKey, unitKey, numericValue } = require('../src/services/labSeriesService');
+const {
+  buildLabSeries,
+  nameKey,
+  unitKey,
+  numericValue,
+  numericBound,
+} = require('../src/services/labSeriesService');
 
 /** A history snapshot in `historyService`'s own shape. */
 const snap = (date, unmapped, reportId = `r-${date}`) => ({
@@ -161,6 +167,224 @@ describe('labSeriesService - what is not a series', () => {
     expect(s.direction).toBeUndefined();
     expect(s.outcome).toBeUndefined();
     expect(JSON.stringify(s)).not.toMatch(/worsening|improving|stable|rising|falling/i);
+  });
+});
+
+/**
+ * THE PRINTED REFERENCE INTERVAL, WHICH SETS THE SCALE AND NOTHING ELSE.
+ *
+ * The shapes here are the ones the real reports produced, in the invented
+ * vocabulary: two laboratories printing different ranges for the same test
+ * (nine of ten parameters on this project's own reports), a one-sided range
+ * (`< 6 mg/l` -> a high and no low), and a range that extracted to no numbers
+ * at all (`F: 36 - 46 M: 40 - 50`, which cannot be reduced to one pair
+ * without knowing whose report it is).
+ */
+const printedFor = (byReport) =>
+  new Map(
+    Object.entries(byReport).map(([reportId, rows]) => [
+      reportId,
+      new Map(rows.map((r) => [r.test_name, r])),
+    ])
+  );
+
+const ref = (test_name, reference_low, reference_high, reference_range_raw = null) => ({
+  test_name,
+  reference_low,
+  reference_high,
+  reference_range_raw,
+});
+
+describe('labSeriesService - the printed reference interval', () => {
+  it('joins per report and by the EXACT printed name, so two spellings both match', () => {
+    // The join that makes this work across reports: `Zorblex` is looked up in
+    // its own report and `ZORBLEX` in its own. Neither has to know about the
+    // other -- that they are the same TEST is nameKey's separate job.
+    const out = buildLabSeries(
+      [
+        snap('2026-01-01', [row('Zorblex', '15', '%')], 'r1'),
+        snap('2026-02-01', [row('ZORBLEX', '14', '%')], 'r2'),
+      ],
+      printedFor({
+        r1: [ref('Zorblex', 22, 45, '22-45')],
+        r2: [ref('ZORBLEX', 20, 40, '20-40')],
+      })
+    );
+
+    const s = out.series[0];
+    expect(s.points.map((p) => [p.labReferenceLow, p.labReferenceHigh])).toEqual([
+      [22, 45],
+      [20, 40],
+    ]);
+  });
+
+  it('takes the UNION when the two reports disagree about the range', () => {
+    // There is no single interval, and preferring one laboratory's would be
+    // asserting its assay applies to the other's reading. 22-45 and 20-40
+    // become 20-45: at least as wide as either, so nothing is excluded that
+    // one of the reader's own documents called usual.
+    const out = buildLabSeries(
+      [
+        snap('2026-01-01', [row('Zorblex', '15', '%')], 'r1'),
+        snap('2026-02-01', [row('ZORBLEX', '14', '%')], 'r2'),
+      ],
+      printedFor({
+        r1: [ref('Zorblex', 22, 45)],
+        r2: [ref('ZORBLEX', 20, 40)],
+      })
+    );
+
+    expect(out.series[0].referenceScale).toEqual({ low: 20, high: 45 });
+    expect(out.series[0].referenceAgreement).toBe('differ');
+  });
+
+  it('keeps a one-sided range one-sided instead of inventing the other half', () => {
+    // `< 6 mg/l` is a high and no low. A fabricated zero would put a number
+    // on the scale that no laboratory printed.
+    const out = buildLabSeries(
+      [
+        snap('2026-01-01', [row('Quibblease', '12.1', 'mg/L')], 'r1'),
+        snap('2026-02-01', [row('Quibblease', '38.9', 'mg/L')], 'r2'),
+      ],
+      printedFor({
+        r1: [ref('Quibblease', null, 6, '< 6 mg/l')],
+        r2: [ref('Quibblease', null, 5, '< 5.0')],
+      })
+    );
+
+    expect(out.series[0].referenceScale).toEqual({ low: null, high: 6 });
+  });
+
+  it('reads NO bound from a range that extracted to no numbers, and keeps the text', () => {
+    // A sex-specific interval. The extraction deliberately declined to pick a
+    // pair; parsing the string here would be undoing that decision.
+    const out = buildLabSeries(
+      [
+        snap('2026-01-01', [row('Frimbulator', '34.4', '%')], 'r1'),
+        snap('2026-02-01', [row('Frimbulator', '37.9', '%')], 'r2'),
+      ],
+      printedFor({
+        r1: [ref('Frimbulator', 35, 48, '35-48')],
+        r2: [ref('Frimbulator', null, null, 'F: 36 - 46 M: 40 - 50')],
+      })
+    );
+
+    const s = out.series[0];
+    expect(s.points[1].labReferenceLow).toBeNull();
+    expect(s.points[1].labReferenceHigh).toBeNull();
+    expect(s.points[1].labReferenceRaw).toBe('F: 36 - 46 M: 40 - 50');
+    // One opinion and a silence is NOT agreement.
+    expect(s.referenceAgreement).toBe('differ');
+    expect(s.referenceCoverage).toEqual({ withBounds: 1, total: 2 });
+  });
+
+  it('says `agree` only when EVERY point carries the same bounds', () => {
+    const out = buildLabSeries(
+      [
+        snap('2026-01-01', [row('Zorblex', '35', 'mm/hr')], 'r1'),
+        snap('2026-02-01', [row('Zorblex', '45', 'mm/hr')], 'r2'),
+      ],
+      printedFor({
+        r1: [ref('Zorblex', 0, 20, '00 - 20')],
+        r2: [ref('Zorblex', 0, 20, '0 - 20')],
+      })
+    );
+
+    expect(out.series[0].referenceAgreement).toBe('agree');
+    expect(out.series[0].referenceScale).toEqual({ low: 0, high: 20 });
+  });
+
+  it('says `none`, and gives no scale, when no report printed a range', () => {
+    const out = buildLabSeries(
+      [
+        snap('2026-01-01', [row('Zorblex', '1', 'U/L')], 'r1'),
+        snap('2026-02-01', [row('Zorblex', '2', 'U/L')], 'r2'),
+      ],
+      printedFor({ r1: [ref('Zorblex', null, null)], r2: [ref('Zorblex', null, null)] })
+    );
+
+    expect(out.series[0].referenceAgreement).toBe('none');
+    expect(out.series[0].referenceScale).toBeNull();
+    expect(out.scaledCount).toBe(0);
+  });
+
+  it('never parses a range out of a string bound', () => {
+    // Module 4 already decided what the printed text means. A string arriving
+    // in a numeric field is a contract violation, not an invitation to parse.
+    expect(numericBound('22')).toBeNull();
+    expect(numericBound(22)).toBe(22);
+    expect(numericBound(null)).toBeNull();
+    expect(numericBound(Number.NaN)).toBeNull();
+    expect(numericBound(undefined)).toBeNull();
+  });
+
+  it('gives a BLOCKED series no scale, so a mixed-unit union cannot be handed on', () => {
+    // Two units means two scales, and adding their intervals together would
+    // be the failure the blocking rule exists to prevent.
+    const out = buildLabSeries(
+      [
+        snap('2026-01-01', [row('Zorblex', '101.9', 'U/L')], 'r1'),
+        snap('2026-02-01', [row('Zorblex', '13', 'IU/L')], 'r2'),
+      ],
+      printedFor({
+        r1: [ref('Zorblex', null, 40, 'UP TO 40')],
+        r2: [ref('Zorblex', 5, 40, '5 - 40')],
+      })
+    );
+
+    expect(out.series[0].blocked).not.toBeNull();
+    expect(out.series[0].referenceScale).toBeNull();
+    // The per-point facts are still carried; only the union is withheld.
+    expect(out.series[0].points[1].labReferenceLow).toBe(5);
+  });
+
+  it('counts only PLOTTED series in scaledCount', () => {
+    const out = buildLabSeries(
+      [
+        snap('2026-01-01', [row('Zorblex', '1', 'U/L'), row('Quibblease', '5', 'mg/L')], 'r1'),
+        snap('2026-02-01', [row('Zorblex', '2', 'IU/L'), row('Quibblease', '6', 'mg/L')], 'r2'),
+      ],
+      printedFor({
+        r1: [ref('Zorblex', 0, 40), ref('Quibblease', 1, 9)],
+        r2: [ref('Zorblex', 0, 40), ref('Quibblease', 1, 9)],
+      })
+    );
+
+    // Zorblex is blocked on units; only Quibblease is drawn and scaled.
+    expect(out.blockedCount).toBe(1);
+    expect(out.scaledCount).toBe(1);
+  });
+
+  it('degrades to NO scale, never a wrong one, when the caller supplies nothing', () => {
+    // An older caller -- or one whose extraction query found nothing -- gets
+    // exactly the behaviour this page had before the scale existed.
+    for (const printed of [undefined, null, new Map(), printedFor({ other: [] })]) {
+      const out = buildLabSeries(
+        [
+          snap('2026-01-01', [row('Zorblex', '1', 'U/L')], 'r1'),
+          snap('2026-02-01', [row('Zorblex', '2', 'U/L')], 'r2'),
+        ],
+        printed
+      );
+      expect(out.series[0].referenceScale).toBeNull();
+      expect(out.series[0].referenceAgreement).toBe('none');
+      expect(out.scaledCount).toBe(0);
+    }
+  });
+
+  it('leaves a point unbounded when the extraction spells the name differently', () => {
+    // Not assumed away: the point simply has no bound and the coverage count
+    // says so, rather than borrowing the other report's range.
+    const out = buildLabSeries(
+      [
+        snap('2026-01-01', [row('Zorblex', '1', 'U/L')], 'r1'),
+        snap('2026-02-01', [row('Zorblex', '2', 'U/L')], 'r2'),
+      ],
+      printedFor({ r1: [ref('Zorblex', 0, 5)], r2: [ref('Zorblex (total)', 0, 5)] })
+    );
+
+    expect(out.series[0].referenceCoverage).toEqual({ withBounds: 1, total: 2 });
+    expect(out.series[0].points[1].labReferenceLow).toBeNull();
   });
 });
 

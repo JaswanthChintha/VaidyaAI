@@ -150,6 +150,18 @@ const getTrends = asyncHandler(async (req, res) => {
 
   const { history, excluded } = await loadHistory(req);
 
+  // THE PRINTED REFERENCE INTERVALS, FOR THIS ENDPOINT ONLY.
+  //
+  // A separate, narrow query -- four fields out of the extraction array --
+  // run here rather than inside `loadHistory` because the comparison,
+  // progress-score and doctor-summary endpoints share that function and have
+  // no use for this. It feeds the scale under the `labSeries` charts and
+  // reaches the ai-service nowhere: `history.snapshots` is untouched.
+  const printed = await historyService.loadPrintedParameters({
+    user: req.user,
+    reportIds: history.snapshots.map((s) => s.report_id),
+  });
+
   const trends = await aiService.analyseTrends({
     reports: history.snapshots,
     patientRef: patientRefOf(req),
@@ -167,8 +179,12 @@ const getTrends = asyncHandler(async (req, res) => {
     //
     // Built here, from the SAME snapshots Module 28 receives, so the two
     // cannot disagree about which reports are in the history. It carries no
-    // direction and no classification: see labSeriesService.
-    labSeries: labSeriesService.buildLabSeries(history.snapshots),
+    // direction and no classification: see labSeriesService. The printed
+    // intervals set the SCALE those charts are drawn against and are never
+    // drawn as a band -- the reader's own two reports disagree about the
+    // range on nine parameters out of ten, so there is no single band to
+    // draw and a scale is the claim that survives that.
+    labSeries: labSeriesService.buildLabSeries(history.snapshots, printed),
     // Module 28's `TimelineTrendsData`, VERBATIM. `outcome` is the field to
     // branch on, never `trend` - and neither is touched here.
     trends,

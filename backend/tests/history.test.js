@@ -584,6 +584,149 @@ describe('historyService - the shared timeline assembler', () => {
   });
 
   // =========================================================== PHI / payloads =
+  // ================================================= the printed intervals ==
+  //
+  // `loadPrintedParameters` carries the laboratory's own reference interval
+  // forward to the one page that needs it. It is a SEPARATE query on purpose,
+  // so the three tests that matter are: it is scoped like everything else
+  // here, it stays narrow, and its absence degrades to no scale rather than a
+  // wrong one.
+  describe('loadPrintedParameters', () => {
+    /** A report carrying an extraction with printed ranges. */
+    async function seedExtracted(userId, parameters, extra = {}) {
+      const doc = await Report.create({
+        user: userId,
+        originalName: 'labs.pdf',
+        storageKey: `${userId}/${new mongoose.Types.ObjectId().toString()}.pdf`,
+        storageDriver: 'local',
+        mimeType: 'application/pdf',
+        sizeBytes: 1024,
+        checksumSha256: 'c'.repeat(64),
+        status: 'processed',
+        analysis: { version: 1 },
+        featureValidation: validatedFeatureSet(),
+        extraction: { extracted_parameters: parameters, ...extra },
+      });
+      return doc._id.toString();
+    }
+
+    it('returns each report keyed by the name AS PRINTED on that report', async () => {
+      const user = await makeUser();
+      const a = await seedExtracted(user.id, [
+        { test_name: 'Lymphocytes', value_raw: '15', reference_low: 22, reference_high: 45 },
+      ]);
+      const b = await seedExtracted(user.id, [
+        { test_name: 'LYMPHOCYTES', value_raw: '14', reference_low: 20, reference_high: 40 },
+      ]);
+
+      const printed = await historyService.loadPrintedParameters({
+        user,
+        reportIds: [a, b],
+      });
+
+      // Two spellings, each found in its OWN report. That is what lets one
+      // series carry both without this function deciding they are the same.
+      expect(printed.get(a).get('Lymphocytes').reference_high).toBe(45);
+      expect(printed.get(b).get('LYMPHOCYTES').reference_high).toBe(40);
+      expect(printed.get(a).has('LYMPHOCYTES')).toBe(false);
+    });
+
+    it('will not read another patient\'s report, even when handed its id', async () => {
+      // Being able to NAME a report is not permission to read it. These ids
+      // normally come from the caller's own history, which is a reason to
+      // keep this check rather than to drop it.
+      const owner = await makeUser();
+      const stranger = await makeUser();
+      const theirs = await seedExtracted(owner.id, [
+        { test_name: 'Zorblex', value_raw: '1', reference_low: 0, reference_high: 9 },
+      ]);
+
+      const printed = await historyService.loadPrintedParameters({
+        user: stranger,
+        reportIds: [theirs],
+      });
+      expect(printed.size).toBe(0);
+    });
+
+    it('grants a clinician no reach either, matching every other route here', async () => {
+      const owner = await makeUser();
+      const clinician = await makeUser(ROLES.CLINICIAN);
+      const theirs = await seedExtracted(owner.id, [
+        { test_name: 'Zorblex', value_raw: '1', reference_low: 0, reference_high: 9 },
+      ]);
+
+      const printed = await historyService.loadPrintedParameters({
+        user: clinician,
+        reportIds: [theirs],
+      });
+      expect(printed.size).toBe(0);
+    });
+
+    it('reads the four range fields and NOT the rest of the extraction', async () => {
+      // The narrowness `HISTORY_PROJECTION` argues for, held one function
+      // down. `extraction` is a large payload and this takes four fields out
+      // of one array.
+      const user = await makeUser();
+      const id = await seedExtracted(
+        user.id,
+        [
+          {
+            test_name: 'Zorblex',
+            value_raw: 'CANARY-VALUE',
+            unit: 'CANARY-UNIT',
+            flag: 'high',
+            reference_low: 0,
+            reference_high: 9,
+            reference_range_raw: '0 - 9',
+          },
+        ],
+        { raw_text: 'CANARY-RAW-TEXT', report_metadata: { note: 'CANARY-META' } }
+      );
+
+      const printed = await historyService.loadPrintedParameters({ user, reportIds: [id] });
+      const serialised = JSON.stringify([...printed.get(id).values()]);
+
+      for (const canary of ['CANARY-RAW-TEXT', 'CANARY-META', 'CANARY-VALUE', 'CANARY-UNIT']) {
+        expect(serialised).not.toContain(canary);
+      }
+      expect(printed.get(id).get('Zorblex')).toEqual(
+        expect.objectContaining({ reference_low: 0, reference_high: 9, reference_range_raw: '0 - 9' })
+      );
+    });
+
+    it('answers with an empty map, never a throw, when there is nothing to load', async () => {
+      const user = await makeUser();
+      for (const reportIds of [undefined, null, [], [null, undefined]]) {
+        // eslint-disable-next-line no-await-in-loop
+        const printed = await historyService.loadPrintedParameters({ user, reportIds });
+        expect(printed.size).toBe(0);
+      }
+    });
+
+    it('omits a report that stored no extraction rather than inventing an entry', async () => {
+      const user = await makeUser();
+      const id = await seedReport(user.id, { chronoDate: day(1) });
+
+      const printed = await historyService.loadPrintedParameters({ user, reportIds: [id] });
+      // Present with nothing in it, not absent: the report WAS read and had
+      // no parameters, which is a different fact from not being readable.
+      expect(printed.get(id).size).toBe(0);
+    });
+
+    it('keeps the FIRST of two rows printing the same name, as the dashboard does', async () => {
+      // Two screens disagreeing about one test's range would be worse than
+      // either choice; this matches `buildUnanalysedSection`'s own join.
+      const user = await makeUser();
+      const id = await seedExtracted(user.id, [
+        { test_name: 'Zorblex', value_raw: '1', reference_low: 0, reference_high: 9 },
+        { test_name: 'Zorblex', value_raw: '2', reference_low: 1, reference_high: 8 },
+      ]);
+
+      const printed = await historyService.loadPrintedParameters({ user, reportIds: [id] });
+      expect(printed.get(id).get('Zorblex').reference_low).toBe(0);
+    });
+  });
+
   describe('what it reads and what it does not', () => {
     it('reads no payload but `featureValidation`', async () => {
       const user = await makeUser();

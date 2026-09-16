@@ -1197,12 +1197,15 @@ describe('Module 28 -- a stable panel says what stable means', () => {
  * would let the suite pass by recognising them.
  */
 describe('Timeline -- parameters this platform does not assess', () => {
-  const series = (name, points, blocked = null, unit = 'mg/L') => ({
+  const series = (name, points, blocked = null, unit = 'mg/L', overrides = {}) => ({
     key: name.toLowerCase(),
     name,
     unit: blocked ? null : unit,
     blocked,
     points: points.map(([date, value]) => ({ date: `${date}T00:00:00Z`, value, unit })),
+    // DEFAULTED TO ABSENT, so every test that does not opt in exercises the
+    // no-scale path -- which is what an older backend still returns.
+    ...overrides,
   });
 
   const labSeries = (overrides = {}) => ({
@@ -1290,9 +1293,10 @@ describe('Timeline -- parameters this platform does not assess', () => {
     expect(screen.getByText(/10 appeared on only one report/)).toBeInTheDocument();
   });
 
-  it('warns that the scale covers only the readings', async () => {
-    // These have no stability band and no reference interval, so the axis
-    // cannot mean anything more than the two points on it.
+  it('warns that the scale covers only the readings when NO range reached it', async () => {
+    // No stability band, no polarity, and here no printed interval either --
+    // so the axis cannot mean anything more than the two points on it, and
+    // the page has to say so rather than let the steepness speak.
     mountLab(
       labSeries({
         series: [series('ZORBLEX', [['2026-01-01', 1], ['2026-02-01', 2]])],
@@ -1303,6 +1307,107 @@ describe('Timeline -- parameters this platform does not assess', () => {
 
     await screen.findByText(/Other parameters on your reports/);
     expect(screen.getByText(/even a small change looks large/)).toBeInTheDocument();
+  });
+
+  // ============================== the laboratory's own printed interval =====
+  //
+  // The scale these charts are judged against, carried through from the
+  // reader's own reports. It sets the scale and is never drawn, so what the
+  // page owes the reader is the sentence explaining why there is no shaded
+  // band on a chart that plainly has a range behind it.
+
+  it('says the scale includes the printed range, and that none is drawn', async () => {
+    mountLab(
+      labSeries({
+        series: [
+          series('LYMPHOCYTES', [['2026-01-01', 15], ['2026-02-01', 14]], null, '%', {
+            referenceScale: { low: 20, high: 45 },
+            referenceAgreement: 'differ',
+          }),
+        ],
+        consideredCount: 1,
+        plottedCount: 1,
+        scaledCount: 1,
+      })
+    );
+
+    await screen.findByText(/Other parameters on your reports/);
+    const text = screen.getByText(/Other parameters on your reports/).closest('section').textContent;
+    expect(text).toMatch(/includes the reference range printed on\s+your own reports/);
+    // THE PART THAT IS EASY TO DROP. A reader looking for the band has to be
+    // told why there is not one, and the reason is their own documents.
+    expect(text).toMatch(/No range is drawn/);
+    expect(text).toMatch(/do not all print the same range/);
+    // And the old, now-false caveat must be gone.
+    expect(text).not.toMatch(/even a small change looks large/);
+  });
+
+  it('never prints the range itself, on the chart or in the prose', async () => {
+    // The interval is a scale, not a finding. Printing 20-45 beside a reading
+    // would state one laboratory's range as though it were the test's.
+    mountLab(
+      labSeries({
+        series: [
+          series('LYMPHOCYTES', [['2026-01-01', 15], ['2026-02-01', 14]], null, '%', {
+            referenceScale: { low: 20, high: 45 },
+            referenceAgreement: 'differ',
+          }),
+        ],
+        consideredCount: 1,
+        plottedCount: 1,
+        scaledCount: 1,
+      })
+    );
+
+    await screen.findByText(/Other parameters on your reports/);
+    const section = screen.getByText(/Other parameters on your reports/).closest('section');
+    expect(section.textContent).not.toMatch(/20\s*[-–]\s*45/);
+    expect(section.querySelectorAll('.trend-chart__band')).toHaveLength(0);
+  });
+
+  it('names the panels that got NO range, rather than letting them look alike', async () => {
+    // Two charts side by side, one scaled and one not, are read as the same
+    // kind of picture. They are not, and only the page can say so.
+    mountLab(
+      labSeries({
+        series: [
+          series('LYMPHOCYTES', [['2026-01-01', 15], ['2026-02-01', 14]], null, '%', {
+            referenceScale: { low: 20, high: 45 },
+            referenceAgreement: 'differ',
+          }),
+          series('PCV', [['2026-01-01', 34.4], ['2026-02-01', 37.9]], null, '%', {
+            referenceScale: null,
+            referenceAgreement: 'differ',
+          }),
+        ],
+        consideredCount: 2,
+        plottedCount: 2,
+        scaledCount: 1,
+      })
+    );
+
+    await screen.findByText(/Other parameters on your reports/);
+    const text = screen.getByText(/Other parameters on your reports/).closest('section').textContent;
+    expect(text).toMatch(/1 of these had no reference range printed/);
+    // And on the panel itself, so a reader who opens only that one is told.
+    expect(text).toMatch(/No reference range for this test could be read/);
+  });
+
+  it('degrades to the old caveat when an older payload carries no scale at all', async () => {
+    // A response from before this existed must not produce a page claiming a
+    // scale it does not have.
+    mountLab(
+      labSeries({
+        series: [series('ZORBLEX', [['2026-01-01', 1], ['2026-02-01', 2]])],
+        consideredCount: 1,
+        plottedCount: 1,
+      })
+    );
+
+    await screen.findByText(/Other parameters on your reports/);
+    const text = screen.getByText(/Other parameters on your reports/).closest('section').textContent;
+    expect(text).toMatch(/covers only the readings shown/);
+    expect(text).not.toMatch(/includes the reference range/);
   });
 
   it('renders nothing at all when there is nothing to show', async () => {

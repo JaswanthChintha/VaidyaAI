@@ -137,7 +137,7 @@ function significanceSpan(stability, baseline) {
   return { low: baseline - threshold, high: baseline + threshold };
 }
 
-function domainFor(values, band, span) {
+function domainFor(values, band, span, scaleOnly) {
   const numbers = values.slice();
   if (band && isNum(band.low)) numbers.push(band.low);
   if (band && isNum(band.high)) numbers.push(band.high);
@@ -157,6 +157,26 @@ function domainFor(values, band, span) {
   if (span && isNum(span.low) && isNum(span.high)) {
     numbers.push(span.low, span.high);
   }
+  // THE SAME MOVE FOR A CHART THAT HAS NO BAND TO DRAW.
+  //
+  // The parameters this platform does not assess have no stability band and
+  // no polarity, so neither `band` nor `span` exists for them -- and their
+  // axes spanned the readings alone, which is the defect above in a place it
+  // had not been fixed. What they DO have is the interval their own
+  // laboratory printed, and it is supplied here instead.
+  //
+  // IT IS NOT A BAND AND IS NOT DRAWN. Two reasons, and either alone is
+  // enough. The reader's reports disagree about the range on most parameters,
+  // so there is no single interval a band could honestly represent; and
+  // `band` above is this platform's own declared optimal range, so rendering
+  // a laboratory's interval in the same ink would merge two different claims
+  // by two different authors into one rectangle.
+  //
+  // EACH BOUND SEPARATELY, because `< 6 mg/l` is a high with no low and
+  // pairing it with an invented zero would fabricate the half the laboratory
+  // chose not to print.
+  if (scaleOnly && isNum(scaleOnly.low)) numbers.push(scaleOnly.low);
+  if (scaleOnly && isNum(scaleOnly.high)) numbers.push(scaleOnly.high);
   if (!numbers.length) return null;
 
   let min = Math.min(...numbers);
@@ -182,6 +202,9 @@ export default function TrendChart({
   // from. Both are the service's own; see `significanceSpan`.
   stability = null,
   baseline = null,
+  // A span that SETS THE SCALE AND IS NEVER DRAWN, for charts that have no
+  // band of their own. See `domainFor`. Either bound may be null.
+  scaleOnly = null,
   caption,
 }) {
   // A reading we cannot place is not silently dropped -- it is counted and
@@ -216,7 +239,7 @@ export default function TrendChart({
 
   const span = significanceSpan(stability, baseline);
   const domain = plotReadings
-    ? domainFor(placeable.map((p) => p.value), band, span)
+    ? domainFor(placeable.map((p) => p.value), band, span, scaleOnly)
     : null;
 
   // THE AXIS NUMBERS ARE ONLY PRINTED WHEN THEY MEAN SOMETHING. With one

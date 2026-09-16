@@ -3,7 +3,7 @@
 > Living context file for the VaidyaAI build. Keep this in the project folder so the
 > project's history, decisions, and state survive independently of any chat session.
 >
-> **Last updated:** 2026-09-16 (§6at) · **All 32 modules + frontend built, plus 33 and 34**
+> **Last updated:** 2026-09-16 (§6au) · **All 32 modules + frontend built, plus 33 and 34**
 >
 > The build history is §1–§6w. The recent design and safety work is:
 > the "Instrument" design system (§6x) · the timeline trend chart (§6z) · five
@@ -12,7 +12,10 @@
 > picker for the comparison (§6ah) · and a third session of design, WCAG AA
 > and internal-vocabulary work (§6aj–§6ao).
 >
-> **⚠ READ §6at FIRST, THEN §6as.** Those are the current handovers.
+> **⚠ READ §6au FIRST, THEN §6at, THEN §6as.** Those are the current
+> handovers. §6au is short and closes one item off §6at's open list; §6at is
+> the long one and still holds except where §6au corrects its description of
+> that item's fix.
 >
 > The line that stood here — "nothing since `6dc3409` is committed, 45 files,
 > three sessions deep, read §6ap first" — **is history.** Everything is
@@ -33,17 +36,17 @@ about any of them. That is the fifth time on this project.
 
 | | Tests |
 |---|---|
-| `backend/` (Node/Express) | **686** passing + 3 opt-in live |
+| `backend/` (Node/Express) | **704** passing + 3 skipped |
 | `ai-service/` (Python/FastAPI) | **3,903** passing + 7 skipped (3,910 collected) |
-| `frontend/` (React/Vitest) | **345** passing, 0 suites failed |
-| **Total** | **4,934** -- ALL THREE re-run green 2026-09-16 |
+| `frontend/` (React/Vitest) | **354** passing, 0 suites failed |
+| **Total** | **4,961** -- backend and frontend re-run green 2026-09-16 (§6au); ai-service unchanged since its own green run that day |
 
 > **⚠ THE 4,852 IN EVERY EARLIER SECTION WAS 7 TOO HIGH.** §6as recorded
 > ai-service's COLLECTED total (3,865) as its PASSED count; that day's real
 > figure was 3,858 passed + 7 skipped. The row above is a true count, taken
 > from the junit XML. See §6at.
 
-> ### ▶ NEW CHAT? START AT §6at, THEN §6as.
+> ### ▶ NEW CHAT? START AT §6au, THEN §6at, THEN §6as.
 >
 > Between them they have the run commands, the state of the repository, what
 > `Test 2.pdf` and `Test 3.pdf` are and why they matter, and what is open.
@@ -8553,6 +8556,172 @@ behaviour and looks identical to a bug if you do not check the log.
 Both narratives were cleared deliberately, so the clinician page regenerates
 against the current code on the next visit — one model call each, and the
 quota is gone, so expect the composed passage until it resets.
+---
+
+## 6au. THE THIRD 2026-09-16 SESSION — READ THIS FIRST
+
+**One task, taken from §6at's KNOWN AND OPEN: `labSeries` charts had no scale
+to judge against.** Closed. Everything else in §6at still holds.
+
+| | Tests | Last run |
+|---|---|---|
+| `backend/` | **704** passed, 3 skipped, 0 suites failed | 2026-09-16 ✅ (+18) |
+| `ai-service/` | **3,903** passed, 7 skipped | **NOT RE-RUN — nothing in it changed** |
+| `frontend/` | **354** passed, 0 suites failed | 2026-09-16 ✅ (+9) |
+| **Total** | **4,961** | |
+
+### THE HANDOVER'S OWN DESCRIPTION OF THE FIX WAS WRONG, AND CHEAPLY SO
+
+§6at said the fix "is carrying the laboratory's printed interval into the
+history snapshot, which changes what Module 28 receives." **It does not.**
+`dashboardService.buildUnanalysedSection` already reunites an unmapped row
+with its printed interval by joining `extraction.extracted_parameters` on the
+exact `test_name`, per report, in this backend at read time. The same join
+serves the timeline. `TimelineReportInput`, `UnmappedItem` and the ai-service
+are untouched; **no Python file changed.**
+
+> **A HANDOVER'S ESTIMATE OF A FIX IS A CLAIM ABOUT A DESIGN NOBODY PROBED —
+> the same lesson §6at recorded about "wording decisions", one layer up.** Two
+> minutes of reading the dashboard's own join replaced a schema change across
+> a service boundary.
+
+### ▶ WHAT THE PROBE FOUND, AND WHY IT CHANGED THE DESIGN
+
+Before writing anything, the real `buildLabSeries` was run over the real
+snapshots and each point joined back to its own report's stored extraction.
+**The intervals are all there** — 23 of 24 point-rows carry a numeric bound.
+**But the two reports disagree about the range on NINE of the ten plotted
+parameters:**
+
+```
+ESR           0-20    and  0-20      <- the ONLY agreement
+LYMPHOCYTES   22-45   and  20-40
+MCV           78-100  and  80-97
+MONOCYTES     5-7     and  1-8
+CRP           < 6     and  < 5.0     <- one-sided: low is null
+PCV           35-48   and  "F: 36 - 46 M: 40 - 50"  <- NEITHER bound
+```
+
+So there is no single interval, and **a drawn band would be asserting that one
+laboratory's assay applies to the other's reading.** Two further shapes any
+consumer must survive: a one-sided interval (`< 6`, `UP TO 40`), and a
+sex-specific range the extraction correctly refused to reduce to one pair.
+
+### THE DESIGN: IT SETS THE SCALE AND IS NEVER DRAWN
+
+Exactly §6at's move for the significance span, one section up. A scale asserts
+nothing about which interval applies; a rectangle does. **And `band` in
+`TrendChart` is THIS PLATFORM's declared `polarity.optimal_low/high`** —
+drawing a laboratory's interval in the same ink would merge two different
+authors' claims into one shape, which is what `labFlag` / `labReferenceLow`
+exist to keep apart.
+
+* **`historyService.loadPrintedParameters`** — new. A SEPARATE, optional,
+  owner-scoped query, the same construction as `describeExcluded`, because
+  `assembleHistory` is shared by four endpoints and three have no use for
+  this. Projects **four fields out of the array**, not the payload.
+* **`buildLabSeries(snapshots, printed)`** — second argument optional, still a
+  pure function. Points gain `labReferenceLow/High/Raw`; series gain
+  `referenceScale` (the UNION, each bound taken independently),
+  `referenceAgreement` (`agree`/`differ`/`none`) and `referenceCoverage`.
+  Omit the argument and every series comes back unscaled — an older caller
+  degrades to the old behaviour, never to a wrong one.
+* **`TrendChart`** gains `scaleOnly`, which enters `domainFor` and is drawn
+  and labelled nowhere. Axis numbers are still only readings.
+* **The page's caveat was FALSE once this landed** — it said "There is no
+  reference range here to judge one against". It now says the scale includes
+  the printed range, that no range is drawn, and why: the reader's own reports
+  do not all print the same one.
+
+### ⚠ THE `+` PREFIX SILENTLY RETURNED NOTHING
+
+`PRINTED_PROJECTION` was first written as
+`'+extraction.extracted_parameters.test_name'`. **mongoose returned
+`extraction: undefined`** — no error, no warning, and every chart quietly back
+to spanning its own readings. `+path` re-includes a deselected path BY ITS OWN
+NAME; on a SUBPATH of one it is not that. Naming the subpath plainly works.
+Caught only because a test asserted on the loaded value, and confirmed by
+running all four projection spellings side by side against the real schema.
+
+### VERIFICATION
+
+**15 mutants: 12 killed, 3 SURVIVED — and the survivors were the useful part.**
+Every mutant was confirmed to apply (by grep count) and to parse before its
+verdict was believed.
+
+* **Two survivors were guards that no input could reach, and both were
+  deleted.** An explicit `some(shape === null) -> 'differ'` branch in
+  `referenceAgreementOf`: a null beside a non-null already makes the set size
+  2, and a set of size 1 containing null is the all-null case answered one
+  line above. And `!s.blocked &&` in `scaledCount`: `referenceScale` is
+  already null for every blocked series. **Both read like they were doing
+  work.**
+* **The third survivor was KEPT, after a control proved the pattern.** The
+  per-row `assertCanAccess` in `loadPrintedParameters` cannot fire — the query
+  is already owner-scoped. So the SAME mutation was applied to the
+  PRE-EXISTING re-check in `assembleHistory`: **it survives too, with 143
+  tests passing.** This is the file's documented belt-and-braces convention
+  for a filter someone widens later, not dead code introduced here. Deleting
+  it would have made this one function the only unguarded one in the backend.
+
+> **A SURVIVING MUTANT IS A QUESTION, NOT A VERDICT: "is this guard dead, or
+> is it a convention?" The control mutant is what tells them apart**, and it
+> took one run. Two guards were deleted and one kept on the strength of it.
+
+### LIVE, ON THE REAL REPORTS
+
+The production path itself — `assembleHistory` → `loadPrintedParameters` →
+`buildLabSeries`, composed as `getTrends` composes them — run against Atlas
+after restarting the backend. **10 of 10 plotted series scaled.** The measured
+effect, as a fraction of the plot box the readings occupy:
+
+```
+LYMPHOCYTES     15 -> 14        81%  ->   3%
+PLATELET COUNT  2.6 -> 3.03     81%  ->  12%
+MCV             85.1 -> 88.6    81%  ->  13%
+ESR             35 -> 45        81%  ->  18%
+CRP             12.1 -> 38.9    81%  ->  66%   <- now the steepest on the page
+```
+
+**Every chart filled 81% of the box before, whatever the change meant.** CRP's
+tripling past the upper bound and a one-point lymphocyte wobble inside a
+25-point range drew the same picture. They no longer do.
+
+### KNOWN AND OPEN
+
+**Not verified here:** the rendered page. All three services are up and the
+backend was restarted onto this code, but signing in needs the owner's
+credentials. The data is proven at the service boundary and the rendering is
+pinned by 9 new frontend tests (including one asserting no band rectangle
+appears); **nobody has read the screen aloud**, which on this project is the
+step that has found what green suites did not, six times.
+
+**Raised and NOT fixed:**
+
+* **`referenceAgreement` is computed and never shown per panel.** The section
+  says once that the reports disagree; a reader looking at ESR — the one
+  parameter where they AGREE — is told the general thing. The field is there
+  to make that fixable.
+* **PCV is scaled from ONE report's interval** (`referenceCoverage 1/2`) and
+  the panel does not say so. It is not wrong, but it is one laboratory's range
+  presented with the same confidence as a series where both agree.
+
+**Carried forward from §6at, unchanged:** the glucose exclusion message wrong
+about why (three places); the trend chart drawing one line across
+non-comparable glucose points; ten unassessed parameters appearing on only one
+report; `--rust` at 4.38:1; `origin: report_transcription`;
+`MISSING_PROFESSIONAL_REFERRAL` not blocking; Module 32's two-way `present`;
+hand-written frontend fixtures; **the ai-service suite still needing `.env`
+moved aside**; `RangeChart.jsx` orphaned.
+
+**Closed this session:** ~~`labSeries` charts have no scale to judge against~~.
+
+### ⚠ GEMINI WAS STILL SPENT — AND NOTHING HERE NEEDED IT
+
+No stage in this change calls a model. The quota state was irrelevant to it,
+which is worth knowing: a task picked off the open list that needs no model is
+the one to take on a spent day.
+
 ---
 
 ## 7. Module 1 → later modules: inherited obligations

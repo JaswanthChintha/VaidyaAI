@@ -203,6 +203,13 @@ function LabSeries({ data }) {
   const plotted = series.filter((s) => !s.blocked);
   const blocked = series.filter((s) => s.blocked);
 
+  // HOW MANY OF THE DRAWN CHARTS GOT A SCALE. Taken from the panels actually
+  // on screen, not from the payload's own counter -- a count that does not
+  // come from the list it claims to count is a statement waiting to be wrong,
+  // and this page has been wrong that way before.
+  const scaled = plotted.filter((s) => s.referenceScale).length;
+  const unscaled = plotted.length - scaled;
+
   return (
     <section className="card">
       <h2>Other parameters on your reports</h2>
@@ -213,19 +220,37 @@ function LabSeries({ data }) {
         condition is derived from any of it.
       </p>
 
-      {/* THE SCALE CAVEAT, STATED RATHER THAN DESIGNED AROUND.
+      {/* THE SCALE, AND WHY NO RANGE IS DRAWN.
           The assessed charts above are drawn against the band a change would
-          have to cross to count. These parameters have no such band and no
-          reference interval reaches this page, so the vertical scale spans
-          only the readings themselves -- which makes any change, however
-          small, fill the box. Saying so is the honest option available here;
-          the alternative is a picture whose steepness means nothing and no
-          warning that it does not. */}
-      {plotted.length ? (
+          have to cross to count. These parameters have no such band -- no
+          polarity and no stability figure exists for them -- but their own
+          laboratories printed a reference interval beside each value, and
+          that is now carried through to set the scale.
+          IT SETS THE SCALE AND IS NOT DRAWN, and the sentence below says so
+          rather than leaving a reader to wonder where the shaded band went.
+          The reader's reports disagree about the range on most parameters, so
+          there is no single interval a band could honestly represent. */}
+      {scaled ? (
         <p className="hint">
-          The vertical scale on these covers only the readings shown, so even a
-          small change looks large. There is no reference range here to judge
-          one against.
+          The vertical scale on these includes the reference range printed on
+          your own reports, so a reading inside the usual range sits inside the
+          scale instead of filling it. No range is drawn on the charts: your
+          reports do not all print the same range for the same test, so there
+          is no one range to show.
+        </p>
+      ) : null}
+
+      {/* A CHART WITH NO SCALE IS NOT THE SAME CHART, and a reader cannot see
+          the difference between the two kinds by looking. Counted, not left
+          to be inferred from a picture. */}
+      {unscaled ? (
+        <p className="hint">
+          {scaled
+            ? `${unscaled} of these had no reference range printed, so ${
+                unscaled === 1 ? 'its scale covers' : 'their scales cover'
+              } only the readings shown`
+            : 'The vertical scale on these covers only the readings shown'}
+          , and even a small change looks large.
         </p>
       ) : null}
 
@@ -244,7 +269,17 @@ function LabSeries({ data }) {
               value: p.value,
               unit: p.unit,
             }))}
+            // THE SCALE ONLY. Never `band` -- that prop is this platform's own
+            // declared optimal range and is drawn as a rectangle, and these
+            // numbers belong to the laboratory, not to us.
+            scaleOnly={entry.referenceScale}
           />
+          {entry.referenceScale ? null : (
+            <p className="hint">
+              No reference range for this test could be read from your reports,
+              so this scale covers only the readings shown.
+            </p>
+          )}
         </details>
       ))}
 
