@@ -8131,6 +8131,61 @@ returns. Declared above them it threw *"Cannot access 'outOfRange' before
 initialization"* on every render — 32 of 47 tests, all with the same message,
 which is what a single structural fault looks like as opposed to 32 problems.
 
+### ⚠ TEST 2'S GLOSSARY WAS STALE, NOT BROKEN — A STORED RESULT FROM OLD RULES
+
+The reader: not all parameters are covered in "What these results mean" on
+Test 2. Correct, and the code was right — the stored result was old.
+
+```
+Test 2  analysis v3   entries=8   skipped_over_limit=2   9 names never asked
+Test 3  analysis v5   entries=17  skipped_over_limit=0   0 missing
+```
+
+Test 2 was analysed BEFORE §6ar's `358ba92`, which stopped filtering to the
+tests the laboratory had flagged and raised `MAX_PER_REQUEST` 8 → 24. Under the
+old rules it got:
+
+* **8 described** — lab-flagged, up to the old cap of 8;
+* **2 flagged and cut by the cap** — `CRP`, `SGPT`;
+* **7 never requested** — `WBC Count`, `Platelet count`, `Eosinophils`,
+  `Basophils`, `MCV`, `Estimated Average Glucose`, `TSH`, all unflagged.
+
+**The arithmetic is the proof, and it came from a separate count:** Test 2 has
+exactly **10** lab-flagged out-of-range parameters, and 8 + 2 = 10.
+
+> **A STORED RESULT IS AS OLD AS THE RULES THAT MADE IT.** Every report
+> analysed before `358ba92` carries a glossary built by the filter and the cap
+> of that day, and nothing about the current code will repair it. When a reader
+> says a feature is incomplete on ONE report, check the stored artefact's age
+> before the code — the same way a missing result means checking the lookup
+> before the renderer.
+
+### REFRESHING ONE STAGE WITHOUT RE-ANALYSING
+
+A full re-analysis would re-run extraction over four pages and every downstream
+stage, produce a new analysis version, and invalidate the `findingContext` and
+narrative caches with it. The glossary was regenerated ALONE instead: 17 names
+to `/explain/glossary`, the result written to `parameterGlossary`.
+
+**The names came from the pipeline's own `unmappedTestNames`**, imported rather
+than re-derived — it orders them by the extraction and filters to the rows the
+feature stage actually skipped, and a second implementation here would be free
+to disagree about what to describe.
+
+Two guards on the write, because this touches the database directly:
+
+* a `--dry` pass that prints the names and writes nothing, run first;
+* **a refusal to write a result with FEWER descriptions than the one stored.**
+  A partial regeneration replacing a fuller stored result would remove
+  descriptions a reader is seeing today — the failure this whole section is
+  about, arriving through the repair.
+
+Result: `requested 17, generated 17, cached 0, withheld 0, skipped 0`, 82.9s.
+**Both reports now have 17 of 17 described.**
+
+> **GEMINI IS SPENT FOR THE DAY.** All three models in the chain — 3.6-flash,
+> 3.5-flash and 3.5-flash-lite — hit their daily limits during this session.
+
 ### STILL TO DO ON THIS
 
 Nothing on Module 34's ceiling. Both real reports are described, stored and
