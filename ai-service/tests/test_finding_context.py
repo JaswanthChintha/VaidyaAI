@@ -240,3 +240,80 @@ def test_the_policy_says_what_the_prompt_contained():
     assert "NAME" in policy and "DIRECTION" in policy
     assert "never about the reader" in policy
     assert "diagnosis" in policy.lower() and "no condition is derived" in policy.lower()
+
+
+# --------------------------------------------------------------------------
+# THE NUMBER GATE, NARROWED FROM "ANY DIGIT" TO "A MEASUREMENT"
+#
+# It was `\d` and refused three quarters of everything this module produced on
+# a real report: `vitamin B12`, `low T4`, `type 2 diabetes` and "one of several
+# causes" are two analyte names, a condition name and a quantifier. None is a
+# measurement, and the gate exists to stop MEASUREMENTS being invented.
+#
+# Both directions are asserted, because a gate narrowed too far is worse than
+# the over-broad one it replaced.
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "A lowered result is commonly associated with vitamin B12 deficiency.",
+        "Commonly associated with iron deficiency, one of several causes.",
+        "A raised result is commonly associated with type 2 diabetes.",
+        "May be associated with thyroid conditions such as low T4.",
+        "Associated with vitamin D3 deficiency and COVID-19 related inflammation.",
+        "It can be a sign of infection or two distinct inflammatory processes.",
+        "A raised result is commonly associated with inflammation in the body.",
+    ],
+)
+def test_a_name_or_a_quantifier_is_not_a_measurement(text):
+    from app.services.finding_context import _check
+
+    assert _check(text) is None, text
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "A raised result is commonly associated with levels above 20 mm/hr.",
+        "Values of 12.5 or lower are commonly associated with anaemia.",
+        "Commonly associated with a level of 7 or more.",
+        "Commonly associated with a range of 10-20 mm/hr.",
+        # The spelled forms exist to stop the digit rule being evaded.
+        "Results below twelve are commonly associated with anaemia.",
+        "Commonly associated with two hundred milligrams per decilitre.",
+        "Associated with readings over fifty units.",
+        "Levels under ten are associated with this.",
+        "Concentrations above five grams are relevant.",
+    ],
+)
+def test_a_measurement_is_still_refused_however_it_is_written(text):
+    from app.services.finding_context import _check
+
+    assert _check(text) == "number", text
+
+
+def test_the_boundaries_are_word_boundaries_and_not_backspaces():
+    """THE ACCIDENT THIS FILE'S SIBLING ALREADY HAD, and it happened again here.
+
+    `parameter_glossary.py` carries a comment recording that its spelled-number
+    boundaries were once written into the source as literal BACKSPACE
+    characters by a shell escaping accident, so the pattern matched nothing and
+    the control was silently dead. Writing this gate reproduced it exactly:
+    five `\b` became `\x08`, every spelled-number test passed for the wrong
+    reason, and the only thing that caught it was a phrase that should have
+    been refused coming back allowed.
+
+    A regex cannot be trusted by inspection -- the two spellings look identical
+    in a diff. This asserts on the COMPILED pattern.
+    """
+    from app.services.finding_context import _MEASUREMENT_DIGIT, _SPELLED_NUMBER
+
+    for pattern in (_SPELLED_NUMBER.pattern, _MEASUREMENT_DIGIT.pattern):
+        assert "\x08" not in pattern
+    # And the boundary still does its job: a spelled number inside a longer
+    # word is not a spelled number.
+    from app.services.finding_context import _check
+
+    assert _check("Associated with a shortening of the tendon.") is None

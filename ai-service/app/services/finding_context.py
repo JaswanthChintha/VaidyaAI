@@ -82,10 +82,54 @@ DIRECTIONS = (DIRECTION_RAISED, DIRECTION_LOWERED)
 #: spends the day.
 MAX_PER_REPORT = 6
 
-_ANY_DIGIT = re.compile(r"\d")
+#: A MEASUREMENT, NOT MERELY A DIGIT.
+#:
+#: This was `\d` -- any digit anywhere -- and on a real report it refused three
+#: quarters of everything this module produced. The refusals were not
+#: measurements: `vitamin B12`, `low T4`, `type 2 diabetes` and "one of several
+#: causes" are two analyte names, a condition name and a quantifier. The
+#: vocabulary of this domain is full of them.
+#:
+#: THE PURPOSE IS UNCHANGED and is the one in the module docstring: the prompt
+#: carries no figures, so a FIGURE in the answer was invented. What follows is
+#: that rule stated precisely instead of approximated by "contains a digit".
+#:
+#: ALLOWED: a digit bound into a name -- preceded by a letter (`B12`, `T4`,
+#: `D3`, `HbA1c`, `COVID-19`) or following the word "type" (`type 2`).
+#: A digit after a LETTER-HYPHEN is a name too (`COVID-19`); a range like
+#: `10-20` is still refused, because its FIRST digit follows a space.
+#:
+#: A SEPARATE DECIMAL CHECK STOOD HERE AND WAS REMOVED: every mutation of it
+#: survived, because no input reaches it. `12.5` is caught at its FIRST digit,
+#: which follows a space; even `B12.5` is caught at the `5`, whose preceding
+#: character is a dot. A dead control that reads like a live one is worse than
+#: no control -- this codebase has lost a regex and a CSS block that way.
+#: REFUSED: every standalone numeral, every decimal, and every digit reached
+#: through a comparison. `above 20`, `12.5`, `a level of 7` all still refuse.
+_MEASUREMENT_DIGIT = re.compile(r"(?<![A-Za-z0-9])(?<![A-Za-z]-)(?<!type )\d")
+
+#: Spelled numbers exist to stop the digit rule being evaded by writing "below
+#: twelve". ONLY REFUSED IN QUANTITATIVE USE -- reached by a comparison, paired
+#: with another number, or followed by a unit -- because "one of several
+#: causes" is a quantifier and not a value.
+_SPELLED = (
+    r"(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|"
+    r"twenty|thirty|forty|fifty|hundred|thousand)"
+)
+_COMPARISON = (
+    r"(?:above|below|over|under|exceeds|exceeding|exceed|greater|less|more|"
+    r"fewer|at least|at most|between|around|approximately|roughly|nearly|"
+    r"up to|of)"
+)
+_UNIT_WORD = (
+    r"(?:grams?|milligrams?|micrograms?|litres?|liters?|decilitres?|"
+    r"deciliters?|millimoles?|micromoles?|percent|per cent|units?|"
+    r"millimetres?|millimeters?|hours?)"
+)
 _SPELLED_NUMBER = re.compile(
-    r"\b(zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|"
-    r"twenty|thirty|forty|fifty|hundred|thousand)\b",
+    _COMPARISON + r"\s+" + _SPELLED + r"\b"
+    r"|\b" + _SPELLED + r"\s+" + _SPELLED + r"\b"
+    r"|\b" + _SPELLED + r"\s+" + _UNIT_WORD + r"\b",
     re.IGNORECASE,
 )
 
@@ -179,7 +223,7 @@ def _refuse(test_name: str, direction: str, gate: str) -> FindingContext:
 
 def _check(text: str) -> Optional[str]:
     """Which local gate refuses this text, or None."""
-    if _ANY_DIGIT.search(text) or _SPELLED_NUMBER.search(text):
+    if _MEASUREMENT_DIGIT.search(text) or _SPELLED_NUMBER.search(text):
         return "number"
     if _SECOND_PERSON.search(text):
         return "second_person"
