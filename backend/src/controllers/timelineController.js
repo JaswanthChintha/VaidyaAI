@@ -4,6 +4,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const { sendSuccess } = require('../utils/apiResponse');
 const aiService = require('../services/aiServiceClient');
 const historyService = require('../services/historyService');
+const labSeriesService = require('../services/labSeriesService');
 
 /**
  * Modules 28, 29 and 30 - the longitudinal endpoints.
@@ -157,6 +158,17 @@ const getTrends = asyncHandler(async (req, res) => {
 
   return sendSuccess(res, 200, {
     history: historyService.summariseHistory(history, excluded),
+    // THE LABORATORY'S OWN REPEATED PARAMETERS, which Module 28 cannot trend.
+    //
+    // Module 28 works on canonical features -- the ones this pipeline can
+    // identify across reports and express in one unit -- so everything the
+    // platform does not assess was absent from the timeline entirely. A
+    // reader asked why, having reports full of parameters that never appeared.
+    //
+    // Built here, from the SAME snapshots Module 28 receives, so the two
+    // cannot disagree about which reports are in the history. It carries no
+    // direction and no classification: see labSeriesService.
+    labSeries: labSeriesService.buildLabSeries(history.snapshots),
     // Module 28's `TimelineTrendsData`, VERBATIM. `outcome` is the field to
     // branch on, never `trend` - and neither is touched here.
     trends,

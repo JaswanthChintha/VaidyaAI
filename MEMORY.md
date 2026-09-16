@@ -33,10 +33,10 @@ about any of them. That is the fifth time on this project.
 
 | | Tests |
 |---|---|
-| `backend/` (Node/Express) | **670** passing + 3 opt-in live |
+| `backend/` (Node/Express) | **686** passing + 3 opt-in live |
 | `ai-service/` (Python/FastAPI) | **3,903** passing + 7 skipped (3,910 collected) |
-| `frontend/` (React/Vitest) | **338** passing, 0 suites failed |
-| **Total** | **4,911** -- ALL THREE re-run green 2026-09-16 |
+| `frontend/` (React/Vitest) | **345** passing, 0 suites failed |
+| **Total** | **4,934** -- ALL THREE re-run green 2026-09-16 |
 
 > **⚠ THE 4,852 IN EVERY EARLIER SECTION WAS 7 TOO HIGH.** §6as recorded
 > ai-service's COLLECTED total (3,865) as its PASSED count; that day's real
@@ -73,7 +73,7 @@ about any of them. That is the fifth time on this project.
 > consolidated onto `main`, and the commit messages were then rewritten to
 > carry no co-author trailer. **Nothing carries one; do not add one.**
 >
-> All 4,911 tests pass and all three suites ran 2026-09-16. §6x is the design
+> All 4,934 tests pass and all three suites ran 2026-09-16. §6x is the design
 > system; §6z–§6ah and §6aj–§6ao are the earlier sessions; **§6aq, §6ar, §6as
 > and §6at are the recent ones** — two real laboratory reports driven through
 > the app, the three lookup defects they exposed (a parenthetical, a
@@ -7328,10 +7328,10 @@ described including the CRP that was being dropped. See the ✅ section below.
 
 | | Tests | Last run |
 |---|---|---|
-| `backend/` | **670** passed, 3 skipped, 0 suites failed | 2026-09-16 ✅ |
+| `backend/` | **686** passed, 3 skipped, 0 suites failed | 2026-09-16 ✅ |
 | `ai-service/` | **3,903** passed, 7 skipped, 0 failures (3,910 collected) | 2026-09-16 ✅ (`.env` moved aside) |
-| `frontend/` | **338** passed, **0 suites failed** | 2026-09-16 ✅ |
-| **Total** | **4,911** | |
+| `frontend/` | **345** passed, **0 suites failed** | 2026-09-16 ✅ |
+| **Total** | **4,934** | |
 
 One task: settle Module 34's six-finding ceiling, which §6as left open as a
 decision about a hypothetical report. **It was not hypothetical and it was not
@@ -8324,6 +8324,84 @@ now, and for neither when the service gave no sentence.
 Four mutants, all killed: the span dropped from the domain, the percentage
 ignored in favour of the absolute floor, stable panels silenced, and a reason
 invented when the service gave none.
+
+### ▶ THE TIMELINE SHOWED 14 PARAMETERS AND THE REPORTS CARRY 28
+
+The reader: the timeline only covers the fixed parameters, not all of them.
+Correct, and the reason was structural rather than a bug — Module 28 trends
+CANONICAL features, and a canonical feature is one the pipeline can identify
+across two reports and express in one unit. Everything this platform does not
+assess has neither, so **CRP 12.1 → 38.9 mg/L, a tripling across two reports,
+was nowhere on the timeline.** Not refused, not explained: absent.
+
+### THE DIFFICULTY IS NAMES, AND IT IS THE SAME DEFECT A THIRD TIME
+
+On this account: **28 distinct printed names across 4 reports, of which SIX
+repeat as exact strings.** Five more are the same test in a different case.
+And the one that matters most matches by neither route:
+
+```
+"CRP (C-REACTIVE PROTEIN)"   vs   "C-REACTIVE PROTEIN(CRP)"
+```
+
+Same test, same words, different order — §6aq's parenthetical and §6ar's
+"Grams/dL" again, with the consequence reaching the reader as an absence.
+
+**So the key is the SET OF WORDS, sorted.** `crp` + `creactive` + `protein` in
+either arrangement is one key. That took the account from 6 matched to
+**22 considered, 10 plotted, 2 blocked, 10 seen only once** — and CRP is on the
+timeline.
+
+> **SET EQUALITY, NOT SIMILARITY, AND THE LINE IS DELIBERATE.** Two names match
+> only when built from exactly the same words. Nothing is fuzzy and nothing is
+> scored: `Free Frimbulator` does not match `Frimbulator`, and there is a test
+> for it. A similarity threshold here would be the file guessing that two tests
+> are the same — the class of guess this codebase refuses everywhere else.
+> Duplicate words are kept too, so `total total protein` cannot collapse into
+> `total protein`.
+
+### THREE THINGS IT IS NOT ALLOWED TO DO
+
+1. **NO DIRECTION, EVER.** There is no polarity for these parameters and no
+   stability band — nothing knows whether a rising ESR is better or worse, or
+   how much movement is noise. Module 28 refuses to classify without both, and
+   so does this. A test asserts no panel carries a direction element.
+2. **NO UNIT IS ASSUMED.** Reports disagreeing about a unit BLOCK the series.
+   `U/L` and `IU/L` are the same to a clinician, and `g/dL` and `%` for MCHC are
+   numerically close — and this file treats none of that as known, because two
+   scales on one axis is the failure §6z caught once. **A blocked series still
+   shows its readings**; it just draws no line. On this account that is MCHC and
+   SGPT.
+3. **NOTHING IS DROPPED SILENTLY.** Ten parameters appeared on only one report;
+   the page says so rather than showing nine panels and letting the reader
+   assume nine was the total.
+
+### ⚠ THE SCALE CAVEAT, STATED RATHER THAN DESIGNED AROUND
+
+The assessed charts are now drawn against the band a change must cross to
+count. **These have no such band and no reference interval reaches this page**,
+so their vertical scale spans only the readings — which makes any change fill
+the box, the very thing fixed one section above. The page says so in a line.
+That is the honest option available today; the fix is to carry the
+laboratory's own printed interval into the history snapshot, which would mean
+changing what Module 28 receives and was not done here.
+
+### BUILT WHERE IT CANNOT DISAGREE
+
+`labSeriesService` reads `historyService`'s own snapshots — the same objects
+Module 28 receives — so the two cannot differ about which reports are in the
+history or in what order. `featureValidation.unmapped` was already on them; no
+projection changed and no query was added.
+
+**EVERY TEST FIXTURE IS INVENTED** — `Zorblex`, `Quibblease`, `Frimbulator`.
+There is no list of known tests in the service and there must be none in its
+tests, or the suite would pass by recognising the fixtures instead of the rule
+working. The reader asked for exactly this: *"this should work for any report
+which contains any unknown parameters, don't rely only on these."*
+
+Seven mutants, all killed: words unsorted, duplicates collapsed, units never
+compared, one report accepted, one numeric reading accepted, the chronological
+sort dropped, and the unit case not folded.
 
 ### STILL TO DO ON THIS
 

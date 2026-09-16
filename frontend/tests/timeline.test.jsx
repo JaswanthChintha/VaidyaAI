@@ -1184,3 +1184,136 @@ describe('Module 28 -- a stable panel says what stable means', () => {
     expect(block.querySelector('.trend-chart__why')).toBeNull();
   });
 });
+
+/**
+ * THE LABORATORY'S OWN REPEATED PARAMETERS, ON THE TIMELINE.
+ *
+ * Module 28 trends canonical features, so everything this platform does not
+ * assess was absent from the page entirely -- a reader with reports full of
+ * such parameters asked why none of them appeared.
+ *
+ * EVERY NAME BELOW IS INVENTED. The feature must work for any report carrying
+ * any unknown parameter; a fixture drawn from this project's own reports
+ * would let the suite pass by recognising them.
+ */
+describe('Timeline -- parameters this platform does not assess', () => {
+  const series = (name, points, blocked = null, unit = 'mg/L') => ({
+    key: name.toLowerCase(),
+    name,
+    unit: blocked ? null : unit,
+    blocked,
+    points: points.map(([date, value]) => ({ date: `${date}T00:00:00Z`, value, unit })),
+  });
+
+  const labSeries = (overrides = {}) => ({
+    series: [],
+    consideredCount: 0,
+    plottedCount: 0,
+    blockedCount: 0,
+    singleReportCount: 0,
+    notNumericCount: 0,
+    ...overrides,
+  });
+
+  const mountLab = (data) =>
+    mount({ trends: { trends: { features: {} }, history: { included: 2 }, labSeries: data } });
+
+  it('shows a parameter the platform does not assess', async () => {
+    mountLab(
+      labSeries({
+        series: [series('ZORBLEX FACTOR(ZBX)', [['2026-01-01', 12.1], ['2026-02-01', 38.9]])],
+        consideredCount: 3,
+        plottedCount: 1,
+      })
+    );
+
+    await screen.findByText(/Other parameters on your reports/);
+    expect(screen.getByText('ZORBLEX FACTOR(ZBX)')).toBeInTheDocument();
+  });
+
+  it('gives it NO direction word, because there is no polarity for it', async () => {
+    mountLab(
+      labSeries({
+        series: [series('ZORBLEX FACTOR(ZBX)', [['2026-01-01', 1], ['2026-02-01', 99]])],
+        consideredCount: 1,
+        plottedCount: 1,
+      })
+    );
+
+    await screen.findByText(/Other parameters on your reports/);
+    const section = screen.getByText(/Other parameters on your reports/).closest('section');
+    // THE PROPERTY IS THE BADGE, NOT THE WORDS. The section's own caveat says
+    // "no direction is given", which is the point rather than a violation of
+    // it -- so this asserts that no panel carries a direction ELEMENT.
+    expect(section.querySelectorAll('.trend')).toHaveLength(0);
+    expect(section.querySelectorAll('.trend-chart__nodirection')).toHaveLength(0);
+    for (const summary of section.querySelectorAll('summary')) {
+      expect(summary.textContent).not.toMatch(/improving|worsening|stable/i);
+    }
+  });
+
+  it('shows the readings when the units disagree, and says why there is no line', async () => {
+    mountLab(
+      labSeries({
+        series: [
+          series('FRIMBULATOR', [['2026-01-01', 101.9], ['2026-02-01', 13]], {
+            reason: 'units_differ',
+            units: ['U/L', 'IU/L'],
+          }),
+        ],
+        consideredCount: 1,
+        blockedCount: 1,
+      })
+    );
+
+    await screen.findByText(/Other parameters on your reports/);
+    const text = screen.getByText(/Other parameters on your reports/).closest('section').textContent;
+    expect(text).toMatch(/FRIMBULATOR/);
+    expect(text).toMatch(/101\.9/);
+    expect(text).toMatch(/13/);
+    expect(text).toMatch(/different units/);
+    expect(text).toMatch(/U\/L and IU\/L|IU\/L and U\/L/);
+  });
+
+  it('counts what it considered, so ten panels do not imply ten parameters', async () => {
+    mountLab(
+      labSeries({
+        series: [series('ZORBLEX', [['2026-01-01', 1], ['2026-02-01', 2]])],
+        consideredCount: 22,
+        plottedCount: 1,
+        singleReportCount: 10,
+      })
+    );
+
+    await screen.findByText(/Other parameters on your reports/);
+    expect(screen.getByText(/22 parameters considered/)).toBeInTheDocument();
+    expect(screen.getByText(/10 appeared on only one report/)).toBeInTheDocument();
+  });
+
+  it('warns that the scale covers only the readings', async () => {
+    // These have no stability band and no reference interval, so the axis
+    // cannot mean anything more than the two points on it.
+    mountLab(
+      labSeries({
+        series: [series('ZORBLEX', [['2026-01-01', 1], ['2026-02-01', 2]])],
+        consideredCount: 1,
+        plottedCount: 1,
+      })
+    );
+
+    await screen.findByText(/Other parameters on your reports/);
+    expect(screen.getByText(/even a small change looks large/)).toBeInTheDocument();
+  });
+
+  it('renders nothing at all when there is nothing to show', async () => {
+    mountLab(labSeries());
+    await screen.findByText(/Trends over time/);
+    expect(screen.queryByText(/Other parameters on your reports/)).toBeNull();
+  });
+
+  it('survives the section being absent from an older payload', async () => {
+    mount({ trends: { trends: { features: {} }, history: { included: 2 } } });
+    await screen.findByText(/Trends over time/);
+    expect(screen.queryByText(/Other parameters on your reports/)).toBeNull();
+  });
+});

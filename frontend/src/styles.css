@@ -1537,3 +1537,17 @@ code, kbd, samp, pre { font-family: var(--font-mono); }
   font-size: 13px;
   line-height: 1.45;
 }
+
+/* The laboratory's own repeated parameters, where the units disagree.
+   No line is drawn and the readings are shown anyway -- a unit disagreement
+   is a result, not a reason to withhold the numbers. */
+.lab-series__blocked { margin-top: 14px; }
+.lab-series__blocked > p {
+  margin: 0 0 8px;
+  padding: 9px 12px;
+  background: var(--header);
+  border-radius: 8px;
+  color: var(--mono);
+  font-size: 13px;
+  line-height: 1.45;
+}

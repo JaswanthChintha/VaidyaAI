@@ -183,6 +183,108 @@ function chartPropsFor(trend) {
   };
 }
 
+/**
+ * The laboratory's OWN repeated parameters.
+ *
+ * Module 28 trends canonical features -- the ones this pipeline can identify
+ * across reports and express in one unit -- so everything the platform does
+ * not assess was absent from the timeline entirely. A reader with reports
+ * full of parameters that never appeared asked why.
+ *
+ * NO DIRECTION WORD ANYWHERE IN HERE, and no summary badge. There is no
+ * polarity for these parameters and no stability band: nothing knows whether
+ * a rising ESR is better or worse, or how much movement is noise. The panel
+ * carries the readings and the dates and stops.
+ */
+function LabSeries({ data }) {
+  const series = data?.series || [];
+  if (!series.length && !data?.consideredCount) return null;
+
+  const plotted = series.filter((s) => !s.blocked);
+  const blocked = series.filter((s) => s.blocked);
+
+  return (
+    <section className="card">
+      <h2>Other parameters on your reports</h2>
+
+      <p className="hint">
+        Values your laboratory reported that this tool does not assess, shown
+        over time. Nothing here is interpreted: no direction is given and no
+        condition is derived from any of it.
+      </p>
+
+      {/* THE SCALE CAVEAT, STATED RATHER THAN DESIGNED AROUND.
+          The assessed charts above are drawn against the band a change would
+          have to cross to count. These parameters have no such band and no
+          reference interval reaches this page, so the vertical scale spans
+          only the readings themselves -- which makes any change, however
+          small, fill the box. Saying so is the honest option available here;
+          the alternative is a picture whose steepness means nothing and no
+          warning that it does not. */}
+      {plotted.length ? (
+        <p className="hint">
+          The vertical scale on these covers only the readings shown, so even a
+          small change looks large. There is no reference range here to judge
+          one against.
+        </p>
+      ) : null}
+
+      {plotted.map((entry) => (
+        <details className="trend-chart__block disclosure" key={entry.key}>
+          <summary className="disclosure__summary">
+            <h3 className="trend-chart__title">{entry.name}</h3>
+            <span className="disclosure__spacer" />
+            <span className="disclosure__chevron" aria-hidden="true" />
+          </summary>
+          <TrendChart
+            label={entry.name}
+            unit={entry.unit}
+            points={entry.points.map((p) => ({
+              date: p.date,
+              value: p.value,
+              unit: p.unit,
+            }))}
+          />
+        </details>
+      ))}
+
+      {/* A UNIT DISAGREEMENT IS A RESULT, NOT A REASON TO HIDE THE READINGS.
+          Two scales on one axis is the failure 6z caught once already, so no
+          line is drawn -- but the values are the laboratory's and the reader
+          is entitled to them, with the disagreement named. */}
+      {blocked.length ? (
+        <div className="lab-series__blocked">
+          {blocked.map((entry) => (
+            <p key={entry.key}>
+              <strong>{entry.name}</strong>{' '}
+              {entry.points
+                .map((p) => `${p.value} ${p.unit || ''}`.trim())
+                .join(' \u2192 ')}
+              {' \u2014 '}
+              reported in different units ({entry.blocked.units.join(' and ')}),
+              so these are not plotted together.
+            </p>
+          ))}
+        </div>
+      ) : null}
+
+      {/* WHAT WAS CONSIDERED, so a reader seeing ten panels can tell that
+          twenty-two parameters were looked at. An absence that is counted is
+          not the same as one that is silent. */}
+      <p className="hint">
+        {data.consideredCount} parameter
+        {data.consideredCount === 1 ? '' : 's'} considered.
+        {data.singleReportCount
+          ? ` ${data.singleReportCount} appeared on only one report, so there is nothing to compare them against.`
+          : ''}
+        {data.notNumericCount
+          ? ` ${data.notNumericCount} were not reported as numbers.`
+          : ''}
+      </p>
+    </section>
+  );
+}
+
 function Trends({ data, history }) {
   const features = data?.features ? Object.values(data.features) : [];
   const summary = data?.summary;
@@ -717,7 +819,10 @@ export default function Timeline() {
       {state.trendsError ? (
         <p className="error" role="alert">{state.trendsError}</p>
       ) : (
-        <Trends data={state.trends?.trends} history={state.trends?.history} />
+        <>
+          <Trends data={state.trends?.trends} history={state.trends?.history} />
+          <LabSeries data={state.trends?.labSeries} />
+        </>
       )}
 
       {state.comparisonError ? (
