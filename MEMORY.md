@@ -3,7 +3,7 @@
 > Living context file for the VaidyaAI build. Keep this in the project folder so the
 > project's history, decisions, and state survive independently of any chat session.
 >
-> **Last updated:** 2026-09-12 · **All 32 modules + frontend built**
+> **Last updated:** 2026-09-16 (§6at) · **All 32 modules + frontend built, plus 33 and 34**
 >
 > The build history is §1–§6w. The recent design and safety work is:
 > the "Instrument" design system (§6x) · the timeline trend chart (§6z) · five
@@ -12,9 +12,12 @@
 > picker for the comparison (§6ah) · and a third session of design, WCAG AA
 > and internal-vocabulary work (§6aj–§6ao).
 >
-> **⚠ NOTHING SINCE `6dc3409` IS COMMITTED — 45 files, three sessions deep.**
-> **Read §6ap first.** It is the current handover and supersedes §6ai, whose
-> test-account description is now stale.
+> **⚠ READ §6at FIRST, THEN §6as.** Those are the current handovers.
+>
+> The line that stood here — "nothing since `6dc3409` is committed, 45 files,
+> three sessions deep, read §6ap first" — **is history.** Everything is
+> committed and the tree is clean. §6ap and §6ai are stale handovers and §6ap
+> opens with that same uncommitted-work warning; do not act on it.
 
 ---
 
@@ -30,18 +33,28 @@ about any of them. That is the fifth time on this project.
 
 | | Tests |
 |---|---|
-| `backend/` (Node/Express) | **662** passing + 3 opt-in live |
-| `ai-service/` (Python/FastAPI) | **3,865** passing + 7 skipped |
+| `backend/` (Node/Express) | **666** passing + 3 opt-in live |
+| `ai-service/` (Python/FastAPI) | **3,865** passing + 7 skipped (3,872 collected) |
 | `frontend/` (React/Vitest) | **325** passing, 0 suites failed |
-| **Total** | **4,852** -- ALL THREE re-run green 2026-09-16 |
+| **Total** | **4,856** -- ALL THREE re-run green 2026-09-16 |
 
-> ### ▶ NEW CHAT? START AT §6as, THEN §6ar.
+> **⚠ THE 4,852 IN EVERY EARLIER SECTION WAS 7 TOO HIGH.** §6as recorded
+> ai-service's COLLECTED total (3,865) as its PASSED count; that day's real
+> figure was 3,858 passed + 7 skipped. The row above is a true count, taken
+> from the junit XML. See §6at.
+
+> ### ▶ NEW CHAT? START AT §6at, THEN §6as.
 >
 > Between them they have the run commands, the state of the repository, what
 > `Test 2.pdf` and `Test 3.pdf` are and why they matter, and what is open.
-> **Two decisions are waiting, both at the foot of §6as** -- the certainty
-> gate's `indicate` gap, and whether Module 34's six-finding ceiling should
-> rise as the glossary's did.
+> **ONE decision is waiting, at the foot of §6at** -- the certainty gate's
+> `indicate` gap. Module 34's six-finding ceiling is settled: it was not a
+> decision about a hypothetical report, it was **already dropping a raised CRP
+> on Test 3**, and §6at is that defect.
+>
+> **§6at leaves one thing unfinished that costs quota:** `Test 3.pdf`'s
+> `findingContext` cache still holds the six-entry result, so the fix is
+> invisible on that report until the cache is cleared.
 >
 > **§6ap and §6ai are PREVIOUS handovers and both are stale in the way that
 > matters most: §6ap opens with "45 files uncommitted, no recovery point", and
@@ -53,13 +66,13 @@ about any of them. That is the fifth time on this project.
 > consolidated onto `main`, and the commit messages were then rewritten to
 > carry no co-author trailer. **Nothing carries one; do not add one.**
 >
-> All 4,852 tests pass, all three suites run 2026-09-16, and EVERYTHING IS
-> PUSHED — `main` and `origin/main` are identical. §6x is the design system;
-> §6z–§6ah and §6aj–§6ao are the earlier sessions; **§6aq, §6ar and §6as are
-> the recent ones** — two real laboratory reports driven through the app, the
-> three lookup defects they exposed (a parenthetical, a misspelling and a unit
-> spelled out in words), Modules 33 and 34, a page stripped of its own
-> commentary, and every parameter finally described.
+> All 4,856 tests pass and all three suites ran 2026-09-16. §6x is the design
+> system; §6z–§6ah and §6aj–§6ao are the earlier sessions; **§6aq, §6ar, §6as
+> and §6at are the recent ones** — two real laboratory reports driven through
+> the app, the three lookup defects they exposed (a parenthetical, a
+> misspelling and a unit spelled out in words), Modules 33 and 34, a page
+> stripped of its own commentary, every parameter finally described, and
+> **Module 34's ceiling caught silently dropping a finding (§6at)**.
 >
 > **§6ar carries the runner fault worth reading before you trust any suite
 > here:** a frontend run reported 288 passed / 0 failed when a whole file had
@@ -7126,7 +7139,7 @@ unit table. Its haemoglobin is accepted and Anemia is `Indicated`.
 
 ---
 
-## 6as. THE 2026-09-16 SESSION — READ THIS FIRST
+## 6as. THE FIRST 2026-09-16 SESSION — **SEE ALSO §6at**
 
 **Everything is committed and pushed. `main` == `origin/main`, tree clean, one
 branch.** §6ar is the previous handover; its body still holds, but its counts
@@ -7277,9 +7290,13 @@ nothing else.
   `indicating` but not `indicate`, so "may indicate" passes. It is hedged, so
   this is a WORDING DECISION rather than a defect -- but the inconsistency is
   unintended and should be settled deliberately.
-* **`MAX_PER_REPORT = 6` in Module 34** was not reached on Test 3 (6 findings
-  exactly). A report with more out-of-range results will silently describe the
-  first six. Decide whether that ceiling should rise as the glossary's did.
+* ~~**`MAX_PER_REPORT = 6` in Module 34** was not reached on Test 3 (6 findings
+  exactly).~~ **WRONG, AND IT WAS A LIVE DEFECT. IT HAD ALREADY DROPPED A
+  RAISED CRP ON TEST 3.** The stored document said so on the line below the
+  entries: `skipped_over_limit: 1`. Seven findings were sent, six came back,
+  and this bullet was written by counting the six. Test 2 sends twelve.
+  **ANSWERED AND FIXED — see §6at**: ceiling 16, sized from both reports, with
+  the cache that makes it affordable.
 * `--rust` is 4.38:1 on `--header` (§6am).
 * "stability band" in one trend sentence (§6an-i).
 * `origin: report_transcription` on profile rows (§6w).
@@ -7287,6 +7304,178 @@ nothing else.
 * Module 32's payload still nests `present` two ways (§6w).
 * **Frontend fixtures are still hand-written** — two real payloads now exist
   to generate them from.
+* The ai-service suite still needs `.env` moved aside. Fix `conftest.py`.
+* `RangeChart.jsx` is orphaned since f3d0963.
+
+---
+
+## 6at. THE SECOND 2026-09-16 SESSION — READ THIS FIRST
+
+**Everything is committed. `main`, tree clean, one branch.** §6as is the
+previous handover; its body still holds except for the `MAX_PER_REPORT` bullet,
+which this section corrects, and its test counts, which were off by 7.
+
+| | Tests | Last run |
+|---|---|---|
+| `backend/` | **666** passed, 3 skipped, 0 suites failed | 2026-09-16 ✅ |
+| `ai-service/` | **3,865** passed, 7 skipped, 0 failures (3,872 collected) | 2026-09-16 ✅ (`.env` moved aside) |
+| `frontend/` | **325** passed, **0 suites failed** | 2026-09-16 ✅ |
+| **Total** | **4,856** | |
+
+One task: settle Module 34's six-finding ceiling, which §6as left open as a
+decision about a hypothetical report. **It was not hypothetical and it was not
+a decision.**
+
+### ▶ THE DEFECT: THE CEILING HAD ALREADY DROPPED A RAISED CRP
+
+`Test 3.pdf`, stored analysis version 5, as the producer itself recorded it:
+
+```
+findingContext: entries=6 generated=6 withheld=0 skipped_over_limit=1
+```
+
+Seven findings were sent. Six were described. **The seventh was
+`C-REACTIVE PROTEIN(CRP)` (raised)** — the one that makes clinical sense of the
+raised ESR and raised neutrophils printed immediately above it, and, exactly,
+the analyte this module's own docstring uses as its cautionary example.
+
+`Test 2.pdf` sends **twelve** and would have lost six: PCV, MCH, MCHC, ESR, CRP
+and SGPT. Module 34 has never run on it, so nobody had seen it truncate there.
+
+> **§6as RECORDED THE CEILING AS UNREACHED BY COUNTING THE ENTRIES THAT CAME
+> BACK.** `skipped_over_limit: 1` was on the next line of the same stored
+> document. Six entries is what a cap of six looks like whether or not it fired
+> — **the count that answers the question is the one the producer kept about
+> what it did NOT do**, and this is the sixth time on this project that a
+> number was read as an answer when it was a side effect.
+
+Two independent sources agree on the seven, which is why the fix was believed:
+the stored `findingContext`, and a replay of `Dashboard.jsx`'s own derivation
+through the real `dashboardService` — same six names, same order, plus the one
+that fell off. **The replay's first run said three findings, not seven**, because
+it guessed the stored field names (`doc.engineeredFeatures`) instead of reading
+`dashboardController`'s actual call (`report.features`). A probe's output is a
+claim about the probe.
+
+### WHAT WAS DROPPED WAS THE LABORATORY'S HALF, EVERY TIME
+
+The page sends this tool's own threshold crossings first and the results the
+laboratory merely flagged after them. Everything lost on both reports was
+lab-flagged, because those are appended last. That ordering is a defensible
+priority and it is now **deliberate and pinned by a test**; being 4th rather
+than 7th *within* the lab-flagged group was not a priority at all.
+
+### THE FIX, AND WHY 16
+
+* **`MAX_PER_REPORT` 6 → 16**, sized from the two measurements above (7 and 12)
+  with margin, and still a real cap on a sixty-row panel. Bounded by a test at
+  `>= 12` and `<= 24`, the way the glossary's is.
+* **A process cache keyed on `(normalised test name, direction)`** — which is
+  the ENTIRE prompt, so it holds nothing patient-specific. **This is the
+  precondition, not a nicety**: §6ar's ceiling rose to 24 only because the
+  glossary's name-keyed cache made a hit free, and Module 34 had no cache at
+  all. The budget now counts **calls, not entries**, so a hit spends nothing.
+* Only an `available` entry is cached. A refusal is a moment, not a fact about
+  the test name, and a spent quota refuses everything.
+* **A hit carries back the CALLER's spelling of the name.** The page matches
+  entries to rows by name; one laboratory prints `Lymphocytes` and another
+  `LYMPHOCYTES`, and handing back the first report's spelling would strand a
+  paragraph that had been generated and safety-approved. Whitespace is
+  collapsed in the key too, because a laboratory really does print
+  `RANDOM BLOOD GLUCOSE ( RBS )`.
+* **A summary log line, which this module never had**:
+  `finding_context {requested, generated, cached, withheld, skipped_over_limit,
+  ceiling}`. The page renders nothing for a skipped finding by design, so this
+  is the ONLY place the ceiling is observable. Its absence is why the
+  truncation survived two sessions.
+
+### TWO CONSEQUENCES THE CEILING CHANGE EXPOSED, BOTH ELSEWHERE
+
+**1. The timeout was the §6as glossary defect arriving on schedule.**
+`describeFindings` borrowed `explainTimeoutMs` (120s), a budget shared with
+stages that make ONE call, and fitted only while the cap was six. Sixteen calls
+at the glossary's own measured rate do not fit. It has
+`findingContextTimeoutMs` (180s) now and **`retries: 0`**, because a timed-out
+call has already spent its model calls — retrying spends them again.
+
+> **A STAGE'S TIMEOUT IS A CLAIM ABOUT WHAT IT DOES (§6as).** This is the
+> second stage to make one model call per item while holding a budget written
+> for a stage that makes one in total. Named here BEFORE it fired.
+
+**2. `generated_count: 0` now has two meanings and only one is a refusal.**
+The controller declined to store a result with `generated_count` 0 — correct
+for a spent quota, and **wrong for a fully cached one**, which arrives complete
+with every entry available and nothing generated. It would have refused to
+store a good answer and re-requested on every page view precisely when the
+answer was free. It asks whether anything came back **available** instead. The
+quota-outage protection is unchanged, and its test now uses the real payload
+shape (entries present, all refused) rather than an empty list that passed
+under either rule.
+
+### VERIFICATION
+
+**16 mutants, all killed, each by the test that should own it** — the ceiling
+off-by-one, the cache lookup, caching a refusal, the whitespace fold, the
+direction in the key, the caller's spelling, the order, reverting to counting
+entries, and on the backend the availability check, the retry and both
+timeouts. Every mutant was checked to IMPORT (Python) or PARSE (Node) before
+its verdict was believed.
+
+> ⚠ **TWO NODE MUTANTS FIRST REPORTED "PATCH DID NOT APPLY": THE BACKEND FILES
+> ARE CRLF** and the `\n` anchors matched nothing. Re-run with `\r\n`, both
+> died. A patch that silently fails to apply and a guard that is genuinely
+> untested look identical in the output — the only reason this surfaced is that
+> the runner distinguishes "did not apply" from "survived". **Make it.**
+
+`skipped_over_limit` is **not** dead code after the raise: a 17-finding report
+reaches it, and the two mutations of it died. Kept, on that basis, rather than
+on "just in case".
+
+`test_finding_context.py` went 43 → 50 collected, confirmed by running the
+baseline under `git stash` rather than inferred from the total.
+
+### ⚠ §6as's TEST COUNTS WERE OFF BY 7, AND SO WAS THE TOTAL
+
+§6as records ai-service as "3,865 passed, 7 skipped". 3,865 was the
+**collected** total; that day's real figure was 3,858 passed + 7 skipped. The
+4,852 total carried the same error. Corrected in the table above and in §0.
+
+> The junit XML is the way to get these here, because **pytest's final summary
+> line does not survive to `tail`** in this environment — `-q` output ends at
+> the warnings footer. `--junitxml` then read `tests/failures/errors/skipped`
+> off the `testsuite` element, and count one file's tests by filtering
+> `testcase` on `classname`. Write the XML to the scratchpad with a WINDOWS
+> path: Python does not see bash's `/tmp`.
+
+### STILL TO DO ON THIS, AND IT COSTS QUOTA
+
+**`Test 3.pdf` will keep hiding CRP until its cache is cleared.** The key is
+the analysis version plus a hash of the findings sent, and the fix changed
+neither — so the stored six-entry result is still what the page gets. The
+script is §6as's:
+`Report.updateOne({_id}, {$unset: {findingContext: ''}})`. `Test 2.pdf` has no
+`findingContext` at all and would generate twelve on its first request, minus
+whatever the process cache already holds from Test 3 (haemoglobin, lymphocytes,
+ESR, CRP and HbA1c are shared between the two reports, in different spellings
+that the key folds together).
+
+**Nothing in this session was verified against real Gemini.** That was a
+deliberate call to not spend the day's quota; every claim above rests on the
+stored payloads, the tests and the mutants.
+
+### KNOWN AND OPEN
+
+* **The certainty gate's `indicate` gap** — `_CERTAINTY` matches `indicates`
+  and `indicating` but not `indicate`, so "may indicate" passes. Hedged, so a
+  WORDING DECISION rather than a defect, but the inconsistency is unintended.
+  Carried forward from §6as, untouched.
+* `--rust` is 4.38:1 on `--header` (§6am).
+* "stability band" in one trend sentence (§6an-i).
+* `origin: report_transcription` on profile rows (§6w).
+* `MISSING_PROFESSIONAL_REFERRAL` does not block (§6r, §6k D1).
+* Module 32's payload still nests `present` two ways (§6w).
+* **Frontend fixtures are still hand-written** — two real payloads to generate
+  them from.
 * The ai-service suite still needs `.env` moved aside. Fix `conftest.py`.
 * `RangeChart.jsx` is orphaned since f3d0963.
 
