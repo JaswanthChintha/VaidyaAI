@@ -950,34 +950,82 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
 }
 
 /* The count in a section summary -- how much is behind the toggle, so opening
-   it is an informed choice rather than a surprise. */
+   it is an informed choice rather than a surprise.
+
+   FILLED, NOT OUTLINED. An outlined pill beside a heading reads as a second
+   control -- something else to press -- which is exactly what it must not be.
+   A filled chip with no border reads as a quantity attached to the words. */
 .disclosure__count {
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: .08em;
   color: var(--mono);
-  border: 1px solid var(--panel-line);
+  background: var(--header);
   border-radius: 999px;
-  padding: 1px 8px;
+  padding: 2px 9px;
+}
+.disclosure--section > .disclosure__summary:hover .disclosure__count {
+  background: var(--panel);
 }
 
 .disclosure__spacer { flex: 1; }
 
-/* A whole section rather than one card. The SUMMARY stays unboxed -- the
-   heading inside it is a page heading and a border around that reads as a
-   card containing a section rather than the section itself -- but the
-   revealed CONTENT is panelled, because content with no edge has no visible
-   end and the closing qualifier read as page text that merely followed. */
+/* A whole section rather than one card.
+   ==========================================================================
+   THE CLOSED ROW USED TO BE UNBOXED, AND IT READ AS DEBRIS. A hairline rule,
+   a heading, a pale count and -- a full page-width away -- a chevron. At
+   1500px the two ends of the control had nothing between them, so the
+   chevron looked like a stray glyph rather than the affordance for the words
+   on the far left, and the whole row floated on the page background while
+   every section around it sat on a panel.
+
+   The reasoning for leaving it unboxed was that a border around a page
+   heading "reads as a card containing a section rather than the section
+   itself". That is true of a border drawn around an OPEN section. It is not
+   true of the closed state, which is not a section at all yet -- it is a
+   BUTTON, and a button should look like one surface you can press.
+
+   So the summary is a panel row, and opening it joins that row to the body
+   as a single piece: the seam between them is removed rather than drawn, so
+   the open state is one panel with a heading on top and not two stacked
+   boxes. */
 .disclosure--section {
   border: 0;
-  border-top: 1px solid var(--panel-line);
-  margin-top: 18px;
+  margin-top: 22px;
 }
-.disclosure--section > .disclosure__summary { padding: 13px 0; }
-.disclosure--section > .disclosure__summary:hover { background: none; }
-.disclosure--section > .disclosure__summary:hover > h2 { color: var(--accent); }
+.disclosure--section > .disclosure__summary {
+  padding: 12px 16px;
+  background: var(--panel);
+  border: 1px solid var(--panel-line);
+  border-radius: 12px;
+  transition: background .15s ease, border-color .15s ease;
+}
+/* PRESSABLE, NOT LINKED. The whole row lifts on hover rather than the words
+   changing colour: recolouring the heading suggested a destination, and there
+   is nowhere to go -- the control opens something in place. */
+.disclosure--section > .disclosure__summary:hover {
+  background: var(--header);
+  border-color: var(--header-line);
+}
+.disclosure--section > .disclosure__summary:hover > h2 { color: inherit; }
 /* The heading stops stretching so the count can sit against it. */
 .disclosure--section > .disclosure__summary > h2 { flex: 0 0 auto; }
+
+/* OPEN: one piece, not two. The summary keeps its top corners, loses its
+   bottom ones and its bottom edge, and the body picks up exactly where it
+   stopped -- so the heading reads as the top OF the panel rather than as a
+   separate box sitting on it. */
+.disclosure--section[open] > .disclosure__summary {
+  border-radius: 12px 12px 0 0;
+  border-bottom-color: transparent;
+  background: var(--panel);
+}
+.disclosure--section[open] > .disclosure__body {
+  border-top: 0;
+  border-radius: 0 0 12px 12px;
+  margin-top: 0;
+  padding-top: 4px;
+}
 
 .disclosure__body {
   background: var(--panel);
