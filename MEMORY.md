@@ -52,9 +52,10 @@ about any of them. That is the fifth time on this project.
 > decision about a hypothetical report, it was **already dropping a raised CRP
 > on Test 3**, and §6at is that defect.
 >
-> **§6at leaves one thing unfinished that costs quota:** `Test 3.pdf`'s
-> `findingContext` cache still holds the six-entry result, so the fix is
-> invisible on that report until the cache is cleared.
+> **§6at is verified live on Test 3, through the real page to Mongo** — seven
+> findings described, CRP among them. `Test 2.pdf` has still never had Module 34
+> run on it and is the only report that would exercise the new ceiling near 16;
+> that costs quota.
 >
 > **§6ap and §6ai are PREVIOUS handovers and both are stale in the way that
 > matters most: §6ap opens with "45 files uncommitted, no recovery point", and
@@ -7311,9 +7312,13 @@ nothing else.
 
 ## 6at. THE SECOND 2026-09-16 SESSION — READ THIS FIRST
 
-**Everything is committed. `main`, tree clean, one branch.** §6as is the
-previous handover; its body still holds except for the `MAX_PER_REPORT` bullet,
-which this section corrects, and its test counts, which were off by 7.
+**Everything is committed and pushed. `main` == `origin/main`, tree clean, one
+branch.** §6as is the previous handover; its body still holds except for the
+`MAX_PER_REPORT` bullet, which this section corrects, and its test counts,
+which were off by 7.
+
+**The fix is verified live on Test 3, all the way to Mongo** — seven findings
+described including the CRP that was being dropped. See the ✅ section below.
 
 | | Tests | Last run |
 |---|---|---|
@@ -7447,21 +7452,68 @@ baseline under `git stash` rather than inferred from the total.
 > `testcase` on `classname`. Write the XML to the scratchpad with a WINDOWS
 > path: Python does not see bash's `/tmp`.
 
+### ✅ VERIFIED LIVE ON TEST 3, ALL THE WAY TO MONGO
+
+`Test 3.pdf`'s `findingContext` was cleared and the page re-driven. Three
+independent sources agree, which is why this is believed:
+
+```
+ai-service   finding_context {requested: 7, generated: 7, cached: 0,
+                              withheld: 0, skipped_over_limit: 0, ceiling: 16}
+mongo        STORED: entries=7 generated=0 cached=7 withheld=0 skipped=0
+             - C-REACTIVE PROTEIN(CRP) (raised) available=true textLen=180
+```
+
+* **Seven described, zero refused.** §6as's prompt fixes hold at seven, not
+  only at the six that used to fit. Seven Module 24 approvals,
+  `violation_count: 0` on every one.
+* **`requested: 7` from the real page** — which independently confirms the
+  replay this session's sizing rested on.
+* **The cache, live: 19.6s → 0.0s**, `generated: 0, cached: 7` on the second
+  identical request. The property the raised ceiling rests on is measured now,
+  not only asserted in a test.
+* **`generated_count: 0` WITH A COMPLETE RESULT WAS STORED.** That is the exact
+  branch the old controller would have refused, and it was unreachable before
+  the cache existed, so this is the first time it has ever run for real.
+* Per-call time through the FALLBACK model was 2–3.5s, so sixteen findings is
+  ~56s. `findingContextTimeoutMs` at 180s is sized from that.
+
+> ⚠ **THE QUOTA WAS ALREADY NEARLY GONE, AND THE CHAIN FELL OVER TWICE DURING
+> THESE SEVEN CALLS**: `gemini-3.6-flash` exhausted on the first call,
+> `gemini-3.5-flash` four calls later, both `cooldown_seconds: 1800`. One call
+> on 3.6-flash, four on 3.5-flash, four on 3.5-flash-lite. Nothing failed — the
+> chain did its job — but **a seven-call verification can exhaust two of three
+> models**, so budget a live check as more than its call count.
+
+### ⚠ THE DASHBOARD FIRES EACH MODEL REQUEST TWICE IN DEV
+
+`finding-context` arrived **twice**, 1ms apart in the ai-service log, and so
+did `summary-prose`. It is `React.StrictMode` double-invoking effects
+(`frontend/src/main.jsx:9`) — dev only, not a defect in shipped code, and not
+worth changing.
+
+**What it changes is the arithmetic on what the old code cost.** Both requests
+raced past the Mongo cache before either had stored, so on a cold cache **every
+dev page load spent twice the findings in model calls** — twelve, not six, at
+the old cap. The process cache is what makes the second one free now.
+
+> **"ONE MODEL CALL PER FINDING" IS TRUE ONCE PER PROCESS, NOT PER PAGE LOAD.**
+> Anyone measuring quota burn from a dev session and dividing by one will be
+> out by a factor of two.
+
 ### STILL TO DO ON THIS, AND IT COSTS QUOTA
 
-**`Test 3.pdf` will keep hiding CRP until its cache is cleared.** The key is
-the analysis version plus a hash of the findings sent, and the fix changed
-neither — so the stored six-entry result is still what the page gets. The
-script is §6as's:
-`Report.updateOne({_id}, {$unset: {findingContext: ''}})`. `Test 2.pdf` has no
-`findingContext` at all and would generate twelve on its first request, minus
-whatever the process cache already holds from Test 3 (haemoglobin, lymphocytes,
-ESR, CRP and HbA1c are shared between the two reports, in different spellings
-that the key folds together).
+**`Test 2.pdf` has never had Module 34 run on it** and would generate twelve on
+its first request, minus whatever the process cache holds from Test 3
+(haemoglobin, lymphocytes, ESR, CRP and HbA1c are shared between the two
+reports, in spellings the key folds together). It is the only report that would
+exercise the ceiling anywhere near 16.
 
-**Nothing in this session was verified against real Gemini.** That was a
-deliberate call to not spend the day's quota; every claim above rests on the
-stored payloads, the tests and the mutants.
+To force a re-request on a report that already has one, the script is §6as's
+and it touches nothing else:
+`Report.updateOne({_id}, {$unset: {findingContext: ''}})` — verified this
+session to leave the analysis version, `clinicalReport`, `summaryProse` and
+`parameterGlossary` intact.
 
 ### KNOWN AND OPEN
 
