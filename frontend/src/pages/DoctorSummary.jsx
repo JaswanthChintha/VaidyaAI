@@ -145,7 +145,6 @@ export default function DoctorSummary() {
   const { id } = useParams();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
-  const [findingContext, setFindingContext] = useState([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -162,39 +161,6 @@ export default function DoctorSummary() {
         setData(result);
         summaryRendered = true;
 
-        /* MODULE 34 -- what the values the LABORATORY marked are generally
-           associated with.
-           DERIVED FROM `printed_flag`, which is the reporting laboratory's own
-           marking and the only direction on this page that is not this tool's
-           own verdict. Profile rows are excluded upstream by `measured`'s own
-           filter, so a questionnaire answer can never reach it. The request
-           carries a printed NAME and the word raised/lowered; no value goes
-           with it, which is what keeps the answer about the test.
-           IT LIVES IN THIS EFFECT because `labFlagged` is computed after the
-           early returns below, and a second hook cannot follow them. */
-        const rows = result?.doctorSummary?.laboratory?.rows || [];
-        const direction = (word) => {
-          const w = String(word || '').toLowerCase();
-          if (w.includes('high') || w.includes('raised')) return 'raised';
-          if (w.includes('low') || w.includes('lowered')) return 'lowered';
-          return null;
-        };
-        const findings = [];
-        for (const row of rows) {
-          if (row?.provenance?.source === 'patient_profile') continue;
-          if (row?.usable === false) continue;
-          const d = direction(row?.printed_flag);
-          if (!d) continue;
-          const name = parameterName(row);
-          if (name) findings.push({ test_name: name, direction: d });
-        }
-        if (!findings.length) return;
-
-        const ctx = await api.describeFindings(id, findings);
-        const entries = (ctx?.context?.entries || []).filter(
-          (e) => e && e.available === true && typeof e.text === 'string' && e.text.trim()
-        );
-        if (!cancelled && entries.length) setFindingContext(entries);
       } catch (err) {
         // ONLY THE SUMMARY ITSELF IS AN ERROR. A missing context block is not
         // something a clinician has any use for being told about, and the
@@ -231,6 +197,34 @@ export default function DoctorSummary() {
   const outOfRange = (unassessed?.items || []).filter(
     (item) => item.labFlaggedAbnormal === true
   );
+
+  /* OUT OF RANGE, AND IT BELONGS INSIDE THE DOCUMENT.
+
+     Built once and rendered in BOTH branches of the passage rather than
+     after them: as a sibling of the <article> it drew its own box on the
+     page, which is the separate-document look the reader asked to be rid
+     of. One constant, two call sites -- the alternative is duplicating
+     the markup and letting the two copies drift.
+
+     Values, units, intervals and flags are the laboratory's own and are
+     carried forward untouched, which is why the sentence says "marked by
+     the laboratory" rather than putting it in this tool's voice. */
+  const outOfRangeLine = outOfRange.length ? (
+    <p className="passage__outofrange">
+        <strong>Marked outside the reference interval by the laboratory:</strong>{' '}
+        {outOfRange.map((item, index) => (
+          <span key={`${item.testName}-${index}`}>
+            {index > 0 ? '; ' : ''}
+            {item.testName} {item.value}
+            {item.unit ? ` ${item.unit}` : ''}
+            {referenceText(item) ? ` (${referenceText(item)}` : ' ('}
+            {item.labFlag ? `${referenceText(item) ? ', ' : ''}${item.labFlag}` : ''}
+            {')'}
+          </span>
+        ))}
+        .
+      </p>
+  ) : null;
   const narrative = data.narrative || null;
   const patient = summary.patient || {};
   const laboratory = summary.laboratory || {};
@@ -346,6 +340,8 @@ export default function DoctorSummary() {
           {/* SAID, NOT IMPLIED. The reader is entitled to know a model wrote
               the prose -- the findings in it were not decided by one, and the
               distinction is the whole reason the composed version existed. */}
+          {outOfRangeLine}
+
           <p className="passage__close">
             The wording above was written by a language model from the findings
             of this analysis and checked before being shown. The findings
@@ -501,6 +497,8 @@ export default function DoctorSummary() {
           </p>
         ) : null}
 
+        {outOfRangeLine}
+
         <p className="passage__close">
           Not a diagnosis and not a clinical conclusion. The original laboratory
           report remains the primary record.
@@ -521,50 +519,6 @@ export default function DoctorSummary() {
           Neither depends on the narrative: one is general context for a
           direction the laboratory or this tool already decided, the other
           is the laboratory's own rows. */}
-      {/* WHAT THE LABORATORY'S OWN MARKINGS ARE GENERALLY ASSOCIATED WITH.
-          Above the closing line, which keeps the last word, and outside
-          everything the narrative may rewrite. Each sentence is about the
-          TEST and the DIRECTION -- the same sentence for any report with a
-          raised neutrophil count -- so it carries no attribution: there is
-          no claim about this patient in it to attribute. */}
-      {findingContext.length ? (
-        <div className="passage__context">
-          {findingContext.map((entry, index) => (
-            <p key={`${entry.test_name}-${index}`}>
-              <strong>
-                {entry.test_name}
-                {entry.direction === 'raised' ? ' (raised)' : ' (lowered)'}
-              </strong>{' '}
-              {entry.text}
-            </p>
-          ))}
-        </div>
-      ) : null}
-
-      {/* OUT OF RANGE, AS ONE PARAGRAPH.
-          The reader asked for these as ordinary prose, not a table or a
-          section of their own: a handover note is paragraphs, and a bordered
-          grid with a heading reads as a separate document stapled to it.
-          Values, units, intervals and flags are the laboratory's own and are
-          carried forward untouched -- this tool asserts nothing about any of
-          them, which is why it says "marked by the laboratory" and not
-          "out of range" in its own voice. */}
-      {outOfRange.length ? (
-        <p className="passage__outofrange">
-          <strong>Marked outside the reference interval by the laboratory:</strong>{' '}
-          {outOfRange.map((item, index) => (
-            <span key={`${item.testName}-${index}`}>
-              {index > 0 ? '; ' : ''}
-              {item.testName} {item.value}
-              {item.unit ? ` ${item.unit}` : ''}
-              {referenceText(item) ? ` (${referenceText(item)}` : ' ('}
-              {item.labFlag ? `${referenceText(item) ? ', ' : ''}${item.labFlag}` : ''}
-              {')'}
-            </span>
-          ))}
-          .
-        </p>
-      ) : null}
     </main>
   );
 }

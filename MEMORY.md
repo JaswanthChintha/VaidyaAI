@@ -35,8 +35,8 @@ about any of them. That is the fifth time on this project.
 |---|---|
 | `backend/` (Node/Express) | **670** passing + 3 opt-in live |
 | `ai-service/` (Python/FastAPI) | **3,903** passing + 7 skipped (3,910 collected) |
-| `frontend/` (React/Vitest) | **335** passing, 0 suites failed |
-| **Total** | **4,908** -- ALL THREE re-run green 2026-09-16 |
+| `frontend/` (React/Vitest) | **329** passing, 0 suites failed |
+| **Total** | **4,902** -- ALL THREE re-run green 2026-09-16 |
 
 > **⚠ THE 4,852 IN EVERY EARLIER SECTION WAS 7 TOO HIGH.** §6as recorded
 > ai-service's COLLECTED total (3,865) as its PASSED count; that day's real
@@ -73,7 +73,7 @@ about any of them. That is the fifth time on this project.
 > consolidated onto `main`, and the commit messages were then rewritten to
 > carry no co-author trailer. **Nothing carries one; do not add one.**
 >
-> All 4,908 tests pass and all three suites ran 2026-09-16. §6x is the design
+> All 4,902 tests pass and all three suites ran 2026-09-16. §6x is the design
 > system; §6z–§6ah and §6aj–§6ao are the earlier sessions; **§6aq, §6ar, §6as
 > and §6at are the recent ones** — two real laboratory reports driven through
 > the app, the three lookup defects they exposed (a parenthetical, a
@@ -7330,8 +7330,8 @@ described including the CRP that was being dropped. See the ✅ section below.
 |---|---|---|
 | `backend/` | **670** passed, 3 skipped, 0 suites failed | 2026-09-16 ✅ |
 | `ai-service/` | **3,903** passed, 7 skipped, 0 failures (3,910 collected) | 2026-09-16 ✅ (`.env` moved aside) |
-| `frontend/` | **335** passed, **0 suites failed** | 2026-09-16 ✅ |
-| **Total** | **4,908** | |
+| `frontend/` | **329** passed, **0 suites failed** | 2026-09-16 ✅ |
+| **Total** | **4,902** | |
 
 One task: settle Module 34's six-finding ceiling, which §6as left open as a
 decision about a hypothetical report. **It was not hypothetical and it was not
@@ -8083,6 +8083,54 @@ neither re-derives it.
 > are all in range renders nothing at all; that has its own test, as does a
 > parameter flagged `normal` being left out.
 
+### MODULE 34 LEAVES THE CLINICIAN PAGE, AND THE LINE MOVES INSIDE THE DOCUMENT
+
+> *"remove that random glucose bottom one why it came? and add the below ones
+> also in those white box only not as separate"*
+
+**Both done.** The general-context block — *"a raised random blood glucose
+result is commonly associated with diabetes or prediabetes…"* — is gone from
+this page, and the out-of-range sentence now renders INSIDE the passage rather
+than as a sibling of it, which is what was drawing its own box.
+
+The context blocks are patient-facing writing: a clinician does not need to be
+told what a raised glucose is associated with. They remain on the patient
+dashboard, which is where they were asked for.
+
+> **AND IT CLOSES AN OPEN DEFECT FOR FREE.** §6at recorded that the two pages
+> evicted each other's `findingContext`: the dashboard asks about 12 findings
+> on Test 2, the clinician page about 1, both write the same field, and each
+> visit invalidated the other and paid model calls to rebuild. **The clinician
+> page no longer makes the request at all**, so there is only one writer left
+> and nothing to evict. A feature removed on taste turned out to be the fix for
+> a defect logged on quota.
+
+`outOfRangeLine` is built once and rendered in BOTH branches of the passage
+rather than after them. One constant, two call sites — duplicating the markup
+would let the two copies drift.
+
+### ⚠ TWO SELF-INFLICTED FAULTS IN THAT ONE EDIT, BOTH CAUGHT BY THE RUNNER
+
+**1. A JSX COMMENT INSIDE A TERNARY, AND THE SUITE REPORTED NO TESTS AT ALL.**
+Moving the block carried its `{/* … */}` with it into an expression position,
+where it is not valid. Vitest reported:
+
+```
+Test Files 1 failed · Tests no tests
+{ total: 0, passed: 0, failed: 0, failedSuites: 1 }
+```
+
+> **§6ar'S RUNNER FAULT, ARRIVING FOR THE THIRD TIME AND CAUGHT IMMEDIATELY.**
+> `numFailedTests` was honestly zero because the file never compiled. The check
+> that caught it is the one §6ar wrote down: **assertion count per file, and
+> `numFailedTestSuites` — never the failure count.**
+
+**2. A `const` IN THE TEMPORAL DEAD ZONE.** `outOfRangeLine` reads
+`outOfRange`, which is derived from `data`, which only exists past the early
+returns. Declared above them it threw *"Cannot access 'outOfRange' before
+initialization"* on every render — 32 of 47 tests, all with the same message,
+which is what a single structural fault looks like as opposed to 32 problems.
+
 ### STILL TO DO ON THIS
 
 Nothing on Module 34's ceiling. Both real reports are described, stored and
@@ -8110,10 +8158,10 @@ session to leave the analysis version, `clinicalReport`, `summaryProse` and
   WHOLE GATE, IN EVERY VERB.** Seven of seven flat assertions passed. **ANSWERED
   AND FIXED** — swept to base forms, with `mean` excused only before a
   measurement noun. See the ▶ section above.
-* **THE TWO PAGES EVICT EACH OTHER'S `findingContext`** — the dashboard asks
-  about 12 findings on Test 2, the clinician page about 1, and both write the
-  same field. Each visit invalidates the other and pays model calls to rebuild
-  it. Dates from §6ar. See the ⚠ section above.
+* ~~**THE TWO PAGES EVICT EACH OTHER'S `findingContext`**~~ — **CLOSED.** The
+  clinician page no longer requests finding context at all (the reader asked
+  for those blocks removed from it), so there is one writer left and nothing
+  to evict. Logged on quota, fixed by a change made on taste.
 * `--rust` is 4.38:1 on `--header` (§6am).
 * "stability band" in one trend sentence (§6an-i).
 * `origin: report_transcription` on profile rows (§6w).

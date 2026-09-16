@@ -737,114 +737,6 @@ describe('the population page, without the repetition', () => {
   });
 });
 
-describe('Module 34 on the clinician page', () => {
-  const block = () => document.querySelector('.passage__context');
-
-  // Self-contained: the fixture the other blocks use is scoped to theirs.
-  const flaggedReport = (rows) => ({
-    overall: { status_label: 'Needs Medical Attention', clean_bill_of_health: false },
-    attribution: { report_date: '2026-09-13T04:00:00.000Z' },
-    patient: { age: 20, gender: 'male' },
-    data_quality: { page_count: 2, pages_unreadable: [], partial_document: false },
-    laboratory: { total: rows.length, features_not_present: [], rows },
-    assessments: [],
-    abnormal_findings: [],
-  });
-
-  const ROWS = [
-    {
-      feature: 'hemoglobin',
-      display_name: 'Haemoglobin concentration',
-      value: 12.5,
-      unit: 'g/dl',
-      printed_flag: 'low',
-      usable: true,
-      provenance: { source: 'lab_report', original_test_name: { text: 'HEMOGLOBIN' } },
-    },
-    {
-      feature: 'bmi',
-      display_name: 'Body mass index',
-      value: 31,
-      unit: 'kg/m2',
-      printed_flag: 'high',
-      usable: true,
-      provenance: { source: 'patient_profile' },
-    },
-  ];
-
-  const GOOD = {
-    test_name: 'HEMOGLOBIN',
-    direction: 'lowered',
-    text: 'A lowered result of this kind is commonly associated with anaemia.',
-    available: true,
-  };
-
-  it('asks about the LABORATORY’S markings, by printed name, with no value', async () => {
-    // The laboratory's own `printed_flag` is the only direction on this page
-    // that is not this tool's verdict, and it is what the clinician is reading
-    // beside the original. The request may carry a name and a direction only.
-    const spy = vi.spyOn(api, 'describeFindings').mockResolvedValue({
-      context: { entries: [GOOD] },
-    });
-    mountSummary(flaggedReport(ROWS));
-
-    await waitFor(() => expect(spy).toHaveBeenCalled());
-    const findings = spy.mock.calls[0][1];
-    for (const f of findings) {
-      expect(Object.keys(f).sort()).toEqual(['direction', 'test_name']);
-    }
-    // The printed wording, because that is what they are matching against.
-    expect(findings).toContainEqual({ test_name: 'HEMOGLOBIN', direction: 'lowered' });
-    // A PROFILE ANSWER IS NOT A LABORATORY MARKING and must never be asked
-    // about -- a questionnaire value presented as something the laboratory
-    // measured is the category error this page is most exposed to.
-    expect(findings.some((f) => /body mass index|bmi/i.test(f.test_name))).toBe(false);
-  });
-
-  it('renders an approved entry above the closing line, never inside it', async () => {
-    vi.spyOn(api, 'describeFindings').mockResolvedValue({ context: { entries: [GOOD] } });
-    mountSummary(flaggedReport(ROWS));
-
-    await waitFor(() => expect(block()).not.toBeNull());
-    expect(block().textContent).toMatch(/commonly associated with anaemia/);
-    // The closing line keeps the last word, and this may not be part of it.
-    const close = document.querySelector('.passage__close');
-    expect(close).toBeVisible();
-    expect(close.textContent).toMatch(/Not a diagnosis/);
-    expect(block().closest('.passage__close')).toBeNull();
-  });
-
-  it('renders nothing, and no notice, when every entry was refused', async () => {
-    vi.spyOn(api, 'describeFindings').mockResolvedValue({
-      context: { entries: [{ ...GOOD, text: null, available: false }] },
-    });
-    mountSummary(flaggedReport(ROWS));
-
-    await screen.findByText(/Not a diagnosis/);
-    expect(block()).toBeNull();
-  });
-
-  it('still renders the summary when the context request fails', async () => {
-    // A FAILURE AFTER THE SUMMARY IS IN HAND MUST NOT REPLACE IT WITH AN
-    // ERROR. The document is complete without this block, and a clinician has
-    // no use for being told a paragraph they never saw did not arrive.
-    vi.spyOn(api, 'describeFindings').mockRejectedValue(new Error('network'));
-    mountSummary(flaggedReport(ROWS));
-
-    await screen.findByText(/Not a diagnosis/);
-    expect(block()).toBeNull();
-    expect(document.querySelector('.error')).toBeNull();
-  });
-
-  it('asks for nothing when the laboratory marked nothing', async () => {
-    const spy = vi.spyOn(api, 'describeFindings').mockResolvedValue({ context: { entries: [] } });
-    mountSummary(flaggedReport([{ ...ROWS[0], printed_flag: null }]));
-
-    await screen.findByText(/Not a diagnosis/);
-    expect(spy).not.toHaveBeenCalled();
-  });
-});
-
 /**
  * Module 32 -- the parameters the laboratory reported and this tool skips.
  *
@@ -1006,7 +898,7 @@ describe('Module 32 - reported, not assessed', () => {
  * Every existing test on this page mounts with `narrative: null`, so all of
  * them exercised the branch that worked.
  */
-describe('Module 32 - sections that survive a generated narrative', () => {
+describe('Module 32 - the out-of-range line survives a generated narrative', () => {
   const MINIMAL = {
     overall: { status_label: 'Needs Medical Attention', clean_bill_of_health: false },
     attribution: { report_date: '2026-09-07T04:00:14.776000Z' },
@@ -1058,40 +950,17 @@ describe('Module 32 - sections that survive a generated narrative', () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
-    vi.spyOn(api, 'describeFindings').mockResolvedValue({
-      context: {
-        entries: [
-          {
-            test_name: 'NEUTROPHILS',
-            direction: 'raised',
-            available: true,
-            text: 'A raised neutrophil count is commonly associated with infection.',
-          },
-        ],
-      },
-    });
   });
 
-  it('keeps the general-context blocks when a narrative WAS generated', async () => {
-    mountSummary(MINIMAL, {}, NARRATIVE, UNASSESSED);
-    // The narrative renders...
-    await screen.findByText(/This tool flagged Diabetes/);
-    // ...and so does the context that has nothing to do with it.
-    await screen.findByText(/commonly associated with infection/);
-    // The name carries its direction in the same element.
-    expect(screen.getByText(/NEUTROPHILS \(raised\)/)).toBeInTheDocument();
-  });
-
-  it('keeps the unassessed table when a narrative WAS generated', async () => {
+  it('renders inside the passage when a narrative WAS generated', async () => {
     mountSummary(MINIMAL, {}, NARRATIVE, UNASSESSED);
     await screen.findByText(/This tool flagged Diabetes/);
     const line = await outOfRangeLine();
     expect(line).toContain('CRP (C-REACTIVE PROTEIN) 12.1 mg/L');
   });
 
-  it('still shows both when there is NO narrative', async () => {
+  it('still renders it when there is NO narrative', async () => {
     mountSummary(MINIMAL, {}, null, UNASSESSED);
-    await screen.findByText(/commonly associated with infection/);
     expect(await outOfRangeLine()).toContain('CRP (C-REACTIVE PROTEIN)');
   });
 });
