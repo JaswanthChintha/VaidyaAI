@@ -3300,3 +3300,83 @@ describe('Modules 4+5 - analysis orchestration', () => {
     });
   });
 });
+
+describe('the glossary stage spends model calls, and is budgeted like it', () => {
+  // FOUND LIVE ON Test 3.pdf, and the logs named both halves precisely:
+  //
+  //   ai-service  parameter_glossary {requested: 17, generated: 16, cached: 1}
+  //   backend     stage=glossary outcome=failure code=ECONNABORTED attempt=1
+  //   backend     stage=glossary outcome=failure code=ECONNABORTED attempt=2
+  //
+  // Seventeen descriptions were generated and every one was thrown away,
+  // twice. The stage was borrowing `guidanceTimeoutMs` -- 30s -- whose own
+  // comment argues for a short budget because that stage "CALLS NO MODEL AT
+  // ALL". The glossary makes one call per test. It fitted only while the cap
+  // was eight.
+  const aiServiceClient = require('../src/services/aiServiceClient');
+  const originalRetries = config.aiService.retries;
+
+  // SET EXPLICITLY, NOT INHERITED. Another block in this file sets
+  // `retries = 0` for its own reasons, and a retry test that reads whatever
+  // the previous block left behind proves nothing about the code -- the first
+  // version of the last test here passed and failed for that reason alone.
+  beforeEach(() => {
+    mockAxios.post.mockReset();
+    config.aiService.retries = 1;
+    aiServiceClient.resetClient();
+  });
+
+  afterEach(() => {
+    config.aiService.retries = originalRetries;
+    aiServiceClient.resetClient();
+  });
+
+  it('does NOT use the budget meant for stages that call no model', () => {
+    expect(config.aiService.glossaryTimeoutMs).not.toBe(config.aiService.guidanceTimeoutMs);
+    // Measured, not guessed: ~1.2s per description at the fast model, and
+    // several times that once the daily quota pushes the chain onto a
+    // fallback. A ceiling of 24 tests has to fit inside this.
+    expect(config.aiService.glossaryTimeoutMs).toBeGreaterThanOrEqual(24 * 4000);
+  });
+
+  it('sends the glossary call with its own timeout', async () => {
+    mockAxios.post.mockResolvedValue({ status: 200, data: { success: true, data: { entries: [] } } });
+    await aiServiceClient.describeParameters({ testNames: ['PCV'], requestId: 'r1' });
+
+    const [, , options] = mockAxios.post.mock.calls[0];
+    expect(options.timeout).toBe(config.aiService.glossaryTimeoutMs);
+  });
+
+  it('NEVER RETRIES A TIMEOUT, because the calls are already spent', async () => {
+    // The retry does not recover the model calls, it spends them again. On a
+    // free tier of twenty a day that is the difference between one report and
+    // none -- the live failure burned roughly thirty-four calls for nothing.
+    const timeout = Object.assign(new Error('timeout of 30000ms exceeded'), {
+      code: 'ECONNABORTED',
+      isAxiosError: true,
+    });
+    mockAxios.post.mockRejectedValue(timeout);
+
+    await expect(
+      aiServiceClient.describeParameters({ testNames: ['PCV'], requestId: 'r2' })
+    ).rejects.toBeDefined();
+
+    expect(mockAxios.post).toHaveBeenCalledTimes(1);
+  });
+
+  it('still retries a stage that has NOT been given its own budget', async () => {
+    // The per-call override must not have turned retries off everywhere. This
+    // is the guarantee that keeps the change narrow.
+    const timeout = Object.assign(new Error('timeout'), {
+      code: 'ECONNABORTED',
+      isAxiosError: true,
+    });
+    mockAxios.post.mockRejectedValue(timeout);
+
+    await expect(
+      aiServiceClient.lifestyleGuidance({ conditions: ['Diabetes'], features: [], requestId: 'r3' })
+    ).rejects.toBeDefined();
+
+    expect(mockAxios.post.mock.calls.length).toBeGreaterThan(1);
+  });
+});

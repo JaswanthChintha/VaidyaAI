@@ -562,8 +562,18 @@ function assertStorableKeys(value, stage, depth = 0) {
  * outcome and would double the load on a service that has already said no. An
  * ApiError raised by our own envelope check is likewise never retried.
  */
-async function withRetry(stage, requestId, attempt) {
-  const maxExtra = Math.max(0, config.aiService.retries);
+async function withRetry(stage, requestId, attempt, retries) {
+  // A CALLER MAY SET ITS OWN RETRY BUDGET, AND ONE STAGE NEEDS TO SET IT TO
+  // ZERO. Retrying a timeout is right when the work is cheap and idempotent;
+  // the glossary is neither. A timed-out glossary call has usually ALREADY
+  // SPENT its model calls -- the retry does not recover them, it spends them
+  // again, and on a free tier of twenty a day that is the difference between
+  // one report and none. Observed exactly once, on Test 3.pdf: two attempts,
+  // both completing within 0.3s of each other, ~34 model calls, all discarded.
+  const maxExtra = Math.max(
+    0,
+    typeof retries === 'number' ? retries : config.aiService.retries
+  );
   let lastError = null;
 
   for (let tryIndex = 0; tryIndex <= maxExtra; tryIndex += 1) {
@@ -690,7 +700,7 @@ async function extract({ streamFactory, filename, mimeType, requestId }) {
  * @param {number} args.timeoutMs THIS stage's timeout, never a shared default.
  * @returns {Promise<object>} the UNWRAPPED `data` object.
  */
-async function postJson({ path, stage, payload, requestId, timeoutMs }) {
+async function postJson({ path, stage, payload, requestId, timeoutMs, retries }) {
   if (!isConfigured()) throw notConfigured();
 
   return withRetry(stage, requestId, async () => {
@@ -699,7 +709,7 @@ async function postJson({ path, stage, payload, requestId, timeoutMs }) {
       timeout: timeoutMs,
     });
     return unwrapEnvelope(res.data, stage);
-  });
+  }, retries);
 }
 
 // --------------------------------------------------------------- features ---
@@ -925,7 +935,12 @@ async function describeParameters({ testNames, requestId }) {
       test_names: Array.isArray(testNames) ? testNames : [],
     },
     requestId,
-    timeoutMs: config.aiService.guidanceTimeoutMs,
+    // ITS OWN BUDGET, because this stage makes one model call per test and the
+    // guidance budget it used to borrow exists for a stage that makes none.
+    timeoutMs: config.aiService.glossaryTimeoutMs,
+    // NO RETRY. A timed-out glossary call has already spent its model calls;
+    // retrying does not recover them, it spends them again. See `withRetry`.
+    retries: 0,
   });
 }
 

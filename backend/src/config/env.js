@@ -261,6 +261,24 @@ const config = {
     // dictionary lookup.
     guidanceTimeoutMs: toInt(process.env.AI_SERVICE_GUIDANCE_TIMEOUT_MS, STAGE_TIMEOUT_DEFAULT),
 
+    // MODULE 25's GLOSSARY MAKES ONE MODEL CALL PER TEST, and it used to
+    // borrow `guidanceTimeoutMs` -- the budget above, whose whole argument is
+    // that its stage "CALLS NO MODEL AT ALL". That was wrong from the start
+    // and survived only because the glossary was capped at eight tests and
+    // eight calls happened to fit inside thirty seconds.
+    //
+    // It broke the moment the cap rose to 24 to describe every test on a
+    // report: the ai-service generated all seventeen descriptions for
+    // Test 3.pdf in about twenty-five seconds, the backend gave up at thirty,
+    // and every one of them was discarded. The log is unambiguous about who
+    // did what -- ai-service `generated: 16, cached: 1`, backend
+    // `outcome=failure code=ECONNABORTED`.
+    //
+    // Sized from that measurement, not guessed: ~1.2s per description at the
+    // fast model, and several times that when the daily quota pushes the chain
+    // onto a slower fallback. 24 x 4s + safety validation, rounded up.
+    glossaryTimeoutMs: toInt(process.env.AI_SERVICE_GLOSSARY_TIMEOUT_MS, 180 * 1000),
+
     // MODULES 28, 29, 30 AND 32 (trends, comparison, progress score, doctor
     // summary) ARE MODEL-FREE AND OFFLINE ON THE PYTHON SIDE - they are pure
     // computation over feature snapshots the backend supplies, so they belong
