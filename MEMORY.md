@@ -30,16 +30,18 @@ about any of them. That is the fifth time on this project.
 
 | | Tests |
 |---|---|
-| `backend/` (Node/Express) | **661** passing + 3 opt-in live |
-| `ai-service/` (Python/FastAPI) | **3,846** passing + 7 skipped |
+| `backend/` (Node/Express) | **662** passing + 3 opt-in live |
+| `ai-service/` (Python/FastAPI) | **3,865** passing + 7 skipped |
 | `frontend/` (React/Vitest) | **325** passing, 0 suites failed |
-| **Total** | **4,829** -- ALL THREE re-run green 2026-09-13 |
+| **Total** | **4,852** -- ALL THREE re-run green 2026-09-16 |
 
-> ### ▶ NEW CHAT? START AT §6ar, THEN §6aq.
+> ### ▶ NEW CHAT? START AT §6as, THEN §6ar.
 >
 > Between them they have the run commands, the state of the repository, what
-> `Test 2.pdf` and `Test 3.pdf` are and why they matter, and what is open --
-> INCLUDING ONE DECISION THE READER IS WAITING ON, at the foot of §6ar.
+> `Test 2.pdf` and `Test 3.pdf` are and why they matter, and what is open.
+> **Two decisions are waiting, both at the foot of §6as** -- the certainty
+> gate's `indicate` gap, and whether Module 34's six-finding ceiling should
+> rise as the glossary's did.
 >
 > **§6ap and §6ai are PREVIOUS handovers and both are stale in the way that
 > matters most: §6ap opens with "45 files uncommitted, no recovery point", and
@@ -51,13 +53,13 @@ about any of them. That is the fifth time on this project.
 > consolidated onto `main`, and the commit messages were then rewritten to
 > carry no co-author trailer. **Nothing carries one; do not add one.**
 >
-> All 4,829 tests pass, all three suites run 2026-09-13, and EVERYTHING IS
+> All 4,852 tests pass, all three suites run 2026-09-16, and EVERYTHING IS
 > PUSHED — `main` and `origin/main` are identical. §6x is the design system;
-> §6z–§6ah and §6aj–§6ao are the earlier sessions; **§6aq and §6ar are the two
-> 2026-09-13 ones** — two real laboratory reports driven through the app, the
+> §6z–§6ah and §6aj–§6ao are the earlier sessions; **§6aq, §6ar and §6as are
+> the recent ones** — two real laboratory reports driven through the app, the
 > three lookup defects they exposed (a parenthetical, a misspelling and a unit
-> spelled out in words), Modules 33 and 34, and a page stripped of its own
-> commentary.
+> spelled out in words), Modules 33 and 34, a page stripped of its own
+> commentary, and every parameter finally described.
 >
 > **§6ar carries the runner fault worth reading before you trust any suite
 > here:** a frontend run reported 288 passed / 0 failed when a whole file had
@@ -6909,7 +6911,7 @@ above was ever reachable on them.
 
 ---
 
-## 6ar. THE SECOND 2026-09-13 SESSION — READ THIS FIRST
+## 6ar. THE SECOND 2026-09-13 SESSION — **SEE ALSO §6as**
 
 **Everything is committed and PUSHED.** `main` and `origin/main` are identical,
 the working tree is clean, and there is one branch. §6aq is the previous
@@ -7121,6 +7123,172 @@ unit table. Its haemoglobin is accepted and Anemia is `Indicated`.
   left node holding port 5000 and the restart failed `EADDRINUSE`; the fix is
   `Get-NetTCPConnection -LocalPort 5000` then `Stop-Process`. Worth knowing
   before concluding a restart happened.
+
+---
+
+## 6as. THE 2026-09-16 SESSION — READ THIS FIRST
+
+**Everything is committed and pushed. `main` == `origin/main`, tree clean, one
+branch.** §6ar is the previous handover; its body still holds, but its counts
+and its open list are superseded here.
+
+| | Tests | Last run |
+|---|---|---|
+| `backend/` | **662** passed, 3 skipped | 2026-09-16 ✅ |
+| `ai-service/` | **3,865** passed, 7 skipped | 2026-09-16 ✅ (`.env` moved aside) |
+| `frontend/` | **325** passed, **0 suites failed** | 2026-09-16 ✅ |
+| **Total** | **4,852** | |
+
+```
+23839f7 the glossary makes model calls, so stop budgeting it like a dictionary lookup
+b8fa050 Module 34: refuse a measurement, not any digit -- and a backspace, again
+ee783a3 Module 34: forbid the WORDS the validator bans, not the intent
+```
+
+### WHAT THE READER ASKED FOR IS NOW ALL WORKING, ON REAL DATA
+
+Test 3.pdf, re-analysed against the current code:
+
+* **21 of 21 parameters described** in "What these results mean" (was 7).
+  `requested 17, generated 3, cached 14` on the second run -- the name-keyed
+  cache did the rest.
+* **6 of 6 findings carry general context** in the `In short` summary and on
+  the clinician page (was 2 of 8, then 2 of 6).
+* **Haemoglobin is a real result** and Anemia is `Indicated`, risk Low.
+
+### ▶ THE THREE DEFECTS, AND THEY WERE ALL DOWNSTREAM OF ONE DECISION
+
+Describing every test (358ba92, §6ar) raised `MAX_PER_REQUEST` 8 → 24. That
+one change exposed three separate faults, none of which was in the code it
+touched:
+
+**1. The glossary was budgeted like a dictionary lookup (23839f7).**
+It borrowed `guidanceTimeoutMs` -- 30s -- whose own comment in `env.js` argues
+for a short budget because that stage *"CALLS NO MODEL AT ALL"*. The glossary
+makes one call per test. It had fitted only because eight calls happened to
+finish inside thirty seconds. At seventeen it did not, and the logs named both
+halves exactly:
+
+```
+ai-service  parameter_glossary {requested: 17, generated: 16, cached: 1}
+backend     stage=glossary outcome=failure code=ECONNABORTED attempt=1
+backend     stage=glossary outcome=failure code=ECONNABORTED attempt=2
+```
+
+Seventeen descriptions generated and every one discarded, twice. It has
+`glossaryTimeoutMs` (180s) now, **sized from the measurement** rather than
+guessed, and **it no longer retries a timeout**: `withRetry` takes a per-call
+budget and this stage sets it to 0, because a timed-out glossary call has
+ALREADY SPENT its model calls -- the retry does not recover them, it spends
+them again. Roughly thirty-four calls burned for nothing on a free tier of
+twenty a day.
+
+> **A STAGE'S TIMEOUT IS A CLAIM ABOUT WHAT IT DOES.** Four stages share
+> `STAGE_TIMEOUT_DEFAULT` on the stated grounds that they call no model. If a
+> stage starts calling one, its budget is wrong before anything else is.
+
+**2. Module 34's number gate refused any digit (b8fa050).**
+It was `\d`, and on a real report it refused six of eight findings -- none of
+them a measurement: `vitamin B12`, `low T4`, `type 2 diabetes`, "one of
+several causes". The purpose is unchanged (the prompt carries no figures, so a
+FIGURE was invented); the rule is now stated instead of approximated:
+
+* ALLOWED: a digit bound into a name -- after a letter or digit (`B12`, `T4`,
+  `HbA1c`), after a letter-hyphen (`COVID-19`), or after "type" (`type 2`).
+* REFUSED: every standalone numeral, decimal, digit reached by a comparison,
+  and ranges like `10-20` -- whose FIRST digit follows a space.
+* Spelled numbers refuse only in QUANTITATIVE use ("below twelve", "two
+  hundred milligrams"), because they exist to stop the digit rule being evaded.
+
+**3. The prompt forbade an INTENT where the validator measures WORDS
+(ee783a3).** With the number gate fixed, four findings were still refused,
+always `UNSAFE_TREATMENT_INSTRUCTION`. That rule is a VOCABULARY rule at
+PROHIBITED severity: it fires on `treat`, `therapy`, `medication`, `drug`,
+`dialysis` and the rest **wherever they appear**, including plain description
+-- *"iron deficiency, which is often treated with supplements"* is refused on
+the word alone, in a sentence about a condition rather than about anybody.
+
+The prompt said *"do not give advice or recommend a test or treatment"*, and
+**the model was obeying it**. It now names the forbidden words, and the system
+instruction bans a mention *"not even in passing, and not even about the
+condition rather than the reader"*. Result: zero refusals, twelve approvals.
+
+> **NOTHING IN THE SAFETY LAYER WAS TOUCHED, and nothing should have been.**
+> Given what was sent, every refusal was correct. A test now pins the prompt
+> to the validator's own word list so the two cannot drift apart again.
+
+### ⚠ THE BACKSPACE ACCIDENT, FOR THE SECOND TIME IN THIS CODEBASE
+
+`parameter_glossary.py` carries a comment recording that its spelled-number
+boundaries were once written into the source as literal BACKSPACE characters
+by a shell escaping accident, so the pattern matched nothing and the control
+was silently dead. **Writing Module 34's gate reproduced it exactly.** Five
+`\b` arrived in the file as `\x08`; the module compiled, imported and passed
+its own tests, and the only thing that exposed it was a phrase that should
+have been refused coming back allowed.
+
+There is now a test asserting the COMPILED patterns contain no `\x08`.
+
+> **THE CAUSE IS WRITING PYTHON THROUGH A SHELL HEREDOC.** `\\b` and `\\n`
+> both collapsed on the way in during this session -- one silently corrupted a
+> regex, the other made a `str.replace` pattern miss so an edit was skipped
+> while the surrounding script reported success. **Use the Edit/Write tools for
+> any file content containing backslash escapes.** A regex cannot be reviewed
+> by eye: `\b` and `\x08` are indistinguishable in a diff.
+
+### A DEAD CONTROL, FOUND BY A SURVIVING MUTATION
+
+A separate `_DECIMAL` check sat beside the digit rule. Every mutation of it
+SURVIVED, because nothing reaches it -- `12.5` is caught at its first digit,
+and even `B12.5` at the `5`. **Deleted, not kept "just in case".** This project
+has lost a regex and a CSS block to exactly that shape, and a dead control that
+reads like a live one is worse than no control.
+
+### LESSONS THIS SESSION PAID FOR
+
+1. **Read the log at the right time.** I reported "no request reached the
+   backend" while two 30-second requests were still in flight, having read an
+   empty DOM and a stale log tail. Both were true and the conclusion was
+   wrong. **An empty result during a slow request is not a result.**
+2. **`TaskStop` does not kill an `npm start` child.** It kills the wrapper; the
+   node process keeps the port and the restart fails `EADDRINUSE`. Confirmed
+   twice now. `Get-NetTCPConnection -LocalPort N` then `Stop-Process`.
+3. **Check what the validator MEASURES, not what it is called.** Two hours went
+   into refusals that a single grep of `policy.py` explained in one line.
+4. **The suite's own logs already carried the answer.** `safety_validation ...
+   codes: UNSAFE_TREATMENT_INSTRUCTION` was in the ai-service log the whole
+   time. No instrumentation was needed -- only looking.
+
+### The data
+
+| report | pages | the only fixture exercising |
+|---|---|---|
+| `Test 2.pdf` | 4 | the parenthetical mapping, the summary rewrite, the range chart |
+| `Test 3.pdf` | 2 | the unit-spelling defect, Module 34, a rejected value, all-21 descriptions |
+
+`Test 3.pdf` is at analysis version 5. Its `findingContext` cache was cleared
+twice by hand this session to force a re-request; the script is
+`Report.updateOne({_id}, {$unset: {findingContext: ''}})` and it touches
+nothing else.
+
+### KNOWN AND OPEN
+
+* **The certainty gate has a gap.** `_CERTAINTY` matches `indicates` and
+  `indicating` but not `indicate`, so "may indicate" passes. It is hedged, so
+  this is a WORDING DECISION rather than a defect -- but the inconsistency is
+  unintended and should be settled deliberately.
+* **`MAX_PER_REPORT = 6` in Module 34** was not reached on Test 3 (6 findings
+  exactly). A report with more out-of-range results will silently describe the
+  first six. Decide whether that ceiling should rise as the glossary's did.
+* `--rust` is 4.38:1 on `--header` (§6am).
+* "stability band" in one trend sentence (§6an-i).
+* `origin: report_transcription` on profile rows (§6w).
+* `MISSING_PROFESSIONAL_REFERRAL` does not block (§6r, §6k D1).
+* Module 32's payload still nests `present` two ways (§6w).
+* **Frontend fixtures are still hand-written** — two real payloads now exist
+  to generate them from.
+* The ai-service suite still needs `.env` moved aside. Fix `conftest.py`.
+* `RangeChart.jsx` is orphaned since f3d0963.
 
 ---
 
