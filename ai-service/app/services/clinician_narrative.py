@@ -167,6 +167,19 @@ class ClinicianNarrative(BaseModel):
     #: only for OUTCOME_FACTS_MISSING, and it names the FACT, never the text.
     missing_facts: Tuple[str, ...] = ()
     llm_calls_made: int = 0
+    #: THE MODEL PERFORMANCE FIGURES, FOR THE PAGE RATHER THAN THE PROSE.
+    #:
+    #: §6w's rule is that a model-derived flag may not reach a reader with no
+    #: indication of what produced it. These used to be APPENDED to `text`,
+    #: which put two paragraphs of ROC-AUC and operating thresholds in the
+    #: middle of a clinical handover note -- the reader objected three times
+    #: and was right. They are carried separately so the page can render them
+    #: as subdued furniture, and so `text` stays a clinical summary.
+    #:
+    #: DERIVED IN ONE PLACE. A renderer that rebuilt them from
+    #: `assessments[].bases[].ml.limitations` would be a second implementation
+    #: free to round differently or drop a model.
+    model_notes: Tuple[str, ...] = ()
     safety: NarrativeSafety
 
 
@@ -568,17 +581,8 @@ def _missing(text: str, facts: _Facts) -> Tuple[str, ...]:
     # vocabulary alternation is deliberately wide, because this file has
     # already refused a faithful narrative once by insisting on the words we
     # would have chosen (see `flagged_model_only` below).
-    if facts.unmapped_count:
-        if str(facts.unmapped_count) not in body:
-            gaps.append("unmapped_count")
-        if not re.search(
-            r"not assess|does not assess|do not assess|cannot assess|"
-            r"not evaluat|not analys|not analyz|not cover|not interpret|"
-            r"set aside|outside .{0,30}scope|beyond .{0,30}scope|"
-            r"no assessment",
-            lowered,
-        ):
-            gaps.append("unmapped_sentence")
+    # NOTHING IS REQUIRED ABOUT THE UNASSESSED PARAMETERS. The page lists
+    # them; the prose does not discuss them. See `_facts_block`.
 
     # WHICH KIND OF CHECK FLAGGED WHAT, for the model-only group -- the one
     # a compressed rewrite drops, and the one a clinician is misled by losing.
@@ -675,21 +679,26 @@ def _facts_block(facts: _Facts) -> str:
         # reported values are ..." followed by four of them, which a clinician
         # reads as the panel. The label now says what the list is.
         lines.append(
-            "VALUES THIS TOOL ASSESSED (these are NOT all the values on the "
-            "report): " + "; ".join(facts.values)
+            # NEUTRAL WORDING, because the label is what the model echoes.
+            # "VALUES THIS TOOL ASSESSED" produced "Values assessed by this
+            # tool were ..." -- the same tool-centric register the reader
+            # asked to be rid of. The parenthetical stays: it is what stops
+            # the model calling four values "the reported values" on a report
+            # carrying twenty-one, which was the original defect.
+            "MEASURED VALUES AVAILABLE TO THIS ANALYSIS (NOT all the values "
+            "on the report): " + "; ".join(facts.values)
         )
-    if facts.unmapped_count:
-        # THE COUNTERPART FACT, AND IT IS REQUIRED RATHER THAN OPTIONAL. A
-        # document that lists the assessed subset and says nothing about the
-        # rest has stated "we did not look" as "we looked and found nothing" --
-        # this project's fourth case, in a document written for a clinician.
-        lines.append(
-            f"NOT ASSESSED: the laboratory reported {facts.unmapped_count} "
-            "further parameters that this platform does not assess. They were "
-            "read from the document and set aside, NOT found normal. You must "
-            "say so, with the number, and say that they remain on the source "
-            "report for review."
-        )
+    # NO "NOT ASSESSED" SENTENCE IS REQUESTED OR PERMITTED ANY MORE.
+    #
+    # The reader asked for this removed three times, and they are right that a
+    # clinical summary does not editorialise about the tool that produced it.
+    # THE COMPLETENESS PROBLEM IT WAS WRITTEN FOR IS STILL SOLVED, and better:
+    # the parameters themselves -- name, value, unit, the laboratory's own flag
+    # and interval -- are listed on the page. The document no longer says "we
+    # did not look at seventeen things"; it shows the seventeen.
+    #
+    # That is the honest version of the same fix. An absence is not created by
+    # omitting a sentence about absence when the values are on the page.
     if facts.no_intervals:
         lines.append(
             "NOTE: the source report printed no reference intervals, so no "
@@ -814,15 +823,9 @@ def write_clinician_summary(
     permitted = _numbers_in(facts.values) + _numbers_in(
         tuple(facts.model_notes) + (facts.subject,)
     )
-    # THE COUNT IS INSTRUCTED, SO IT MUST BE PERMITTED. `_facts_block` now
-    # requires the document to state how many parameters were not assessed;
-    # without this the validator's numeric grounding sees "17" as a figure the
-    # model invented and refuses the narrative for obeying its own prompt --
-    # §6as's defect, which cost four of six findings, arriving from the other
-    # direction. A prompt and a validator that disagree is the same bug either
-    # way round.
-    if facts.unmapped_count:
-        permitted = permitted + (float(facts.unmapped_count),)
+    # The count is no longer instructed, so it is no longer permitted. A
+    # figure the prompt does not ask for is a figure the model invented, and
+    # the validator should refuse it.
 
     context = SafetyContext(
         grounding_sources=tuple(facts.model_notes) or (_facts_block(facts),),
@@ -890,12 +893,29 @@ def write_clinician_summary(
     # paraphrased, truncated or dropped -- and the narrative is not required to
     # survive a check that the notes themselves do not pass (which is what made
     # every live attempt unapprovable).
+    # THE MODEL NOTES ARE NO LONGER APPENDED TO THIS DOCUMENT.
+    #
+    # THE READER'S INSTRUCTION, GIVEN THREE TIMES: this page is a clinical
+    # summary and must not carry "roc, model and all". They are right about
+    # what it is -- a clinician reading a handover note is not reading a model
+    # card, and two paragraphs of ROC-AUC and operating thresholds in the
+    # middle of it are noise at best.
+    #
+    # §6w's requirement is NOT discarded, it is MOVED: the metrics render on
+    # the page itself, beside the data-quality furniture, from
+    # `assessments[].bases[].ml.limitations` which the payload already carries.
+    # A model-derived flag still cannot reach a reader with no indication of
+    # what produced it -- it simply no longer interrupts the prose.
+    #
+    # `facts.model_notes` is still collected: it is the narrative's grounding
+    # source and its permitted numbers, both of which are safety controls on
+    # what the model may write, not text for the page.
     parts = [result.approved_text.strip()]
-    parts.extend(note.strip() for note in facts.model_notes)
     parts.append(CLOSING_LINE)
 
     return ClinicianNarrative(
         outcome=OUTCOME_GENERATED,
+        model_notes=tuple(facts.model_notes),
         # THE ONLY ASSIGNMENT of model-written text. See the module docstring.
         text="\n\n".join(parts),
         notice=None,

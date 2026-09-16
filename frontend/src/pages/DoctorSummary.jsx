@@ -320,6 +320,22 @@ export default function DoctorSummary() {
             of this analysis and checked before being shown. The findings
             themselves were not produced by a language model.
           </p>
+
+          {/* MODEL PERFORMANCE, OUT OF THE PROSE AND STILL REACHABLE.
+              These figures used to be two paragraphs in the middle of the
+              note. A clinician reading a handover is not reading a model
+              card, so they sit here, collapsed, instead -- but §6w's rule
+              holds: a model-derived flag must never reach a reader with no
+              way to see what produced it. Derived once, in the service; this
+              only renders what it is given. */}
+          {narrative.model_notes?.length ? (
+            <details className="passage__models">
+              <summary>Model performance for the flags above</summary>
+              {narrative.model_notes.map((note, index) => (
+                <p key={index}>{note}</p>
+              ))}
+            </details>
+          ) : null}
         </article>
       ) : (
       <article className="passage">
