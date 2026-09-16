@@ -13,12 +13,15 @@ import { api } from '../src/lib/api';
  * product. Both are tested on exactly those properties.
  */
 
-function mountSummary(doctorSummary, history, narrative) {
+function mountSummary(doctorSummary, history, narrative, unassessed) {
   vi.spyOn(api, 'getDoctorSummary').mockResolvedValue({
     report: { originalName: 'r.pdf' },
     history: history || {},
     doctorSummary,
     narrative: narrative ?? null,
+    // The parameters the laboratory reported and this platform does not
+    // assess. Absent by default so every existing call is unchanged.
+    unassessed,
   });
   return render(
     <MemoryRouter initialEntries={['/reports/abc/doctor-summary']}>
@@ -839,5 +842,107 @@ describe('Module 34 on the clinician page', () => {
 
     await screen.findByText(/Not a diagnosis/);
     expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Module 32 -- the parameters the laboratory reported and this tool skips.
+ *
+ * THE DEFECT THIS SECTION EXISTS FOR. The clinician document listed the four
+ * values this platform ASSESSES under the words "The reported values are", on
+ * a report carrying twenty-one. The seventeen omitted included a CRP of 12.1,
+ * an SGPT of 101.9 and an ESR of 35. A clinician reads that sentence as the
+ * panel.
+ *
+ * The narrative now states the COUNT; this table is the list behind it.
+ */
+describe('Module 32 - reported, not assessed', () => {
+  const MINIMAL = {
+    overall: { status_label: 'Needs Medical Attention', clean_bill_of_health: false },
+    attribution: { report_date: '2026-09-07T04:00:14.776000Z' },
+    patient: { age: 20, gender: 'male' },
+    data_quality: { page_count: 4, pages_unreadable: [], partial_document: false },
+    laboratory: { total: 0, rows: [] },
+    assessments: [],
+  };
+
+  const UNASSESSED = {
+    count: 3,
+    labFlaggedCount: 2,
+    descriptionsPresent: false,
+    describedCount: 0,
+    withheldCount: 0,
+    items: [
+      {
+        testName: 'CRP (C-REACTIVE PROTEIN)',
+        value: '12.1',
+        unit: 'mg/L',
+        labFlag: 'high',
+        labFlaggedAbnormal: true,
+        labReferenceLow: 0,
+        labReferenceHigh: 6,
+      },
+      {
+        testName: 'SGPT',
+        value: '101.9',
+        unit: 'U/L',
+        labFlag: 'high',
+        labFlaggedAbnormal: true,
+        labReferenceHigh: 50,
+      },
+      {
+        testName: 'ESR',
+        value: '35',
+        unit: 'mm/hr',
+        labFlag: 'normal',
+        labFlaggedAbnormal: false,
+      },
+    ],
+  };
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('shows every skipped parameter with its value and unit', async () => {
+    mountSummary(MINIMAL, {}, null, UNASSESSED);
+    await screen.findByText(/Reported, not assessed by this tool \(3\)/);
+
+    expect(screen.getByText('CRP (C-REACTIVE PROTEIN)')).toBeInTheDocument();
+    expect(screen.getByText('12.1 mg/L')).toBeInTheDocument();
+    expect(screen.getByText('101.9 U/L')).toBeInTheDocument();
+    expect(screen.getByText('35 mm/hr')).toBeInTheDocument();
+  });
+
+  it('says SET ASIDE, not found normal', async () => {
+    // THE WHOLE POINT. "We did not look" must not render as "we looked and
+    // found nothing" -- least of all on the page a clinician may act on.
+    mountSummary(MINIMAL, {}, null, UNASSESSED);
+    const text = await screen.findByText(/set aside because no assessment rule/i);
+    expect(text.textContent).toMatch(/not.{0,10}found normal/i);
+  });
+
+  it("attributes the flag and the interval to the LABORATORY", async () => {
+    mountSummary(MINIMAL, {}, null, UNASSESSED);
+    await screen.findByText(/Reported, not assessed/);
+    expect(
+      screen.getByText(/Values,\s*units and flags are the laboratory/i)
+    ).toBeInTheDocument();
+    expect(screen.getByText('0–6')).toBeInTheDocument();
+    expect(screen.getByText('≤ 50')).toBeInTheDocument();
+  });
+
+  it('renders nothing at all when every parameter was assessed', async () => {
+    mountSummary(MINIMAL, {}, null, { count: 0, items: [], labFlaggedCount: 0 });
+    await waitFor(() => expect(document.querySelector('.passage')).toBeTruthy());
+    expect(screen.queryByText(/Reported, not assessed/)).toBeNull();
+  });
+
+  it('renders nothing when the section is absent from the payload', async () => {
+    // An older analysis has no section. Absent and empty both render nothing,
+    // and neither may invent a claim that something was skipped.
+    mountSummary(MINIMAL, {}, null, undefined);
+    await waitFor(() => expect(document.querySelector('.passage')).toBeTruthy());
+    expect(screen.queryByText(/Reported, not assessed/)).toBeNull();
   });
 });

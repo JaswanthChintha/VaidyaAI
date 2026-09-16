@@ -307,17 +307,50 @@ def _numbers_in(values: Sequence[str]) -> Tuple[float, ...]:
     return tuple(found)
 
 
-def _model_notes(summary: Any) -> List[str]:
-    """The model's own limitation note, for every model that FLAGGED.
+def _round(value: Any, places: int = 2) -> Optional[str]:
+    """A metric as a clinician would read it, or nothing."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return f"{round(float(value), places):.{places}f}"
 
-    The same rule the composed passage follows (MEMORY.md 6w): a note
-    qualifies an output, and a model that returned Not Indicated produced no
-    output this document reports.
+
+def _model_notes(summary: Any) -> List[str]:
+    """The performance of every model that FLAGGED, in one line each.
+
+    THE RULE IS UNCHANGED FROM 6w AND IS NOT NEGOTIABLE: a model-derived flag
+    may not appear without its limitation. That defect -- "every model
+    probability shown with no ROC-AUC, no recall and no caveat" -- recurred
+    three times and is what this function exists to prevent.
+
+    WHAT CHANGED IS THE REGISTER, on the reader's objection. This returned
+    `limitations.author_note.text`, a curated note written in plain language
+    for a lay reader:
+
+        "This came from a pattern model, not from a measurement. It was
+         developed on one small dataset in which the two groups separated
+         unusually cleanly, so its accuracy there flatters it ..."
+
+    In a document headed "Summary for a healthcare professional" that is a
+    paragraph of methodology narrative where a clinician wants the numbers.
+    The same structure already carries them -- `roc_auc`, precision and recall
+    AT THE OPERATING THRESHOLD, the threshold itself, the validation split and
+    the model variant -- so the note is now built from those.
+
+    IT ALSO COVERS MORE THAN THE PROSE DID. `author_note` is `NOT_PRESENT` for
+    the diabetes model, so on a report flagging Diabetes and Kidney Disease
+    only ONE caveat ever appeared. Diabetes carries recall 0.70 at its
+    operating threshold -- close to a third of true cases not flagged -- which
+    is precisely the figure a clinician needs and the old note omitted.
+
+    A model with no metrics still gets a line saying so: `metrics_available`
+    false is a fact about the model, and silence would read as "no limitation".
     """
     notes: List[str] = []
+    seen: set = set()
     flagged = set(_field(summary, "abnormal_findings") or [])
     for assessment in _field(summary, "assessments") or []:
-        if _field(assessment, "condition") not in flagged:
+        condition = _field(assessment, "condition")
+        if condition not in flagged:
             continue
         for basis in _field(assessment, "bases") or []:
             if _field(basis, "status") == "Not Indicated":
@@ -325,9 +358,65 @@ def _model_notes(summary: Any) -> List[str]:
             if _field(basis, "assessed") is False:
                 continue
             ml = _field(basis, "ml")
-            note = _field(_field(_field(ml, "limitations"), "author_note"), "text")
-            if note and note not in notes:
-                notes.append(str(note))
+            if ml is None:
+                continue
+            limits = _field(ml, "limitations")
+            if limits is None:
+                continue
+            key = str(condition)
+            if key in seen:
+                continue
+            seen.add(key)
+
+            model = _field(ml, "model_name") or "statistical model"
+            if _field(limits, "metrics_available") is False:
+                notes.append(
+                    f"{condition}: flagged by a {model}. No validation metrics "
+                    "are recorded for this model, so its performance cannot be "
+                    "stated. Not a measurement and not diagnostic."
+                )
+                continue
+
+            bits: List[str] = []
+            # THREE PLACES FOR THE AUC. The kidney model's 0.9987 rounds to
+            # "1.00" at two, which reads as a perfect classifier -- the one
+            # impression this note exists to prevent.
+            auc = _round(_field(limits, "roc_auc"), 3)
+            if auc:
+                bits.append(f"ROC-AUC {auc}")
+            precision = _round(_field(limits, "precision_at_operating_threshold"))
+            recall = _round(_field(limits, "recall_at_operating_threshold"))
+            if precision and recall:
+                bits.append(f"precision {precision} / recall {recall}")
+            threshold = _round(_field(limits, "operating_threshold"))
+            if threshold:
+                bits.append(f"at an operating threshold of {threshold}")
+            measured = _field(limits, "measured_on")
+            if measured:
+                # "held-out test split, see the metrics artifact" -- the
+                # trailing clause points at `ml/artifacts/*.metrics.json` and
+                # is for whoever maintains the model, not for the clinician
+                # reading this line. WHICH SPLIT the metrics came from is
+                # clinical information and stays; only the pointer goes, and
+                # only when it is recognisably a pointer.
+                measured = re.sub(
+                    r",\s*(?:see|refer to)\b[^,]*\bartifacts?\b\.?$",
+                    "",
+                    str(measured).strip(),
+                    flags=re.IGNORECASE,
+                ).rstrip(" .,")
+                if measured:
+                    bits.append(f"measured on {measured}")
+            variant = _field(limits, "variant")
+            if variant and str(variant) != "neither":
+                bits.append(f"variant: {str(variant).replace('_', ' ')}")
+
+            notes.append(
+                f"{condition}: flagged by a {model} -- "
+                + ", ".join(bits)
+                + ". An estimated probability from comparable records, not a "
+                "measurement of this patient and not a diagnosis."
+            )
     return notes
 
 
@@ -558,6 +647,11 @@ Rules:
   same sentence with a different name in it; four copies of "this tool flagged
   X because a measured value crossed a cut-off" is the fault this document was
   rewritten to remove.
+- THE READER IS A CLINICIAN. Write for one: concise, technical, no lay glosses.
+  Do not explain what a laboratory test is or what a threshold means, and do
+  not reassure or advise. Use the clinical name of a parameter where the report
+  gives one. Prefer the shortest sentence that carries the fact. This is a
+  handover note, not patient education.
 - Three to five short paragraphs, SEPARATED BY A BLANK LINE. The reader's page
   splits paragraphs on blank lines; groups divided by spaces arrive as one
   dense block.

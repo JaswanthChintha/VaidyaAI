@@ -28,9 +28,28 @@ def offline_settings():
     return Settings(_env_file=None)
 
 
+#: WHAT THE APPENDED CAVEAT NOW SAYS, and it is composed from the metrics
+#: rather than quoted from the payload. The old note was
+#: `limitations.author_note.text`, written in plain language for a lay reader
+#: -- a paragraph of methodology narrative in a document headed "Summary for a
+#: healthcare professional". The reader objected to exactly that, and the
+#: metrics were already in the same structure.
+MODEL_METRICS = {
+    "metrics_available": True,
+    "roc_auc": 0.9987129987129988,
+    "precision_at_operating_threshold": 0.968421052631579,
+    "recall_at_operating_threshold": 0.983957219251337,
+    "operating_threshold": 0.3673979778714104,
+    "measured_on": "held-out test split",
+    "variant": "without_hypertension",
+}
+
 MODEL_NOTE = (
-    "A COARSE screening signal, not a precise one. At the cut-off used here, "
-    "roughly two out of every three people it flags do NOT have heart disease."
+    "Kidney Disease: flagged by a Random Forest -- ROC-AUC 0.999, "
+    "precision 0.97 / recall 0.98, at an operating threshold of 0.37, "
+    "measured on held-out test split, variant: without hypertension. "
+    "An estimated probability from comparable records, not a measurement of "
+    "this patient and not a diagnosis."
 )
 
 
@@ -101,7 +120,10 @@ def _summary() -> dict:
                         "status": "Indicated",
                         "assessed": True,
                         "source_kind": "machine_learning",
-                        "ml": {"limitations": {"author_note": {"text": MODEL_NOTE}}},
+                        "ml": {
+                            "model_name": "Random Forest",
+                            "limitations": dict(MODEL_METRICS),
+                        },
                     }
                 ],
             }
@@ -510,3 +532,135 @@ def test_a_report_with_nothing_unassessed_gains_no_sentence(offline_settings):
     result = write_clinician_summary(_summary(), llm=llm, settings=offline_settings)
     assert result.outcome == OUTCOME_GENERATED, result.missing_facts
     assert "NOT ASSESSED:" not in llm.prompts[0]
+
+
+# --------------------------------------------------------------------------
+# THE MODEL CAVEAT IS FOR A CLINICIAN, SO IT IS THE METRICS
+#
+# The reader, on Test 3's page: the document should not carry "un-necessary
+# things like model, datasets and all". It was carrying
+# `limitations.author_note.text` -- "It was developed on one small dataset in
+# which the two groups separated unusually cleanly ..." -- which is methodology
+# narrative written for a lay reader.
+#
+# §6w's rule is untouched and is why the caveat still exists at all: a
+# model-derived flag may NOT appear without its limitation. Only the register
+# changed.
+# --------------------------------------------------------------------------
+
+
+def _ml_basis(condition: str, limits: dict, model: str = "Random Forest") -> dict:
+    return {
+        "condition": condition,
+        "bases": [
+            {
+                "status": "Indicated",
+                "assessed": True,
+                "source_kind": "machine_learning",
+                "ml": {"model_name": model, "limitations": limits},
+            }
+        ],
+    }
+
+
+def test_the_caveat_states_the_metrics_not_the_methodology(offline_settings):
+    llm = FakeLLM(_faithful())
+    result = write_clinician_summary(_summary(), llm=llm, settings=offline_settings)
+    assert result.outcome == OUTCOME_GENERATED, result.missing_facts
+    text = result.text
+    assert "ROC-AUC 0.999" in text
+    assert "recall 0.98" in text
+    assert "operating threshold of 0.37" in text
+    # And NOT the lay paragraph it replaced.
+    assert "small dataset" not in text
+    assert "flatters" not in text
+
+
+def test_the_auc_keeps_three_places_so_it_is_not_read_as_perfect(offline_settings):
+    """0.9987 at two places is "1.00", which reads as a perfect classifier --
+    the single impression this note exists to prevent."""
+    llm = FakeLLM(_faithful())
+    result = write_clinician_summary(_summary(), llm=llm, settings=offline_settings)
+    assert "ROC-AUC 1.00" not in result.text
+    assert "ROC-AUC 0.999" in result.text
+
+
+def test_a_model_with_no_author_note_still_gets_a_caveat(offline_settings):
+    """THE COVERAGE THIS CHANGE GAINS.
+
+    `author_note` is NOT_PRESENT for the diabetes model, so a report flagging
+    both Diabetes and Kidney Disease carried ONE caveat. Diabetes runs at
+    recall 0.70 -- close to a third of true cases not flagged -- which is
+    exactly the figure a clinician needs and the old note omitted entirely.
+    """
+    summary = _summary()
+    summary["assessments"] = summary["assessments"] + [
+        _ml_basis(
+            "Diabetes",
+            {
+                "metrics_available": True,
+                "roc_auc": 0.9733748420857805,
+                "precision_at_operating_threshold": 0.9218266253869969,
+                "recall_at_operating_threshold": 0.7022405660377359,
+                "operating_threshold": 0.7932221243150029,
+                "measured_on": "held-out test split",
+                "variant": "neither",
+                # The shape that produced NO note at all before.
+                "author_note": {"text": None, "state": "NOT_PRESENT"},
+            },
+        )
+    ]
+    llm = FakeLLM(_faithful())
+    result = write_clinician_summary(summary, llm=llm, settings=offline_settings)
+    assert result.outcome == OUTCOME_GENERATED, result.missing_facts
+    assert "Diabetes: flagged by a Random Forest" in result.text
+    assert "recall 0.70" in result.text
+    # `variant: neither` is not a variant and must not be printed as one.
+    assert "variant: neither" not in result.text
+
+
+def test_a_model_with_no_metrics_says_so_rather_than_nothing(offline_settings):
+    """Silence would read as "no limitation", which is the §6w defect."""
+    summary = _summary()
+    summary["assessments"] = [
+        _ml_basis("Kidney Disease", {"metrics_available": False})
+    ]
+    llm = FakeLLM(_faithful())
+    result = write_clinician_summary(summary, llm=llm, settings=offline_settings)
+    assert result.outcome == OUTCOME_GENERATED, result.missing_facts
+    assert "No validation metrics are recorded" in result.text
+    assert "not diagnostic" in result.text.lower()
+
+
+def test_the_prompt_asks_for_a_clinician_register(offline_settings):
+    llm = FakeLLM(_faithful())
+    write_clinician_summary(_summary(), llm=llm, settings=offline_settings)
+    prompt = llm.prompts[0].lower()
+    assert "the reader is a clinician" in prompt
+    assert "no lay glosses" in prompt
+    assert "handover note" in prompt
+
+
+@pytest.mark.parametrize(
+    "measured_on,expected",
+    [
+        # THE REAL PRODUCER STRING. The trailing clause names an internal file.
+        ("held-out test split, see the metrics artifact", "held-out test split"),
+        ("held-out test split, refer to the artifact", "held-out test split"),
+        # A MEANINGFUL CLAUSE IS NOT A POINTER AND MUST SURVIVE. This is the
+        # difference between trimming and mangling the producer's own text.
+        ("held-out test split, stratified by age", "held-out test split, stratified by age"),
+        ("held-out test split", "held-out test split"),
+    ],
+)
+def test_only_the_artifact_pointer_is_trimmed(offline_settings, measured_on, expected):
+    summary = _summary()
+    limits = dict(MODEL_METRICS)
+    limits["measured_on"] = measured_on
+    summary["assessments"] = [_ml_basis("Kidney Disease", limits)]
+
+    llm = FakeLLM(_faithful())
+    result = write_clinician_summary(summary, llm=llm, settings=offline_settings)
+    assert result.outcome == OUTCOME_GENERATED, result.missing_facts
+    assert f"measured on {expected}" in result.text
+    assert "metrics artifact" not in result.text

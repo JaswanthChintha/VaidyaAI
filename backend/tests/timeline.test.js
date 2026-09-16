@@ -877,3 +877,98 @@ describe('Modules 28-30 + 32 - the longitudinal endpoints', () => {
     });
   });
 });
+
+// ===================================== the parameters this platform skips ==
+//
+// The clinician document listed the four values this platform ASSESSES under
+// the words "The reported values are", on a report where the laboratory had
+// printed twenty-one. The narrative states the count; these are the rows
+// behind it, so a clinician can read the values rather than be told how many
+// they cannot see.
+//
+// Built by the DASHBOARD'S assembler, deliberately: deriving them a second
+// time here would be a second implementation free to disagree with the
+// patient page about what was set aside.
+describe('Module 32 - the parameters the platform does not assess', () => {
+  const UNMAPPED = [
+    { test_name: 'CRP (C-REACTIVE PROTEIN)', value_raw: '12.1', unit: 'mg/L', reason: 'no_canonical_feature', page_number: 3 },
+    { test_name: 'SGPT', value_raw: '101.9', unit: 'U/L', reason: 'no_canonical_feature', page_number: 3 },
+    { test_name: 'ESR', value_raw: '35', unit: 'mm/hr', reason: 'no_canonical_feature', page_number: 1 },
+  ];
+  const EXTRACTED = [
+    { test_name: 'CRP (C-REACTIVE PROTEIN)', flag: 'high', reference_low: 0, reference_high: 6 },
+    { test_name: 'SGPT', flag: 'high', reference_low: 0, reference_high: 50 },
+    { test_name: 'ESR', flag: 'normal', reference_low: 0, reference_high: 15 },
+  ];
+
+  let owner;
+  let reportId;
+
+  beforeEach(async () => {
+    owner = await makeUser('doc.unassessed@example.com');
+    reportId = await seedReport(owner.id);
+    await Report.updateOne(
+      { _id: reportId },
+      { $set: { features: { unmapped: UNMAPPED }, extraction: { extracted_parameters: EXTRACTED } } }
+    );
+  });
+
+  it('carries every skipped parameter with its value and unit', async () => {
+    const res = await request(app)
+      .get(`${REPORTS}/${reportId}/doctor-summary`)
+      .set(auth(owner.token));
+
+    expect(res.status).toBe(200);
+    const items = res.body.data.unassessed.items;
+    expect(res.body.data.unassessed.count).toBe(3);
+    expect(items.map((i) => i.testName)).toEqual([
+      'CRP (C-REACTIVE PROTEIN)',
+      'SGPT',
+      'ESR',
+    ]);
+    const crp = items[0];
+    expect(crp.value).toBe('12.1');
+    expect(crp.unit).toBe('mg/L');
+  });
+
+  it("carries the LABORATORY's own flag and printed interval, not this tool's", async () => {
+    const res = await request(app)
+      .get(`${REPORTS}/${reportId}/doctor-summary`)
+      .set(auth(owner.token));
+
+    const items = res.body.data.unassessed.items;
+    expect(items[0].labFlag).toBe('high');
+    expect(items[0].labFlaggedAbnormal).toBe(true);
+    expect(items[0].labReferenceHigh).toBe(6);
+    // `normal` is a flag and is NOT an abnormal one.
+    expect(items[2].labFlag).toBe('normal');
+    expect(items[2].labFlaggedAbnormal).toBe(false);
+    expect(res.body.data.unassessed.labFlaggedCount).toBe(2);
+  });
+
+  it('describes nothing, because that is not a question this reader has', async () => {
+    const res = await request(app)
+      .get(`${REPORTS}/${reportId}/doctor-summary`)
+      .set(auth(owner.token));
+
+    const items = res.body.data.unassessed.items;
+    for (const item of items) {
+      expect(item.description).toBeUndefined();
+      expect(item.descriptionAvailable).toBeUndefined();
+    }
+  });
+
+  it('is an empty section, never absent, when every parameter mapped', async () => {
+    // A SECTION THAT VANISHES IS INDISTINGUISHABLE FROM ONE THAT FOUND
+    // NOTHING. `count: 0` is the honest answer and the renderer can branch.
+    const other = await seedReport(owner.id);
+    const res = await request(app)
+      .get(`${REPORTS}/${other}/doctor-summary`)
+      .set(auth(owner.token));
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.unassessed).toBeDefined();
+    expect(res.body.data.unassessed.count).toBe(0);
+    expect(res.body.data.unassessed.items).toEqual([]);
+  });
+});

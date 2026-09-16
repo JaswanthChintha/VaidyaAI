@@ -195,6 +195,11 @@ export default function DoctorSummary() {
   if (!data) return <p className="loading">Preparing the clinical summary…</p>;
 
   const summary = data.doctorSummary || {};
+  // WHAT THE LABORATORY REPORTED AND THIS PLATFORM DOES NOT ASSESS.
+  // `count: 0` is an ordinary answer and is rendered as nothing; the section
+  // is never absent from the payload, so "none" and "not computed" stay
+  // distinguishable here rather than collapsing into one blank space.
+  const unassessed = data.unassessed || null;
   const narrative = data.narrative || null;
   const patient = summary.patient || {};
   const laboratory = summary.laboratory || {};
@@ -481,6 +486,68 @@ export default function DoctorSummary() {
                 {entry.text}
               </p>
             ))}
+          </div>
+        ) : null}
+
+        {/* THE PARAMETERS THIS PLATFORM DOES NOT ASSESS, WITH THEIR VALUES.
+            The paragraphs above state how many; a clinician needs to read
+            them. These are the laboratory's own values, units, flags and
+            printed intervals, carried forward untouched -- this tool asserts
+            nothing about any of them, which is exactly why they are here
+            rather than in the assessed table.
+
+            No descriptions. The patient page explains what ESR measures;
+            this reader knows. */}
+        {unassessed && unassessed.count > 0 ? (
+          <div className="passage__unassessed">
+            <h3>
+              Reported, not assessed by this tool ({unassessed.count})
+            </h3>
+            <p>
+              Read from the document and set aside because no assessment rule
+              here covers them &mdash; <strong>not</strong> found normal. Values,
+              units and flags are the laboratory&rsquo;s own.
+            </p>
+            <table className="lab-table">
+              <caption className="visually-hidden">
+                Parameters reported by the laboratory that this tool does not
+                assess
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Parameter</th>
+                  <th scope="col">Value</th>
+                  <th scope="col">Reference</th>
+                  <th scope="col">Lab flag</th>
+                </tr>
+              </thead>
+              <tbody>
+                {unassessed.items.map((item, index) => (
+                  <tr key={`${item.testName}-${index}`}>
+                    <th scope="row">{item.testName}</th>
+                    <td>
+                      {item.value}
+                      {item.unit ? ` ${item.unit}` : ''}
+                    </td>
+                    <td>
+                      {item.labReferenceLow !== undefined &&
+                      item.labReferenceHigh !== undefined
+                        ? `${item.labReferenceLow}–${item.labReferenceHigh}`
+                        : item.labReferenceHigh !== undefined
+                          ? `≤ ${item.labReferenceHigh}`
+                          : item.labReferenceLow !== undefined
+                            ? `≥ ${item.labReferenceLow}`
+                            : '—'}
+                    </td>
+                    <td>
+                      {/* THE LABORATORY'S VERDICT, NAMED AS THEIRS. This tool
+                          has no opinion on these rows and must not appear to. */}
+                      {item.labFlag ? item.labFlag : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         ) : null}
 

@@ -1058,4 +1058,11 @@ module.exports = {
   buildDocumentQuality,
   indexEvidenceLines,
   labState,
+  // SHARED WITH THE CLINICIAN DOCUMENT, deliberately. That page needs the same
+  // rows this one lists -- the laboratory's own values and its own flags for
+  // the parameters this platform does not assess -- and deriving them a second
+  // time there would be a second implementation free to disagree with this
+  // one about what was set aside. Called with `parameterGlossary` null from
+  // there: a clinician does not need to be told what ESR measures.
+  buildUnanalysedSection,
 };

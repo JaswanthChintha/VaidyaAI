@@ -6,6 +6,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const { sendSuccess } = require('../utils/apiResponse');
 const { ownerScopedFilter, assertCanAccess, OWNER_ONLY } = require('../utils/ownership');
 const aiService = require('../services/aiServiceClient');
+const dashboardService = require('../services/dashboardService');
 const historyService = require('../services/historyService');
 const config = require('../config/env');
 
@@ -86,7 +87,12 @@ const ownFilter = (req, base = {}) => ownerScopedFilter(req.user, { ...OWNER_ONL
  * clinician's page. Loading it here would serve no purpose but to put it one
  * careless edit away from doing so.
  */
-const DOCTOR_SUMMARY_PROJECTION = '+clinicalReport +doctorNarrative';
+// `+features +extraction` FOR THE PARAMETERS THIS PLATFORM DOES NOT ASSESS.
+// The clinician document listed the four assessed values and nothing else; the
+// laboratory had reported twenty-one. The rows and the laboratory's own flags
+// live on these two fields, which is where the patient dashboard reads them.
+const DOCTOR_SUMMARY_PROJECTION =
+  '+clinicalReport +doctorNarrative +features +extraction';
 
 /**
  * GET /reports/:id/doctor-summary
@@ -218,6 +224,21 @@ const getDoctorSummary = asyncHandler(async (req, res) => {
     // and `comparison.present`, and on `overall.any_assessed` - which being
     // false is NOT a clean bill of health.
     doctorSummary: summary,
+    // WHAT THE LABORATORY REPORTED AND THIS PLATFORM DOES NOT ASSESS.
+    //
+    // The narrative states the COUNT; this is the list behind it, so a
+    // clinician can read the values rather than be told how many they cannot
+    // see. Built by the dashboard's own assembler, with no glossary: the
+    // descriptions on the patient page answer "what is ESR", which is not a
+    // question this reader has.
+    //
+    // A raised CRP, an SGPT of 101.9 and an ESR of 35 were all in here on
+    // `Test 2.pdf` while the document above listed four values.
+    unassessed: dashboardService.buildUnanalysedSection(
+      report.features === undefined ? null : report.features,
+      report.extraction === undefined ? null : report.extraction,
+      null
+    ),
     // Module 32 as prose, or null. `null` is an ordinary answer and the
     // client MUST be able to render without it -- see resolveNarrative.
     narrative,

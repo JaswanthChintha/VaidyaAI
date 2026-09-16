@@ -33,10 +33,10 @@ about any of them. That is the fifth time on this project.
 
 | | Tests |
 |---|---|
-| `backend/` (Node/Express) | **666** passing + 3 opt-in live |
-| `ai-service/` (Python/FastAPI) | **3,907** passing + 7 skipped (3,914 collected) |
-| `frontend/` (React/Vitest) | **325** passing, 0 suites failed |
-| **Total** | **4,898** -- ALL THREE re-run green 2026-09-16 |
+| `backend/` (Node/Express) | **670** passing + 3 opt-in live |
+| `ai-service/` (Python/FastAPI) | **3,916** passing + 7 skipped (3,923 collected) |
+| `frontend/` (React/Vitest) | **330** passing, 0 suites failed |
+| **Total** | **4,916** -- ALL THREE re-run green 2026-09-16 |
 
 > **⚠ THE 4,852 IN EVERY EARLIER SECTION WAS 7 TOO HIGH.** §6as recorded
 > ai-service's COLLECTED total (3,865) as its PASSED count; that day's real
@@ -73,7 +73,7 @@ about any of them. That is the fifth time on this project.
 > consolidated onto `main`, and the commit messages were then rewritten to
 > carry no co-author trailer. **Nothing carries one; do not add one.**
 >
-> All 4,898 tests pass and all three suites ran 2026-09-16. §6x is the design
+> All 4,916 tests pass and all three suites ran 2026-09-16. §6x is the design
 > system; §6z–§6ah and §6aj–§6ao are the earlier sessions; **§6aq, §6ar, §6as
 > and §6at are the recent ones** — two real laboratory reports driven through
 > the app, the three lookup defects they exposed (a parenthetical, a
@@ -7328,10 +7328,10 @@ described including the CRP that was being dropped. See the ✅ section below.
 
 | | Tests | Last run |
 |---|---|---|
-| `backend/` | **666** passed, 3 skipped, 0 suites failed | 2026-09-16 ✅ |
-| `ai-service/` | **3,907** passed, 7 skipped, 0 failures (3,914 collected) | 2026-09-16 ✅ (`.env` moved aside) |
-| `frontend/` | **325** passed, **0 suites failed** | 2026-09-16 ✅ |
-| **Total** | **4,898** | |
+| `backend/` | **670** passed, 3 skipped, 0 suites failed | 2026-09-16 ✅ |
+| `ai-service/` | **3,916** passed, 7 skipped, 0 failures (3,923 collected) | 2026-09-16 ✅ (`.env` moved aside) |
+| `frontend/` | **330** passed, **0 suites failed** | 2026-09-16 ✅ |
+| **Total** | **4,916** | |
 
 One task: settle Module 34's six-finding ceiling, which §6as left open as a
 decision about a hypothetical report. **It was not hypothetical and it was not
@@ -7772,6 +7772,92 @@ went again on the one narrative call at ~10:5x, after their 1800s cooldown
 expired, which means the cooldown returned them to a limit they were already at.
 **Only `gemini-3.5-flash-lite` has headroom.** Session spend: 17 calls for
 Module 34 plus 1 for the narrative.
+
+### ▶ THE CLINICIAN PAGE, READ BY THE READER: FOUR OBJECTIONS, FOUR CAUSES
+
+Test 3's summary, looked at on screen. Every objection was a different fault
+and only one of them was in the code the previous section had just changed.
+
+**1. It still said "The reported values were".** **My omission, not a code
+fault**: the previous fix landed but I cleared only Test 2's cached
+`doctorNarrative`. Test 3 was serving a copy generated before it. **A cache is
+part of a fix's blast radius — clear every report, not the one you tested on.**
+
+**2. "Un-necessary things like model, datasets and all."** The paragraph
+
+> *"This came from a pattern model, not from a measurement. It was developed on
+> one small dataset in which the two groups separated unusually cleanly, so its
+> accuracy there flatters it …"*
+
+**is not written by Gemini.** The prompt forbids it — *"do not write anything
+about how the model was built or tested"* — and it is appended after approval
+from `limitations.author_note.text`, a curated note in lay register. §6w's rule
+stands and is why a caveat exists at all: a model-derived flag may NOT appear
+without its limitation, a defect that recurred three times. **So the register
+changed, not the requirement.** The same structure already carried what a
+clinician actually wants:
+
+```
+Diabetes:       ROC-AUC 0.973, precision 0.92 / recall 0.70 @ threshold 0.79
+Kidney Disease: ROC-AUC 0.999, precision 0.97 / recall 0.98 @ threshold 0.37
+                variant: without hypertension
+```
+
+> **IT ALSO COVERS MORE THAN THE PROSE DID.** `author_note` is `NOT_PRESENT`
+> for the diabetes model, so a report flagging Diabetes AND Kidney Disease
+> carried exactly one caveat. **Diabetes runs at recall 0.70** — close to a
+> third of true cases unflagged — which is precisely the figure a clinician
+> needs and the lay note omitted entirely. A caveat that only some models
+> happen to carry is not a control.
+
+Three places for the AUC, because 0.9987 at two reads as `1.00` — a perfect
+classifier, the one impression the note exists to prevent. `variant: neither`
+is not a variant and is not printed. A model with `metrics_available: false`
+gets a line saying so, because silence reads as "no limitation".
+
+**3. "In doctor used technical terms."** The prompt now states the register:
+concise, technical, no lay glosses, no explaining what a test is, no
+reassurance, no advice — *a handover note, not patient education*.
+
+**4. "All those remaining parameters are shown and explained in the normal
+summary, but here it is not complete."** Correct, and the previous fix only
+gave the document a COUNT. The rows themselves — name, value, unit, the
+laboratory's own flag and printed interval — now appear as a table.
+
+> **BUILT BY THE DASHBOARD'S OWN ASSEMBLER.** `buildUnanalysedSection` is
+> exported and called from the clinician controller with `parameterGlossary`
+> null. Deriving the rows a second time there would be a second implementation
+> free to disagree with the patient page about what was set aside — and the
+> descriptions are omitted deliberately: the patient page answers "what is
+> ESR", which is not a question this reader has.
+
+`+features +extraction` joined the projection; both were already in Mongo, so
+**no ai-service change and no re-analysis was needed for the list**.
+
+### ✅ TEST 3, REGENERATED — ONE MODEL CALL
+
+> *"This handover concerns a 20-year-old male. … **The tool assessed** GLYCATED
+> HAEMOGLOBIN (HBA1C) 7 %, … **The laboratory reported 17 further parameters
+> that were not assessed, which were set aside rather than found normal**, and
+> remain on the source report for review.*
+>
+> *Diabetes: flagged by a Random Forest — ROC-AUC 0.973, precision 0.92 /
+> recall 0.70, at an operating threshold of 0.79, measured on held-out test
+> split. An estimated probability from comparable records, not a measurement of
+> this patient and not a diagnosis."*
+
+`outcome generated · missing_facts [] · llm_calls_made 1`
+
+One detail worth keeping: the producer's `measured_on` is *"held-out test
+split, see the metrics artifact"*, and that trailing clause points at
+`ml/artifacts/*.metrics.json` — for whoever maintains the model, not for the
+clinician. **Only a recognisable pointer is trimmed**; "held-out test split,
+stratified by age" survives intact, and a test pins the difference. Trimming
+and mangling the producer's own text are one regex apart.
+
+**Six mutants, all killed**: the AUC at two places, the no-metrics branch,
+`neither` printed as a variant, the pointer left untrimmed, recall dropped from
+the line, and the register bullet removed.
 
 ### STILL TO DO ON THIS
 
