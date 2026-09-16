@@ -61,7 +61,8 @@ page's own standing provenance line still covers the section.
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, Optional, Sequence, Tuple
+import threading
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -77,10 +78,41 @@ DIRECTION_RAISED = "raised"
 DIRECTION_LOWERED = "lowered"
 DIRECTIONS = (DIRECTION_RAISED, DIRECTION_LOWERED)
 
-#: Cap per report. The free tier is twenty calls a day per model and a real
-#: report can carry a dozen out-of-range results; without this one upload
-#: spends the day.
-MAX_PER_REPORT = 6
+#: Answers already given, keyed on the NORMALISED TEST NAME AND DIRECTION.
+#:
+#: NOTHING PATIENT-SPECIFIC CAN BE IN HERE, and that is not a convention: the
+#: key IS the entire prompt. A raised CRP produces the same two sentences for
+#: every reader on earth, which is the module docstring's own argument for
+#: carrying no attribution line -- the text is true independently of whose
+#: report it sits on. So a shared process cache is exactly as safe as the
+#: request that filled it, and it is what makes the ceiling below affordable.
+_CACHE: Dict[Tuple[str, str], "FindingContext"] = {}
+_CACHE_LOCK = threading.Lock()
+
+#: Cap per report, COUNTED IN MODEL CALLS. A cache hit does not consume it.
+#:
+#: RAISED FROM 6, AND IT WAS NOT A HYPOTHETICAL CEILING. Both real laboratory
+#: reports on this project exceeded it, and the handover recording it as
+#: unreached had counted the six entries that came back rather than the
+#: `skipped_over_limit` sitting beside them in the same stored document:
+#:
+#:   Test 3.pdf   7 findings, 1 dropped -- C-REACTIVE PROTEIN (raised)
+#:   Test 2.pdf  12 findings, 6 dropped -- PCV, MCH, MCHC, ESR, CRP, SGPT
+#:
+#: On Test 3 the dropped finding was the CRP that makes sense of the raised
+#: ESR and raised neutrophils printed above it -- and, exactly, the analyte
+#: this module's own docstring uses as its cautionary example. Under a heading
+#: about what the results mean, a finding with no context reads as one nobody
+#: could explain: §6ar's argument for describing every unassessed test, in the
+#: same words, about the same page.
+#:
+#: 16 IS SIZED FROM THOSE TWO MEASUREMENTS, not guessed: above the larger of
+#: them with margin, and still a real cap on a sixty-row panel. The free tier
+#: is twenty calls a day per model and that has not changed -- what makes 16
+#: affordable is the cache above, because the out-of-range tests two reports
+#: share (haemoglobin, lymphocytes, ESR, CRP, HbA1c) are described once for
+#: this process and every later report reuses them for nothing.
+MAX_PER_REPORT = 16
 
 #: A MEASUREMENT, NOT MERELY A DIGIT.
 #:
@@ -145,6 +177,19 @@ _CERTAINTY = re.compile(
 )
 
 
+_WHITESPACE = re.compile(r"\s+")
+
+
+def _cache_key(test_name: str, direction: str) -> Tuple[str, str]:
+    """The whole prompt, normalised -- which is why it is safe to share.
+
+    Whitespace is collapsed as well as case folded because a laboratory prints
+    `RANDOM BLOOD GLUCOSE ( RBS )`, and two spellings of one test name asking
+    the same question twice would spend two calls on one answer.
+    """
+    return (_WHITESPACE.sub(" ", test_name).strip().lower(), direction)
+
+
 class FindingContext(BaseModel):
     """One out-of-range test, put in general context -- or explicitly not."""
 
@@ -158,6 +203,8 @@ class FindingContext(BaseModel):
     available: bool = False
     #: Which gate stopped it. Names the GATE, never the text.
     refused_by: Optional[str] = None
+    #: Answered from the process cache, so this entry cost no model call.
+    cached: bool = False
 
 
 class FindingContextData(BaseModel):
@@ -166,7 +213,14 @@ class FindingContextData(BaseModel):
     version: str = CONTEXT_VERSION
     entries: Tuple[FindingContext, ...] = ()
     generated_count: int = 0
+    cached_count: int = 0
     withheld_count: int = 0
+    #: Findings this report carried that the ceiling refused to spend a call
+    #: on. NOT rendered to the reader -- there is no notice and no placeholder,
+    #: as for any refusal here -- but LOGGED, and the log line is the only
+    #: thing that can tell you the ceiling has been reached. Counting the
+    #: entries that came back cannot: that is how 6 was recorded as unreached
+    #: on a report where it had already dropped a raised CRP.
     skipped_over_limit: int = 0
     policy: str = Field(
         default=(
@@ -312,38 +366,86 @@ def describe_findings(
     direction this module does not know is SKIPPED rather than guessed at: the
     prompt turns on that one word, and inventing it would be inventing the
     finding.
+
+    THE ORDER IS THE PRIORITY, and the caller's order is honoured exactly:
+    this tool's own threshold crossings first, then the results the laboratory
+    itself flagged. That matters only when the ceiling is reached, and then it
+    matters entirely -- it is the difference between a rule deciding what is
+    dropped and "whatever the laboratory printed last" deciding.
     """
     client = _resolve_llm(llm, settings)
     if client is None:
         return FindingContextData()
 
-    entries = []
-    generated = withheld = 0
+    entries: List[FindingContext] = []
+    generated = cached = withheld = 0
     seen = set()
     over_limit = 0
+    # COUNTED IN CALLS, NOT IN ENTRIES. A cache hit spends nothing, so it must
+    # not consume the budget -- that property is what the raised ceiling rests
+    # on, and it is the glossary's own arrangement (§6ar).
+    calls_left = MAX_PER_REPORT
 
     for item in findings or []:
         name = (item or {}).get("test_name")
         direction = (item or {}).get("direction")
         if not name or direction not in DIRECTIONS:
             continue
-        key = (name.strip().lower(), direction)
+        key = _cache_key(name, direction)
         if key in seen:
             continue
         seen.add(key)
-        if len(entries) >= MAX_PER_REPORT:
+
+        with _CACHE_LOCK:
+            hit = _CACHE.get(key)
+        if hit is not None:
+            entries.append(
+                hit.model_copy(update={"test_name": name, "cached": True})
+            )
+            cached += 1
+            continue
+
+        if calls_left <= 0:
             over_limit += 1
             continue
+        calls_left -= 1
+
         entry = _one(name, direction, client)
+        with _CACHE_LOCK:
+            # Only a real answer is cached. A refusal is a moment, not a fact
+            # about the test name -- and a quota outage refuses everything.
+            if entry.available:
+                _CACHE[key] = entry
         entries.append(entry)
         if entry.available:
             generated += 1
         else:
             withheld += 1
 
+    # THE ONE PLACE THE CEILING IS OBSERVABLE. The page renders nothing for a
+    # skipped finding, by design, so without this line a truncation leaves no
+    # trace anywhere -- which is how it went unnoticed on both real reports.
+    logger.info(
+        "finding_context %s",
+        safe_meta(
+            requested=len(seen),
+            generated=generated,
+            cached=cached,
+            withheld=withheld,
+            skipped_over_limit=over_limit,
+            ceiling=MAX_PER_REPORT,
+        ),
+    )
     return FindingContextData(
         entries=tuple(entries),
         generated_count=generated,
+        cached_count=cached,
         withheld_count=withheld,
         skipped_over_limit=over_limit,
     )
+
+
+def reset_cache() -> None:
+    """Test hook. Never called by the service."""
+    with _CACHE_LOCK:
+        _CACHE.clear()

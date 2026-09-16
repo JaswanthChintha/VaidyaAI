@@ -315,15 +315,48 @@ describe('Module 34 -- general context for out-of-range findings', () => {
     expect(res.body.data.context).toBeNull();
   });
 
-  it('NEVER caches a result where nothing at all was generated', async () => {
+  it('DOES cache a result that was entirely cache hits upstream', async () => {
+    // `generated_count: 0` HAS TWO MEANINGS NOW and only one of them is a
+    // refusal. The ai-service keys its own process cache on the test name and
+    // direction -- the whole prompt -- so a report whose findings were all
+    // described for an EARLIER report comes back complete, with every entry
+    // available and nothing generated. Treating that as "the model answered
+    // nothing" would decline to store a full result and re-request it on
+    // every page view, precisely when the answer was already free.
+    const owner = await makeUser('ctx.allcached@example.com');
+    const id = await seedReport(owner.id);
+    serviceReplies({
+      entries: [{ test_name: 'CRP', direction: 'raised', text: 'x', available: true, cached: true }],
+      generated_count: 0,
+      cached_count: 1,
+      withheld_count: 0,
+    });
+
+    await postCtx(id, owner.token);
+    await postCtx(id, owner.token);
+    expect(mockAxios.post).toHaveBeenCalledTimes(1);
+  });
+
+  it('NEVER caches a result where nothing came back available', async () => {
     // FOUND LIVE, and it would have hidden until the next day. When the Gemini
-    // quota is spent every model in the chain refuses and `generated_count` is
-    // 0. Caching that pins an empty result to this report and these findings
-    // forever: the quota resets, the cache key has not changed, and nothing
-    // ever asks again.
+    // quota is spent every model in the chain refuses, so nothing is available
+    // and nothing is cached upstream either. Caching that pins an empty result
+    // to this report and these findings forever: the quota resets, the cache
+    // key has not changed, and nothing ever asks again.
     const owner = await makeUser('ctx.quota@example.com');
     const id = await seedReport(owner.id);
-    serviceReplies({ entries: [], generated_count: 0, withheld_count: 2 });
+    // THE REAL PAYLOAD SHAPE, not an empty list: a quota outage still returns
+    // one entry per finding, each carrying no text. An empty `entries` would
+    // pass this test without exercising the rule at all.
+    serviceReplies({
+      entries: [
+        { test_name: 'CRP', direction: 'raised', available: false, refused_by: 'safety' },
+        { test_name: 'ESR', direction: 'raised', available: false, refused_by: 'safety' },
+      ],
+      generated_count: 0,
+      cached_count: 0,
+      withheld_count: 2,
+    });
 
     await postCtx(id, owner.token);
     await postCtx(id, owner.token);

@@ -1163,7 +1163,13 @@ async function describeFindings({ findings, requestId }) {
     stage: STAGES.EXPLANATION,
     payload: { findings },
     requestId,
-    timeoutMs: config.aiService.explainTimeoutMs,
+    // ITS OWN BUDGET, because this stage makes one model call per finding and
+    // `explainTimeoutMs` is shared with stages that make one in total.
+    timeoutMs: config.aiService.findingContextTimeoutMs,
+    // NO RETRY, for the glossary's reason exactly: a timed-out call has
+    // already spent its model calls, and retrying spends them again rather
+    // than recovering them. See `withRetry`.
+    retries: 0,
   });
 }
 

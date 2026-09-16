@@ -3380,3 +3380,67 @@ describe('the glossary stage spends model calls, and is budgeted like it', () =>
     expect(mockAxios.post.mock.calls.length).toBeGreaterThan(1);
   });
 });
+
+describe('Module 34 spends model calls too, and is budgeted like it', () => {
+  // THE SAME FAULT, NAMED BEFORE IT FIRED RATHER THAN AFTER. Module 34 makes
+  // one model call per out-of-range finding and was borrowing
+  // `explainTimeoutMs` -- a budget shared with stages that make one call in
+  // total. It fitted only while the cap was six, and the cap is now sixteen,
+  // measured from two real reports that both exceeded six.
+  const aiServiceClient = require('../src/services/aiServiceClient');
+  const originalRetries = config.aiService.retries;
+
+  beforeEach(() => {
+    mockAxios.post.mockReset();
+    // Set explicitly. A retry test reading whatever a previous block left
+    // behind proves nothing about the code.
+    config.aiService.retries = 1;
+    aiServiceClient.resetClient();
+  });
+
+  afterEach(() => {
+    config.aiService.retries = originalRetries;
+    aiServiceClient.resetClient();
+  });
+
+  it('does NOT share the budget of stages that make a single call', () => {
+    expect(config.aiService.findingContextTimeoutMs).not.toBe(
+      config.aiService.explainTimeoutMs
+    );
+    // Sixteen findings at the glossary's own measured rate, plus the safety
+    // validation each answer passes, plus room for the slower fallback model
+    // the daily quota forces the chain onto.
+    expect(config.aiService.findingContextTimeoutMs).toBeGreaterThanOrEqual(16 * 4000);
+  });
+
+  it('sends the finding-context call with its own timeout', async () => {
+    mockAxios.post.mockResolvedValue({
+      status: 200,
+      data: { success: true, data: { entries: [] } },
+    });
+    await aiServiceClient.describeFindings({
+      findings: [{ test_name: 'ESR', direction: 'raised' }],
+      requestId: 'fc1',
+    });
+
+    const [, , options] = mockAxios.post.mock.calls[0];
+    expect(options.timeout).toBe(config.aiService.findingContextTimeoutMs);
+  });
+
+  it('NEVER RETRIES A TIMEOUT, because the calls are already spent', async () => {
+    const timeout = Object.assign(new Error('timeout of 120000ms exceeded'), {
+      code: 'ECONNABORTED',
+      isAxiosError: true,
+    });
+    mockAxios.post.mockRejectedValue(timeout);
+
+    await expect(
+      aiServiceClient.describeFindings({
+        findings: [{ test_name: 'ESR', direction: 'raised' }],
+        requestId: 'fc2',
+      })
+    ).rejects.toBeDefined();
+
+    expect(mockAxios.post).toHaveBeenCalledTimes(1);
+  });
+});

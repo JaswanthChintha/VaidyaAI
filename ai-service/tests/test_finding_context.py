@@ -41,6 +41,22 @@ def approved(text: str):
     return _R()
 
 
+@pytest.fixture(autouse=True)
+def _clear_cache():
+    """THE CACHE IS PROCESS-WIDE, SO IT MUST NOT CROSS A TEST BOUNDARY.
+
+    Without this, the first test to describe `C-REACTIVE PROTEIN (raised)`
+    successfully answers every later one from the cache -- and the refusal
+    tests, which hand the model text that must be rejected, would pass without
+    the model ever being called. Autouse, because a gate test that silently
+    stops exercising its gate is exactly the dead control this module has
+    already lost one of.
+    """
+    fc.reset_cache()
+    yield
+    fc.reset_cache()
+
+
 @pytest.fixture
 def guard(monkeypatch):
     """Safety layer that approves whatever it is handed."""
@@ -212,16 +228,152 @@ def test_the_same_test_and_direction_is_asked_once(guard):
 
 
 def test_a_report_cannot_spend_the_days_quota(guard):
-    """A real report can carry a dozen out-of-range results and the free tier
-    is twenty calls a day."""
+    """The ceiling still exists. The free tier is twenty calls a day."""
+    over = fc.MAX_PER_REPORT + 4
     many = [
-        {"test_name": f"TEST {chr(65 + i)}", "direction": "raised"} for i in range(12)
+        {"test_name": f"TEST {i}", "direction": "raised"} for i in range(over)
     ]
-    llm = FakeLLM(*[GOOD] * 12)
+    llm = FakeLLM(*[GOOD] * over)
     out = fc.describe_findings(many, llm=llm)
     assert len(out.entries) == fc.MAX_PER_REPORT
     assert len(llm.prompts) == fc.MAX_PER_REPORT
-    assert out.skipped_over_limit == 12 - fc.MAX_PER_REPORT
+    assert out.skipped_over_limit == over - fc.MAX_PER_REPORT
+
+
+def test_the_ceiling_clears_both_real_reports():
+    """SIZED FROM MEASUREMENT, NOT GUESSED -- and the old 6 was not.
+
+    Both real laboratory reports on this project exceeded 6: Test 3 sent seven
+    findings and lost a raised C-REACTIVE PROTEIN, Test 2 sends twelve and
+    would lose six. The handover recorded the ceiling as unreached because it
+    counted the six entries that came back instead of the `skipped_over_limit`
+    stored beside them.
+
+    The lower bound is therefore a real report's count. The upper bound is
+    there because a ceiling nothing can reach is not a ceiling: twenty calls a
+    day per model is still the budget.
+    """
+    assert fc.MAX_PER_REPORT >= 12, "below a real report's out-of-range count"
+    assert fc.MAX_PER_REPORT <= 24, "no longer a meaningful ceiling"
+
+
+def test_a_cache_hit_does_not_spend_the_ceiling(guard):
+    """WHAT MAKES THE RAISED CEILING AFFORDABLE.
+
+    The key is the normalised test name and the direction, which is the entire
+    prompt -- so the answer is the same for every reader and holds nothing
+    patient-specific. If a hit consumed the budget, a second report of the
+    same panel would truncate while costing nothing.
+    """
+    first = [{"test_name": f"TEST {i}", "direction": "raised"} for i in range(fc.MAX_PER_REPORT)]
+    llm = FakeLLM(*[GOOD] * fc.MAX_PER_REPORT)
+    fc.describe_findings(first, llm=llm)
+    assert len(llm.prompts) == fc.MAX_PER_REPORT
+
+    # The same panel again, plus four more than the ceiling would allow if the
+    # hits were charged for.
+    again = FakeLLM(*[GOOD] * 4)
+    out = fc.describe_findings(
+        first + [{"test_name": f"EXTRA {i}", "direction": "lowered"} for i in range(4)],
+        llm=again,
+    )
+    assert out.cached_count == fc.MAX_PER_REPORT
+    assert out.generated_count == 4
+    assert out.skipped_over_limit == 0
+    assert len(again.prompts) == 4
+    assert len(out.entries) == fc.MAX_PER_REPORT + 4
+
+
+def test_only_an_answer_is_cached_never_a_refusal(guard):
+    """A refusal is a moment, not a fact about the test name.
+
+    When the Gemini quota is spent every model in the chain refuses. Caching
+    that would pin an empty answer to this test name for the life of the
+    process, and the next report would never ask again.
+    """
+    fc.describe_findings(RAISED, llm=FakeLLM("Your level is over 9000."))
+    llm = FakeLLM(GOOD)
+    out = fc.describe_findings(RAISED, llm=llm)
+    assert len(llm.prompts) == 1, "a refusal was cached"
+    assert out.entries[0].available is True
+    assert out.cached_count == 0
+
+
+def test_a_cached_entry_carries_the_name_this_report_printed(guard):
+    """The page matches the entry to the ROW it is rendering, by name.
+
+    One laboratory prints `Lymphocytes` and another `LYMPHOCYTES`; the key
+    folds them together, which is the point. Handing back the first report's
+    spelling would leave the second report's row unmatched -- a paragraph
+    generated, approved, and then dropped for a difference in case.
+    """
+    fc.describe_findings([{"test_name": "LYMPHOCYTES", "direction": "lowered"}], llm=FakeLLM(GOOD))
+    out = fc.describe_findings(
+        [{"test_name": "Lymphocytes", "direction": "lowered"}], llm=FakeLLM()
+    )
+    entry = out.entries[0]
+    assert entry.cached is True
+    assert entry.test_name == "Lymphocytes"
+    assert entry.available is True
+
+
+def test_the_laboratorys_own_spacing_does_not_buy_a_second_call(guard):
+    """`RANDOM BLOOD GLUCOSE ( RBS )` is printed exactly like that.
+
+    Whitespace is collapsed in the key as well as case folded, because a name
+    spelled with a stray space is the SAME question -- and this project has
+    already paid three times for a lookup defeated by a laboratory's own
+    spelling. Here the cost is only a wasted call, which is precisely why it
+    would never be noticed.
+    """
+    llm = FakeLLM(GOOD)
+    fc.describe_findings(
+        [{"test_name": "RANDOM BLOOD GLUCOSE ( RBS )", "direction": "raised"}], llm=llm
+    )
+    again = FakeLLM(GOOD)
+    out = fc.describe_findings(
+        [{"test_name": "Random Blood  Glucose ( RBS )  ", "direction": "raised"}],
+        llm=again,
+    )
+    assert again.prompts == [], "a second call was spent on the same question"
+    assert out.cached_count == 1
+
+
+def test_the_direction_is_part_of_the_key(guard):
+    """A raised result and a lowered one are different questions.
+
+    The prompt turns on that single word, so sharing a cache entry between the
+    two would answer one with the other's paragraph -- the worst available
+    failure for a module whose whole input is a name and a direction.
+    """
+    llm = FakeLLM(GOOD, GOOD)
+    fc.describe_findings(
+        [
+            {"test_name": "FERRITIN", "direction": "raised"},
+            {"test_name": "FERRITIN", "direction": "lowered"},
+        ],
+        llm=llm,
+    )
+    assert len(llm.prompts) == 2
+    assert "raised" in llm.prompts[0] and "lowered" in llm.prompts[1]
+
+
+def test_the_callers_order_is_the_priority_order(guard):
+    """WHAT IS DROPPED WHEN THE CEILING IS REACHED MUST BE A DECISION.
+
+    The page sends this tool's own threshold crossings first and the results
+    the laboratory merely flagged after them. That ordering is the priority,
+    and it is only observable here: reordering the findings must reorder the
+    entries, so a caller can rely on the tail being what is lost rather than
+    on whatever came first out of the extraction.
+    """
+    names = [f"TEST {i}" for i in range(fc.MAX_PER_REPORT + 2)]
+    llm = FakeLLM(*[GOOD] * fc.MAX_PER_REPORT)
+    out = fc.describe_findings(
+        [{"test_name": n, "direction": "raised"} for n in names], llm=llm
+    )
+    assert [e.test_name for e in out.entries] == names[: fc.MAX_PER_REPORT]
+    assert out.skipped_over_limit == 2
 
 
 def test_a_refusal_carries_no_text_at_all(guard):

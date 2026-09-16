@@ -279,6 +279,23 @@ const config = {
     // onto a slower fallback. 24 x 4s + safety validation, rounded up.
     glossaryTimeoutMs: toInt(process.env.AI_SERVICE_GLOSSARY_TIMEOUT_MS, 180 * 1000),
 
+    // MODULE 34 MAKES ONE MODEL CALL PER OUT-OF-RANGE FINDING, so it gets its
+    // own budget for exactly the reason the glossary above got one -- and it
+    // is named here BEFORE the ceiling that would have broken it, rather than
+    // after.
+    //
+    // It borrowed `explainTimeoutMs` (120s), a budget shared with stages that
+    // make ONE call, and fitted only because the cap was six. The cap is now
+    // sixteen, measured from two real reports that both exceeded six. At the
+    // glossary's own measured rate that is 16 x ~4s plus safety validation
+    // per call, and several times that when the daily quota pushes the chain
+    // onto a slower fallback: 120s has nothing spare and is the §6as defect
+    // waiting to recur.
+    findingContextTimeoutMs: toInt(
+      process.env.AI_SERVICE_FINDING_CONTEXT_TIMEOUT_MS,
+      180 * 1000
+    ),
+
     // MODULES 28, 29, 30 AND 32 (trends, comparison, progress score, doctor
     // summary) ARE MODEL-FREE AND OFFLINE ON THE PYTHON SIDE - they are pure
     // computation over feature snapshots the backend supplies, so they belong
