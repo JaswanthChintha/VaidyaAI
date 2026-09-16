@@ -97,6 +97,11 @@ def _summary() -> dict:
                     },
                     "reference_low": None,
                     "reference_high": None,
+                    # OUT OF RANGE ON THE LABORATORY'S OWN INTERVAL, which is
+                    # a different fact from crossing one of this tool's
+                    # cut-offs. Both belong in the note.
+                    "position": "above_reference_interval",
+                    "printed_flag": "high",
                 },
                 # A PROFILE ANSWER, carrying the catalog's internal note as its
                 # display name. On the first live run this opened the document
@@ -114,6 +119,41 @@ def _summary() -> dict:
         "normal_findings": ["Anemia"],
         "unassessed_conditions": ["Heart Disease"],
         "assessments": [
+            {
+                # THE REASON, AS THE RULE ENGINE STATES IT. The note is built
+                # from these: the parameter, its value, the comparator, the
+                # threshold and the rule's own classification. "What was
+                # flagged and why" is not prose -- it is already on the
+                # payload.
+                "condition": "Diabetes",
+                "bases": [
+                    {
+                        "status": "Indicated",
+                        "assessed": True,
+                        "source_kind": "clinical_rule",
+                        "rule": {
+                            "triggering_values": [
+                                {
+                                    "display_name": "Glycated haemoglobin, NGSP %",
+                                    "value": 8.4,
+                                    "unit": "%",
+                                    "comparator": ">=",
+                                    "threshold": 6.5,
+                                    "classification": "at or above the ADA diabetes-range HbA1c threshold of 6.5 %",
+                                },
+                                {
+                                    "display_name": "Blood glucose",
+                                    "value": 186,
+                                    "unit": "mg/dl",
+                                    "comparator": ">=",
+                                    "threshold": 140,
+                                    "classification": "at or above the impaired-glucose-tolerance boundary",
+                                },
+                            ]
+                        },
+                    }
+                ],
+            },
             {
                 "condition": "Kidney Disease",
                 "bases": [
@@ -153,13 +193,13 @@ def _faithful() -> str:
     paraphrase or drop them.
     """
     return (
-        "This 58-year-old male was assessed from a single laboratory report. "
-        "No value was available for hypertension. "
-        "The source report printed no reference intervals. "
-        "HbA1c was 8.4 % and glucose was 186 mg/dl. "
-        "Diabetes was flagged. Kidney Disease was flagged by the model alone, "
-        "with no measured value crossing a cut-off for it. Anemia was assessed "
-        "and not flagged, and Heart Disease could not be assessed at all."
+        "This 58-year-old male had an HbA1c of 8.4 % and a glucose of "
+        "186 mg/dl. Diabetes was flagged because HbA1c 8.4 % is at or above "
+        "the ADA diabetes-range threshold of 6.5 % and glucose 186 mg/dl is "
+        "at or above the impaired-glucose-tolerance boundary of 140 mg/dl. "
+        "Kidney Disease was flagged by the statistical model alone, and no "
+        "measured value crossed a cut-off for it. Glucose 186 mg/dl is above "
+        "the printed reference interval."
     )
 
 
@@ -196,20 +236,14 @@ def test_a_narrative_that_drops_a_value_is_thrown_away(offline_settings):
     assert any("186" in gap for gap in result.missing_facts)
 
 
-def test_a_narrative_that_drops_AN_ABSENCE_is_thrown_away(offline_settings):
-    # The sentence a summariser drops first. "Heart Disease could not be
-    # assessed" missing turns an open question into silence, and silence on
-    # this page reads as nothing to report.
-    llm = FakeLLM(
-        _faithful().replace(", and Heart Disease could not be assessed at all", "")
-    )
-    result = write_clinician_summary(_summary(), llm=llm, settings=offline_settings)
-    assert result.outcome == OUTCOME_FACTS_MISSING
-    assert "unassessed:Heart Disease" in result.missing_facts
-
-
 def test_a_narrative_that_drops_a_flagged_topic_is_thrown_away(offline_settings):
-    llm = FakeLLM(_faithful().replace("Diabetes was flagged. ", ""))
+    llm = FakeLLM((_faithful()
+        .replace("Diabetes was flagged", "It was flagged")
+        # ALSO the incidental mention inside the threshold wording --
+        # the check is a substring match, so "ADA diabetes-range" alone
+        # would satisfy it and the test would pass for the wrong reason.
+        .replace("ADA diabetes-range", "ADA reference")
+    ))
     result = write_clinician_summary(_summary(), llm=llm, settings=offline_settings)
     assert result.outcome == OUTCOME_FACTS_MISSING
     assert "flagged:Diabetes" in result.missing_facts
@@ -246,8 +280,8 @@ def test_the_model_only_distinction_must_survive(offline_settings):
     value crossed anything, is being told something the analysis did not find.
     """
     body = _faithful().replace(
-        "Kidney Disease was flagged by the model alone, with no measured value "
-        "crossing a cut-off for it.",
+        "Kidney Disease was flagged by the statistical model alone, and no "
+        "measured value crossed a cut-off for it.",
         "Kidney Disease was flagged.",
     )
     llm = FakeLLM(body)
@@ -287,8 +321,16 @@ def test_the_prompt_carries_the_facts_and_forbids_inventing_numbers(offline_sett
     # of nothing, worse than the passage it was meant to improve on.
     assert "HbA1c 8.4 %" in prompt
     assert "Glucose 186 mg/dl" in prompt
-    assert "Diabetes" in prompt and "Heart Disease" in prompt
+    assert "Diabetes" in prompt
     assert "Never introduce a number that is not below" in prompt
+    # AND THE THRESHOLD IT CROSSED, which is the "why" the note is made of.
+    assert "6.5" in prompt
+    # "Heart Disease" is an unassessed topic and is deliberately NOT here any
+    # more: the note states what was flagged and why, and nothing about what
+    # was assessed, not assessed or not supplied.
+    assert "Heart Disease" not in prompt
+    assert "COULD NOT BE ASSESSED" not in prompt
+    assert "NOT SUPPLIED" not in prompt
 
 
 def test_the_prompt_forbids_naming_the_software(offline_settings):
@@ -340,52 +382,6 @@ def test_a_note_from_a_model_that_flagged_NOTHING_is_not_required(offline_settin
     assert "UNRELATED NOTE" not in facts.model_notes
 
 
-def test_a_narrative_that_drops_A_MISSING_PROFILE_ANSWER_is_thrown_away(
-    offline_settings,
-):
-    """MEMORY.md 6w third kept thing: EVERY absence.
-
-    Lost on a live run that passed every other gate. The prose read well,
-    carried every value and every finding, and quietly stopped mentioning that
-    three profile answers were never supplied.
-    """
-    llm = FakeLLM(_faithful().replace("No value was available for hypertension. ", ""))
-    result = write_clinician_summary(_summary(), llm=llm, settings=offline_settings)
-    assert result.outcome == OUTCOME_FACTS_MISSING
-    assert "not_supplied:hypertension" in result.missing_facts
-
-
-def test_a_narrative_that_drops_THE_NO_INTERVALS_SENTENCE_is_thrown_away(
-    offline_settings,
-):
-    """The one sentence that stops eight bare numbers reading as in range.
-
-    Also lost on that live run.
-    """
-    llm = FakeLLM(
-        _faithful().replace("The source report printed no reference intervals. ", "")
-    )
-    result = write_clinician_summary(_summary(), llm=llm, settings=offline_settings)
-    assert result.outcome == OUTCOME_FACTS_MISSING
-    assert "no_intervals_sentence" in result.missing_facts
-
-
-def test_the_no_intervals_fact_is_carried(offline_settings):
-    facts = collect_facts(_summary())
-    assert facts.no_intervals is True
-
-
-def test_an_unsupplied_answer_is_derived_from_the_payload_shape(offline_settings):
-    """There is no `not_supplied` list; the nulls are the signal.
-
-    Reading one produced an empty tuple on every real report, so the absence
-    check it fed could never fire -- the live narrative dropped the sentence
-    and the gate reported nothing missing.
-    """
-    facts = collect_facts(_summary())
-    assert facts.not_supplied == ("hypertension",)
-
-
 def test_a_profile_answer_is_not_a_reported_value(offline_settings):
     """And its display name never reaches the document.
 
@@ -432,42 +428,6 @@ def _summary_with_unassessed(count: int = 17) -> dict:
     return summary
 
 
-def test_the_unassessed_count_is_collected(offline_settings):
-    facts = collect_facts(_summary_with_unassessed())
-    assert facts.unmapped_count == 17
-
-
-def test_the_prompt_does_not_call_the_assessed_subset_the_reported_values(
-    offline_settings,
-):
-    """THE LABEL IS WHAT THE MODEL REPEATED, so the label is what changed.
-
-    A stronger instruction would not have helped: the model was told these
-    were the reported values and it said so.
-    """
-    llm = FakeLLM(_faithful())
-    write_clinician_summary(
-        _summary_with_unassessed(), llm=llm, settings=offline_settings
-    )
-    prompt = llm.prompts[0]
-    assert "REPORTED VALUES:" not in prompt
-    assert "MEASURED VALUES AVAILABLE TO THIS ANALYSIS" in prompt
-    assert "NOT all the values on the report" in prompt
-    # NOT tool-centric either. "VALUES THIS TOOL ASSESSED" produced "Values
-    # assessed by this tool were ...", which is the register the reader asked
-    # to be rid of -- the label is what the model echoes.
-    assert "THIS TOOL ASSESSED" not in prompt
-
-
-def test_a_report_with_nothing_unassessed_gains_no_sentence(offline_settings):
-    """No count, no requirement, no invented caveat. A report whose every
-    parameter mapped must not be told that some did not."""
-    llm = FakeLLM(_faithful())
-    result = write_clinician_summary(_summary(), llm=llm, settings=offline_settings)
-    assert result.outcome == OUTCOME_GENERATED, result.missing_facts
-    assert "NOT ASSESSED:" not in llm.prompts[0]
-
-
 # --------------------------------------------------------------------------
 # THE MODEL CAVEAT IS FOR A CLINICIAN, SO IT IS THE METRICS
 #
@@ -495,17 +455,6 @@ def _ml_basis(condition: str, limits: dict, model: str = "Random Forest") -> dic
             }
         ],
     }
-
-
-def test_the_prompt_asks_for_a_clinician_register(offline_settings):
-    llm = FakeLLM(_faithful())
-    write_clinician_summary(_summary(), llm=llm, settings=offline_settings)
-    prompt = llm.prompts[0].lower()
-    assert "the reader is a clinician" in prompt
-    assert "no lay glosses" in prompt
-    assert "handover note" in prompt
-
-
 
 
 # --------------------------------------------------------------------------
@@ -541,64 +490,7 @@ def test_the_document_carries_no_model_or_metric_talk(offline_settings):
         assert banned not in lowered, banned
 
 
-def test_the_document_does_not_editorialise_about_what_was_skipped(offline_settings):
-    summary = _summary()
-    summary["data_quality"] = {"unmapped_count": 17}
-    llm = FakeLLM(_faithful())
-    result = write_clinician_summary(summary, llm=llm, settings=offline_settings)
-    assert result.outcome == OUTCOME_GENERATED, result.missing_facts
-
-    lowered = result.text.lower()
-    for banned in ("set aside", "not assessed by", "does not assess", "not found normal"):
-        assert banned not in lowered, banned
-
-
-def test_the_prompt_no_longer_demands_a_sentence_about_them(offline_settings):
-    summary = _summary()
-    summary["data_quality"] = {"unmapped_count": 17}
-    llm = FakeLLM(_faithful())
-    write_clinician_summary(summary, llm=llm, settings=offline_settings)
-    assert "NOT ASSESSED:" not in llm.prompts[0]
-
-
-def test_the_prose_still_may_not_claim_to_list_every_value(offline_settings):
-    """THE ORIGINAL DEFECT MUST NOT COME BACK.
-
-    The reader's first objection was a document listing four values as "the
-    reported values" on a report carrying twenty-one. Removing the sentence
-    about the other seventeen must not restore the claim that the four are all
-    of them, so the prompt still tells the model what the list is and is not.
-    """
-    llm = FakeLLM(_faithful())
-    write_clinician_summary(_summary(), llm=llm, settings=offline_settings)
-    prompt = llm.prompts[0]
-    assert "REPORTED VALUES:" not in prompt
-    assert "NOT all the values on the report" in prompt
-
-
 # --- the metrics themselves, which the PAGE renders -----------------------
-
-
-def test_the_metrics_are_still_computed_for_the_page(offline_settings):
-    """6w's control, relocated rather than deleted.
-
-    The note is no longer appended to the prose, but it is still derived: it
-    remains the narrative's grounding source and its permitted numbers, and
-    the page renders the same figures.
-    """
-    notes = _model_notes(_summary())
-    assert len(notes) == 1
-    assert "ROC-AUC 0.999" in notes[0]
-    assert "recall 0.98" in notes[0]
-    assert "not a diagnosis" in notes[0].lower()
-
-
-def test_the_auc_keeps_three_places_so_it_is_not_read_as_perfect():
-    """0.9987 at two places is 1.00 -- a perfect classifier, the single
-    impression this figure exists to prevent."""
-    note = _model_notes(_summary())[0]
-    assert "ROC-AUC 1.00" not in note
-    assert "ROC-AUC 0.999" in note
 
 
 def _ml_case(condition, limits):
@@ -614,52 +506,119 @@ def _ml_case(condition, limits):
     }
 
 
-def test_every_flagging_model_gets_its_figures_not_only_the_documented_one():
-    """author_note is NOT_PRESENT for the diabetes model, so the prose version
-    carried ONE caveat for TWO model-flagged conditions. Diabetes runs at
-    recall 0.70."""
-    summary = _summary()
-    summary["assessments"] = summary["assessments"] + [
-        _ml_case(
-            "Diabetes",
-            {
-                "metrics_available": True,
-                "roc_auc": 0.9733748420857805,
-                "precision_at_operating_threshold": 0.9218266253869969,
-                "recall_at_operating_threshold": 0.7022405660377359,
-                "operating_threshold": 0.7932221243150029,
-                "measured_on": "held-out test split",
-                "variant": "neither",
-                "author_note": {"text": None, "state": "NOT_PRESENT"},
-            },
-        )
-    ]
-    joined = " ".join(_model_notes(summary))
-    assert "Diabetes: flagged by a Random Forest" in joined
-    assert "recall 0.70" in joined
-    assert "variant: neither" not in joined
+# --------------------------------------------------------------------------
+# WHAT THE NOTE CONTAINS, AND IT CONTAINS NOTHING ELSE
+#
+# The owner's spec, given after reading three drafts of it:
+#
+#   "the summary should contain what diseases are flagged and why that's it
+#    no other information like these were assessed and these were not
+#    assessed ... and mention those parameters which are not in range"
+#
+# Everything below is that sentence, turned into checks.
+# --------------------------------------------------------------------------
 
 
-def test_a_model_with_no_metrics_says_so_rather_than_nothing():
-    summary = _summary()
-    summary["assessments"] = [_ml_case("Kidney Disease", {"metrics_available": False})]
-    assert "No validation metrics are recorded" in _model_notes(summary)[0]
+def test_the_reason_is_the_value_and_the_threshold_it_crossed(offline_settings):
+    """THE "WHY" IS NOT PROSE -- it is already on the payload, as the rule's
+    own triggering values. The note is built from them."""
+    facts = collect_facts(_summary())
+    reasons = facts.triggering["Diabetes"]
+    joined = " ".join(reasons)
+    assert "HbA1c 8.4 %" in joined
+    assert ">= 6.5" in joined
+    assert "ADA diabetes-range" in joined
+    assert "Glucose 186 mg/dl" in joined
 
 
-@pytest.mark.parametrize(
-    "measured_on,expected",
-    [
-        ("held-out test split, see the metrics artifact", "held-out test split"),
-        ("held-out test split, refer to the artifact", "held-out test split"),
-        ("held-out test split, stratified by age", "held-out test split, stratified by age"),
-        ("held-out test split", "held-out test split"),
-    ],
-)
-def test_only_the_artifact_pointer_is_trimmed(measured_on, expected):
-    limits = dict(MODEL_METRICS)
-    limits["measured_on"] = measured_on
-    summary = _summary()
-    summary["assessments"] = [_ml_case("Kidney Disease", limits)]
-    note = _model_notes(summary)[0]
-    assert "measured on " + expected in note
-    assert "metrics artifact" not in note
+def test_a_parameter_out_of_the_laboratorys_own_interval_is_carried(
+    offline_settings,
+):
+    """SEPARATE FROM CROSSING ONE OF THIS TOOL'S CUT-OFFS, and both are wanted.
+
+    A parameter can be marked high by the laboratory without crossing any
+    threshold this tool holds, and it is still out of range.
+    """
+    facts = collect_facts(_summary())
+    assert any("Glucose 186 mg/dl" in entry for entry in facts.out_of_range)
+    assert any("above the printed reference interval" in e for e in facts.out_of_range)
+
+
+def test_the_prompt_states_only_findings_reasons_and_out_of_range(offline_settings):
+    llm = FakeLLM(_faithful())
+    write_clinician_summary(_summary(), llm=llm, settings=offline_settings)
+    prompt = llm.prompts[0]
+
+    assert "FLAGGED -- Diabetes:" in prompt
+    assert "OUT OF RANGE:" in prompt
+    # None of the coverage vocabulary reaches the model at all.
+    for banned in (
+        "NOT SUPPLIED",
+        "COULD NOT BE ASSESSED",
+        "ASSESSED AND NOT FLAGGED",
+        "MEASURED VALUES AVAILABLE",
+        "NOT ASSESSED",
+    ):
+        assert banned not in prompt, banned
+
+
+def test_the_note_says_nothing_about_coverage(offline_settings):
+    llm = FakeLLM(_faithful())
+    result = write_clinician_summary(_summary(), llm=llm, settings=offline_settings)
+    assert result.outcome == OUTCOME_GENERATED, result.missing_facts
+
+    lowered = result.text.lower()
+    for banned in (
+        "not assessed",
+        "could not be assessed",
+        "was assessed",
+        "were assessed",
+        "not supplied",
+        "set aside",
+        "not found normal",
+        "does not assess",
+    ):
+        assert banned not in lowered, banned
+
+
+def test_the_note_carries_no_model_or_metric_talk(offline_settings):
+    llm = FakeLLM(_faithful())
+    result = write_clinician_summary(_summary(), llm=llm, settings=offline_settings)
+    lowered = result.text.lower()
+    for banned in ("roc-auc", "precision", "operating threshold", "random forest",
+                   "dataset", "held-out", "metrics artifact"):
+        assert banned not in lowered, banned
+
+
+def test_a_narrative_that_drops_A_FLAGGED_CONDITION_is_thrown_away(offline_settings):
+    """The findings ARE the document now, so losing one is fatal."""
+    llm = FakeLLM((_faithful()
+        .replace("Diabetes was flagged", "It was flagged")
+        # ALSO the incidental mention inside the threshold wording --
+        # the check is a substring match, so "ADA diabetes-range" alone
+        # would satisfy it and the test would pass for the wrong reason.
+        .replace("ADA diabetes-range", "ADA reference")
+    ))
+    result = write_clinician_summary(_summary(), llm=llm, settings=offline_settings)
+    assert result.outcome == OUTCOME_FACTS_MISSING
+    assert "flagged:Diabetes" in result.missing_facts
+
+
+def test_a_narrative_that_drops_THE_REASON_is_thrown_away(offline_settings):
+    """A finding without its value is the half a clinician cannot act on."""
+    llm = FakeLLM(_faithful().replace("8.4 %", "a crossed threshold"))
+    result = write_clinician_summary(_summary(), llm=llm, settings=offline_settings)
+    assert result.outcome == OUTCOME_FACTS_MISSING
+    assert any("8.4" in gap for gap in result.missing_facts)
+
+
+def test_the_laboratorys_printed_name_is_used_for_the_reason_too(offline_settings):
+    """A clinician matches the row against the paper in front of them.
+
+    The rule's triggering values carry the catalog's display name -- "Glycated
+    haemoglobin, NGSP %" -- and the laboratory printed "HbA1c". The join puts
+    the printed name back.
+    """
+    joined = " ".join(collect_facts(_summary()).triggering["Diabetes"])
+    assert "HbA1c" in joined
+    assert "NGSP" not in joined

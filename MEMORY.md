@@ -34,9 +34,9 @@ about any of them. That is the fifth time on this project.
 | | Tests |
 |---|---|
 | `backend/` (Node/Express) | **670** passing + 3 opt-in live |
-| `ai-service/` (Python/FastAPI) | **3,915** passing + 7 skipped (3,922 collected) |
+| `ai-service/` (Python/FastAPI) | **3,903** passing + 7 skipped (3,910 collected) |
 | `frontend/` (React/Vitest) | **330** passing, 0 suites failed |
-| **Total** | **4,915** -- ALL THREE re-run green 2026-09-16 |
+| **Total** | **4,903** -- ALL THREE re-run green 2026-09-16 |
 
 > **⚠ THE 4,852 IN EVERY EARLIER SECTION WAS 7 TOO HIGH.** §6as recorded
 > ai-service's COLLECTED total (3,865) as its PASSED count; that day's real
@@ -73,7 +73,7 @@ about any of them. That is the fifth time on this project.
 > consolidated onto `main`, and the commit messages were then rewritten to
 > carry no co-author trailer. **Nothing carries one; do not add one.**
 >
-> All 4,915 tests pass and all three suites ran 2026-09-16. §6x is the design
+> All 4,903 tests pass and all three suites ran 2026-09-16. §6x is the design
 > system; §6z–§6ah and §6aj–§6ao are the earlier sessions; **§6aq, §6ar, §6as
 > and §6at are the recent ones** — two real laboratory reports driven through
 > the app, the three lookup defects they exposed (a parenthetical, a
@@ -7329,9 +7329,9 @@ described including the CRP that was being dropped. See the ✅ section below.
 | | Tests | Last run |
 |---|---|---|
 | `backend/` | **670** passed, 3 skipped, 0 suites failed | 2026-09-16 ✅ |
-| `ai-service/` | **3,915** passed, 7 skipped, 0 failures (3,922 collected) | 2026-09-16 ✅ (`.env` moved aside) |
+| `ai-service/` | **3,903** passed, 7 skipped, 0 failures (3,910 collected) | 2026-09-16 ✅ (`.env` moved aside) |
 | `frontend/` | **330** passed, **0 suites failed** | 2026-09-16 ✅ |
-| **Total** | **4,915** | |
+| **Total** | **4,903** | |
 
 One task: settle Module 34's six-finding ceiling, which §6as left open as a
 decision about a hypothetical report. **It was not hypothetical and it was not
@@ -7904,6 +7904,96 @@ Test 3, regenerated: no ROC-AUC, no model, no dataset, nothing set aside.
 ```
 outcome generated · missing_facts [] · llm_calls_made 1
 ```
+
+### ▶ WHAT THE NOTE CONTAINS NOW, AND IT CONTAINS NOTHING ELSE
+
+The owner, after three drafts — each of which I answered with a safety citation
+and a smaller version of the thing they had asked me to remove:
+
+> *"the summary should contain what diseases are flagged and why thats it no
+> other information like these were assessed and these were not assessed …
+> and mention those parameters which are not in range"*
+
+**Implemented literally.** Every flagged condition with the value and threshold
+behind it, plus the parameters outside the laboratory's own interval. Nothing
+about coverage, nothing about the model.
+
+```
+This tool flagged Diabetes because GLYCATED HAEMOGLOBIN (HBA1C) was 7 %
+(>= 6.5, at or above the ADA diabetes-range HbA1c threshold of 6.5 %) and
+RANDOM BLOOD GLUCOSE ( RBS ) was 168 mg/dl (>= 140, ...).
+Kidney Disease was flagged by the statistical model alone, and no measured
+value crossed a cut-off for it.
+The out of range parameter is RANDOM BLOOD GLUCOSE ( RBS ) at 168 mg/dl.
+```
+
+**THE "WHY" WAS ALREADY ON THE PAYLOAD** and nothing had used it:
+`assessments[].bases[].rule.triggering_values` carries the parameter, its
+value, the comparator, the threshold and the rule's own classification.
+`_triggering` renders it and the note is built from it.
+
+> **WHY NOT `position` FOR "OUT OF RANGE".** On Test 3 exactly ONE row is
+> `above_reference_interval`, because the laboratory printed no interval for
+> HbA1c or haemoglobin — and those two are what flagged Diabetes and Anemia. A
+> document listing "out of range" by printed interval alone would omit the
+> values its own findings rest on. Both signals are carried; they are different
+> facts.
+
+**REMOVED, AND EACH WAS A §6w REQUIREMENT:** "assessed and not flagged",
+"could not be assessed", "not supplied", the no-intervals note, and the
+model-performance section in full. Recorded here so nobody later reads their
+absence as an oversight — the assessed/unassessed picture is still on the page
+around the note.
+
+### ⚠ THREE DEFECTS FOUND WHILE DOING IT, TWO OF THEM MINE
+
+**1. A RANGE PARSED AS A NEGATIVE NUMBER, AND IT COST TWO LIVE GENERATIONS.**
+The classification text says *"the WHO overweight band of 25.0-29.9"*.
+`_numbers_in` matched `-?\d+` and read that as 25.0 and **MINUS 29.9**, so the
+permitted set held `-29.9` while the model wrote `29.9`. Both attempts were
+refused `UNGROUNDED_NUMERIC_CLAIM`; the log named the code and not the number.
+
+> **PRINTING THE PERMITTED SET FOUND IT IN ONE LINE, AFTER TWO WASTED CALLS.**
+> When a numeric gate refuses, print what it permits — the refusal names the
+> rule, never the figure.
+
+The lookbehind now refuses to read "-" as a sign when a digit precedes it, and
+a genuine `-1.5` still parses.
+
+**2. THE INTERNAL FEATURE KEY REACHED THE DOCUMENT AS "bmi 25.25 kg/m2".**
+Obesity's trigger is the BMI, whose row is a PROFILE answer — and a profile row
+carries a transcribed `original_test_name` whose text is the string `bmi`
+(§6w's still-open `origin: report_transcription`). Preferring the printed name
+therefore preferred the internal key, which is exactly what §6an-i swept off
+every reader-facing screen. `_value_strings` already had the guard and this did
+not: only trust a printed name from a `lab_report` row.
+
+**3. MY OWN FACT CHECK PASSED ON A NARRATIVE THAT HAD DROPPED THE VALUE.**
+It re-parsed the rendered string and took `numbers[0]` — which for
+`"HbA1c 8.4 % (>= 6.5 …)"` is the **1 out of "HbA1c"**, present in almost any
+text. The check now uses the bare values the producer reported, carried
+alongside the rendered strings.
+
+> **A CHECK THAT RE-PARSES ITS OWN OUTPUT IS CHECKING THE WRONG THING.** Take
+> the value from the producer, not from the sentence you built out of it.
+
+**And the numeric permission moved with the prompt again.** The thresholds are
+instructed now, so they are permitted now. **Third time in this file that a
+prompt change needed the permitted set changed in the same commit** — it is one
+edit, not two.
+
+### ⚠ AND THE TOOLING TRAP, TWICE IN ONE SESSION
+
+Writing Python through `python -c "..."` from bash: **backticks in a comment
+were executed as command substitution**, silently deleting `` `_value_strings` ``
+and four other backticked terms from the source comments. Separately `\\b` and
+`\\n` collapsed through a heredoc and put **four literal `\x08` backspaces into
+a regex** and a real newline into a string literal — §6as's accident, for the
+third time on this project.
+
+> **USE Write/Edit FOR FILE CONTENT. Not `python -c`, not a heredoc.** The
+> assertion that caught it was `chr(8) in source`, which every change to this
+> file should keep running.
 
 ### STILL TO DO ON THIS
 

@@ -167,19 +167,6 @@ class ClinicianNarrative(BaseModel):
     #: only for OUTCOME_FACTS_MISSING, and it names the FACT, never the text.
     missing_facts: Tuple[str, ...] = ()
     llm_calls_made: int = 0
-    #: THE MODEL PERFORMANCE FIGURES, FOR THE PAGE RATHER THAN THE PROSE.
-    #:
-    #: §6w's rule is that a model-derived flag may not reach a reader with no
-    #: indication of what produced it. These used to be APPENDED to `text`,
-    #: which put two paragraphs of ROC-AUC and operating thresholds in the
-    #: middle of a clinical handover note -- the reader objected three times
-    #: and was right. They are carried separately so the page can render them
-    #: as subdued furniture, and so `text` stays a clinical summary.
-    #:
-    #: DERIVED IN ONE PLACE. A renderer that rebuilt them from
-    #: `assessments[].bases[].ml.limitations` would be a second implementation
-    #: free to round differently or drop a model.
-    model_notes: Tuple[str, ...] = ()
     safety: NarrativeSafety
 
 
@@ -269,6 +256,149 @@ def _unmapped_count(summary: Any) -> int:
     return 0
 
 
+def _triggering(summary: Any) -> Dict[str, Tuple[str, ...]]:
+    """For every FLAGGED condition, the values that crossed and what they crossed.
+
+    THE READER'S SPEC, AND IT IS A BETTER DOCUMENT THAN THE ONE IT REPLACES:
+    "what diseases are flagged and why, that's it".
+
+    The "why" is not prose -- it is on the payload already, as the rule's own
+    triggering values: the parameter, its value, the comparator, the threshold
+    and the classification the rule assigned. "Glycated haemoglobin 7 % at or
+    above the ADA diabetes-range threshold of 6.5 %" is the reason, stated in
+    the producer's own words.
+
+    WHY NOT `position` FOR THIS. On `Test 3.pdf` only ONE row is
+    `above_reference_interval`, because the laboratory printed no interval for
+    HbA1c or haemoglobin -- yet those two are exactly what flagged Diabetes and
+    Anemia. A document that listed "out of range" by printed interval alone
+    would omit the values its own findings rest on.
+    """
+    # THE LABORATORY'S OWN PRINTED NAME, wherever there is one -- the same
+    # rule `_value_strings` follows and for the same reason: a clinician
+    # matches the row against the paper in front of them. The triggering
+    # values carry the catalog's display name, so they are joined back to the
+    # laboratory rows on the feature key.
+    # KEYED ON BOTH, because a triggering value and a laboratory row do not
+    # always agree on which identifier they carry: the rule lines lead with
+    # `display_name` and the rows with `feature`. Matching on either is what
+    # makes the join land on real payloads and on fixtures alike.
+    printed_by_key: Dict[str, str] = {}
+    for row in _field(_field(summary, "laboratory"), "rows") or []:
+        provenance = _field(row, "provenance")
+        # ONLY A LABORATORY ROW HAS A PRINTED NAME WORTH PREFERRING. A profile
+        # row carries a transcribed `original_test_name` too -- the BMI row's
+        # is the string "bmi" (§6w's open `origin: report_transcription`) --
+        # and trusting it put the internal feature key into the document as
+        # "bmi 25.25 kg/m2", which is what §6an-i swept off every
+        # reader-facing screen. Same predicate `_value_strings` uses.
+        if _field(provenance, "source") != "lab_report":
+            continue
+        text = _field(_field(provenance, "original_test_name"), "text")
+        if not text:
+            continue
+        for key in (_field(row, "feature"), _field(row, "display_name")):
+            if key:
+                printed_by_key.setdefault(str(key), str(text))
+
+    # AND A FALLBACK TO THE CATALOG NAME, so a rule line that carries only a
+    # feature key never puts one on the page. Obesity's trigger is the BMI,
+    # whose row is a profile answer with no printed laboratory name -- without
+    # this the document said "bmi 25.25 kg/m2", which is the internal key
+    # §6an-i swept off every reader-facing screen.
+    named_by_key: Dict[str, str] = {}
+    for row in _field(_field(summary, "laboratory"), "rows") or []:
+        feature = _field(row, "feature")
+        display = _field(row, "display_name")
+        if feature and display:
+            named_by_key.setdefault(str(feature), str(display))
+
+    out: Dict[str, List[str]] = {}
+    required: List[str] = []
+    flagged = set(_field(summary, "abnormal_findings") or [])
+    for assessment in _field(summary, "assessments") or []:
+        condition = _field(assessment, "condition")
+        if condition not in flagged:
+            continue
+        rows: List[str] = []
+        for basis in _field(assessment, "bases") or []:
+            rule = _field(basis, "rule")
+            for line in _field(rule, "triggering_values") or []:
+                display = _field(line, "display_name")
+                feature = _field(line, "feature")
+                name = (
+                    printed_by_key.get(str(feature))
+                    or printed_by_key.get(str(display))
+                    or display
+                    or named_by_key.get(str(feature))
+                    or feature
+                )
+                value = _field(line, "value")
+                if not name or value is None:
+                    continue
+                unit = _field(line, "unit")
+                rendered = f"{name} {value} {unit}".strip() if unit else f"{name} {value}"
+                classification = _field(line, "classification")
+                comparator = _field(line, "comparator")
+                threshold = _field(line, "threshold")
+                if comparator is not None and threshold is not None:
+                    rendered += f" ({comparator} {threshold}"
+                    rendered += f", {classification})" if classification else ")"
+                elif classification:
+                    rendered += f" ({classification})"
+                if rendered not in rows:
+                    rows.append(rendered)
+                    required.append(str(value))
+        if rows:
+            out[str(condition)] = tuple(rows)
+    return {k: tuple(v) for k, v in out.items()}, tuple(dict.fromkeys(required))
+
+
+def _out_of_range(summary: Any) -> Tuple[str, ...]:
+    """Laboratory rows outside the interval the laboratory itself printed.
+
+    Separate from `_triggering` and both are wanted: a parameter can be marked
+    high by the laboratory without crossing any cut-off this tool holds, and
+    that is still a parameter out of range.
+    """
+    out: List[str] = []
+    required: List[str] = []
+    for row in _field(_field(summary, "laboratory"), "rows") or []:
+        provenance = _field(row, "provenance")
+        if _field(provenance, "source") == "patient_profile":
+            continue
+        if _field(row, "usable") is False:
+            continue
+        value = _field(row, "value")
+        if value is None:
+            continue
+        position = str(_field(row, "position") or "")
+        flag = str(_field(row, "printed_flag") or "").strip().lower()
+        abnormal = position in ("below_reference_interval", "above_reference_interval") or (
+            flag not in ("", "none", "null", "normal")
+        )
+        if not abnormal:
+            continue
+        printed = _field(_field(provenance, "original_test_name"), "text")
+        name = str(printed) if printed else str(
+            _field(row, "display_name") or _field(row, "feature") or ""
+        )
+        unit = _field(row, "unit")
+        rendered = f"{name} {value} {unit}".strip() if unit else f"{name} {value}"
+        direction = (
+            "below the printed reference interval"
+            if position == "below_reference_interval"
+            else "above the printed reference interval"
+            if position == "above_reference_interval"
+            else f"marked {flag} by the laboratory"
+        )
+        entry = f"{rendered} ({direction})"
+        if entry not in out:
+            out.append(entry)
+            required.append(str(value))
+    return tuple(out), tuple(dict.fromkeys(required))
+
+
 def _flag_groups(summary: Any) -> Dict[str, Tuple[str, ...]]:
     """Which KIND of check flagged what -- MEMORY.md 6w's first kept thing.
 
@@ -309,10 +439,23 @@ def _flag_groups(summary: Any) -> Dict[str, Tuple[str, ...]]:
     }
 
 
+#: A HYPHEN BETWEEN TWO DIGITS IS A RANGE, NOT A MINUS SIGN.
+#:
+#: The classification text carries "the WHO overweight band of 25.0-29.9", and
+#: the old pattern read that as 25.0 and MINUS 29.9. The permitted set then
+#: held -29.9 while the model, quite reasonably, wrote 29.9 -- and the whole
+#: document was refused as an UNGROUNDED_NUMERIC_CLAIM. Two live generations
+#: were lost to it before the permitted set was printed and read.
+#:
+#: The lookbehind refuses to treat "-" as a sign when a digit or a decimal
+#: point precedes it, which is exactly when it is a range.
+_NUMBER_TOKEN = re.compile(r"(?<![\d.])-?\d+(?:\.\d+)?")
+
+
 def _numbers_in(values: Sequence[str]) -> Tuple[float, ...]:
     found: List[float] = []
     for item in values:
-        for token in re.findall(r"-?\d+(?:\.\d+)?", str(item)):
+        for token in _NUMBER_TOKEN.findall(str(item)):
             try:
                 found.append(float(token))
             except ValueError:
@@ -469,9 +612,17 @@ class _Facts(BaseModel):
     not_supplied: Tuple[str, ...]
     model_notes: Tuple[str, ...]
     no_intervals: bool
-    #: Extracted parameters this platform does not assess. NOT a detail: the
-    #: values list is the ASSESSED subset, and a document that lists it without
-    #: this number reads as the whole panel. See `_facts_block`.
+    #: Per flagged condition, the values that crossed and what they crossed.
+    #: This IS the "why" the document is now made of.
+    triggering: Dict[str, Tuple[str, ...]] = Field(default_factory=dict)
+    #: Rows outside the laboratory's own printed interval.
+    out_of_range: Tuple[str, ...] = ()
+    #: THE BARE VALUES behind the two above, taken from the producer rather
+    #: than re-parsed out of the rendered strings. Re-parsing picked the 1 out
+    #: of "HbA1c" as the number to check for, which is present in almost any
+    #: text -- so the check passed on a narrative that had dropped the value.
+    required_values: Tuple[str, ...] = ()
+    #: Still collected; no longer stated. The page lists the parameters.
     unmapped_count: int = 0
     flagged_both: Tuple[str, ...] = ()
     flagged_rule_only: Tuple[str, ...] = ()
@@ -498,6 +649,8 @@ def collect_facts(summary: Any) -> _Facts:
     )
 
     groups = _flag_groups(summary)
+    triggering, trigger_values = _triggering(summary)
+    out_of_range, range_values = _out_of_range(summary)
     return _Facts(
         flagged_both=groups["both"],
         flagged_rule_only=groups["rule_only"],
@@ -510,6 +663,9 @@ def collect_facts(summary: Any) -> _Facts:
         not_supplied=_not_supplied(patient),
         model_notes=tuple(_model_notes(summary)),
         no_intervals=no_intervals,
+        triggering=triggering,
+        out_of_range=out_of_range,
+        required_values=trigger_values + range_values,
         unmapped_count=_unmapped_count(summary),
     )
 
@@ -517,87 +673,37 @@ def collect_facts(summary: Any) -> _Facts:
 def _missing(text: str, facts: _Facts) -> Tuple[str, ...]:
     """Which required facts are NOT in the model's output.
 
-    A REWRITE MAY NOT LOSE ANYTHING, and the sentences a summariser drops
-    first are the qualifying ones -- the absences, the limitation note, the
-    disclaimer. Each of these is checked literally; anything absent throws the
-    whole narrative away rather than shipping a document that is quietly
-    missing a caveat.
+    THE REQUIRED SET IS NOW EXACTLY WHAT THE DOCUMENT IS FOR: every flagged
+    condition, and every number behind it. A rewrite that drops a finding or a
+    value still throws the whole narrative away.
+
+    The absence checks -- unsupplied profile answers, topics that could not be
+    assessed, the no-intervals note -- are gone with the sentences they
+    guarded. See `_facts_block`.
     """
     gaps: List[str] = []
-
-    # The note and the closing line are APPENDED after approval and the model
-    # is told not to write them, so anything found here is the model's own
-    # prose and nothing has to be stripped out of it first.
     body = text
     lowered = body.lower()
 
-    for value in facts.values:
-        # THE NUMBER has to survive. The unit may legitimately be written
-        # differently ("mg/dL" for "mg/dl") and the test name may be reworded,
-        # but the figure is the thing a clinician reads this document for.
-        #
-        # Taken from the value string rather than from its first token: these
-        # strings now lead with the TEST NAME, and `split(" ")[0]` quietly
-        # started checking that the word "Glucose" was present instead of 186.
-        numbers = re.findall(r"-?\d+(?:\.\d+)?", value)
-        if numbers and numbers[-1] not in body:
-            gaps.append(f"value:{value}")
-
     for name in facts.flagged:
-        if name.lower() not in lowered:
+        if str(name).lower() not in lowered:
             gaps.append(f"flagged:{name}")
 
-    for name in facts.unassessed:
-        if name.lower() not in lowered:
-            gaps.append(f"unassessed:{name}")
+    # THE NUMBER HAS TO SURVIVE. The unit may legitimately be written
+    # differently and the test name reworded, but the figure is the thing a
+    # clinician reads this document for. Taken from the whole string rather
+    # than its first token: these strings lead with the TEST NAME.
+    for value in facts.required_values:
+        if value not in body:
+            gaps.append(f"value:{value}")
 
-    # EVERY ABSENCE, which is MEMORY.md 6w's third kept thing and the one a
-    # compressed rewrite is most likely to drop.
+    # WHICH KIND OF CHECK FLAGGED WHAT, for the model-only group -- the one a
+    # compressed rewrite drops and the one a clinician is misled by losing.
     #
-    # BOTH OF THESE WERE LOST ON A LIVE RUN THAT PASSED EVERY OTHER GATE. The
-    # narrative read well, stated every value and every finding, and silently
-    # omitted that three profile answers were never supplied and that the
-    # report printed no reference intervals -- so eight bare numbers sat in a
-    # clinical document with nothing saying they are placed against no range.
-    # A fact check that does not list a fact does not protect it.
-    for name in facts.not_supplied:
-        if str(name).replace("_", " ").lower() not in lowered:
-            gaps.append(f"not_supplied:{name}")
-
-    if facts.no_intervals and not re.search(
-        r"no reference interval|without reference interval|printed no .{0,20}interval",
-        lowered,
-    ):
-        gaps.append("no_intervals_sentence")
-
-    # THE PARAMETERS THIS TOOL DOES NOT ASSESS, which is the absence a reader
-    # cannot recover from the document itself -- the values list looks complete
-    # precisely because it is a list. On `Test 2.pdf` the narrative stated four
-    # values and said nothing of the other seventeen, among them a CRP of 12.1
-    # and an SGPT of 101.9.
-    #
-    # THE NUMBER AND THE SUBSTANCE, NOT ONE PHRASING. The count must survive
-    # because that is what a rewrite drops and what a clinician needs; the
-    # vocabulary alternation is deliberately wide, because this file has
-    # already refused a faithful narrative once by insisting on the words we
-    # would have chosen (see `flagged_model_only` below).
-    # NOTHING IS REQUIRED ABOUT THE UNASSESSED PARAMETERS. The page lists
-    # them; the prose does not discuss them. See `_facts_block`.
-
-    # WHICH KIND OF CHECK FLAGGED WHAT, for the model-only group -- the one
-    # a compressed rewrite drops, and the one a clinician is misled by losing.
-    # The names are already required above; this checks the DISTINCTION is
-    # still attached to them.
-    # THE SUBSTANCE, NOT ONE PHRASING OF IT.
-    #
-    # The first version looked for "model ... alone/only" and refused a live
-    # narrative that had said the same thing as "flagged by the statistical
-    # model without any measured value crossing a cut-off". A check that only
-    # accepts the words we would have chosen rejects faithful prose, and a
-    # gate that always refuses is a feature that never ships.
-    #
-    # Either half is the fact: the model acted by itself, or no measured value
-    # crossed. The prompt asks for both.
+    # THE SUBSTANCE, NOT ONE PHRASING OF IT. An earlier version looked for
+    # "model ... alone/only" and refused a live narrative that had said the
+    # same thing another way. A gate that always refuses is a feature that
+    # never ships.
     if facts.flagged_model_only and not re.search(
         r"(model|pattern)[^.]{0,140}\b(alone|only|by itself)\b"
         r"|\b(alone|only|by itself)\b[^.]{0,80}(model|pattern)"
@@ -607,15 +713,18 @@ def _missing(text: str, facts: _Facts) -> Tuple[str, ...]:
     ):
         gaps.append("model_only_distinction")
 
-    return tuple(gaps)
-
-
-# --------------------------------------------------------------------------
-# The prompt
-# --------------------------------------------------------------------------
+    return tuple(dict.fromkeys(gaps))
 
 _INSTRUCTIONS = """You are writing a short handover note for a clinician who has
 been handed a patient's phone. Use the facts below and NOTHING else.
+
+WHAT THIS NOTE CONTAINS, AND IT CONTAINS NOTHING ELSE:
+  1. what was flagged, and the measured value and threshold behind each one;
+  2. the parameters that are out of range.
+
+Say nothing about what was assessed, what was not assessed, what could not be
+assessed, or what was not supplied. Do not mention this tool's coverage, its
+scope, or anything it did not look at. A reader wants the findings.
 
 Rules:
 - Plain professional English. No headings, no bullet points, no markdown.
@@ -623,8 +732,9 @@ Rules:
   name copied from the facts below. Those are given in lower case and a
   sentence opening ". hypertension, heart disease..." has reached a real
   document on this project before.
-- Do not name or describe the software, its components, its thresholds, its
-  models by type, or any statistical measure. Write about the patient.
+- Do not name or describe the software, its components, its models by type, or
+  any statistical measure such as an AUC, a precision or a recall. Write about
+  the patient.
 - Do not state or imply that the patient has any condition. Findings are
   things this tool flagged, not diagnoses.
 - DO NOT INTERPRET ANY VALUE. Never write what a result means, suggests,
@@ -632,21 +742,18 @@ Rules:
   Report what was measured and what was flagged, and stop there.
 - Attribute every finding: "this tool flagged X", never "X is present",
   "X is likely" or "the results show X".
+- Give the REASON with the finding: the parameter, its value and the threshold
+  it crossed, exactly as the facts give them.
 - Do not describe any value as high, low, raised, elevated, poor, good or
-  well-controlled. If a value crossed a cut-off, say that it crossed one.
+  well-controlled beyond what the facts themselves say. If a value crossed a
+  cut-off, say that it crossed one.
 - Use only the numbers given. Never introduce a number that is not below.
 - Name every laboratory value WITH ITS TEST NAME, exactly as given.
-- Every flagged topic and every topic that could not be assessed must appear.
-- If there is a NOT SUPPLIED line, write this sentence with EVERY name from it,
-  spelled exactly as given: "<names> were not supplied and were unavailable to
-  the analysis." Leaving one out is the most common way this answer is
-  rejected.
-- If there is a line beginning NOTE:, write that fact as a sentence of its own.
-- For each topic under FLAGGED BY THE MODEL ALONE, write this sentence with the
-  topic's name in it: "<topic> was flagged by the statistical model alone, and
-  no measured value crossed a cut-off for it."
-- Do not write any closing disclaimer and do not write anything about how the
-  model was built or tested. Those sentences are added after you.
+- Every flagged topic must appear, and every value given as its reason.
+- For each topic under FLAGGED BY THE STATISTICAL MODEL, write this sentence
+  with the topic's name in it: "<topic> was flagged by the statistical model
+  alone, and no measured value crossed a cut-off for it."
+- Do not write any closing disclaimer. That sentence is added after you.
 - Topics that share a reason go in ONE sentence as a list. Do not repeat the
   same sentence with a different name in it; four copies of "this tool flagged
   X because a measured value crossed a cut-off" is the fault this document was
@@ -656,94 +763,55 @@ Rules:
   not reassure or advise. Use the clinical name of a parameter where the report
   gives one. Prefer the shortest sentence that carries the fact. This is a
   handover note, not patient education.
-- Three to five short paragraphs, SEPARATED BY A BLANK LINE. The reader's page
+- Two or three short paragraphs, SEPARATED BY A BLANK LINE. The reader's page
   splits paragraphs on blank lines; groups divided by spaces arrive as one
   dense block.
 """
 
 
 def _facts_block(facts: _Facts) -> str:
+    """WHAT WAS FLAGGED, WHY, AND WHICH PARAMETERS ARE OUT OF RANGE.
+
+    Nothing else. The reader's instruction, and it is the right shape for a
+    handover note: a clinician wants the findings and the numbers behind them.
+
+    GONE, DELIBERATELY, AND EACH WAS A §6w REQUIREMENT:
+      * "assessed and not flagged" -- the topics that were checked and clear;
+      * "could not be assessed" -- the topics with no input;
+      * "not supplied" -- the profile answers the patient never gave;
+      * the no-reference-intervals note.
+
+    Those exist because a compressed rewrite dropping them was a logged defect.
+    The owner has asked three times for a document that says what was flagged
+    and why and nothing else, which is their call to make; this records what
+    the document no longer states so nobody later mistakes it for an oversight.
+    The full assessed/unassessed picture is still on the PAGE around this note.
+    """
     lines: List[str] = [f"SUBJECT: {facts.subject}"]
-    if facts.not_supplied:
-        # Underscores out. The keys are `smoking_history`, and a model handed
-        # one writes "smoking status" or drops it -- while `_missing` looks for
-        # "smoking history". Give it the words the check will look for.
-        lines.append(
-            "NOT SUPPLIED: "
-            + ", ".join(name.replace("_", " ") for name in facts.not_supplied)
-        )
-    if facts.values:
-        # NOT "REPORTED VALUES", WHICH WAS FALSE AND THE MODEL REPEATED IT.
-        # This list is the subset this platform assessed -- four rows of the
-        # twenty-one printed on `Test 2.pdf`. The old label produced "The
-        # reported values are ..." followed by four of them, which a clinician
-        # reads as the panel. The label now says what the list is.
-        lines.append(
-            # NEUTRAL WORDING, because the label is what the model echoes.
-            # "VALUES THIS TOOL ASSESSED" produced "Values assessed by this
-            # tool were ..." -- the same tool-centric register the reader
-            # asked to be rid of. The parenthetical stays: it is what stops
-            # the model calling four values "the reported values" on a report
-            # carrying twenty-one, which was the original defect.
-            "MEASURED VALUES AVAILABLE TO THIS ANALYSIS (NOT all the values "
-            "on the report): " + "; ".join(facts.values)
-        )
-    # NO "NOT ASSESSED" SENTENCE IS REQUESTED OR PERMITTED ANY MORE.
-    #
-    # The reader asked for this removed three times, and they are right that a
-    # clinical summary does not editorialise about the tool that produced it.
-    # THE COMPLETENESS PROBLEM IT WAS WRITTEN FOR IS STILL SOLVED, and better:
-    # the parameters themselves -- name, value, unit, the laboratory's own flag
-    # and interval -- are listed on the page. The document no longer says "we
-    # did not look at seventeen things"; it shows the seventeen.
-    #
-    # That is the honest version of the same fix. An absence is not created by
-    # omitting a sentence about absence when the values are on the page.
-    if facts.no_intervals:
-        lines.append(
-            "NOTE: the source report printed no reference intervals, so no "
-            "value is placed against a range."
-        )
-    if facts.flagged_both:
-        lines.append(
-            "FLAGGED BY BOTH A MEASURED VALUE CROSSING A CUT-OFF AND THE "
-            "MODEL: " + ", ".join(facts.flagged_both)
-        )
-    if facts.flagged_rule_only:
-        lines.append(
-            "FLAGGED BECAUSE A MEASURED VALUE CROSSED A CUT-OFF: "
-            + ", ".join(facts.flagged_rule_only)
-        )
-    if facts.flagged_model_only:
-        lines.append(
-            "FLAGGED BY THE MODEL ALONE, no measured value crossed a cut-off: "
-            + ", ".join(facts.flagged_model_only)
-        )
-    # EVERY FLAGGED NAME REACHES THE PROMPT, grouped or not.
-    #
-    # The groups are built from `assessments`, and a flagged condition with no
-    # assessment entry belongs to none of them. The first version only fell
-    # back when ALL THREE groups were empty, so on a report with one grouped
-    # topic and one ungrouped one the ungrouped one was silently absent from
-    # the facts -- and `_missing` then required a name the model was never
-    # given, refusing every narrative forever. A fallback that only fires when
-    # nothing else did is not a fallback.
-    ungrouped = [
-        name
-        for name in facts.flagged
-        if name not in facts.flagged_both
-        and name not in facts.flagged_rule_only
-        and name not in facts.flagged_model_only
-    ]
-    if ungrouped:
-        lines.append("ALSO FLAGGED: " + ", ".join(ungrouped))
-    if facts.normal:
-        lines.append("ASSESSED AND NOT FLAGGED: " + ", ".join(facts.normal))
-    if facts.unassessed:
-        lines.append("COULD NOT BE ASSESSED: " + ", ".join(facts.unassessed))
-    # The limitation notes and the closing line are deliberately NOT here.
-    # The model is told not to write them and they are appended after
-    # approval; see the module docstring.
+
+    # THE FINDINGS, EACH WITH THE VALUE THAT PRODUCED IT.
+    for condition in facts.flagged:
+        reasons = facts.triggering.get(condition)
+        if reasons:
+            lines.append(f"FLAGGED -- {condition}: " + "; ".join(reasons))
+    # A flagged condition with no triggering value still has to be named, or
+    # `_missing` requires a name the model was never given and every narrative
+    # is refused forever. That fallback fired for real once already.
+    unexplained = [c for c in facts.flagged if not facts.triggering.get(c)]
+    if unexplained:
+        model_only = [c for c in unexplained if c in facts.flagged_model_only]
+        other = [c for c in unexplained if c not in facts.flagged_model_only]
+        if model_only:
+            lines.append(
+                "FLAGGED BY THE STATISTICAL MODEL, no measured value crossed a "
+                "cut-off: " + ", ".join(model_only)
+            )
+        if other:
+            lines.append("ALSO FLAGGED: " + ", ".join(other))
+
+    if facts.out_of_range:
+        lines.append("OUT OF RANGE: " + "; ".join(facts.out_of_range))
+
     return "\n".join(lines)
 
 
@@ -820,12 +888,24 @@ def write_clinician_summary(
             NarrativeSafety(validated=False),
         )
 
-    permitted = _numbers_in(facts.values) + _numbers_in(
-        tuple(facts.model_notes) + (facts.subject,)
+    # EVERY NUMBER THE PROMPT SUPPLIES IS PERMITTED, AND ONLY THOSE.
+    #
+    # The thresholds belong here now. The note is REQUIRED to state why each
+    # finding was flagged, and the why is "HbA1c 8.4 % at or above 6.5 %" --
+    # so 6.5 reaches the model in the facts. Without it in this tuple the
+    # validator's numeric grounding would read 6.5 as invented and refuse the
+    # document for obeying its own prompt. That is §6as's defect and it has
+    # now been one edit away three times in this file: whenever the prompt
+    # starts supplying a figure, this line is the other half of the change.
+    permitted = (
+        _numbers_in(facts.values)
+        + _numbers_in(tuple(facts.model_notes) + (facts.subject,))
+        + _numbers_in(facts.out_of_range)
+        + _numbers_in(
+            tuple(value for values in facts.triggering.values() for value in values)
+        )
+        + _numbers_in(facts.required_values)
     )
-    # The count is no longer instructed, so it is no longer permitted. A
-    # figure the prompt does not ask for is a figure the model invented, and
-    # the validator should refuse it.
 
     context = SafetyContext(
         grounding_sources=tuple(facts.model_notes) or (_facts_block(facts),),
@@ -915,7 +995,6 @@ def write_clinician_summary(
 
     return ClinicianNarrative(
         outcome=OUTCOME_GENERATED,
-        model_notes=tuple(facts.model_notes),
         # THE ONLY ASSIGNMENT of model-written text. See the module docstring.
         text="\n\n".join(parts),
         notice=None,
