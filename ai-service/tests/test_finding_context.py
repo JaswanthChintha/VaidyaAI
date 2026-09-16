@@ -317,3 +317,52 @@ def test_the_boundaries_are_word_boundaries_and_not_backspaces():
     from app.services.finding_context import _check
 
     assert _check("Associated with a shortening of the tendon.") is None
+
+
+def test_the_prompt_forbids_the_words_the_validator_actually_bans():
+    """THE PROMPT AND THE VALIDATOR HAVE TO AGREE, and they did not.
+
+    Module 24's `UNSAFE_TREATMENT_INSTRUCTION` is a VOCABULARY rule at
+    PROHIBITED severity: it fires on `treat`, `therapy`, `medication` and the
+    rest wherever they appear, including in plain description. The prompt said
+    "do not give advice or recommend a test or treatment", which the model
+    obeyed -- it advised nobody -- and four of six findings on a real report
+    were refused anyway, for sentences like "iron deficiency, which is often
+    treated with supplements".
+
+    An instruction that forbids an INTENT cannot satisfy a validator that
+    measures WORDS. This pins the two together: every word the validator bans
+    outright must be named in the prompt.
+    """
+    from app.services.finding_context import _prompt
+
+    prompt = _prompt("ESR", "raised").lower()
+    for word in (
+        "treat",
+        "therapy",
+        "medication",
+        "medicine",
+        "drug",
+        "cure",
+        "regimen",
+        "surgery",
+        "injection",
+        "infusion",
+        "dialysis",
+        "chemotherapy",
+        "prescribe",
+    ):
+        assert word in prompt, f"{word!r} is refused by Module 24 but not named in the prompt"
+
+
+def test_the_system_instruction_bans_a_passing_mention_too():
+    """"Never recommend" and "never mention" are different instructions, and
+    only the second matches a vocabulary rule. The refused sentences were not
+    recommendations; they mentioned a treatment in passing while describing a
+    condition.
+    """
+    from app.services.finding_context import SYSTEM_INSTRUCTION
+
+    lowered = SYSTEM_INSTRUCTION.lower()
+    assert "not even in passing" in lowered
+    assert "mention treatment" in lowered

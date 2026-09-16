@@ -188,7 +188,8 @@ SYSTEM_INSTRUCTION = (
     "You are given only the test name and the direction. You never address the "
     "reader, never say what their result means, never state that anyone has or "
     "does not have a condition, never give numbers or ranges, and never "
-    "recommend treatment."
+    "mention treatment, management or what should be done next -- not even in "
+    "passing, and not even about the condition rather than the reader."
 )
 
 
@@ -205,7 +206,23 @@ def _prompt(test_name: str, direction: str, feedback: Optional[str] = None) -> s
         "say what it means, indicates, confirms or is caused by.\n"
         "- Do not state any number, range, threshold or cut-off.\n"
         "- Do not say anyone has, likely has, or does not have a condition.\n"
-        "- Do not give advice or recommend a test or treatment.\n"
+        "- Do not give advice or recommend a test or next step.\n"
+        # NAMING THE WORDS, because "do not recommend treatment" was not
+        # enough. Module 24's `UNSAFE_TREATMENT_INSTRUCTION` is a VOCABULARY
+        # rule at PROHIBITED severity: it fires on `treat`, `therapy`,
+        # `medication`, `drug` and the rest wherever they appear, including in
+        # plain description -- "iron deficiency, which is often treated with
+        # supplements" is refused on the word alone. The model was obeying the
+        # old instruction (it was advising nobody) and being refused anyway,
+        # four times out of six on a real report. The prompt now forbids the
+        # WORDS, which is what the validator actually measures.
+        "- Never use any of these words, in any form and for any reason, "
+        "including about a condition rather than about the reader: treat, "
+        "treatment, therapy, medication, medicine, drug, cure, regimen, "
+        "surgery, injection, infusion, dialysis, chemotherapy, prescribe, "
+        "supplement, dose, tablet, capsule, pill.\n"
+        "- Name only what the result is associated with, and stop there. Do "
+        "not continue into what is done about it.\n"
         "- If the name is not a laboratory test you recognise, reply exactly: "
         "NOT RECOGNISED"
     )
