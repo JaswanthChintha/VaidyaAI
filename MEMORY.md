@@ -35,8 +35,8 @@ about any of them. That is the fifth time on this project.
 |---|---|
 | `backend/` (Node/Express) | **670** passing + 3 opt-in live |
 | `ai-service/` (Python/FastAPI) | **3,903** passing + 7 skipped (3,910 collected) |
-| `frontend/` (React/Vitest) | **332** passing, 0 suites failed |
-| **Total** | **4,905** -- ALL THREE re-run green 2026-09-16 |
+| `frontend/` (React/Vitest) | **338** passing, 0 suites failed |
+| **Total** | **4,911** -- ALL THREE re-run green 2026-09-16 |
 
 > **⚠ THE 4,852 IN EVERY EARLIER SECTION WAS 7 TOO HIGH.** §6as recorded
 > ai-service's COLLECTED total (3,865) as its PASSED count; that day's real
@@ -73,7 +73,7 @@ about any of them. That is the fifth time on this project.
 > consolidated onto `main`, and the commit messages were then rewritten to
 > carry no co-author trailer. **Nothing carries one; do not add one.**
 >
-> All 4,905 tests pass and all three suites ran 2026-09-16. §6x is the design
+> All 4,911 tests pass and all three suites ran 2026-09-16. §6x is the design
 > system; §6z–§6ah and §6aj–§6ao are the earlier sessions; **§6aq, §6ar, §6as
 > and §6at are the recent ones** — two real laboratory reports driven through
 > the app, the three lookup defects they exposed (a parenthetical, a
@@ -7330,8 +7330,8 @@ described including the CRP that was being dropped. See the ✅ section below.
 |---|---|---|
 | `backend/` | **670** passed, 3 skipped, 0 suites failed | 2026-09-16 ✅ |
 | `ai-service/` | **3,903** passed, 7 skipped, 0 failures (3,910 collected) | 2026-09-16 ✅ (`.env` moved aside) |
-| `frontend/` | **332** passed, **0 suites failed** | 2026-09-16 ✅ |
-| **Total** | **4,905** | |
+| `frontend/` | **338** passed, **0 suites failed** | 2026-09-16 ✅ |
+| **Total** | **4,911** | |
 
 One task: settle Module 34's six-finding ceiling, which §6as left open as a
 decision about a hypothetical report. **It was not hypothetical and it was not
@@ -8272,6 +8272,58 @@ a second coverage table cannot drift from the service's.
 > choice someone could revisit. **The same wording appears in three places**
 > (`policy.py`'s message, `populationController.js:122`, `Population.jsx:178`)
 > and is unfixed.
+
+### ▶ "STABLE" OVER A LINE THAT FALLS FROM CEILING TO FLOOR
+
+The same reader, on the next chart down. Cholesterol 186 → 172, drawn as a
+cliff, labelled **stable**. Both were true:
+
+```
+cholesterol   TREND_CLASSIFIED   trend: stable   direction: falling
+  186 -> 172 mg/dl   =  -14 mg/dl,  -7.53 %
+  stability band: 17 %  (floor 5 mg/dl)   exceeded: false
+  basis: RCV = sqrt(2) * 1.96 * sqrt(CVa^2 + CVi^2)
+         CVa 2.5 %, CVi 5.7 % -> 17.3 % -> 17 %
+```
+
+**A 7.5 % fall is smaller than the test's own variation** — two draws from an
+unchanged person can differ by that much — so `stable` is the right word, and
+the service records `direction: falling` separately rather than pretending
+nothing moved. Nothing was wrong with the classification.
+
+### THE AXIS WAS THE LIE, AND IT IS A LIE EVERY CHART TOLD
+
+`domainFor()` spanned the readings and nothing else. **So every change filled
+the box, whatever its size.** A 7.5 % move and a 70 % move drew the same
+picture, and the only thing distinguishing them was a word in the corner that
+the picture contradicted.
+
+The domain now includes **the span a change would have to cross to count** —
+the service's own `significant_change_pct` and `min_absolute_change`, measured
+from the baseline the change is measured from. Inside the band the line is
+visibly shallow; a trend that exceeds the band still runs past it. Measured:
+the same two readings now occupy **less than half** the height they did.
+
+> **NOTHING IS DRAWN FOR THE SPAN AND NOTHING NEW IS LABELLED.** It sets the
+> scale only. The axis numbers are still the highest and lowest actual
+> readings -- 186 and 172 -- because every number printed on that chart is a
+> reading somebody took. A test asserts 154 and 218 never appear.
+
+### AND THE PANEL NOW SAYS WHAT STABLE MEANS
+
+The `reason` field already carried it. The panel explanation added earlier
+showed only when there was NO direction, so "stable" -- the other case where
+the words and the picture disagree -- still said nothing. It shows for both
+now, and for neither when the service gave no sentence.
+
+> **TWO FIXES FOR ONE COMPLAINT, AND THEY ARE NOT ALTERNATIVES.** The sentence
+> explains the contradiction; the axis removes it. Text that talks a reader out
+> of what they can see is the weaker half -- **a chart whose steepness means
+> nothing should not be argued with, it should be rescaled.**
+
+Four mutants, all killed: the span dropped from the domain, the percentage
+ignored in favour of the absolute floor, stable panels silenced, and a reason
+invented when the service gave none.
 
 ### STILL TO DO ON THIS
 

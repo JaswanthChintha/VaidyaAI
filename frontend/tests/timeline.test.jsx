@@ -1110,3 +1110,77 @@ describe('Module 28 -- the chart says why it has no direction', () => {
     expect(block.querySelector('.trend-chart__why')).toBeNull();
   });
 });
+
+/**
+ * "STABLE" IS THE OTHER CASE WHERE THE WORDS AND THE PICTURE DISAGREE.
+ *
+ * It does not mean the line is flat. It means the movement is inside the band
+ * where this test's own variation lives: cholesterol 186 -> 172 is -7.53 %
+ * against a 17 % band -- a real fall, and smaller than the noise. The reader
+ * saw a steep line labelled "stable" with nothing to reconcile them.
+ */
+describe('Module 28 -- a stable panel says what stable means', () => {
+  const REASON =
+    'TOTAL cholesterol went from 186 to 172 mg/dl between 2026-09-09 and '
+    + '2026-09-11 (2 days apart), a change of -14 mg/dl, -7.53 %. That is '
+    + 'within the declared stability band for this feature (17 % and 5 mg/dl), '
+    + 'so the series is reported as stable.';
+
+  const stable = (reason) => ({
+    feature: 'cholesterol',
+    outcome: 'TREND_CLASSIFIED',
+    trend: 'stable',
+    reason,
+    canonical_unit: 'mg/dl',
+    stability: { significant_change_pct: 17, min_absolute_change: 5 },
+    change: { first_value: 186, last_value: 172 },
+    points: [
+      { date: '2026-09-09', value: 186, unit: 'mg/dl' },
+      { date: '2026-09-11', value: 172, unit: 'mg/dl' },
+    ],
+  });
+
+  it('explains what stable means, on the panel', async () => {
+    mount({
+      trends: {
+        trends: { features: { cholesterol: stable(REASON) } },
+        history: { included: 2, considered: 2 },
+      },
+    });
+
+    await screen.findByText(/Trends over time/);
+    const block = [...document.querySelectorAll('.trend-chart__block')][0];
+    const why = block.querySelector('.trend-chart__why');
+    expect(why).not.toBeNull();
+    expect(why.textContent).toMatch(/within the declared stability band/);
+    expect(why.textContent).toMatch(/17 %/);
+  });
+
+  it('still calls it stable in the summary', async () => {
+    // The explanation qualifies the word; it does not replace it.
+    mount({
+      trends: {
+        trends: { features: { cholesterol: stable(REASON) } },
+        history: { included: 2, considered: 2 },
+      },
+    });
+
+    await screen.findByText(/Trends over time/);
+    const summary = [...document.querySelectorAll('.trend-chart__block')][0]
+      .querySelector('summary');
+    expect(summary.textContent).toMatch(/stable/);
+  });
+
+  it('invents nothing when the service gave no sentence', async () => {
+    mount({
+      trends: {
+        trends: { features: { cholesterol: stable(undefined) } },
+        history: { included: 2, considered: 2 },
+      },
+    });
+
+    await screen.findByText(/Trends over time/);
+    const block = [...document.querySelectorAll('.trend-chart__block')][0];
+    expect(block.querySelector('.trend-chart__why')).toBeNull();
+  });
+});

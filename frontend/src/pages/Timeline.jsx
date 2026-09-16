@@ -174,6 +174,12 @@ function chartPropsFor(trend) {
     band,
     classified: trend.outcome === 'TREND_CLASSIFIED',
     trend: trend.trend,
+    // WHAT WOULD HAVE COUNTED AS A CHANGE, so the chart can be drawn at a
+    // scale where "stable" looks stable. The numbers are the service's own
+    // (`significant_change_pct`, `min_absolute_change`); nothing is derived
+    // here beyond passing them along with the value they are measured from.
+    stability: trend.stability || null,
+    baseline: trend.change ? trend.change.first_value : null,
   };
 }
 
@@ -242,7 +248,15 @@ function Trends({ data, history }) {
                 is mostly the change of test, not a change in the reader. The
                 refusal is right and it was the only thing on screen that was
                 not explained. */}
-            {!declared && isPresent(trend.reason) ? (
+            {/* ALSO WHEN THE TREND IS "STABLE", which is the other case
+                where the words and the picture can disagree. "Stable" does
+                not mean the line is flat -- it means the movement is inside
+                the band where this test's own variation lives. Cholesterol
+                186 -> 172 is -7.53 % against a 17 % band: a real fall, and
+                smaller than the noise. Without the sentence the reader sees a
+                steep line labelled "stable" and has nothing to reconcile
+                them with. */}
+            {(!declared || trend.trend === 'stable') && isPresent(trend.reason) ? (
               <p className="trend-chart__why">{trend.reason}</p>
             ) : null}
             <TrendChart {...props} />

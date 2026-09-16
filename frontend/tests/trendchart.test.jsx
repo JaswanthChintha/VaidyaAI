@@ -473,3 +473,89 @@ describe('nothing at all', () => {
     expect(screen.getByText(/1 further reading\(s\) could not be placed/)).toBeInTheDocument();
   });
 });
+
+/**
+ * THE AXIS IS THE SCALE A CHANGE IS JUDGED AGAINST.
+ *
+ * Found by a reader looking at their cholesterol chart: 186 -> 172 drawn from
+ * ceiling to floor, labelled "stable". Both were true. The service reports
+ * -7.53 % against a 17 % stability band, so "stable" is correct -- and an axis
+ * spanning only the two readings stretches any change, however small, across
+ * the whole box. The picture said collapse, the label said stable, and the
+ * picture is what a reader believes.
+ */
+describe('TrendChart -- the significance span sets the scale', () => {
+  const STABILITY = { significant_change_pct: 17, min_absolute_change: 5 };
+  const POINTS = [
+    { date: '2026-09-09', value: 186, unit: 'mg/dl' },
+    { date: '2026-09-11', value: 172, unit: 'mg/dl' },
+  ];
+
+  /** Vertical distance between the two plotted readings, in svg units. */
+  const dropHeight = () => {
+    const dots = [...document.querySelectorAll('circle')].filter(
+      (c) => c.getAttribute('r') && !c.getAttribute('stroke-dasharray')
+    );
+    const ys = dots.map((c) => Number(c.getAttribute('cy'))).filter(Number.isFinite);
+    return ys.length >= 2 ? Math.abs(Math.max(...ys) - Math.min(...ys)) : null;
+  };
+
+  it('draws a within-band change as a SHALLOW line, not a cliff', () => {
+    const { unmount } = render(
+      <TrendChart label="Total cholesterol" unit="mg/dl" points={POINTS} />
+    );
+    const withoutBand = dropHeight();
+    unmount();
+
+    render(
+      <TrendChart
+        label="Total cholesterol"
+        unit="mg/dl"
+        points={POINTS}
+        stability={STABILITY}
+        baseline={186}
+      />
+    );
+    const withBand = dropHeight();
+
+    expect(withoutBand).toBeGreaterThan(0);
+    expect(withBand).toBeGreaterThan(0);
+    // THE WHOLE POINT: the same two readings, drawn against what would have
+    // counted, occupy a fraction of the height they did before.
+    expect(withBand).toBeLessThan(withoutBand / 2);
+  });
+
+  it('still prints the readings themselves, never the scale', () => {
+    // Every number on this chart is a reading somebody took. Widening the
+    // domain must not start labelling the axis with the band's edges.
+    render(
+      <TrendChart
+        label="Total cholesterol"
+        unit="mg/dl"
+        points={POINTS}
+        stability={STABILITY}
+        baseline={186}
+      />
+    );
+    const text = document.body.textContent;
+    expect(text).toMatch(/186/);
+    expect(text).toMatch(/172/);
+    // 186 +/- 17 % is about 154 and 218. Neither is a reading and neither may
+    // appear.
+    expect(text).not.toMatch(/154/);
+    expect(text).not.toMatch(/218/);
+  });
+
+  it('is unchanged when the service declared no stability band', () => {
+    const { unmount } = render(
+      <TrendChart label="Total cholesterol" unit="mg/dl" points={POINTS} />
+    );
+    const plain = dropHeight();
+    unmount();
+
+    render(
+      <TrendChart label="Total cholesterol" unit="mg/dl" points={POINTS} stability={null} />
+    );
+    expect(dropHeight()).toBe(plain);
+  });
+});

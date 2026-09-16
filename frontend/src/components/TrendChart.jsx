@@ -126,10 +126,37 @@ function axisNumber(n) {
  * row -- which is a flat line drawn for a reason that has nothing to do with
  * the readings being flat.
  */
-function domainFor(values, band) {
+function significanceSpan(stability, baseline) {
+  if (!stability || !isNum(baseline)) return null;
+  const pct = Number(stability.significant_change_pct);
+  const floor = Number(stability.min_absolute_change);
+  const byPct = Number.isFinite(pct) ? Math.abs(baseline) * (pct / 100) : 0;
+  const byFloor = Number.isFinite(floor) ? Math.abs(floor) : 0;
+  const threshold = Math.max(byPct, byFloor);
+  if (!Number.isFinite(threshold) || threshold <= 0) return null;
+  return { low: baseline - threshold, high: baseline + threshold };
+}
+
+function domainFor(values, band, span) {
   const numbers = values.slice();
   if (band && isNum(band.low)) numbers.push(band.low);
   if (band && isNum(band.high)) numbers.push(band.high);
+  // THE SCALE A CHANGE IS JUDGED AGAINST, NOT JUST THE TWO READINGS.
+  //
+  // An axis spanning only the data makes EVERY change fill the box. Total
+  // cholesterol 186 -> 172 is -7.53 % against a 17 % stability band -- a
+  // movement the service explicitly reports as stable -- and it was drawn as
+  // a line from ceiling to floor. The picture said "collapse" while the label
+  // said "stable", and the picture is what a reader believes.
+  //
+  // Including the span a change would have to cross makes the steepness mean
+  // something: inside the band the line is visibly shallow, and a trend that
+  // DOES exceed the band still runs past it. Nothing is drawn for the span --
+  // it only sets the scale, and every printed number is still a reading
+  // somebody took.
+  if (span && isNum(span.low) && isNum(span.high)) {
+    numbers.push(span.low, span.high);
+  }
   if (!numbers.length) return null;
 
   let min = Math.min(...numbers);
@@ -151,6 +178,10 @@ export default function TrendChart({
   band = null,
   classified = false,
   trend = null,
+  // The band a change has to cross to count, and the value it is measured
+  // from. Both are the service's own; see `significanceSpan`.
+  stability = null,
+  baseline = null,
   caption,
 }) {
   // A reading we cannot place is not silently dropped -- it is counted and
@@ -183,7 +214,10 @@ export default function TrendChart({
   // twice. The readings are still in the table beside this chart.
   const plotReadings = placeable.length > 0 && !mixedUnits;
 
-  const domain = plotReadings ? domainFor(placeable.map((p) => p.value), band) : null;
+  const span = significanceSpan(stability, baseline);
+  const domain = plotReadings
+    ? domainFor(placeable.map((p) => p.value), band, span)
+    : null;
 
   // THE AXIS NUMBERS ARE ONLY PRINTED WHEN THEY MEAN SOMETHING. With one
   // reading and no declared band the domain is pure padding -- a 10% nudge
