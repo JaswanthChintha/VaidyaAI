@@ -52,10 +52,11 @@ about any of them. That is the fifth time on this project.
 > decision about a hypothetical report, it was **already dropping a raised CRP
 > on Test 3**, and §6at is that defect.
 >
-> **§6at is verified live on Test 3, through the real page to Mongo** — seven
-> findings described, CRP among them. `Test 2.pdf` has still never had Module 34
-> run on it and is the only report that would exercise the new ceiling near 16;
-> that costs quota.
+> **§6at is verified live on BOTH real reports, through the real page to
+> Mongo** — Test 3's seven findings with the CRP that was being dropped, and
+> Test 2's twelve, six of which had never been described on any report. 19
+> descriptions, 19 Module 24 approvals, zero gate refusals, zero skipped.
+> Nothing on Module 34's ceiling is outstanding.
 >
 > **§6ap and §6ai are PREVIOUS handovers and both are stale in the way that
 > matters most: §6ap opens with "45 files uncommitted, no recovery point", and
@@ -7452,7 +7453,7 @@ baseline under `git stash` rather than inferred from the total.
 > `testcase` on `classname`. Write the XML to the scratchpad with a WINDOWS
 > path: Python does not see bash's `/tmp`.
 
-### ✅ VERIFIED LIVE ON TEST 3, ALL THE WAY TO MONGO
+### ✅ VERIFIED LIVE ON BOTH REAL REPORTS, ALL THE WAY TO MONGO
 
 `Test 3.pdf`'s `findingContext` was cleared and the page re-driven. Three
 independent sources agree, which is why this is believed:
@@ -7485,6 +7486,62 @@ mongo        STORED: entries=7 generated=0 cached=7 withheld=0 skipped=0
 > chain did its job — but **a seven-call verification can exhaust two of three
 > models**, so budget a live check as more than its call count.
 
+### ✅ AND TEST 2, THE REPORT THAT WAS LOSING HALF ITS FINDINGS
+
+`Test 2.pdf` had never had Module 34 run on it at all, so there was nothing to
+clear. Twelve findings; the old ceiling cut the list at `Monocytes`.
+
+```
+ai-service   finding_context {requested: 12, generated: 10, cached: 2,
+                              withheld: 0, skipped_over_limit: 0, ceiling: 16}
+mongo        entries=12 generated=0 cached=12 withheld=0 skipped=0 storedFor=v3
+             entries missing usable text: 0
+```
+
+**Six of these had never been described on any report** — `PCV`, `MCH`,
+`MCHC`, `ESR`, `CRP` and `SGPT` — and they are the coherent half of the
+picture: four views of one anaemia, plus inflammation, plus a liver marker.
+
+* **`skipped_over_limit: 0` on the report the ceiling was halving.**
+* **Every stored entry carries the LABORATORY's own printed name**, not Test
+  3's: `Haemoglobin` not `HEMOGLOBIN`, `Lymphocytes` not `LYMPHOCYTES`. The
+  caller's-spelling override, proven on a real payload — this is the case where
+  a cache hit would otherwise strand an approved paragraph against a row whose
+  name did not match.
+* **19 descriptions across both reports, 19 Module 24 approvals, ZERO gate
+  refusals.** §6as's prompt fixes hold at twelve as well as at seven.
+* The page load again stored through the `generated_count: 0` branch, at zero
+  quota: 12 cached, 132ms.
+
+### ⚠ THE CROSS-REPORT CACHE REACHES LESS FAR THAN THE SHARED ANALYTES SUGGEST
+
+An earlier draft of this section said Test 2 would reuse Test 3's haemoglobin,
+lymphocytes, ESR, CRP and HbA1c, "in spellings the key folds together". **That
+was wrong and the run disproved it: 2 of 12 hit, not 5.**
+
+| | Test 3 | Test 2 | |
+|---|---|---|---|
+| lymphocytes | `LYMPHOCYTES` | `Lymphocytes` | hit |
+| ESR | `ESR` | `ESR` | hit |
+| haemoglobin | `HEMOGLOBIN` | `Haemoglobin` | MISS — `ae` |
+| CRP | `C-REACTIVE PROTEIN(CRP)` | `CRP (C-REACTIVE PROTEIN)` | MISS — word order |
+| HbA1c | `GLYCATED HAEMOGLOBIN (HBA1C)` | `GLYSOLATED HAEMOGLOBIN ( HBA1C)` | MISS — the lab's typo |
+
+**The key folds case and whitespace. It does not fold spelling variants, word
+order or a laboratory's misspelling, and it must not** — guessing that two
+differently-spelled names are the same test is the exact class of thing that
+produced three defects here (§6aq, §6ar). The right conclusion is not to widen
+the key; it is that **the cache's saving is bounded by how many reports print a
+name identically**, and the ceiling has to be affordable on that basis. Ten
+fresh calls for a twelve-finding report is the number to plan with.
+
+> **A SIDE NOTE WORTH KEEPING.** The laboratory prints `GLYSOLATED
+> HAEMOGLOBIN`; the model answered about "glycated hemoglobin", silently
+> correcting the typo. It passed all five gates and the page prints the lab's
+> own name beside it, so no harm here — but it is a model doing the
+> lookup-correction that `UNIT_ALIASES` is deliberately NOT allowed to do
+> (§6ar). Worth remembering the day a corrected name matters.
+
 ### ⚠ THE DASHBOARD FIRES EACH MODEL REQUEST TWICE IN DEV
 
 `finding-context` arrived **twice**, 1ms apart in the ai-service log, and so
@@ -7501,19 +7558,25 @@ the old cap. The process cache is what makes the second one free now.
 > Anyone measuring quota burn from a dev session and dividing by one will be
 > out by a factor of two.
 
-### STILL TO DO ON THIS, AND IT COSTS QUOTA
+### STILL TO DO ON THIS
 
-**`Test 2.pdf` has never had Module 34 run on it** and would generate twelve on
-its first request, minus whatever the process cache holds from Test 3
-(haemoglobin, lymphocytes, ESR, CRP and HbA1c are shared between the two
-reports, in spellings the key folds together). It is the only report that would
-exercise the ceiling anywhere near 16.
+Nothing on Module 34's ceiling. Both real reports are described, stored and
+rendering.
 
 To force a re-request on a report that already has one, the script is §6as's
 and it touches nothing else:
 `Report.updateOne({_id}, {$unset: {findingContext: ''}})` — verified this
 session to leave the analysis version, `clinicalReport`, `summaryProse` and
 `parameterGlossary` intact.
+
+> ⚠ **DRIVE A COLD REPORT THROUGH THE AI-SERVICE FIRST, NOT THROUGH THE PAGE.**
+> The controller caches a PARTIAL result — §6ar's reasoning was that partial
+> refusals come from the gates and would recur. **Quota exhaustion mid-batch is
+> a second cause of a partial and that reasoning does not cover it**: a spent
+> quota halfway through twelve findings would pin an incomplete result to the
+> report until someone cleared it by hand. Warming the ai-service's process
+> cache directly writes nothing to Mongo on failure, and the page load that
+> follows is then free and complete. Both reports were done that way.
 
 ### KNOWN AND OPEN
 
