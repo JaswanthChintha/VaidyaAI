@@ -47,6 +47,15 @@ about any of them. That is the fifth time on this project.
 >
 > Between them they have the run commands, the state of the repository, what
 > `Test 2.pdf` and `Test 3.pdf` are and why they matter, and what is open.
+> **§6at opens with a ten-line list of what that session did and a KNOWN AND
+> OPEN list naming four things it raised and did NOT fix.** Read those two
+> blocks before anything else in it — the section is long because the reader
+> drove the real pages for a whole session, not because it all matters equally.
+>
+> **⚠ GEMINI WAS EXHAUSTED ON 2026-09-16.** All three models in the chain hit
+> their daily limits. Every refusal path renders nothing, which is designed
+> behaviour and looks exactly like a bug — check the ai-service log before
+> concluding anything is broken.
 > **NO DECISION IS WAITING. §6as's two open questions were BOTH defects, and
 > both were framed as decisions because nobody had probed them.** The
 > six-finding ceiling was already dropping a raised CRP on Test 3; the certainty
@@ -7323,9 +7332,6 @@ branch.** §6as is the previous handover; its body still holds except for the
 `MAX_PER_REPORT` bullet, which this section corrects, and its test counts,
 which were off by 7.
 
-**The fix is verified live on Test 3, all the way to Mongo** — seven findings
-described including the CRP that was being dropped. See the ✅ section below.
-
 | | Tests | Last run |
 |---|---|---|
 | `backend/` | **686** passed, 3 skipped, 0 suites failed | 2026-09-16 ✅ |
@@ -7333,9 +7339,68 @@ described including the CRP that was being dropped. See the ✅ section below.
 | `frontend/` | **345** passed, **0 suites failed** | 2026-09-16 ✅ |
 | **Total** | **4,934** | |
 
-One task: settle Module 34's six-finding ceiling, which §6as left open as a
-decision about a hypothetical report. **It was not hypothetical and it was not
-a decision.**
+### WHAT THIS SESSION DID, IN ONE LINE EACH
+
+It started as one task — settle Module 34's six-finding ceiling — and became a
+long back-and-forth with the reader driving the real pages. In order:
+
+1. **Module 34's ceiling was already dropping findings.** Not hypothetical:
+   Test 3 lost a raised CRP, Test 2 would lose six. Ceiling 6 → 16 with a
+   name+direction cache; verified live on both reports.
+2. **The certainty gate only fired on a singular subject.** Seven of seven flat
+   assertions passed with a plural one. Swept to base forms.
+3. **"The reported values are…" named four of twenty-one** in the clinician
+   document. `unmapped_count` was 0 because the list is dropped at the HTTP
+   boundary; §6u had found the same zero and routed around it on the patient
+   page only.
+4. **The clinician summary was rewritten three times on the reader's
+   instruction** until it was a pure clinical note: what was flagged and why,
+   plus the out-of-range parameters, and nothing about coverage or models.
+5. **Two sections were invisible whenever the narrative succeeded** — they sat
+   in the `else` branch of a ternary.
+6. **The collapsed "Topics" row was redesigned** from a bare hairline row into
+   a panel that reads as a control.
+7. **A chart said "no direction" over a climbing line** — fasting and random
+   glucose mixed. The explanation existed and was rendered in the table, not on
+   the chart.
+8. **"Stable" over a falling line, and the axis was lying on every chart** —
+   it spanned only the readings, so any change filled the box. It now includes
+   the band a change must cross to count.
+9. **The timeline carried 14 parameters and the reports carry 28.** New
+   `labSeriesService` trends the laboratory's own repeated parameters, matching
+   names by sorted word set so `CRP (C-REACTIVE PROTEIN)` and
+   `C-REACTIVE PROTEIN(CRP)` are one test.
+10. **Test 2's glossary was stale**, built under the pre-`358ba92` rules.
+    Refreshed in place: 17 of 17 described.
+
+### THE THREE THINGS THIS SESSION KEPT PROVING
+
+> **1. WHEN A READER SAYS SOMETHING IS MISSING, CHECK THE STORED ARTEFACT AND
+> THE LOG BEFORE THE CODE.** Test 2's glossary was old, not broken. The
+> dashboard's missing paragraphs were a 48-second request, not a defect. The
+> stored `findingContext` said `skipped_over_limit: 1` while the handover
+> called the ceiling unreached.
+>
+> **2. AN EXPLANATION IN THE WRONG PLACE IS CLOSER TO A MISSING ONE THAN IT
+> LOOKS.** Twice the service had already written the sentence and the page
+> rendered it somewhere the question is not asked.
+>
+> **3. I ARGUED WITH THE OWNER THREE TIMES AND WAS WRONG EACH TIME.** Every
+> objection was answered with a safety citation and a smaller version of the
+> thing they had asked me to remove. The controls were all real; every one of
+> them belonged somewhere other than in the prose.
+
+### ⚠ RESTART THE BACKEND. IT COST TWO ROUNDS HERE
+
+The backend ran from 10:22 while its controller changed at 14:04, so it never
+sent the `unassessed` field and no frontend change could render it — and the
+reader was told to reload twice on the strength of code that had been read
+rather than a response that had been checked. **The working notes for this
+project already say to restart before believing the browser.**
+
+`TaskStop` does not kill an `npm start` child. `Get-NetTCPConnection -LocalPort
+5000` then `Stop-Process`, then start it again.
+
 
 ### ▶ THE DEFECT: THE CEILING HAD ALREADY DROPPED A RAISED CRP
 
@@ -8425,18 +8490,34 @@ session to leave the analysis version, `clinicalReport`, `summaryProse` and
 
 ### KNOWN AND OPEN
 
-* ~~**The certainty gate's `indicate` gap** — hedged, so a WORDING DECISION
-  rather than a defect.~~ **WRONG ON BOTH COUNTS: A PLURAL SUBJECT EVADED THE
-  WHOLE GATE, IN EVERY VERB.** Seven of seven flat assertions passed. **ANSWERED
-  AND FIXED** — swept to base forms, with `mean` excused only before a
-  measurement noun. See the ▶ section above.
-* ~~**THE TWO PAGES EVICT EACH OTHER'S `findingContext`**~~ — **CLOSED.** The
-  clinician page no longer requests finding context at all (the reader asked
-  for those blocks removed from it), so there is one writer left and nothing
-  to evict. Logged on quota, fixed by a change made on taste.
+**Raised this session and NOT fixed:**
+
+* **The glucose exclusion message is wrong about why.** `policy.py`'s
+  `EXCLUDED_FEATURES['blood_glucose']`, `populationController.js:122` and
+  `Population.jsx:178` all say fasting status is not recorded. It IS —
+  `clinical_rules.sample_timing()` recovers it from the printed name, which is
+  how Module 20 chose the 140 post-load boundary and how the glucose TREND
+  refusal was reached. The outcome is right for other reasons (no glucose
+  distribution is shipped, and the timing is not forwarded to Module 31), but
+  the stated reason is stronger than the truth in three places.
+* **The trend chart still draws one line across non-comparable points.** The
+  glucose panel now explains that fasting and random readings are not
+  comparable, and then joins all four with a single stroke. The text resolves
+  the contradiction; the picture still states it.
+* **`labSeries` charts have no scale to judge against.** No stability band and
+  no reference interval reaches that page, so their axis spans only the
+  readings — the exact thing fixed for the assessed charts. The page says so.
+  The fix is carrying the laboratory's printed interval into the history
+  snapshot, which changes what Module 28 receives.
+* **Ten of Test 2/3's unassessed parameters appear on only one report**, so
+  they can never form a series. Nothing to do about it here; stated on the page.
+
+**Carried forward, unchanged:**
+
 * `--rust` is 4.38:1 on `--header` (§6am).
 * "stability band" in one trend sentence (§6an-i).
-* `origin: report_transcription` on profile rows (§6w).
+* `origin: report_transcription` on profile rows (§6w) — this is what put the
+  internal key `bmi` into a clinician's document this session.
 * `MISSING_PROFESSIONAL_REFERRAL` does not block (§6r, §6k D1).
 * Module 32's payload still nests `present` two ways (§6w).
 * **Frontend fixtures are still hand-written** — two real payloads to generate
@@ -8444,6 +8525,34 @@ session to leave the analysis version, `clinicalReport`, `summaryProse` and
 * The ai-service suite still needs `.env` moved aside. Fix `conftest.py`.
 * `RangeChart.jsx` is orphaned since f3d0963.
 
+**Closed this session:**
+
+* ~~The certainty gate's `indicate` gap~~ — was a plural subject evading the
+  whole gate, in every verb. Swept to base forms.
+* ~~Module 34's six-finding ceiling~~ — was already dropping a raised CRP.
+  Ceiling 16, with the cache that makes it affordable.
+* ~~The two pages evict each other's `findingContext`~~ — the clinician page no
+  longer requests it at all.
+
+### ⚠ GEMINI IS SPENT FOR 2026-09-16
+
+All three models in the chain — `gemini-3.6-flash`, `gemini-3.5-flash`,
+`gemini-3.5-flash-lite` — hit their daily limits during this session. Roughly
+45 calls went on Module 34 across both reports, two clinician narratives, and
+Test 2's 17 glossary descriptions. **Anything needing a model will refuse until
+the quota resets**; every refusal path renders nothing, which is the designed
+behaviour and looks identical to a bug if you do not check the log.
+
+### THE DATA, AND WHAT IS CURRENT ON IT
+
+| | |
+|---|---|
+| `Test 2.pdf` | analysis v3 · glossary refreshed to 17/17 · `findingContext` 12 entries · narrative CLEARED |
+| `Test 3.pdf` | analysis v5 · glossary 17/17 · `findingContext` 7 entries incl. CRP · narrative CLEARED |
+
+Both narratives were cleared deliberately, so the clinician page regenerates
+against the current code on the next visit — one model call each, and the
+quota is gone, so expect the composed passage until it resets.
 ---
 
 ## 7. Module 1 → later modules: inherited obligations
