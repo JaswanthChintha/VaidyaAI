@@ -230,6 +230,32 @@ def _value_strings(summary: Any) -> List[str]:
     return out
 
 
+def _unmapped_count(summary: Any) -> int:
+    """Parameters the laboratory reported that this platform does not assess.
+
+    `_value_strings` above returns the ASSESSED subset and nothing else -- four
+    rows on `Test 2.pdf`, out of twenty-one the laboratory printed. Handed that
+    list under the heading "REPORTED VALUES", the model wrote, faithfully:
+
+        "The reported values are GLYSOLATED HAEMOGLOBIN ( HBA1C) 5.9 %, Random
+         Blood Sugar 134.7 mg/dl, Haemoglobin 10.6 g/dl, and SERUM CREATININE
+         0.99 mg/dl."
+
+    Seventeen were missing from that sentence, among them a CRP of 12.1 mg/L,
+    an SGPT of 101.9 U/L and an ESR of 35 mm/hr. A clinician reading it would
+    reasonably take it for the panel.
+
+    THE MODEL WAS OBEYING THE LABEL. The fix is not a stronger instruction: it
+    is to stop calling the assessed subset "the reported values", and to give
+    the document the number it needs to say what it has not covered.
+    """
+    quality = _field(summary, "data_quality")
+    counted = _field(quality, "unmapped_count")
+    if isinstance(counted, int) and not isinstance(counted, bool) and counted > 0:
+        return counted
+    return 0
+
+
 def _flag_groups(summary: Any) -> Dict[str, Tuple[str, ...]]:
     """Which KIND of check flagged what -- MEMORY.md 6w's first kept thing.
 
@@ -341,6 +367,10 @@ class _Facts(BaseModel):
     not_supplied: Tuple[str, ...]
     model_notes: Tuple[str, ...]
     no_intervals: bool
+    #: Extracted parameters this platform does not assess. NOT a detail: the
+    #: values list is the ASSESSED subset, and a document that lists it without
+    #: this number reads as the whole panel. See `_facts_block`.
+    unmapped_count: int = 0
     flagged_both: Tuple[str, ...] = ()
     flagged_rule_only: Tuple[str, ...] = ()
     flagged_model_only: Tuple[str, ...] = ()
@@ -378,6 +408,7 @@ def collect_facts(summary: Any) -> _Facts:
         not_supplied=_not_supplied(patient),
         model_notes=tuple(_model_notes(summary)),
         no_intervals=no_intervals,
+        unmapped_count=_unmapped_count(summary),
     )
 
 
@@ -436,6 +467,29 @@ def _missing(text: str, facts: _Facts) -> Tuple[str, ...]:
         lowered,
     ):
         gaps.append("no_intervals_sentence")
+
+    # THE PARAMETERS THIS TOOL DOES NOT ASSESS, which is the absence a reader
+    # cannot recover from the document itself -- the values list looks complete
+    # precisely because it is a list. On `Test 2.pdf` the narrative stated four
+    # values and said nothing of the other seventeen, among them a CRP of 12.1
+    # and an SGPT of 101.9.
+    #
+    # THE NUMBER AND THE SUBSTANCE, NOT ONE PHRASING. The count must survive
+    # because that is what a rewrite drops and what a clinician needs; the
+    # vocabulary alternation is deliberately wide, because this file has
+    # already refused a faithful narrative once by insisting on the words we
+    # would have chosen (see `flagged_model_only` below).
+    if facts.unmapped_count:
+        if str(facts.unmapped_count) not in body:
+            gaps.append("unmapped_count")
+        if not re.search(
+            r"not assess|does not assess|do not assess|cannot assess|"
+            r"not evaluat|not analys|not analyz|not cover|not interpret|"
+            r"set aside|outside .{0,30}scope|beyond .{0,30}scope|"
+            r"no assessment",
+            lowered,
+        ):
+            gaps.append("unmapped_sentence")
 
     # WHICH KIND OF CHECK FLAGGED WHAT, for the model-only group -- the one
     # a compressed rewrite drops, and the one a clinician is misled by losing.
@@ -521,7 +575,27 @@ def _facts_block(facts: _Facts) -> str:
             + ", ".join(name.replace("_", " ") for name in facts.not_supplied)
         )
     if facts.values:
-        lines.append("REPORTED VALUES: " + "; ".join(facts.values))
+        # NOT "REPORTED VALUES", WHICH WAS FALSE AND THE MODEL REPEATED IT.
+        # This list is the subset this platform assessed -- four rows of the
+        # twenty-one printed on `Test 2.pdf`. The old label produced "The
+        # reported values are ..." followed by four of them, which a clinician
+        # reads as the panel. The label now says what the list is.
+        lines.append(
+            "VALUES THIS TOOL ASSESSED (these are NOT all the values on the "
+            "report): " + "; ".join(facts.values)
+        )
+    if facts.unmapped_count:
+        # THE COUNTERPART FACT, AND IT IS REQUIRED RATHER THAN OPTIONAL. A
+        # document that lists the assessed subset and says nothing about the
+        # rest has stated "we did not look" as "we looked and found nothing" --
+        # this project's fourth case, in a document written for a clinician.
+        lines.append(
+            f"NOT ASSESSED: the laboratory reported {facts.unmapped_count} "
+            "further parameters that this platform does not assess. They were "
+            "read from the document and set aside, NOT found normal. You must "
+            "say so, with the number, and say that they remain on the source "
+            "report for review."
+        )
     if facts.no_intervals:
         lines.append(
             "NOTE: the source report printed no reference intervals, so no "
@@ -646,6 +720,15 @@ def write_clinician_summary(
     permitted = _numbers_in(facts.values) + _numbers_in(
         tuple(facts.model_notes) + (facts.subject,)
     )
+    # THE COUNT IS INSTRUCTED, SO IT MUST BE PERMITTED. `_facts_block` now
+    # requires the document to state how many parameters were not assessed;
+    # without this the validator's numeric grounding sees "17" as a figure the
+    # model invented and refuses the narrative for obeying its own prompt --
+    # §6as's defect, which cost four of six findings, arriving from the other
+    # direction. A prompt and a validator that disagree is the same bug either
+    # way round.
+    if facts.unmapped_count:
+        permitted = permitted + (float(facts.unmapped_count),)
 
     context = SafetyContext(
         grounding_sources=tuple(facts.model_notes) or (_facts_block(facts),),

@@ -1047,8 +1047,8 @@ def _resolve_features(validated: Any, engineered: Any) -> _FeatureView:
         view.rejected = extract_rejected_features({"validated": dict(data)})
         view.clinically_extreme = list(_get(data, "clinically_extreme") or [])
         view.missing = list(_get(data, "missing_features") or [])
-        view.unmapped_count = len(list(_get(data, "unmapped") or []))
         view.summary = _get(data, "summary")
+        view.unmapped_count = _unmapped_count(data, view.summary)
         return view
 
     view.valid = dict(getattr(data, "valid", {}) or {})
@@ -1062,8 +1062,8 @@ def _resolve_features(validated: Any, engineered: Any) -> _FeatureView:
         }
     view.clinically_extreme = list(getattr(data, "clinically_extreme", []) or [])
     view.missing = list(getattr(data, "missing_features", []) or [])
-    view.unmapped_count = len(list(getattr(data, "unmapped", []) or []))
     view.summary = getattr(data, "summary", None)
+    view.unmapped_count = _unmapped_count(data, view.summary)
     return view
 
 
@@ -1071,6 +1071,35 @@ def _get(container: Any, key: str) -> Any:
     if isinstance(container, Mapping):
         return container.get(key)
     return getattr(container, key, None)
+
+
+def _unmapped_count(data: Any, summary: Any) -> int:
+    """How many extracted parameters never became a feature.
+
+    COUNTED FROM THE PRODUCER'S OWN COUNT, NOT FROM THE LIST -- because over
+    HTTP the list is not here. `ValidatedFeaturesInput` declares no `unmapped`
+    field and sets `extra="ignore"`, so Module 6's seventeen unmapped rows are
+    dropped silently at the boundary; `len(unmapped or [])` then returns 0 and
+    the report states, as a fact, that every parameter on the document was
+    assessed. Measured on `Test 2.pdf`: seventeen sent, zero recorded.
+
+    `summary.unmapped_count` is the SAME number computed by the feature stage
+    (`feature_engineer` sets it to `len(unmapped)`), and it survives the
+    boundary because `summary` is a declared field. So it is preferred, and the
+    list is the fallback for in-process callers whose summary is absent.
+
+    §6u FOUND THIS ON THE PATIENT PAGE AND ROUTED AROUND IT rather than fixing
+    it here: `dashboardService` reads `fusion.upstream_summary.unmapped_count`
+    instead, with a comment calling the 0 "not merely missing information but a
+    false statement". The clinician document was never brought along and still
+    read this field. A count of nothing, where a reader will take it to mean
+    nothing was set aside, is this project's fourth case -- "we did not look"
+    rendered as "we looked and found nothing".
+    """
+    counted = _get(summary, "unmapped_count")
+    if isinstance(counted, int) and not isinstance(counted, bool) and counted >= 0:
+        return counted
+    return len(list(_get(data, "unmapped") or []))
 
 
 def _merge_rejected(

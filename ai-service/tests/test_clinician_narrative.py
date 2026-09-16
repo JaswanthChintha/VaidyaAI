@@ -384,3 +384,129 @@ def test_the_laboratory_printed_name_is_preferred(offline_settings):
     joined = " ".join(facts.values)
     assert "HbA1c 8.4 %" in joined
     assert "Glycated haemoglobin" not in joined
+
+
+# --------------------------------------------------------------------------
+# THE ASSESSED SUBSET IS NOT "THE REPORTED VALUES"
+#
+# Found by a reader looking at Test 2's clinician summary, which opened:
+#
+#   "The reported values are GLYSOLATED HAEMOGLOBIN ( HBA1C) 5.9 %, Random
+#    Blood Sugar 134.7 mg/dl, Haemoglobin 10.6 g/dl, and SERUM CREATININE
+#    0.99 mg/dl."
+#
+# The laboratory reported TWENTY-ONE parameters. Seventeen were read, found to
+# map to no feature this platform assesses, and set aside -- among them a CRP
+# of 12.1 mg/L, an SGPT of 101.9 U/L and an ESR of 35 mm/hr. The model was
+# obeying its prompt, which labelled the assessed four "REPORTED VALUES".
+# --------------------------------------------------------------------------
+
+
+def _summary_with_unassessed(count: int = 17) -> dict:
+    summary = _summary()
+    summary["data_quality"] = {"unmapped_count": count}
+    return summary
+
+
+def test_the_unassessed_count_is_collected(offline_settings):
+    facts = collect_facts(_summary_with_unassessed())
+    assert facts.unmapped_count == 17
+
+
+def test_the_prompt_does_not_call_the_assessed_subset_the_reported_values(
+    offline_settings,
+):
+    """THE LABEL IS WHAT THE MODEL REPEATED, so the label is what changed.
+
+    A stronger instruction would not have helped: the model was told these
+    were the reported values and it said so.
+    """
+    llm = FakeLLM(_faithful())
+    write_clinician_summary(
+        _summary_with_unassessed(), llm=llm, settings=offline_settings
+    )
+    prompt = llm.prompts[0]
+    assert "REPORTED VALUES:" not in prompt
+    assert "VALUES THIS TOOL ASSESSED" in prompt
+    assert "NOT all the values on the report" in prompt
+
+
+def test_the_prompt_states_how_many_were_not_assessed(offline_settings):
+    llm = FakeLLM(_faithful())
+    write_clinician_summary(
+        _summary_with_unassessed(), llm=llm, settings=offline_settings
+    )
+    prompt = llm.prompts[0]
+    assert "NOT ASSESSED:" in prompt
+    assert "17" in prompt
+    # NOT found normal. The distinction is the entire point.
+    assert "NOT found normal" in prompt
+
+
+def test_a_narrative_that_omits_the_unassessed_count_is_thrown_away(
+    offline_settings,
+):
+    """`_faithful()` states every value and every finding and says nothing
+    about the seventeen -- which is exactly the document the reader saw."""
+    llm = FakeLLM(_faithful())
+    result = write_clinician_summary(
+        _summary_with_unassessed(), llm=llm, settings=offline_settings
+    )
+    assert result.outcome == OUTCOME_FACTS_MISSING
+    assert "unmapped_count" in result.missing_facts
+    assert "unmapped_sentence" in result.missing_facts
+
+
+def test_a_narrative_that_states_it_is_accepted(offline_settings):
+    body = _faithful() + (
+        " The laboratory reported 17 further parameters that this platform "
+        "does not assess; they remain on the source report for review."
+    )
+    llm = FakeLLM(body)
+    result = write_clinician_summary(
+        _summary_with_unassessed(), llm=llm, settings=offline_settings
+    )
+    assert result.outcome == OUTCOME_GENERATED, result.missing_facts
+    assert "17" in result.text
+
+
+def test_the_count_is_a_permitted_number(offline_settings):
+    """INSTRUCTED AND THEREFORE PERMITTED.
+
+    The prompt requires the document to state the count. If the validator's
+    numeric grounding does not permit it, the narrative is refused for obeying
+    its own instruction -- §6as's defect from the other direction.
+    """
+    body = _faithful() + (
+        " A further 17 parameters were reported and are not assessed here."
+    )
+    llm = FakeLLM(body)
+    result = write_clinician_summary(
+        _summary_with_unassessed(), llm=llm, settings=offline_settings
+    )
+    assert result.outcome == OUTCOME_GENERATED, result.missing_facts
+
+
+def test_the_substance_is_accepted_in_wording_we_did_not_choose(offline_settings):
+    """This file has already refused a faithful narrative by insisting on its
+    own phrasing (see the model-only check). The alternation is wide."""
+    for phrasing in (
+        "17 other parameters were set aside and not evaluated by this tool.",
+        "A further 17 results fall outside the scope of this assessment and "
+        "were not analysed.",
+        "17 reported parameters are not covered here.",
+    ):
+        llm = FakeLLM(_faithful() + " " + phrasing)
+        result = write_clinician_summary(
+            _summary_with_unassessed(), llm=llm, settings=offline_settings
+        )
+        assert result.outcome == OUTCOME_GENERATED, (phrasing, result.missing_facts)
+
+
+def test_a_report_with_nothing_unassessed_gains_no_sentence(offline_settings):
+    """No count, no requirement, no invented caveat. A report whose every
+    parameter mapped must not be told that some did not."""
+    llm = FakeLLM(_faithful())
+    result = write_clinician_summary(_summary(), llm=llm, settings=offline_settings)
+    assert result.outcome == OUTCOME_GENERATED, result.missing_facts
+    assert "NOT ASSESSED:" not in llm.prompts[0]

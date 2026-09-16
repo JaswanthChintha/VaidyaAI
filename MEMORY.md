@@ -34,9 +34,9 @@ about any of them. That is the fifth time on this project.
 | | Tests |
 |---|---|
 | `backend/` (Node/Express) | **666** passing + 3 opt-in live |
-| `ai-service/` (Python/FastAPI) | **3,892** passing + 7 skipped (3,899 collected) |
+| `ai-service/` (Python/FastAPI) | **3,907** passing + 7 skipped (3,914 collected) |
 | `frontend/` (React/Vitest) | **325** passing, 0 suites failed |
-| **Total** | **4,883** -- ALL THREE re-run green 2026-09-16 |
+| **Total** | **4,898** -- ALL THREE re-run green 2026-09-16 |
 
 > **⚠ THE 4,852 IN EVERY EARLIER SECTION WAS 7 TOO HIGH.** §6as recorded
 > ai-service's COLLECTED total (3,865) as its PASSED count; that day's real
@@ -73,7 +73,7 @@ about any of them. That is the fifth time on this project.
 > consolidated onto `main`, and the commit messages were then rewritten to
 > carry no co-author trailer. **Nothing carries one; do not add one.**
 >
-> All 4,883 tests pass and all three suites ran 2026-09-16. §6x is the design
+> All 4,898 tests pass and all three suites ran 2026-09-16. §6x is the design
 > system; §6z–§6ah and §6aj–§6ao are the earlier sessions; **§6aq, §6ar, §6as
 > and §6at are the recent ones** — two real laboratory reports driven through
 > the app, the three lookup defects they exposed (a parenthetical, a
@@ -7329,9 +7329,9 @@ described including the CRP that was being dropped. See the ✅ section below.
 | | Tests | Last run |
 |---|---|---|
 | `backend/` | **666** passed, 3 skipped, 0 suites failed | 2026-09-16 ✅ |
-| `ai-service/` | **3,892** passed, 7 skipped, 0 failures (3,899 collected) | 2026-09-16 ✅ (`.env` moved aside) |
+| `ai-service/` | **3,907** passed, 7 skipped, 0 failures (3,914 collected) | 2026-09-16 ✅ (`.env` moved aside) |
 | `frontend/` | **325** passed, **0 suites failed** | 2026-09-16 ✅ |
-| **Total** | **4,883** | |
+| **Total** | **4,898** | |
 
 One task: settle Module 34's six-finding ceiling, which §6as left open as a
 decision about a hypothetical report. **It was not hypothetical and it was not
@@ -7641,6 +7641,138 @@ plural subject" — §6as's lesson applied to this gate rather than the treatmen
 one: a prompt forbidding `indicates` while the gate refuses `indicate` refuses
 the model for obeying it.
 
+### ▶ "THE REPORTED VALUES ARE" — FOUR OF TWENTY-ONE, IN A CLINICIAN'S DOCUMENT
+
+The reader opened Test 2's clinician summary and asked why it listed so few:
+
+> *"The reported values are GLYSOLATED HAEMOGLOBIN ( HBA1C) 5.9 %, Random Blood
+> Sugar 134.7 mg/dl, Haemoglobin 10.6 g/dl, and SERUM CREATININE 0.99 mg/dl."*
+
+**The laboratory reported twenty-one.** The seventeen missing from that sentence
+include a **CRP of 12.1 mg/L, an SGPT of 101.9 U/L and an ESR of 35 mm/hr** —
+the same results Module 34 had just described as findings. A clinician reads
+that sentence as the panel.
+
+`Test 3.pdf` carried the identical false sentence and the identical seventeen.
+
+**THE MODEL WAS OBEYING ITS PROMPT**, which labelled the assessed subset
+`REPORTED VALUES:`. A stronger instruction would have changed nothing.
+
+### THE CHAIN, AND THE ONE STEP THAT LIED
+
+| stage | | |
+|---|---|---|
+| extraction | 21 parameters | ✅ read |
+| feature engineer | 4 mapped, 17 in `unmapped[]`, `summary.unmapped_count: 17` | ✅ recorded |
+| Module 6 validated payload | carries both | ✅ |
+| **HTTP boundary** | `ValidatedFeaturesInput` declares no `unmapped` and sets `extra="ignore"` | ❌ **list dropped** |
+| `report_builder` | `unmapped_count = len(unmapped or [])` | ❌ **0** |
+| clinician narrative | `REPORTED VALUES: <the 4>` | ❌ completeness claim |
+
+Reproduced through the running service before any change: **send 17, get 0.**
+Not stale data.
+
+> **§6u ALREADY KNEW AND ROUTED AROUND IT.** `dashboardService` reads
+> `fusion.upstream_summary.unmapped_count` instead, with a comment calling the
+> zero *"not merely missing information but a false statement"*. **The patient
+> page was fixed and the clinician document was never brought along** — it went
+> on reading `document.unmapped_count` for three sessions. A workaround on one
+> consumer leaves the field broken for the next one, and the next one was a
+> document for a doctor.
+
+### THE FIX, IN THREE PLACES
+
+1. **`report_builder`** takes `summary.unmapped_count` — the same number, from
+   a field that SURVIVES the boundary, since `summary` is declared — and falls
+   back to the list for in-process callers. **0 → 17 over real HTTP.**
+2. **`doctor_summary`** prefers `fusion.upstream_summary.unmapped_count`, which
+   is already correct in both stored reports, so **every report already in the
+   database is repaired with no re-analysis and no quota**.
+3. **`clinician_narrative`** stops calling the assessed subset "the reported
+   values", and states the count as a required fact.
+
+`ValidatedFeaturesInput` was deliberately NOT widened. That model's exclusions
+are structural — its docstring says the absence of `rejected` is what makes "a
+clinical rule can never read a rejected value" a property rather than a habit.
+The COUNT is all the document needs; the NAMES would need the raw-body lift
+`extract_rejected_features` already does.
+
+### ⚠ THE TRAP I NEARLY WALKED INTO: INSTRUCTED BUT NOT PERMITTED
+
+The prompt now REQUIRES the document to state the number. The narrative's
+safety context builds `permitted_numbers` from the values, the model notes and
+the subject — **and 17 is in none of them**, so the validator would have refused
+the document as an invented figure, for obeying its own prompt.
+
+> **§6as's defect from the other direction.** There, the prompt forbade an
+> intent while the validator measured words, and four of six findings were
+> refused. Here the prompt would have demanded a figure the validator forbade.
+> **Whenever a prompt starts requiring something, check what the validator
+> permits in the same commit.** The count is added to `permitted_numbers`, and
+> a test fails if it is not.
+
+### A SURVIVING MUTANT THAT WAS A MISSING TEST, NOT DEAD CODE
+
+`doctor_summary._unmapped_count` accepts the upstream count only when it is
+`> 0`. Mutating that to `>= 0` **survived** — so, per the rule, which input
+reaches it?
+
+`ClinicalReport.fusion.upstream_summary` is
+`Field(default_factory=FeatureValidationSummary)` and that model's
+`unmapped_count` defaults to **0**. A report whose fusion section was
+default-constructed therefore presents a zero **that was never measured**, and
+`>= 0` would prefer it over a document count that was. The same false zero,
+re-entering from the other side.
+
+**The guard is live and the test was missing.** Written, and the mutant dies.
+Not every survivor is dead code — the rule is to find the input first.
+
+### ✅ VERIFIED LIVE ON TEST 2, ONE MODEL CALL
+
+```
+stored document.unmapped_count            = 0
+stored fusion.upstream_summary            = 17
+doctor summary data_quality.unmapped_count = 17
+outcome generated · missing_facts [] · llm_calls_made 1
+```
+
+> *"The **assessed values** were GLYSOLATED HAEMOGLOBIN ( HBA1C) 5.9 %, …  The
+> laboratory reported 17 further parameters that this platform does not assess.
+> They were read from the document and **set aside, not found normal**, and they
+> remain on the source report for review."*
+
+"Set aside, not found normal" is the distinction the document existed without.
+
+### ⚠ THE TWO PAGES EVICT EACH OTHER'S `findingContext`, AND IT COSTS CALLS
+
+Caught in the backend log while verifying the above, and **it is not new — it
+dates from §6ar, when Module 34 was wired to both pages**:
+
+```
+POST .../finding-context   200  4408 bytes            <- dashboard: 12 entries
+GET  .../doctor-summary    200                        <- the clinician page
+POST .../finding-context   200  1005 bytes  3122 ms   <- 1 entry, OVERWROTE the 12
+```
+
+The dashboard derives findings from this tool's verdicts plus the laboratory's
+flags (12 on Test 2); the clinician page derives them from `printed_flag` alone
+(1). **Both write the SAME `findingContext` field**, keyed on a hash of what was
+asked — so each page's visit invalidates the other's and pays model calls to
+rebuild it on a cold process. Test 2's stored twelve became one this session,
+by opening the clinician page.
+
+**Open.** The shape of a fix is one cache slot per consumer, or a key that
+includes which page asked. Nothing is wrong on screen — both pages render what
+they asked for — it is quota and a cache that cannot hold two answers.
+
+### GEMINI, END OF SESSION
+
+`gemini-3.6-flash` and `gemini-3.5-flash` are **exhausted for the day** — both
+went again on the one narrative call at ~10:5x, after their 1800s cooldown
+expired, which means the cooldown returned them to a limit they were already at.
+**Only `gemini-3.5-flash-lite` has headroom.** Session spend: 17 calls for
+Module 34 plus 1 for the narrative.
+
 ### STILL TO DO ON THIS
 
 Nothing on Module 34's ceiling. Both real reports are described, stored and
@@ -7668,6 +7800,10 @@ session to leave the analysis version, `clinicalReport`, `summaryProse` and
   WHOLE GATE, IN EVERY VERB.** Seven of seven flat assertions passed. **ANSWERED
   AND FIXED** — swept to base forms, with `mean` excused only before a
   measurement noun. See the ▶ section above.
+* **THE TWO PAGES EVICT EACH OTHER'S `findingContext`** — the dashboard asks
+  about 12 findings on Test 2, the clinician page about 1, and both write the
+  same field. Each visit invalidates the other and pays model calls to rebuild
+  it. Dates from §6ar. See the ⚠ section above.
 * `--rust` is 4.38:1 on `--header` (§6am).
 * "stability band" in one trend sentence (§6an-i).
 * `origin: report_transcription` on profile rows (§6w).

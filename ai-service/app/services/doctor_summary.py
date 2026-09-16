@@ -1455,6 +1455,29 @@ def _knowledge_section(
 # --------------------------------------------------------------------------
 
 
+def _unmapped_count(report: ClinicalReport) -> int:
+    """How many extracted parameters this tool does not assess.
+
+    `document.unmapped_count` IS 0 ON EVERY REPORT STORED BEFORE THE
+    `report_builder` FIX, and 0 here is not an absent number -- it is a claim
+    that nothing on the document was set aside. `Test 2.pdf` and `Test 3.pdf`
+    both say 0 and both carry seventeen.
+
+    The feature stage's own count rides through the fusion payload untouched,
+    which is why §6u's dashboard fix reads it there, and it is CORRECT in the
+    two stored reports. Preferring it repairs every report already in the
+    database without a re-analysis; `document` is the fallback, and it agrees
+    from now on.
+    """
+    upstream = getattr(getattr(report, "fusion", None), "upstream_summary", None)
+    counted = getattr(upstream, "unmapped_count", None)
+    if isinstance(upstream, Mapping):
+        counted = upstream.get("unmapped_count")
+    if isinstance(counted, int) and not isinstance(counted, bool) and counted > 0:
+        return counted
+    return report.document.unmapped_count
+
+
 def _data_quality(report: ClinicalReport) -> DataQualitySection:
     document = report.document
     return DataQualitySection(
@@ -1468,7 +1491,7 @@ def _data_quality(report: ClinicalReport) -> DataQualitySection:
         questionable_count=document.questionable_count,
         rejected_count=document.rejected_count,
         rejected_features=list(document.rejected_features),
-        unmapped_count=document.unmapped_count,
+        unmapped_count=_unmapped_count(report),
         sources_used=list(report.summary.sources_used),
         sources_failed=list(report.summary.sources_failed),
         warning_count=len(report.validation_warnings),

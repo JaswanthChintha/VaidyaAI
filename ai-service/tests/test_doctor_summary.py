@@ -1134,3 +1134,71 @@ def test_a_skipped_model_does_not_explain_a_figure_it_never_showed():
     # declined estimate is not a negative estimate, which is the misreading
     # this whole module exists to prevent.
     assert any("declined to produce an estimate" in c for c in limits.caveats)
+
+
+# --------------------------------------------------------------------------
+# THE CLINICIAN DOCUMENT READ THE FIELD §6u ALREADY KNEW WAS WRONG
+# --------------------------------------------------------------------------
+
+
+def test_the_unassessed_count_prefers_the_upstream_summary():
+    """EVERY REPORT STORED BEFORE THE `report_builder` FIX SAYS 0.
+
+    `Test 2.pdf` and `Test 3.pdf` both carry `document.unmapped_count: 0` and
+    `fusion.upstream_summary.unmapped_count: 17`. Preferring the upstream count
+    repairs the documents already in the database without a re-analysis, which
+    on this project means without spending the day's model quota.
+    """
+    from types import SimpleNamespace
+
+    from app.services.doctor_summary import _unmapped_count
+
+    report = SimpleNamespace(
+        document=SimpleNamespace(unmapped_count=0),
+        fusion=SimpleNamespace(upstream_summary={"unmapped_count": 17}),
+    )
+    assert _unmapped_count(report) == 17
+
+
+def test_the_document_count_is_used_when_the_upstream_has_none():
+    from types import SimpleNamespace
+
+    from app.services.doctor_summary import _unmapped_count
+
+    report = SimpleNamespace(
+        document=SimpleNamespace(unmapped_count=4),
+        fusion=SimpleNamespace(upstream_summary={}),
+    )
+    assert _unmapped_count(report) == 4
+
+
+def test_no_fusion_section_is_not_a_crash():
+    from types import SimpleNamespace
+
+    from app.services.doctor_summary import _unmapped_count
+
+    report = SimpleNamespace(document=SimpleNamespace(unmapped_count=3), fusion=None)
+    assert _unmapped_count(report) == 3
+
+
+def test_a_defaulted_upstream_zero_does_not_beat_a_real_document_count():
+    """WHY THE CHECK IS `> 0` AND NOT `>= 0`, found by a surviving mutant.
+
+    `ClinicalReport.fusion.upstream_summary` is
+    `Field(default_factory=FeatureValidationSummary)`, and that model's
+    `unmapped_count` defaults to 0 -- so a report whose fusion section was
+    default-constructed presents a zero that was never measured. Preferring it
+    over a document count that WAS measured would reintroduce the same false
+    zero from the other side.
+
+    A zero is only ever believed here when it is the document's own.
+    """
+    from types import SimpleNamespace
+
+    from app.services.doctor_summary import _unmapped_count
+
+    report = SimpleNamespace(
+        document=SimpleNamespace(unmapped_count=17),
+        fusion=SimpleNamespace(upstream_summary={"unmapped_count": 0}),
+    )
+    assert _unmapped_count(report) == 17

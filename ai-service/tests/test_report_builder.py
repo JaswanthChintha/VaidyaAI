@@ -864,3 +864,71 @@ def test_no_medical_value_reaches_the_logs(caplog):
     text = "\n".join(record.getMessage() for record in caplog.records)
     for canary in ("8.4", "186", "2.1", "268", "33.8", "hba1c", "creatinine"):
         assert canary not in text, f"{canary!r} reached the logs"
+
+
+# --------------------------------------------------------------------------
+# THE UNMAPPED COUNT SURVIVES THE HTTP BOUNDARY
+#
+# `ValidatedFeaturesInput` declares no `unmapped` field and sets
+# `extra="ignore"`, so Module 6's unmapped rows are dropped silently on the way
+# in. Deriving the count with `len(unmapped or [])` then returns 0 -- and 0
+# here is not a missing number, it is the report stating that every parameter
+# on the document was assessed.
+#
+# Measured on `Test 2.pdf` through the running service: seventeen sent, zero
+# recorded, and the clinician summary went on to list four values as "the
+# reported values". §6u found the same 0 on the patient page and routed around
+# it in `dashboardService` rather than fixing it here.
+# --------------------------------------------------------------------------
+
+
+def test_the_count_comes_from_the_summary_when_the_list_was_dropped():
+    """THE SHAPE THAT ARRIVES OVER HTTP: a summary, and no `unmapped` key."""
+    from app.services.report_builder import _resolve_features
+
+    view = _resolve_features(
+        {
+            "valid": {},
+            "questionable": {},
+            "missing_features": [],
+            # No "unmapped" key at all -- this is what the request model leaves.
+            "summary": {"unmapped_count": 17},
+        },
+        None,
+    )
+    assert view.unmapped_count == 17
+
+
+def test_the_list_is_still_used_when_there_is_no_summary_count():
+    """In-process callers hand over the whole object, list included."""
+    from app.services.report_builder import _resolve_features
+
+    view = _resolve_features(
+        {
+            "valid": {},
+            "questionable": {},
+            "missing_features": [],
+            "unmapped": [{"test_name": "CRP"}, {"test_name": "SGPT"}],
+            "summary": {},
+        },
+        None,
+    )
+    assert view.unmapped_count == 2
+
+
+def test_a_report_with_nothing_unmapped_still_counts_zero():
+    """Zero must remain reachable: it is the truth for a fully mapped report,
+    and only a FALSE zero is the defect."""
+    from app.services.report_builder import _resolve_features
+
+    view = _resolve_features(
+        {
+            "valid": {},
+            "questionable": {},
+            "missing_features": [],
+            "unmapped": [],
+            "summary": {"unmapped_count": 0},
+        },
+        None,
+    )
+    assert view.unmapped_count == 0
