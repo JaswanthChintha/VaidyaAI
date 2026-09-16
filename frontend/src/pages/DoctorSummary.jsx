@@ -124,6 +124,23 @@ function flaggingKinds(assessment) {
 
 /* -------------------------------------------------------------------- page */
 
+/**
+ * The interval the laboratory printed, as a clinician would read it.
+ *
+ * An empty string when the report printed none -- the caller then writes the
+ * flag alone rather than an em dash standing in for a range that was never
+ * there. A missing interval is not a range of nothing.
+ */
+function referenceText(item) {
+  const low = item.labReferenceLow;
+  const high = item.labReferenceHigh;
+  if (low !== undefined && high !== undefined) return `${low}\u2013${high}`;
+  if (high !== undefined) return `\u2264 ${high}`;
+  if (low !== undefined) return `\u2265 ${low}`;
+  return '';
+}
+
+
 export default function DoctorSummary() {
   const { id } = useParams();
   const [data, setData] = useState(null);
@@ -524,62 +541,29 @@ export default function DoctorSummary() {
         </div>
       ) : null}
 
-      {/* THE PARAMETERS THIS PLATFORM DOES NOT ASSESS, WITH THEIR VALUES.
-          The paragraphs above state how many; a clinician needs to read
-          them. These are the laboratory's own values, units, flags and
-          printed intervals, carried forward untouched -- this tool asserts
-          nothing about any of them, which is exactly why they are here
-          rather than in the assessed table.
-
-          No descriptions. The patient page explains what ESR measures;
-          this reader knows. */}
+      {/* OUT OF RANGE, AS ONE PARAGRAPH.
+          The reader asked for these as ordinary prose, not a table or a
+          section of their own: a handover note is paragraphs, and a bordered
+          grid with a heading reads as a separate document stapled to it.
+          Values, units, intervals and flags are the laboratory's own and are
+          carried forward untouched -- this tool asserts nothing about any of
+          them, which is why it says "marked by the laboratory" and not
+          "out of range" in its own voice. */}
       {outOfRange.length ? (
-        <div className="passage__unassessed">
-          <h3>Out of range ({outOfRange.length})</h3>
-          <p>
-            Marked outside the reference interval by the laboratory. Values,
-            units and intervals are the laboratory&rsquo;s own.
-          </p>
-          <table className="lab-table">
-            <caption className="visually-hidden">
-              Parameters the laboratory marked outside its reference interval
-            </caption>
-            <thead>
-              <tr>
-                <th scope="col">Parameter</th>
-                <th scope="col">Value</th>
-                <th scope="col">Reference</th>
-                <th scope="col">Lab flag</th>
-              </tr>
-            </thead>
-            <tbody>
-              {outOfRange.map((item, index) => (
-                <tr key={`${item.testName}-${index}`}>
-                  <th scope="row">{item.testName}</th>
-                  <td>
-                    {item.value}
-                    {item.unit ? ` ${item.unit}` : ''}
-                  </td>
-                  <td>
-                    {item.labReferenceLow !== undefined &&
-                    item.labReferenceHigh !== undefined
-                      ? `${item.labReferenceLow}–${item.labReferenceHigh}`
-                      : item.labReferenceHigh !== undefined
-                        ? `≤ ${item.labReferenceHigh}`
-                        : item.labReferenceLow !== undefined
-                          ? `≥ ${item.labReferenceLow}`
-                          : '—'}
-                  </td>
-                  <td>
-                    {/* THE LABORATORY'S VERDICT, NAMED AS THEIRS. This tool
-                        has no opinion on these rows and must not appear to. */}
-                    {item.labFlag ? item.labFlag : '—'}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <p className="passage__outofrange">
+          <strong>Marked outside the reference interval by the laboratory:</strong>{' '}
+          {outOfRange.map((item, index) => (
+            <span key={`${item.testName}-${index}`}>
+              {index > 0 ? '; ' : ''}
+              {item.testName} {item.value}
+              {item.unit ? ` ${item.unit}` : ''}
+              {referenceText(item) ? ` (${referenceText(item)}` : ' ('}
+              {item.labFlag ? `${referenceText(item) ? ', ' : ''}${item.labFlag}` : ''}
+              {')'}
+            </span>
+          ))}
+          .
+        </p>
       ) : null}
     </main>
   );

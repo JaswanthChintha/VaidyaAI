@@ -8054,10 +8054,17 @@ assessed by this tool"**, with a paragraph about their being *"set aside …
 not found normal"*. Both are statements about this platform's coverage in a
 document that is supposed to carry findings.
 
-It is now **"Out of range (N)"**, listing only the rows the LABORATORY marked
-outside its own interval, above one neutral line: *"Marked outside the
-reference interval by the laboratory. Values, units and intervals are the
-laboratory's own."*
+It is now **ONE PARAGRAPH**, listing only the rows the LABORATORY marked
+outside its own interval:
+
+> **Marked outside the reference interval by the laboratory:** NEUTROPHILS 82 %
+> (40-70, high); LYMPHOCYTES 14 % (20-40, low); ESR 45 mm/hr (0-20, high);
+> C-REACTIVE PROTEIN(CRP) 38.9 mg/L (<= 5, high).
+
+**No heading, no table, no section of its own** -- the reader asked for these as
+ordinary prose, and they are right: a handover note is paragraphs, and a
+bordered grid under its own heading reads as a separate document stapled to
+it.
 
 | | skipped | shown |
 |---|---|---|

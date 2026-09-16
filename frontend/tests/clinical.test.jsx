@@ -856,6 +856,20 @@ describe('Module 34 on the clinician page', () => {
  *
  * The narrative now states the COUNT; this table is the list behind it.
  */
+/**
+ * The out-of-range sentence, as one string.
+ *
+ * It is a PARAGRAPH now, not a table: the reader asked for these as ordinary
+ * prose. Asserting on cell text no longer means anything, so every check here
+ * reads the sentence and looks for the facts inside it.
+ */
+async function outOfRangeLine() {
+  await waitFor(() =>
+    expect(document.querySelector('.passage__outofrange')).toBeTruthy()
+  );
+  return document.querySelector('.passage__outofrange').textContent;
+}
+
 describe('Module 32 - reported, not assessed', () => {
   const MINIMAL = {
     overall: { status_label: 'Needs Medical Attention', clean_bill_of_health: false },
@@ -906,20 +920,19 @@ describe('Module 32 - reported, not assessed', () => {
 
   it('shows the out-of-range parameters with their values and units', async () => {
     mountSummary(MINIMAL, {}, null, UNASSESSED);
+    const line = await outOfRangeLine();
     // TWO of the three, because ESR is flagged `normal` by the laboratory.
-    await screen.findByText(/Out of range \(2\)/);
-
-    expect(screen.getByText('CRP (C-REACTIVE PROTEIN)')).toBeInTheDocument();
-    expect(screen.getByText('12.1 mg/L')).toBeInTheDocument();
-    expect(screen.getByText('101.9 U/L')).toBeInTheDocument();
+    expect(line).toContain('CRP (C-REACTIVE PROTEIN) 12.1 mg/L');
+    expect(line).toContain('SGPT 101.9 U/L');
   });
 
   it('leaves out a parameter the laboratory did NOT mark', async () => {
     mountSummary(MINIMAL, {}, null, UNASSESSED);
-    await screen.findByText(/Out of range \(2\)/);
+    const line = await outOfRangeLine();
     // ESR is present in the payload and flagged "normal". It is not out of
     // range and must not be listed as though it were.
-    expect(screen.queryByText('35 mm/hr')).toBeNull();
+    expect(line).not.toContain('ESR');
+    expect(line).not.toContain('35 mm/hr');
   });
 
   it('says nothing about what this tool did or did not assess', async () => {
@@ -927,7 +940,7 @@ describe('Module 32 - reported, not assessed', () => {
     // label the section by this platform's coverage. A clinician wants the
     // results, not a statement about our scope.
     mountSummary(MINIMAL, {}, null, UNASSESSED);
-    await screen.findByText(/Out of range \(2\)/);
+    await outOfRangeLine();
     const page = document.body.textContent.toLowerCase();
     for (const banned of [
       'not assessed',
@@ -942,18 +955,18 @@ describe('Module 32 - reported, not assessed', () => {
 
   it("attributes the flag and the interval to the LABORATORY", async () => {
     mountSummary(MINIMAL, {}, null, UNASSESSED);
-    await screen.findByText(/Out of range/);
-    expect(
-      screen.getByText(/Values,\s*units and intervals are the laboratory/i)
-    ).toBeInTheDocument();
-    expect(screen.getByText('0–6')).toBeInTheDocument();
-    expect(screen.getByText('≤ 50')).toBeInTheDocument();
+    const line = await outOfRangeLine();
+    // WHOSE JUDGEMENT IT IS, said in the sentence itself.
+    expect(line).toMatch(/marked outside the reference interval by the laboratory/i);
+    // The printed interval, and the one-sided form when only a limit exists.
+    expect(line).toContain('0\u20136');
+    expect(line).toContain('\u2264 50');
   });
 
   it('renders nothing when the laboratory marked none of them', async () => {
     mountSummary(MINIMAL, {}, null, { count: 0, items: [], labFlaggedCount: 0 });
     await waitFor(() => expect(document.querySelector('.passage')).toBeTruthy());
-    expect(screen.queryByText(/Out of range/)).toBeNull();
+    expect(document.querySelector('.passage__outofrange')).toBeNull();
   });
 
   it('renders nothing when every skipped parameter is in range', async () => {
@@ -966,7 +979,7 @@ describe('Module 32 - reported, not assessed', () => {
       ],
     });
     await waitFor(() => expect(document.querySelector('.passage')).toBeTruthy());
-    expect(screen.queryByText(/Out of range/)).toBeNull();
+    expect(document.querySelector('.passage__outofrange')).toBeNull();
   });
 
   it('renders nothing when the section is absent from the payload', async () => {
@@ -974,7 +987,7 @@ describe('Module 32 - reported, not assessed', () => {
     // and neither may invent a claim that something was skipped.
     mountSummary(MINIMAL, {}, null, undefined);
     await waitFor(() => expect(document.querySelector('.passage')).toBeTruthy());
-    expect(screen.queryByText(/Out of range/)).toBeNull();
+    expect(document.querySelector('.passage__outofrange')).toBeNull();
   });
 });
 
@@ -1072,13 +1085,13 @@ describe('Module 32 - sections that survive a generated narrative', () => {
   it('keeps the unassessed table when a narrative WAS generated', async () => {
     mountSummary(MINIMAL, {}, NARRATIVE, UNASSESSED);
     await screen.findByText(/This tool flagged Diabetes/);
-    await screen.findByText(/Out of range \(1\)/);
-    expect(screen.getByText('12.1 mg/L')).toBeInTheDocument();
+    const line = await outOfRangeLine();
+    expect(line).toContain('CRP (C-REACTIVE PROTEIN) 12.1 mg/L');
   });
 
   it('still shows both when there is NO narrative', async () => {
     mountSummary(MINIMAL, {}, null, UNASSESSED);
     await screen.findByText(/commonly associated with infection/);
-    await screen.findByText(/Out of range \(1\)/);
+    expect(await outOfRangeLine()).toContain('CRP (C-REACTIVE PROTEIN)');
   });
 });
