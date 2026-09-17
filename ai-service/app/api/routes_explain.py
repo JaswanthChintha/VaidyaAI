@@ -77,6 +77,12 @@ from app.services.parameter_glossary import (
     GlossaryData,
     describe_parameters,
 )
+from app.services.lab_polarity import (
+    MAX_PER_REQUEST as LAB_POLARITY_MAX_PER_REQUEST,
+    LabPolarityData,
+    LabSeriesInput,
+    classify_lab_series,
+)
 from app.services.terminology import (
     MAX_TERM_CHARS,
     TerminologyAnswer,
@@ -469,6 +475,66 @@ def glossary_endpoint(
     return GlossaryResponse(
         data=describe_parameters(
             request.test_names, llm, max_calls=GLOSSARY_MAX_PER_REQUEST
+        )
+    )
+
+
+class LabPolarityRequest(BaseModel):
+    """Series to classify: a test NAME, two values, and the lab's own interval.
+
+    THE VALUES ARE HERE AND THEY NEVER REACH THE MODEL. Module 35's prompt is
+    built from `test_name` alone -- the arithmetic that uses `first_value` and
+    `last_value` is Module 28's classifier, running in this service. This is
+    the same split Module 27b makes and for the same reason: the model supplies
+    a property of the TEST, the pipeline supplies everything about the person.
+
+    `reference_low` / `reference_high` are the interval the PATIENT'S OWN
+    LABORATORY printed. They are accepted rather than generated because an
+    invented reference range is the most damaging hallucination available to
+    this feature, and §6v records one reaching a patient already.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    series: List[LabSeriesInput] = Field(default_factory=list, max_length=64)
+
+
+class LabPolarityResponse(BaseModel):
+    """The `{success, data}` envelope -- see `GlossaryResponse` for why.
+
+    That wrapper was missing once and the feature was dead on every call while
+    the log said it had worked. This one has an endpoint test that asserts the
+    envelope, not only the payload inside it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    success: bool = True
+    data: LabPolarityData
+
+
+@router.post(
+    "/lab-polarity",
+    response_model=LabPolarityResponse,
+    response_model_exclude_none=False,
+    summary="Classify trends for laboratory tests this platform does not assess",
+)
+def lab_polarity_endpoint(
+    request: LabPolarityRequest,
+    llm: Any = Depends(get_explanation_llm),
+) -> LabPolarityResponse:
+    """improving / worsening / stable for an unassessed test.
+
+    Returns an empty set rather than erroring when no model is configured. The
+    caller then renders the readings and the movement word exactly as it does
+    when a polarity is refused -- an unconfigured key is a service state, not a
+    finding about the patient.
+    """
+    if llm is None:
+        return LabPolarityResponse(data=LabPolarityData())
+    return LabPolarityResponse(
+        data=classify_lab_series(
+            request.series, llm, max_calls=LAB_POLARITY_MAX_PER_REQUEST
         )
     )
 

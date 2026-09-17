@@ -3,7 +3,7 @@
 > Living context file for the VaidyaAI build. Keep this in the project folder so the
 > project's history, decisions, and state survive independently of any chat session.
 >
-> **Last updated:** 2026-09-16 (§6au) · **All 32 modules + frontend built, plus 33 and 34**
+> **Last updated:** 2026-09-17 (§6av) · **All 32 modules + frontend built, plus 33, 34 and 35**
 >
 > The build history is §1–§6w. The recent design and safety work is:
 > the "Instrument" design system (§6x) · the timeline trend chart (§6z) · five
@@ -12,10 +12,13 @@
 > picker for the comparison (§6ah) · and a third session of design, WCAG AA
 > and internal-vocabulary work (§6aj–§6ao).
 >
-> **⚠ READ §6au FIRST, THEN §6at, THEN §6as.** Those are the current
-> handovers. §6au is short and closes one item off §6at's open list; §6at is
-> the long one and still holds except where §6au corrects its description of
-> that item's fix.
+> **⚠ READ §6av FIRST, THEN §6au, THEN §6at.** Those are the current
+> handovers. §6av is the newest: it documents Module 35, which existed in an
+> uncommitted tree with no record of it, and it SUPERSEDES §6au's conclusion
+> that improving/worsening/stable could not be produced for an unassessed
+> test. §6au closes one item off §6at's open list; §6at is the long one and
+> still holds except where the two later sections correct it. §6as is older
+> again and its test counts are off by 7.
 >
 > The line that stood here — "nothing since `6dc3409` is committed, 45 files,
 > three sessions deep, read §6ap first" — **is history.** Everything is
@@ -36,17 +39,43 @@ about any of them. That is the fifth time on this project.
 
 | | Tests |
 |---|---|
-| `backend/` (Node/Express) | **704** passing + 3 skipped |
-| `ai-service/` (Python/FastAPI) | **3,903** passing + 7 skipped (3,910 collected) |
-| `frontend/` (React/Vitest) | **354** passing, 0 suites failed |
-| **Total** | **4,961** -- backend and frontend re-run green 2026-09-16 (§6au); ai-service unchanged since its own green run that day |
+| `backend/` (Node/Express) | **725** passing + 3 skipped |
+| `ai-service/` (Python/FastAPI) | **3,931** passing + 7 skipped (3,938 collected) |
+| `frontend/` (React/Vitest) | **368** passing, 0 suites failed |
+| **Total** | **5,024** -- ALL THREE re-run green 2026-09-17, at the commit below |
 
 > **⚠ THE 4,852 IN EVERY EARLIER SECTION WAS 7 TOO HIGH.** §6as recorded
 > ai-service's COLLECTED total (3,865) as its PASSED count; that day's real
 > figure was 3,858 passed + 7 skipped. The row above is a true count, taken
 > from the junit XML. See §6at.
 
-> ### ▶ NEW CHAT? START AT §6au, THEN §6at, THEN §6as.
+> ### ✅ THAT UNCOMMITTED WORK IS NOW SAVED. THE TREE IS CLEAN
+>
+> **The 14-path warning that stood here is history.** Those paths were
+> committed on 2026-09-17 together with the session below — one commit, because
+> Module 35 and the timeline row changes touch the same files and could not be
+> split into two states that both build.
+>
+> What went in: **Module 35 (`lab_polarity`)**, which obtains a polarity and a
+> variation band from the model FROM A TEST NAME ALONE and lets Module 28's own
+> classifier do the classifying; the removal of the trends table; and the
+> first-to-latest pair on the collapsed row.
+>
+> **Verified at the committed state, all three suites, nothing taken on
+> trust:** backend 725 + 3 skipped (15 suites, 0 failed), ai-service 3,931 + 7
+> skipped (3,938 collected, 0 failures, 0 errors), frontend 368 (0 suites
+> failed, no file reporting zero assertions). **5,024.**
+>
+> **§6at's opening says "everything is committed and pushed". That is true
+> again** — but note it was written before §6au and §6av, so read it for its
+> findings, not for its state.
+>
+> **STILL DO `git status` FIRST IN A NEW SESSION.** It cost this project a
+> whole session's work being one bad `git checkout` away from gone, and the
+> habit is the only reason it wasn't.
+
+
+> ### ▶ NEW CHAT? START AT §6av, THEN §6au, THEN §6at.
 >
 > Between them they have the run commands, the state of the repository, what
 > `Test 2.pdf` and `Test 3.pdf` are and why they matter, and what is open.
@@ -8560,15 +8589,18 @@ quota is gone, so expect the composed passage until it resets.
 
 ## 6au. THE THIRD 2026-09-16 SESSION — READ THIS FIRST
 
-**One task, taken from §6at's KNOWN AND OPEN: `labSeries` charts had no scale
-to judge against.** Closed. Everything else in §6at still holds.
+**Two things, both on the timeline's `labSeries` section.** First, taken from
+§6at's KNOWN AND OPEN: the charts had no scale to judge against. Closed.
+Then the reader said the page still showed only the fixed parameters — **it
+was showing 12 of the 22 on their reports**, and the other ten were counted
+and never displayed. Also closed. Everything else in §6at still holds.
 
 | | Tests | Last run |
 |---|---|---|
-| `backend/` | **704** passed, 3 skipped, 0 suites failed | 2026-09-16 ✅ (+18) |
+| `backend/` | **722** passed, 3 skipped, 0 suites failed | 2026-09-17 ✅ |
 | `ai-service/` | **3,903** passed, 7 skipped | **NOT RE-RUN — nothing in it changed** |
-| `frontend/` | **354** passed, 0 suites failed | 2026-09-16 ✅ (+9) |
-| **Total** | **4,961** | |
+| `frontend/` | **363** passed, 0 suites failed | 2026-09-17 ✅ |
+| **Total** | **5,016** | |
 
 ### THE HANDOVER'S OWN DESCRIPTION OF THE FIX WAS WRONG, AND CHEAPLY SO
 
@@ -8687,6 +8719,156 @@ CRP             12.1 -> 38.9    81%  ->  66%   <- now the steepest on the page
 tripling past the upper bound and a one-point lymphocyte wobble inside a
 25-point range drew the same picture. They no longer do.
 
+### ▶ THEN THE READER SAID THE TIMELINE STILL SHOWED ONLY THE FIXED ONES
+
+And they were right, in a way the section above had not addressed. **The
+reports carry 22 unassessed parameters; the page showed 12** — ten charts and
+two blocked. The other ten were counted (`singleReportCount`) and never
+displayed, because a parameter on one report cannot make a series.
+
+**A COUNT OF WHAT WAS LOOKED AT IS NOT AN ANSWER ABOUT WHAT WAS FOUND.**
+"22 parameters considered" answers a question nobody asked while the ten they
+were asking about were not on the page at all. Same failure mode as §6at's
+`skipped_over_limit`, one layer out.
+
+Fixed by listing them: `buildLabSeries` now returns `readings[]` beside
+`series[]`, carrying the value AS PRINTED, the unit and the date — **no line,
+no direction, no scale, and deliberately not in `series` so nothing downstream
+can draw a trend through one point.** Non-numeric results (`Pale Yellow`,
+`Negative`) are shown as text rather than rendered blank. Live: **22
+considered, 22 visible.**
+
+### ⚠ FIVE OF THOSE TEN ARE THE SAME FIVE TESTS, TWICE
+
+The stored data, not a guess:
+
+```
+AVERAGE BLOOD GLUCOSE  154 mg/dL   |  Estimated Average Glucose  121.94
+TOTAL WBC COUNT        9,300       |  WBC Count                  7,290
+RBC COUNT              4.2         |  T.RBC                      4.04
+TSH                    1.81 µIU/mL |  TSH (Thyroid Stim Hormone) 3.51 ulU/mL
+NEUTROPHILS            82 %        |  Polymorphs                 77 %
+```
+
+Each pair is one test on both reports under names `nameKey` will not join —
+extra words, or different words entirely. **They are listed as ten separate
+readings and are NOT joined.** The owner was asked and chose set-equality:
+joining them means either subset-matching (which would make `Free
+Frimbulator` match `Frimbulator`, and free vs total hormone are different
+tests) or a hand-written synonym table, which is clinical knowledge entering a
+file that deliberately has none. **The option is open and the data above is
+the evidence for it; nothing was inferred.**
+
+Six more mutants, all killed: a trended series also listed as a reading,
+`valueRaw` dropped, `readings` collected but not returned, the block not
+rendered, the section hiding itself when there are readings but no charts, and
+the unit dropped from a listed reading.
+
+### ▶ THEN THE READER LOOKED AT IT AND ASKED FOR THE COMMENTARY TO GO
+
+They sent a screenshot. The section was headed **"Other parameters on your
+reports"**, described them as values *"this tool does not assess"*, and
+carried three paragraphs: that nothing here is interpreted and no condition is
+derived, that the scale includes the printed reference range, and that no
+range is drawn because the reports disagree. Then a fourth line counting what
+was considered, and a sub-heading "Reported once, or not as a number".
+
+*"dont make as separate and dont mention separately... add those also on
+normal like things... dont mention any unnecessary things."*
+
+**All of it is gone.** The panels now sit in the `Trends over time` card with
+the assessed parameters, as ordinary disclosure rows.
+
+> **THIS IS §6at's LESSON A FOURTH TIME, AND IT WAS RIGHT A FOURTH TIME. Every
+> control those paragraphs described is still enforced — none of them was ever
+> enforced BY the paragraph.** No direction is emitted because
+> `labSeriesService` produces none; no band is drawn because `scaleOnly` never
+> reaches `hasBand`; two units are never joined because `TrendChart` refuses.
+> **Removing a description of a guarantee is not removing the guarantee** —
+> and a panel carrying no direction badge asserts nothing, so nothing had to
+> be said to make it safe.
+
+A blocked series is now listed rather than charted, in the same shape as a
+one-report reading: **a unit disagreement is a result, not a reason to
+withhold the numbers**, and it no longer needs its own prose block to say so.
+`.lab-series__blocked` was deleted and `.trend-chart__readings` replaces it.
+
+**Live: 22 panels in one card — 10 with a chart, 12 as readings.** Three more
+mutants killed: a blocked series charted instead of listed, the panels not
+rendered into the card, and the card's "No parameters could be followed"
+empty state returning beside ten real panels.
+
+**Four tests were DELETED, not adapted** — they asserted the wording of
+paragraphs that no longer exist. A test that pins removed prose is a test that
+will be made to pass by putting the prose back. **One test replaces them and
+pins the removal**, listing every phrase that must not reappear.
+
+### ▶ "THE STATUS IS NOT SHOWING WHETHER STABLE OR IMPROVING OR WORSENING"
+
+The reader, on the merged panels. **Those three words cannot be produced for
+these parameters and were not.** Each needs something no part of this pipeline
+has for a test it does not assess:
+
+> **⚠ SUPERSEDED BY §6av — AND THE ANALYSIS BELOW IS STILL WHY.** Module 35
+> now produces all three, by obtaining the two missing inputs named below from
+> the model FROM A TEST NAME ALONE and handing the classification to Module
+> 28's own classifier. **What was wrong here was "cannot", not the reasoning.**
+> The two things the words need were identified correctly; the section simply
+> concluded that nothing could supply them without asking what could be asked
+> for safely. Read the list below as the specification Module 35 was built
+> against, then read §6av.
+
+* `improving` / `worsening` need **POLARITY** — whether a rising ESR is better
+  or worse for this person. Module 28 itself refuses that with
+  `CLINICAL_DIRECTION_UNKNOWN` rather than guess.
+* `stable` needs a **STABILITY BAND**. Without one, a 7 % move called "stable"
+  states something nobody measured — the hazard `Timeline.jsx`'s own header is
+  about, and the most repeated one on this project.
+
+**Two TRUE statuses are shown instead, and together they answer what was
+actually being asked:**
+
+1. **`rose` / `fell` / `no change`** — arithmetic on the reader's own first and
+   latest readings, claiming nothing about meaning. **Deliberately
+   uncoloured**: green and rust on this page mean better and worse, and that
+   is precisely the judgement not being made. Module 28 keeps the same
+   separation — cholesterol came back `trend: stable` with
+   `direction: falling`, both true.
+2. **`High` / `Low` / `In range`** — **the laboratory's own marking** of the
+   latest reading, from `extraction.flag`. Same three words and the same
+   wording `Dashboard.jsx`'s `labFlagVerdict` uses, so one laboratory verdict
+   cannot appear differently on two screens. Carries a `title` attributing it
+   to the laboratory in the markup, not only in a comment.
+
+**A NULL FLAG RENDERS NO CHIP AT ALL.** "Not checked" is not "In range", and
+on real data that distinction is load-bearing: **PCV's older report marked it
+low and the newer marked nothing**, so `latestFlag` is strictly the last row's
+flag and never the last row that happened to carry one. Reaching back would
+present a stale verdict as the reader's current status. `Estimated Average
+Glucose` is the other one, and both come back blank.
+
+A **blocked** series gets no movement word either: 101.9 U/L and 13 IU/L may
+be the same measurement twice, and "fell" would assert a change the same file
+refused to draw a line through.
+
+Live, all 22 panels:
+
+```
+C-REACTIVE PROTEIN(CRP)   12.1 -> 38.9   rose       High
+ESR                       35 -> 45       rose       High
+LYMPHOCYTES               15 -> 14       fell       Low
+BASOPHILS                 0 -> 0         no change  In range
+PCV                       34.4 -> 37.9   rose       (none - latest marked nothing)
+SGPT (blocked)            101.9 -> 13    (none)     In range
+NEUTROPHILS               82             --         High
+```
+
+Seven more mutants killed: movement on a blocked series, `latestFlag` reaching
+back to an older marking, an unmarked value reported as `normal`, the
+movement comparison inverted, a null marking rendered as "In range", the
+movement word borrowing `trend--worsening`, and the marking losing its
+attribution.
+
 ### KNOWN AND OPEN
 
 **Not verified here:** the rendered page. All three services are up and the
@@ -8721,6 +8903,236 @@ moved aside**; `RangeChart.jsx` orphaned.
 No stage in this change calls a model. The quota state was irrelevant to it,
 which is worth knowing: a task picked off the open list that needs no model is
 the one to take on a spent day.
+
+---
+
+## 6av. THE 2026-09-17 SESSION — READ THIS FIRST
+
+**Three things, and the first one was already built when the session opened.**
+Module 35 was sitting in an uncommitted working tree with no handover; the
+other two came from the reader driving the timeline. Everything is committed
+now, one commit, tree clean.
+
+| | Tests | Last run |
+|---|---|---|
+| `backend/` | **725** passed, 3 skipped, 15 suites, 0 failed | 2026-09-17 ✅ |
+| `ai-service/` | **3,931** passed, 7 skipped (3,938 collected, 0 failures, 0 errors) | 2026-09-17 ✅ (`.env` moved aside) |
+| `frontend/` | **368** passed, 0 suites failed | 2026-09-17 ✅ |
+| **Total** | **5,024** | |
+
+### ▶ THE SESSION OPENED ON 14 UNCOMMITTED PATHS AND NO RECORD OF THEM
+
+`git status` first, per §0. It found what §0 promised — and two things §0 had
+wrong, both because §0 was written before the last commit rather than after:
+
+* **`main` was at `5ba63a6`, not `5fb20f9`.** A commit had landed after that
+  warning was written and had already saved part of what the warning listed.
+* **The 14 dirty paths were NEWER work than the warning described** — a whole
+  feature, Module 35, that no section of this file mentioned. §6au does not
+  name it. Its only trace was a filename in §0's list.
+
+> **A HANDOVER IS WRITTEN AT A MOMENT AND THE TREE MOVES AFTER IT.** §0's
+> warning was accurate when written and wrong in two particulars by the time
+> it was read, in the direction that matters least (work was safer than
+> described) but by the same mechanism that could have made it worse. The
+> `git status` is what closes that gap, and it is why it is the first action.
+
+### MODULE 35 — improving / worsening / stable FOR A TEST THIS PLATFORM DOES NOT ASSESS
+
+Found uncommitted, read from the source rather than from a description, and
+committed as it stood. It closes §6au's "the status is not showing whether
+stable or improving or worsening", which §6au had concluded was impossible.
+
+**THE PROMPT CONTAINS A TEST NAME AND NOTHING ELSE.** Not the value, not the
+change, not the range, not the flag, not the age or sex. So the answer is a
+property of the TEST -- true for anyone who ever takes it -- and the model is
+never in a position to interpret this person's result. Same narrowing as
+Module 27b (`parameter_glossary`), and for the same reason.
+
+**THE MODEL DOES NOT CLASSIFY.** It supplies a polarity and two variation
+figures (CVa, CVi). The service computes
+`RCV = 2**0.5 * 1.96 * sqrt(CVa**2 + CVi**2)` with
+`trend_polarity.reference_change_value` — the same function that produced
+every row of the hand-written STABILITY table — and the classification is made
+by `trend_analyzer._classify` and `_is_significant`, the SAME two functions
+Module 28 uses for assessed features. **There is one trend classifier in this
+service and Module 35 did not become a second one.**
+
+* **The model never supplies a reference range.** When the polarity is
+  `best_within_range`, the interval is the one the PATIENT'S OWN LABORATORY
+  printed, passed in by the caller. §6v records an invented range reaching a
+  patient already.
+* **A CV outside `CV_PERMITTED` refuses the WHOLE entry rather than being
+  clamped.** A clamped hallucination is still a hallucination wearing a
+  plausible value.
+* **An entry needs both halves.** Polarity without a band would call a 0.1 %
+  wobble "worsening"; a band without polarity cannot say which way is better.
+* **`basis` carries the arithmetic and its inputs**, labelled `PENDING
+  INDEPENDENT VERIFICATION`, so a reviewer can recompute it.
+* **It cannot break the timeline.** `timelineController` catches every failure
+  — spent quota, unconfigured key, timeout, service down — and passes the
+  built series through unchanged, which is what the page rendered before this
+  existed. The failure is logged with a stage name, a code and a count, no
+  PHI.
+* **`labPolarityTimeoutMs` is its own budget**, not the trends one. The
+  comment names the §6as borrow-the-wrong-budget defect before it can fire.
+* **`attachVerdicts` branches on `outcome`, never on `trend`**, and matches by
+  the exact name that was sent. A fuzzy match would put one test's verdict on
+  another's panel, which is the worst failure this feature can have.
+
+Tests: **22 in `test_lab_polarity.py` plus 6 through the HTTP route** in
+`test_explain_endpoint.py`. The route tests exist because of §6w — a module
+can be perfect and unreachable, and anything with a route needs one test that
+goes through the route.
+
+**LIVE, ON THE REAL REPORTS.** Gemini's quota had reset. One probe first, to
+learn whether the feature could run at all before concluding anything from a
+blank screen:
+
+```
+ESR   35 -> 45   TREND_CLASSIFIED   stable   threshold 62.0 %
+```
+
+Then through the page, all 10 trended laboratory series classified. CRP
+`worsening` (118 % threshold, 12.1 -> 38.9), MCV / LYMPHOCYTES / MONOCYTES /
+PLATELET COUNT / ESR `stable`, PCV `improving`.
+
+### ⚠ ESR READS `stable` AND `High` OVER A RISE FROM 35 TO 45, AND IT IS RAISED FOR THE OWNER
+
+Not a defect. The model returned CVa 10.0 % and CVi 20.2 %, giving a reference
+change value of **62 %**; a 28.6 % rise does not cross it, so `stable` is the
+honest answer to the question asked. The panel still shows `rose` and the
+laboratory's `High` beside it, so nothing tells the reader they are fine.
+
+**But a 62 % threshold calls almost any ESR movement stable, and the figures
+behind it are labelled pending verification.** Raised with the owner and NOT
+resolved. This is the one thing on Module 35 that wants a human decision
+rather than a test.
+
+### ▶ THE READER ASKED FOR THE TRENDS TABLE TO GO
+
+A screenshot, circling the `Parameter / Direction / First → latest / Readings`
+table under the charts: *"i dont need this part as already above trends parts
+are there."*
+
+**Checked before cutting, and the check changed the scope.** Of its 12 rows,
+**nine were pure duplication** — the chart above each one carried the same
+direction word and the same refusal sentence. **Three were not:** `age`,
+`sex` and `smoking_history` get no chart, so the table was their only row on
+that card. The owner was asked and chose to drop them; they are still named
+for a reader in the comparison table below.
+
+Deleted with it: `TrendRow`, and `rowHeading` — which existed only because
+that table once printed `trend.feature` raw and put `hba1c` and
+`smoking_history` on a patient's screen. **The chart headings use
+`PATIENT_LABEL` and always did, so the fix did not leave with the function.**
+
+**The empty-state condition had to move.** It hung off `features.length`,
+which was safe only while a table printed a row per feature. A payload of
+nothing but unchartable features would now have left the card blank — no
+panels, no line, nothing said. It now hangs off `charted`, computed once and
+shared with the map, because a second copy is how the two come to disagree.
+
+**SIX FIXTURES WERE LYING ABOUT THE PAYLOAD AND THE SUITE HAD NEVER MINDED.**
+They declared `usable_point_count: 1` or `: 2` and then carried no `points`
+array — a shape Module 28 does not produce. They passed because the table
+printed a row whether or not there was anything to plot. With the table gone
+those features render nothing and the tests failed. **They were given their
+real points rather than having their assertions weakened.** One test asserted
+prose that no longer exists anywhere and was deleted; one new test pins the
+removal by listing the four column headings and the row phrasings that must
+not reappear.
+
+### ▶ THEN THE NUMBERS WERE MISSING FROM THE SHUT ROW, AND THAT WAS REAL
+
+Removing the table took its `First → latest` column with it, so a reader
+scanning closed panels saw `HbA1c ... worsening` and had to open a panel to
+learn from what to what. Raised, and the owner asked for it back.
+
+`ChangePair` puts it on the collapsed row of both kinds of panel. **It selects
+nothing and computes nothing:** Module 28's own `change.first_value` /
+`change.last_value` for an assessed feature, and `movementFrom` /
+`movementTo` for a laboratory one — added to `labSeriesService` for this.
+
+**A PAIR IS SHOWN ONLY WHERE A CHANGE WAS ESTABLISHED.** 18 of 31 rows carry
+one, and every row without one is a case where a pair would assert something:
+
+```
+MCHC, SGPT    blocked (g/dL vs %, U/L vs IU/L) -- an arrow would claim the
+              comparison the service refused to draw a line through
+Blood sugar   Module 28 supplies no `change`: four readings mixing fasting
+              and random. Haemoglobin, by contrast, shows 9.2 -> 12.5 g/dl
+              beside `no direction` -- change known, meaning not.
+10 readings   one report only; one reading is not a change
+```
+
+**Uncoloured, deliberately.** Green and rust mean better and worse on that
+page, and two readings mean neither — the same separation §6au made for the
+movement word. **The unit prints once, at the end** (`2.6 → 3.03 Lakhs/cumm`,
+34 characters down to 21). Printing it once ASSERTS both readings are in it,
+and that holds exactly where the pair renders: `blocked` is the test that the
+units agree, and a blocked series gets no pair.
+
+### ⚠ I WROTE A FALSE JUSTIFICATION INTO TWO FILES AND CAUGHT IT ONE STEP LATER
+
+`movementOf` was changed to return the two values with the word, and the
+comment explaining why said a point could carry a null value at either end,
+so a consumer reaching for `points[0]` would print numbers the word did not
+describe. **That shape does not exist.** `points` is built from `numeric`,
+which is already `entries.filter((e) => e.value !== null)`, so the filter
+inside `movementOf` can remove nothing and `points[0]` would have been safe.
+
+Publishing the pair from the service is still right — one comparison, one
+place, so the word and the numbers cannot drift if the rule for WHICH readings
+are compared ever changes. **But that is a different reason, and the comment
+now says that one.** The filter is kept as this file's belt-and-braces
+convention, on §6au's precedent for the re-check in `assembleHistory`.
+
+> **A JUSTIFICATION IS A CLAIM ABOUT THE PRODUCER AND HAS TO BE READ THERE.**
+> §6au's lesson was that a handover's description of a fix is a claim nobody
+> probed. This is the same error one layer smaller and self-inflicted, in a
+> comment written while making the change it describes. Two minutes reading
+> `buildLabSeries` replaced an invented hazard with the real reason.
+
+The lab-series test fixture had the matching fault: it did not set the new
+fields at all, which would have exercised a no-pair path the backend never
+returns. It now derives them the way the producer does. **That is the
+`basis.limitations` trap from §6w — a fixture written to the consumer's
+assumption cannot catch the assumption being wrong.**
+
+### KNOWN AND OPEN
+
+**Raised this session and NOT resolved:**
+
+* **ESR's 62 % stability threshold**, above. The one Module 35 question that
+  needs a person.
+* **Module 35's CVa/CVi figures are unverified across the board.** Every
+  `basis` string says so. Nobody has checked one against a published table.
+* **`5.4 → 7 %` prints `7`, not `7.0`.** `formatValue` does not pad, so a
+  pair can look like it has different precision on each end.
+* The unknown-key chart heading prints the raw key as it stands
+  (`some_new_marker`); the capitalisation the deleted table applied went with
+  `rowHeading`. Pinned by a test either way.
+
+**Carried forward from §6au and §6at, unchanged:** the glucose exclusion
+message wrong about why (three places); the trend chart drawing one line
+across non-comparable glucose points; `referenceAgreement` computed and never
+shown per panel; PCV scaled from one report's interval without saying so; ten
+unassessed parameters on only one report; `--rust` at 4.38:1;
+`origin: report_transcription`; `MISSING_PROFESSIONAL_REFERRAL` not blocking;
+Module 32's two-way `present`; **the ai-service suite still needing `.env`
+moved aside** (fix `conftest.py`); `RangeChart.jsx` orphaned.
+
+**Closed this session:** ~~Module 35 uncommitted and undocumented~~ ·
+~~§6au's "those three words cannot be produced"~~ · ~~the trends table
+repeating every chart~~ · ~~no numbers on a collapsed row~~.
+
+### ⚠ GEMINI'S QUOTA HAD RESET, AND ONE PROBE IS HOW THAT WAS LEARNED
+
+§6at and §6au both ended with all three models spent. On 2026-09-17 the chain
+was available again. **One call to `/lab-polarity` established that before any
+conclusion was drawn from a page** — the alternative is reading a blank panel
+and debugging code that is working exactly as designed. Cost: one of twenty.
 
 ---
 

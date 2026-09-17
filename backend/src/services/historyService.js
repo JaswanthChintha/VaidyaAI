@@ -349,6 +349,12 @@ const PRINTED_PROJECTION = [
   'extraction.extracted_parameters.reference_low',
   'extraction.extracted_parameters.reference_high',
   'extraction.extracted_parameters.reference_range_raw',
+  // THE LABORATORY'S OWN HIGH/LOW MARKING. Carried for the same reason the
+  // interval is: the laboratory already compared this value to its own range,
+  // and that comparison is the one status available for a parameter this
+  // platform does not assess. `dashboardService` reads the same field from
+  // the same place, so the two screens cannot disagree about it.
+  'extraction.extracted_parameters.flag',
 ].join(' ');
 
 /**

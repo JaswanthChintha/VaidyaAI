@@ -296,6 +296,21 @@ const config = {
       180 * 1000
     ),
 
+    // MODULE 35, AND THE SAME REASONING A THIRD TIME. A STAGE'S TIMEOUT IS A
+    // CLAIM ABOUT WHAT IT DOES: this one makes one model call per distinct
+    // test name, up to its own ceiling of 16, so it belongs with the glossary
+    // and the finding context rather than with the model-free Module 28 call
+    // it travels beside. Borrowing the trends budget would be the §6as defect
+    // for the third time, named here BEFORE it fires.
+    //
+    // Cache hits cost nothing, so a warm process returns almost immediately;
+    // this budget is for the first request after a restart, which is the one
+    // that pays for every test name on the report.
+    labPolarityTimeoutMs: toInt(
+      process.env.AI_SERVICE_LAB_POLARITY_TIMEOUT_MS,
+      180 * 1000
+    ),
+
     // MODULES 28, 29, 30 AND 32 (trends, comparison, progress score, doctor
     // summary) ARE MODEL-FREE AND OFFLINE ON THE PYTHON SIDE - they are pure
     // computation over feature snapshots the backend supplies, so they belong

@@ -162,6 +162,39 @@ const getTrends = asyncHandler(async (req, res) => {
     reportIds: history.snapshots.map((s) => s.report_id),
   });
 
+  // MODULE 35, AND IT MUST NOT BE ABLE TO BREAK THE TIMELINE.
+  //
+  // The trend words on these panels are an addition to a page that worked
+  // without them, and every way this call can fail -- a spent quota, an
+  // unconfigured key, a timeout, the service being down -- is a reason to
+  // render the readings and the movement word, not a reason to fail the
+  // request. So it is caught HERE and the built series passes through
+  // unchanged, which is exactly what the page rendered before this existed.
+  //
+  // The failure is logged, because a stage that silently degrades is a stage
+  // nobody notices has stopped working: §6at's whole finding was a truncation
+  // that survived two sessions for want of one log line.
+  const built = labSeriesService.buildLabSeries(history.snapshots, printed);
+  let labSeries = built;
+  const classifiable = labSeriesService.classifiableSeries(built);
+  if (classifiable.length) {
+    try {
+      const verdicts = await aiService.classifyLabSeries({
+        series: classifiable,
+        requestId: historyRequestId(),
+      });
+      labSeries = labSeriesService.attachVerdicts(built, verdicts && verdicts.verdicts);
+    } catch (error) {
+      // NO PHI. A stage name, a machine code and a count -- the same shape
+      // every other degraded-stage line in this backend uses. Never a test
+      // name, never a value.
+      console.warn(
+        `[lab-polarity] outcome=unavailable requested=${classifiable.length} ` +
+          `code=${(error && error.code) || 'UNKNOWN'}`
+      );
+    }
+  }
+
   const trends = await aiService.analyseTrends({
     reports: history.snapshots,
     patientRef: patientRefOf(req),
@@ -184,7 +217,7 @@ const getTrends = asyncHandler(async (req, res) => {
     // drawn as a band -- the reader's own two reports disagree about the
     // range on nine parameters out of ten, so there is no single band to
     // draw and a scale is the claim that survives that.
-    labSeries: labSeriesService.buildLabSeries(history.snapshots, printed),
+    labSeries,
     // Module 28's `TimelineTrendsData`, VERBATIM. `outcome` is the field to
     // branch on, never `trend` - and neither is touched here.
     trends,

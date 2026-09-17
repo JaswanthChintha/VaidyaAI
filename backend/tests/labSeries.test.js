@@ -23,6 +23,8 @@ const {
   unitKey,
   numericValue,
   numericBound,
+  classifiableSeries,
+  attachVerdicts,
 } = require('../src/services/labSeriesService');
 
 /** A history snapshot in `historyService`'s own shape. */
@@ -385,6 +387,367 @@ describe('labSeriesService - the printed reference interval', () => {
 
     expect(out.series[0].referenceCoverage).toEqual({ withBounds: 1, total: 2 });
     expect(out.series[0].points[1].labReferenceLow).toBeNull();
+  });
+});
+
+/**
+ * THE PARAMETERS THAT CANNOT MAKE A SERIES ARE STILL ON THE REPORT.
+ *
+ * A reader holding two reports with 22 parameters between them saw twelve
+ * panels and a line saying twenty-two had been "considered". They asked where
+ * the rest were, which is the right question: a count of what was looked at is
+ * not an answer about what was found.
+ *
+ * These carry readings and dates and NOTHING ELSE -- no line, no direction, no
+ * scale. "We cannot draw this" is not a reason to withhold the laboratory's
+ * own number.
+ */
+describe('labSeriesService - readings that cannot be trended', () => {
+  it('lists a parameter seen on only ONE report instead of only counting it', () => {
+    const out = buildLabSeries([
+      snap('2026-01-01', [row('Zorblex', '3.51', 'ulU/mL')], 'r1'),
+      snap('2026-02-01', [row('Quibblease', '1.81', 'mg/L')], 'r2'),
+    ]);
+
+    // Still counted, exactly as before -- the count did not become wrong.
+    expect(out.singleReportCount).toBe(2);
+    // AND now visible.
+    expect(out.readings.map((r) => r.name)).toEqual(['Quibblease', 'Zorblex']);
+    expect(out.readings[1].rows).toEqual([
+      expect.objectContaining({ valueRaw: '3.51', unit: 'ulU/mL', value: 3.51 }),
+    ]);
+    expect(out.readings[1].reason).toBe('one_report');
+  });
+
+  it('shows a NON-NUMERIC result as the laboratory printed it', () => {
+    // "Negative" is a result. Rendering it as a missing value, or as nothing,
+    // is this file's standing failure mode: an absence that reads as though
+    // there were nothing there.
+    const out = buildLabSeries([
+      snap('2026-01-01', [row('Zorblex', 'Pale Yellow', null)], 'r1'),
+      snap('2026-02-01', [row('Zorblex', 'Negative', null)], 'r2'),
+    ]);
+
+    expect(out.notNumericCount).toBe(1);
+    expect(out.readings).toHaveLength(1);
+    expect(out.readings[0].reason).toBe('not_numeric');
+    expect(out.readings[0].rows.map((r) => r.valueRaw)).toEqual(['Pale Yellow', 'Negative']);
+    // A value that is not a number is not given one.
+    expect(out.readings[0].rows.every((r) => r.value === null)).toBe(true);
+  });
+
+  it('gives a reading NO line, NO direction and NO scale', () => {
+    // The whole point of keeping these out of `series`: nothing downstream
+    // can draw a trend through a single point or an unordered word.
+    const out = buildLabSeries([
+      snap('2026-01-01', [row('Zorblex', '3.51', 'mg/L')], 'r1'),
+      snap('2026-02-01', [row('Quibblease', '1.81', 'mg/L')], 'r2'),
+    ]);
+
+    expect(out.series).toHaveLength(0);
+    for (const reading of out.readings) {
+      expect(reading.referenceScale).toBeUndefined();
+      expect(reading.blocked).toBeUndefined();
+      expect(reading.points).toBeUndefined();
+    }
+  });
+
+  it('never lists a parameter that DID make a series', () => {
+    // Otherwise the same test appears twice on one page, once as a chart and
+    // once as a reading, which reads as two different tests.
+    const out = buildLabSeries([
+      snap('2026-01-01', [row('Zorblex', '1', 'U/L')], 'r1'),
+      snap('2026-02-01', [row('Zorblex', '2', 'U/L')], 'r2'),
+    ]);
+
+    expect(out.series).toHaveLength(1);
+    expect(out.readings).toHaveLength(0);
+  });
+
+  it('lists a BLOCKED series nowhere either -- it already shows its readings', () => {
+    const out = buildLabSeries([
+      snap('2026-01-01', [row('Zorblex', '101.9', 'U/L')], 'r1'),
+      snap('2026-02-01', [row('Zorblex', '13', 'IU/L')], 'r2'),
+    ]);
+
+    expect(out.blockedCount).toBe(1);
+    expect(out.readings).toHaveLength(0);
+  });
+
+  it('accounts for EVERY considered parameter, in one bucket or another', () => {
+    // The identity a reader is entitled to: nothing looked at is unaccounted
+    // for. considered === plotted + blocked + listed.
+    const out = buildLabSeries([
+      snap('2026-01-01', [
+        row('Zorblex', '1', 'U/L'),
+        row('Quibblease', '101.9', 'U/L'),
+        row('Frimbulator', '5', 'mg/L'),
+        row('Snarflax', 'Negative', null),
+      ], 'r1'),
+      snap('2026-02-01', [
+        row('Zorblex', '2', 'U/L'),
+        row('Quibblease', '13', 'IU/L'),
+        row('Snarflax', 'Negative', null),
+      ], 'r2'),
+    ]);
+
+    expect(out.consideredCount).toBe(4);
+    expect(out.plottedCount + out.blockedCount + out.readings.length).toBe(
+      out.consideredCount
+    );
+  });
+});
+
+/**
+ * THE STATUS A PARAMETER THIS PLATFORM DOES NOT ASSESS IS ALLOWED TO CARRY.
+ *
+ * A reader asked why these panels showed no status when the assessed ones say
+ * improving, worsening or stable. Those three cannot be said here -- two need
+ * polarity and one needs a stability band, and neither exists for a test this
+ * platform does not assess. What IS available is arithmetic on the reader's
+ * own numbers, and the laboratory's own marking.
+ */
+describe('labSeriesService - movement and the laboratory\'s marking', () => {
+  const flagged = (test_name, value_raw, unit, flag) => ({ test_name, value_raw, unit, flag });
+
+  it('says which way the numbers went, and never a clinical word', () => {
+    const rising = buildLabSeries([
+      snap('2026-01-01', [row('Zorblex', '12.1', 'mg/L')], 'r1'),
+      snap('2026-02-01', [row('Zorblex', '38.9', 'mg/L')], 'r2'),
+    ]);
+    const falling = buildLabSeries([
+      snap('2026-01-01', [row('Zorblex', '38.9', 'mg/L')], 'r1'),
+      snap('2026-02-01', [row('Zorblex', '12.1', 'mg/L')], 'r2'),
+    ]);
+    const flat = buildLabSeries([
+      snap('2026-01-01', [row('Zorblex', '0', '%')], 'r1'),
+      snap('2026-02-01', [row('Zorblex', '0', '%')], 'r2'),
+    ]);
+
+    expect(rising.series[0].movement).toBe('rose');
+    expect(falling.series[0].movement).toBe('fell');
+    expect(flat.series[0].movement).toBe('same');
+
+    // THE GUARD THIS MODULE EXISTS FOR. None of the three clinical words may
+    // ever appear, under any key.
+    for (const out of [rising, falling, flat]) {
+      expect(JSON.stringify(out)).not.toMatch(/improving|worsening|stable/i);
+    }
+  });
+
+  it('withholds movement from a BLOCKED series', () => {
+    // 101.9 U/L and 13 IU/L may be the same measurement twice. Saying "fell"
+    // would assert a change the same file refused to draw a line through.
+    const out = buildLabSeries([
+      snap('2026-01-01', [row('Zorblex', '101.9', 'U/L')], 'r1'),
+      snap('2026-02-01', [row('Zorblex', '13', 'IU/L')], 'r2'),
+    ]);
+
+    expect(out.series[0].blocked).not.toBeNull();
+    expect(out.series[0].movement).toBeNull();
+  });
+
+  it('carries the two readings the movement word is about', () => {
+    // The collapsed row prints these beside the word. They come from the same
+    // comparison that produced it, so the two cannot disagree.
+    const out = buildLabSeries([
+      snap('2026-01-01', [row('Zorblex', '12.1', 'mg/L')], 'r1'),
+      snap('2026-02-01', [row('Zorblex', '20.0', 'mg/L')], 'r2'),
+      snap('2026-03-01', [row('Zorblex', '38.9', 'mg/L')], 'r3'),
+    ]);
+
+    // FIRST AND LATEST, never first and second.
+    expect(out.series[0].movement).toBe('rose');
+    expect(out.series[0].movementFrom).toBe(12.1);
+    expect(out.series[0].movementTo).toBe(38.9);
+  });
+
+  it('carries a pair of zeroes rather than treating 0 as absent', () => {
+    // BASOPHILS is 0 on both of this account's real reports. A zero dropped
+    // as "missing" would put an empty pair beside the word "same".
+    const out = buildLabSeries([
+      snap('2026-01-01', [row('Zorblex', '0', '%')], 'r1'),
+      snap('2026-02-01', [row('Zorblex', '0', '%')], 'r2'),
+    ]);
+
+    expect(out.series[0].movement).toBe('same');
+    expect(out.series[0].movementFrom).toBe(0);
+    expect(out.series[0].movementTo).toBe(0);
+  });
+
+  it('withholds the PAIR from a blocked series, not only the word', () => {
+    // 101.9 U/L and 13 IU/L beside each other with an arrow between them
+    // would assert the comparison this file refused to draw -- the word being
+    // absent is not enough if the numbers still claim it.
+    const out = buildLabSeries([
+      snap('2026-01-01', [row('Zorblex', '101.9', 'U/L')], 'r1'),
+      snap('2026-02-01', [row('Zorblex', '13', 'IU/L')], 'r2'),
+    ]);
+
+    expect(out.series[0].movementFrom).toBeNull();
+    expect(out.series[0].movementTo).toBeNull();
+  });
+
+  it('carries the laboratory\'s marking for the LATEST reading', () => {
+    const out = buildLabSeries(
+      [
+        snap('2026-01-01', [flagged('Zorblex', '35', 'mm/hr', 'high')], 'r1'),
+        snap('2026-02-01', [flagged('Zorblex', '45', 'mm/hr', 'high')], 'r2'),
+      ],
+      printedFor({
+        r1: [{ test_name: 'Zorblex', flag: 'high' }],
+        r2: [{ test_name: 'Zorblex', flag: 'high' }],
+      })
+    );
+
+    expect(out.series[0].latestFlag).toBe('high');
+    expect(out.series[0].points.map((p) => p.labFlag)).toEqual(['high', 'high']);
+  });
+
+  it('does NOT reach back for an older marking when the latest report has none', () => {
+    // PCV is the real case: the older report marked it low and the newer
+    // marked nothing. Presenting the older verdict as the current status
+    // would be a stale claim about the reading in the reader's hand.
+    const out = buildLabSeries(
+      [
+        snap('2026-01-01', [row('Zorblex', '34.4', '%')], 'r1'),
+        snap('2026-02-01', [row('Zorblex', '37.9', '%')], 'r2'),
+      ],
+      printedFor({
+        r1: [{ test_name: 'Zorblex', flag: 'low' }],
+        r2: [{ test_name: 'Zorblex', flag: null }],
+      })
+    );
+
+    expect(out.series[0].points[0].labFlag).toBe('low');
+    expect(out.series[0].latestFlag).toBeNull();
+  });
+
+  it('gives a listed reading its marking too, and no movement', () => {
+    const out = buildLabSeries(
+      [snap('2026-01-01', [row('Zorblex', '3.51', 'ulU/mL')], 'r1')],
+      printedFor({ r1: [{ test_name: 'Zorblex', flag: 'normal' }] })
+    );
+
+    expect(out.readings[0].latestFlag).toBe('normal');
+    expect(out.readings[0].movement).toBeUndefined();
+  });
+
+  it('leaves the marking null when the caller supplied no printed parameters', () => {
+    // Null is "not checked". It must never arrive as "normal", which is a
+    // laboratory saying it looked and the value was in range.
+    const out = buildLabSeries([
+      snap('2026-01-01', [row('Zorblex', '1', 'U/L')], 'r1'),
+      snap('2026-02-01', [row('Zorblex', '2', 'U/L')], 'r2'),
+    ]);
+
+    expect(out.series[0].latestFlag).toBeNull();
+    expect(out.series[0].points.every((p) => p.labFlag === null)).toBe(true);
+  });
+});
+
+/**
+ * MODULE 35'S VERDICTS, ATTACHED TO THE SERIES THEY BELONG TO.
+ *
+ * The classification itself happens in the ai-service, using Module 28's own
+ * classifier. This half is only about which verdict lands on which panel, and
+ * what happens when one does not arrive -- which, on a free-tier key, is the
+ * common case rather than the edge case.
+ */
+describe('labSeriesService - attaching a trend verdict', () => {
+  const twoReports = () =>
+    buildLabSeries([
+      snap('2026-01-01', [row('Zorblex', '12.1', 'mg/L')], 'r1'),
+      snap('2026-02-01', [row('Zorblex', '38.9', 'mg/L')], 'r2'),
+    ]);
+
+  it('sends only series that CAN be classified, with the lab\'s own interval', () => {
+    const built = buildLabSeries(
+      [
+        snap('2026-01-01', [row('Zorblex', '15', '%'), row('Quibblease', '1', 'U/L')], 'r1'),
+        snap('2026-02-01', [row('Zorblex', '14', '%'), row('Quibblease', '2', 'IU/L')], 'r2'),
+      ],
+      printedFor({
+        r1: [ref('Zorblex', 22, 45), ref('Quibblease', 0, 40)],
+        r2: [ref('Zorblex', 20, 40), ref('Quibblease', 0, 40)],
+      })
+    );
+
+    const outbound = classifiableSeries(built);
+    // Quibblease is blocked on units: two units have not been shown to have
+    // moved at all, so there is no change to classify.
+    expect(outbound.map((s) => s.test_name)).toEqual(['Zorblex']);
+    expect(outbound[0]).toEqual(
+      expect.objectContaining({
+        first_value: 15,
+        last_value: 14,
+        reference_low: 20,
+        reference_high: 45,
+      })
+    );
+  });
+
+  it('attaches a classified verdict to the matching series', () => {
+    const out = attachVerdicts(twoReports(), [
+      {
+        test_name: 'Zorblex',
+        outcome: 'TREND_CLASSIFIED',
+        trend: 'worsening',
+        significant_change_pct: 57,
+        basis: 'RCV = ...',
+      },
+    ]);
+
+    expect(out.series[0].trend).toBe('worsening');
+    expect(out.series[0].classified).toBe(true);
+    expect(out.series[0].significantChangePct).toBe(57);
+    expect(out.classifiedCount).toBe(1);
+  });
+
+  it('branches on OUTCOME, never on the presence of a trend word', () => {
+    // A payload carrying a direction without a classification is a
+    // contradiction, and §6z rendered the string "null" as a direction once
+    // on exactly this mistake. The unclassified reading wins.
+    const out = attachVerdicts(twoReports(), [
+      {
+        test_name: 'Zorblex',
+        outcome: 'CLINICAL_DIRECTION_UNKNOWN',
+        trend: 'worsening',
+      },
+    ]);
+
+    expect(out.series[0].trend).toBeUndefined();
+    expect(out.series[0].classified).toBeUndefined();
+  });
+
+  it('leaves the series untouched when no verdict arrives', () => {
+    // THE DESIGNED DEGRADATION. A spent quota, an unconfigured key and a
+    // service that is down all land here, and the panel keeps the movement
+    // word it already had.
+    for (const verdicts of [undefined, null, [], [{}], [{ test_name: 'Other' }]]) {
+      const out = attachVerdicts(twoReports(), verdicts);
+      expect(out.series[0].trend).toBeUndefined();
+      expect(out.series[0].movement).toBe('rose');
+    }
+  });
+
+  it('never lands one test\'s verdict on another test\'s panel', () => {
+    // The worst failure this feature can have. Matched on the exact name that
+    // was sent; nothing is normalised, because a fuzzy match here would be
+    // silent and wrong.
+    const out = attachVerdicts(twoReports(), [
+      { test_name: 'zorblex', outcome: 'TREND_CLASSIFIED', trend: 'improving' },
+      { test_name: 'Zorblex (total)', outcome: 'TREND_CLASSIFIED', trend: 'improving' },
+    ]);
+
+    expect(out.series[0].trend).toBeUndefined();
+  });
+
+  it('refuses an empty trend word, which is not a classification', () => {
+    const out = attachVerdicts(twoReports(), [
+      { test_name: 'Zorblex', outcome: 'TREND_CLASSIFIED', trend: '' },
+    ]);
+    expect(out.series[0].trend).toBeUndefined();
   });
 });
 

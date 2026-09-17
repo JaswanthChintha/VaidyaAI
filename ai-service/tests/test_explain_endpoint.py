@@ -70,6 +70,24 @@ def explain_client(client_factory: Any) -> TestClient:
     return client_factory(FakeTextClient(_APPROVABLE))
 
 
+@pytest.fixture(autouse=True)
+def _clear_lab_polarity_cache():
+    """Module 35 caches by test NAME in the process, so tests share it.
+
+    WITHOUT THIS THE PROMPT ASSERTION PASSES VACUOUSLY. A test that checks no
+    patient value reaches the model found an empty prompt list and would have
+    reported success for a model that was never called, because an earlier
+    test in the same process had already cached that test name. The cache is
+    correct -- one answer per test name is the point -- and a suite that does
+    not isolate it is measuring the previous test.
+    """
+    from app.services import lab_polarity
+
+    lab_polarity.reset_cache()
+    yield
+    lab_polarity.reset_cache()
+
+
 FEATURE_BODY = {
     "feature": "hba1c",
     "value": 6.8,
@@ -101,6 +119,12 @@ ROUTES = [
     # `success is True` and would have caught it on the first run -- the route
     # was simply never listed here.
     ("post", "/api/v1/explain/glossary", {"test_names": ["Blood Urea"]}),
+    # Listed HERE on the day it was written, not after it shipped dead.
+    (
+        "post",
+        "/api/v1/explain/lab-polarity",
+        {"series": [{"test_name": "Blood Urea", "first_value": 1.0, "last_value": 2.0}]},
+    ),
     # Listed HERE on the day it was written, not after it shipped dead.
     ("post", "/api/v1/explain/clinician-summary", {"summary": {}}),
     # Same day, same reason.
@@ -445,6 +469,118 @@ def test_the_glossary_request_has_nowhere_to_put_a_patient_value(explain_client)
         headers=HEADERS,
     )
     assert response.status_code == 422
+
+
+# --------------------------------------------------------------------------
+# Module 35 -- the trend classification, over HTTP
+# --------------------------------------------------------------------------
+#
+# The module has its own suite. These are about the TRANSPORT and the SHAPE,
+# which is where the glossary was broken for its whole first life.
+
+_POLARITY_JSON = (
+    '{"polarity":"higher_is_worse","analytical_cv_pct":4.0,'
+    '"within_subject_cv_pct":20.0}'
+)
+
+LAB_POLARITY_BODY = {
+    "series": [
+        {
+            "test_name": "Zorblex",
+            "first_value": 12.1,
+            "last_value": 38.9,
+            "unit": "mg/L",
+        }
+    ]
+}
+
+
+def test_lab_polarity_answers_inside_the_standard_envelope(client_factory):
+    client = client_factory(FakeTextClient(_POLARITY_JSON))
+    response = client.post(
+        "/api/v1/explain/lab-polarity", json=LAB_POLARITY_BODY, headers=HEADERS
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    # The two properties the backend's `unwrapEnvelope` requires, asserted
+    # separately from the payload so a change to either is visible.
+    assert body["success"] is True
+    assert isinstance(body["data"], dict)
+
+    verdict = body["data"]["verdicts"][0]
+    assert verdict["test_name"] == "Zorblex"
+    assert verdict["trend"] == "worsening"
+
+
+def test_lab_polarity_answers_with_no_model_configured(client_factory):
+    """An unconfigured key is a service state, not a finding.
+
+    `verdicts` is empty rather than carrying a placeholder, so the caller can
+    tell "no model" from "the model declined to classify this test".
+    """
+    client = client_factory(None)
+    response = client.post(
+        "/api/v1/explain/lab-polarity", json=LAB_POLARITY_BODY, headers=HEADERS
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["verdicts"] == []
+    assert data["generated"] == 0
+
+
+def test_lab_polarity_refuses_a_field_it_does_not_declare(client_factory):
+    """The safety property is the SHAPE, so it is asserted at the shape.
+
+    A caller cannot smuggle the patient's age, sex or diagnosis alongside the
+    readings: the request model forbids extra fields.
+    """
+    client = client_factory(FakeTextClient(_POLARITY_JSON))
+    body = {
+        "series": [
+            {
+                "test_name": "Zorblex",
+                "first_value": 12.1,
+                "last_value": 38.9,
+                "age": 58,
+            }
+        ]
+    }
+    response = client.post("/api/v1/explain/lab-polarity", json=body, headers=HEADERS)
+    assert response.status_code == 422
+
+
+def test_lab_polarity_sends_no_patient_data_to_the_model(client_factory):
+    """THE ONE THAT MATTERS, asserted on the prompt the service really built.
+
+    The values travel to this SERVICE, because the classification arithmetic
+    runs here. They must not travel to the MODEL.
+    """
+    fake = FakeTextClient(_POLARITY_JSON)
+    client = client_factory(fake)
+    client.post(
+        "/api/v1/explain/lab-polarity",
+        json={
+            "series": [
+                {
+                    "test_name": "Zorblex",
+                    "first_value": 12.1,
+                    "last_value": 38.9,
+                    "unit": "mg/L",
+                    "reference_low": 0.0,
+                    "reference_high": 6.0,
+                }
+            ]
+        },
+        headers=HEADERS,
+    )
+
+    assert fake.prompts, "the model was never called"
+    for prompt in fake.prompts:
+        assert "Zorblex" in prompt
+        for leaked in ["12.1", "38.9", "6.0", "mg/L"]:
+            assert leaked not in prompt
 
 
 def test_the_glossary_sends_no_patient_data_to_the_model(client_factory):

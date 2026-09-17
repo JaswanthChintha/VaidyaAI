@@ -59,62 +59,63 @@ function HistorySummary({ history }) {
   );
 }
 
-/** One feature's trajectory, or the stated reason there isn't one. */
-/**
- * A feature name as a table-row heading.
+/*
+ * `rowHeading` and `TrendRow` STOOD HERE AND ARE DELETED.
  *
- * `PATIENT_LABEL` was already imported on this page and already used for the
- * chart headings above -- and this table printed `trend.feature` RAW, so one
- * screen showed "HbA1c (average blood sugar)" as a chart title and `hba1c`,
- * `blood_glucose`, `vitamin_b12` and `smoking_history` as row headings in the
- * table beneath it. Found while auditing the comparison table one row down
- * for the same class of leak.
+ * They built the `Parameter / Direction / First -> latest / Readings` table
+ * that sat under the charts on this card. Every one of the nine features that
+ * has a chart was already showing the same direction word and the same
+ * refusal sentence in the chart above its row, so the table was a second copy
+ * of the page. The reader asked for it to go.
  *
- * The table's entries for the profile answers are lower case because they are
- * written for mid-sentence use ("sex", "age", "smoking history"); a row
- * heading needs the first letter raised. The shared table is NOT edited for
- * that -- it would break every prose caller -- so the casing happens here,
- * where the heading is.
+ * `rowHeading` existed only because that table once printed `trend.feature`
+ * raw and leaked `hba1c` and `smoking_history` onto a patient's screen. The
+ * chart headings use `PATIENT_LABEL` directly and always did, so the fix is
+ * not lost with the function -- there is simply no raw key left to print.
+ *
+ * ONE COLUMN OF IT CAME BACK, AND ONLY ONE: `First -> latest`. Losing the
+ * table took the numbers off the shut row with it, so a reader scanning the
+ * closed list saw "worsening" and had to open a panel to learn from what to
+ * what. `ChangePair` below puts that back where it was asked for.
  */
-function rowHeading(feature) {
-  const label = PATIENT_LABEL[feature] || feature;
-  return label.charAt(0).toUpperCase() + label.slice(1);
-}
 
-function TrendRow({ trend }) {
-  const classified = trend.outcome === 'TREND_CLASSIFIED';
-
+/**
+ * THE TWO READINGS A MOVEMENT OR DIRECTION WORD IS ABOUT.
+ *
+ * ==========================================================================
+ * IT SELECTS NOTHING AND COMPUTES NOTHING
+ * ==========================================================================
+ *
+ * Both callers hand over values the SERVICE paired: Module 28's own
+ * `change.first_value` / `change.last_value` for an assessed feature, and
+ * `labSeriesService`'s `movementFrom` / `movementTo` for a laboratory one --
+ * the latter added for this. Reading `points[0]` and the last point would
+ * give the same two numbers today, and would be a second copy of the rule
+ * deciding WHICH readings the word beside them describes. One copy means the
+ * word and the pair cannot come to disagree.
+ *
+ * ABSENT MEANS NOTHING IS DRAWN, not a dash and not a zero. A pair is shown
+ * only where a change was established: a blocked series gets none, because
+ * two units have not been shown to have moved, and a single reading gets none
+ * because there is no pair to show. Both of those already render their
+ * numbers in full when opened.
+ */
+function ChangePair({ from, to, unit }) {
+  if (!isPresent(from) || !isPresent(to)) return null;
   return (
-    <tr>
-      <th scope="row">{rowHeading(trend.feature)}</th>
-      <td>
-        {classified && isPresent(trend.trend) ? (
-          <span className={`trend trend--${trend.trend}`}>{trend.trend}</span>
-        ) : (
-          // NOT "stable". The service's own sentence says why there is no
-          // trend, and it is shown verbatim.
-          <Absent
-            label="No trend"
-            reason={trend.reason || 'Not enough usable readings to describe a change.'}
-          />
-        )}
-      </td>
-      <td>
-        {classified && trend.change ? (
-          <>
-            <Value value={trend.change.first_value} unit={trend.canonical_unit} />
-            {' → '}
-            <Value value={trend.change.last_value} unit={trend.canonical_unit} />
-          </>
-        ) : (
-          <span className="absent">—</span>
-        )}
-      </td>
-      <td className="hint">
-        {trend.usable_point_count} usable reading(s)
-        {trend.gaps?.length ? `, ${trend.gaps.length} gap(s)` : ''}
-      </td>
-    </tr>
+    <span className="disclosure__pair">
+      {/* THE UNIT ONCE, AT THE END. `2.6 -> 3.03 Lakhs/cumm`, not the unit
+          twice -- printing it on both ends made the longest rows wrap.
+          PRINTING IT ONCE ASSERTS THAT BOTH READINGS ARE IN IT, and that
+          holds wherever this renders: for a laboratory series `blocked` is
+          exactly the test that the units agree, and a blocked series is given
+          no pair at all, so the one case where the assertion would be false
+          renders nothing. For an assessed feature the values are Module 28's
+          own, already converted to the `canonical_unit` named here. */}
+      <Value value={from} />
+      {' → '}
+      <Value value={to} unit={unit} />
+    </span>
   );
 }
 
@@ -183,146 +184,253 @@ function chartPropsFor(trend) {
   };
 }
 
+/** A reading's date, or an honest word when there is not one. */
+function readingDate(value) {
+  const date = value ? new Date(value) : null;
+  return date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString() : 'undated';
+}
+
 /**
- * The laboratory's OWN repeated parameters.
+ * The laboratory's own repeated parameters, AS PANELS IN THE SAME LIST.
  *
- * Module 28 trends canonical features -- the ones this pipeline can identify
- * across reports and express in one unit -- so everything the platform does
- * not assess was absent from the timeline entirely. A reader with reports
- * full of parameters that never appeared asked why.
+ * ==========================================================================
+ * WHY THESE ARE NOT A SEPARATE SECTION ANY MORE
+ * ==========================================================================
  *
- * NO DIRECTION WORD ANYWHERE IN HERE, and no summary badge. There is no
- * polarity for these parameters and no stability band: nothing knows whether
- * a rising ESR is better or worse, or how much movement is noise. The panel
- * carries the readings and the dates and stops.
+ * They were, under a heading naming them as tests this tool does not assess,
+ * above three paragraphs explaining that nothing here is interpreted, that the
+ * scale includes the printed reference range, and that no range is drawn. The
+ * reader asked for all of it to go and for these to sit with the rest.
+ *
+ * THE CONTROLS SURVIVE; THE PROSE DOES NOT. That is 6at's lesson, third time:
+ * every objection to this page's commentary was right, and every control it
+ * described belonged somewhere other than in a paragraph. So --
+ *
+ *   - NO DIRECTION IS EMITTED FOR THESE, and that is enforced where it cannot
+ *     be bypassed: `labSeriesService` never produces one, because there is no
+ *     polarity and no stability band for these parameters. It was never the
+ *     removed sentence that made it true.
+ *   - NO REFERENCE RANGE IS DRAWN. `scaleOnly` enters the chart's domain and
+ *     no band rectangle, which is a property of `TrendChart` and a test, not
+ *     of the paragraph that used to describe it.
+ *   - TWO UNITS ARE STILL NEVER JOINED. `TrendChart` refuses to plot mixed
+ *     units and says so on the chart itself, where the question is asked.
+ *
+ * A panel with no direction badge asserts nothing. That is the difference
+ * between removing a claim and removing an explanation of one.
  */
-function LabSeries({ data }) {
-  const series = data?.series || [];
-  if (!series.length && !data?.consideredCount) return null;
+/**
+ * THE STATUS ON A PANEL THIS PLATFORM DOES NOT ASSESS.
+ *
+ * ==========================================================================
+ * WHY IT IS NOT improving / worsening / stable
+ * ==========================================================================
+ *
+ * A reader asked why these panels carry no status when the assessed ones do.
+ * The answer is that all three of those words need something no part of this
+ * pipeline has for an unassessed test:
+ *
+ *   - `improving` / `worsening` need POLARITY. Whether a rising ESR is better
+ *     or worse for this person is a clinical fact nothing here knows, and
+ *     Module 28 itself refuses to say it (CLINICAL_DIRECTION_UNKNOWN) rather
+ *     than guess.
+ *   - `stable` needs a STABILITY BAND. Without one, a 7 % move called
+ *     "stable" states something nobody measured -- the hazard this whole file
+ *     header is about.
+ *
+ * SO TWO TRUE STATUSES ARE SHOWN INSTEAD, and between them they answer what
+ * the reader was actually asking:
+ *
+ *   1. WHICH WAY THE NUMBERS WENT -- `rose`, `fell`, `same`. Arithmetic on
+ *      their own two readings, claiming nothing about what it means. It takes
+ *      NO COLOUR, because green and rust on this page mean better and worse
+ *      and that is exactly the judgement not being made.
+ *   2. THE LABORATORY'S OWN MARKING of the latest reading -- `High`, `Low`,
+ *      `In range`. Not this platform's verdict; the laboratory compared the
+ *      value to its own printed interval and said so. Same three words and
+ *      the same wording the dashboard uses for the same fact, so the two
+ *      screens cannot disagree.
+ *
+ * A LABORATORY THAT MARKED NOTHING GETS NO CHIP. `null` is "not checked",
+ * which is not "In range" -- and on a page about absences, letting the second
+ * stand in for the first is the failure mode this project is named for.
+ */
+const MOVEMENT_WORD = { rose: 'rose', fell: 'fell', same: 'no change' };
+const LAB_FLAG_WORD = { high: 'High', low: 'Low', critical: 'High', normal: 'In range' };
 
-  const plotted = series.filter((s) => !s.blocked);
-  const blocked = series.filter((s) => s.blocked);
+const TREND_WORDS = ['improving', 'worsening', 'stable'];
 
-  // HOW MANY OF THE DRAWN CHARTS GOT A SCALE. Taken from the panels actually
-  // on screen, not from the payload's own counter -- a count that does not
-  // come from the list it claims to count is a statement waiting to be wrong,
-  // and this page has been wrong that way before.
-  const scaled = plotted.filter((s) => s.referenceScale).length;
-  const unscaled = plotted.length - scaled;
+function LabStatus({ movement, latestFlag, trend, classified }) {
+  // BOTH HALVES, the same predicate the assessed panels use. A payload
+  // carrying a direction without a classification is a contradiction, and if
+  // one ever arrives the unclassified reading wins -- §6z rendered the string
+  // "null" as a direction once on exactly this mistake.
+  const declared = classified === true && TREND_WORDS.includes(trend);
+
+  // THE CLINICAL WORD REPLACES THE ARITHMETIC ONE, never sits beside it.
+  // "rose" and "worsening" in one row are two answers to one question, and a
+  // reader would reasonably read them as two findings.
+  const moved = declared ? null : movement ? MOVEMENT_WORD[movement] : null;
+  const flag = latestFlag ? LAB_FLAG_WORD[latestFlag] : null;
+  if (!declared && !moved && !flag) return null;
 
   return (
-    <section className="card">
-      <h2>Other parameters on your reports</h2>
-
-      <p className="hint">
-        Values your laboratory reported that this tool does not assess, shown
-        over time. Nothing here is interpreted: no direction is given and no
-        condition is derived from any of it.
-      </p>
-
-      {/* THE SCALE, AND WHY NO RANGE IS DRAWN.
-          The assessed charts above are drawn against the band a change would
-          have to cross to count. These parameters have no such band -- no
-          polarity and no stability figure exists for them -- but their own
-          laboratories printed a reference interval beside each value, and
-          that is now carried through to set the scale.
-          IT SETS THE SCALE AND IS NOT DRAWN, and the sentence below says so
-          rather than leaving a reader to wonder where the shaded band went.
-          The reader's reports disagree about the range on most parameters, so
-          there is no single interval a band could honestly represent. */}
-      {scaled ? (
-        <p className="hint">
-          The vertical scale on these includes the reference range printed on
-          your own reports, so a reading inside the usual range sits inside the
-          scale instead of filling it. No range is drawn on the charts: your
-          reports do not all print the same range for the same test, so there
-          is no one range to show.
-        </p>
+    <span className="lab-status">
+      {declared ? <span className={`trend trend--${trend}`}>{trend}</span> : null}
+      {moved ? <span className="lab-status__move">{moved}</span> : null}
+      {flag ? (
+        // ATTRIBUTED IN THE MARKUP, not only in a comment. A reader hovering,
+        // and a screen reader, are told whose judgement this is; the visible
+        // chip stays short enough to sit in a row of them.
+        <span
+          className={`lab-status__flag lab-status__flag--${latestFlag}`}
+          title="Your laboratory's own marking, from the range printed on that report"
+        >
+          {flag}
+        </span>
       ) : null}
+    </span>
+  );
+}
 
-      {/* A CHART WITH NO SCALE IS NOT THE SAME CHART, and a reader cannot see
-          the difference between the two kinds by looking. Counted, not left
-          to be inferred from a picture. */}
-      {unscaled ? (
-        <p className="hint">
-          {scaled
-            ? `${unscaled} of these had no reference range printed, so ${
-                unscaled === 1 ? 'its scale covers' : 'their scales cover'
-              } only the readings shown`
-            : 'The vertical scale on these covers only the readings shown'}
-          , and even a small change looks large.
-        </p>
-      ) : null}
+function LabPanels({ data }) {
+  const series = data?.series || [];
+  const readings = data?.readings || [];
+  if (!series.length && !readings.length) return null;
 
-      {plotted.map((entry) => (
-        <details className="trend-chart__block disclosure" key={entry.key}>
+  // ONE LIST, TWO KINDS OF PANEL, and the kind is decided by whether a line
+  // can honestly be drawn -- not by which array the parameter arrived in.
+  //
+  // A BLOCKED SERIES IS LISTED, NOT CHARTED. Its two reports printed different
+  // units, so there is no axis that can carry both; but the readings are the
+  // laboratory's and withholding them would lose the numbers to a presentation
+  // rule. They are shown exactly as a one-report reading is.
+  const panels = [
+    ...series.map((entry) =>
+      entry.blocked
+        ? {
+            key: entry.key,
+            name: entry.name,
+            rows: entry.points.map((p) => ({
+              date: p.date,
+              valueRaw: p.value,
+              unit: p.unit,
+            })),
+            // No movement for a blocked series -- the service withholds it,
+            // because two units have not been shown to have moved at all.
+            movement: entry.movement,
+            latestFlag: entry.latestFlag,
+          }
+        : {
+            key: entry.key,
+            name: entry.name,
+            chart: entry,
+            movement: entry.movement,
+            latestFlag: entry.latestFlag,
+            trend: entry.trend,
+            classified: entry.classified,
+          }
+    ),
+    // A reading that cannot be trended is still a reading: one report, or a
+    // result that is not a number. No chart, because one point is not a line.
+    // It has no movement either -- but the laboratory may still have marked
+    // it, and that marking is the one status it can carry.
+    ...readings.map((entry) => ({
+      key: entry.key,
+      name: entry.name,
+      rows: entry.rows,
+      movement: null,
+      latestFlag: entry.latestFlag,
+    })),
+  ];
+
+  return (
+    <>
+      {panels.map((panel) => (
+        <details className="trend-chart__block disclosure" key={`lab-${panel.key}`}>
           <summary className="disclosure__summary">
-            <h3 className="trend-chart__title">{entry.name}</h3>
+            <h3 className="trend-chart__title">{panel.name}</h3>
             <span className="disclosure__spacer" />
+            {/* READ OFF THE SERIES, so the pair exists exactly where a line
+                was drawn. A blocked panel and a single reading have no
+                `chart` and therefore no pair -- the first because its two
+                units were never shown to be comparable, the second because
+                one reading is not a change. Both print their numbers in full
+                on opening. */}
+            <ChangePair
+              from={panel.chart?.movementFrom}
+              to={panel.chart?.movementTo}
+              unit={panel.chart?.unit}
+            />
+            <LabStatus
+              movement={panel.movement}
+              latestFlag={panel.latestFlag}
+              trend={panel.trend}
+              classified={panel.classified}
+            />
             <span className="disclosure__chevron" aria-hidden="true" />
           </summary>
-          <TrendChart
-            label={entry.name}
-            unit={entry.unit}
-            points={entry.points.map((p) => ({
-              date: p.date,
-              value: p.value,
-              unit: p.unit,
-            }))}
-            // THE SCALE ONLY. Never `band` -- that prop is this platform's own
-            // declared optimal range and is drawn as a rectangle, and these
-            // numbers belong to the laboratory, not to us.
-            scaleOnly={entry.referenceScale}
-          />
-          {entry.referenceScale ? null : (
-            <p className="hint">
-              No reference range for this test could be read from your reports,
-              so this scale covers only the readings shown.
+          {panel.chart ? (
+            <TrendChart
+              label={panel.chart.name}
+              unit={panel.chart.unit}
+              points={panel.chart.points.map((p) => ({
+                date: p.date,
+                value: p.value,
+                unit: p.unit,
+              }))}
+              // THE SCALE ONLY. Never `band` -- that prop is this platform's
+              // own declared optimal range and is drawn as a rectangle, and
+              // these numbers belong to the laboratory, not to us.
+              scaleOnly={panel.chart.referenceScale}
+            />
+          ) : (
+            <p className="trend-chart__readings">
+              {panel.rows
+                .map(
+                  (r) =>
+                    `${r.valueRaw ?? ''}${r.unit ? ` ${r.unit}` : ''} (${readingDate(r.date)})`
+                )
+                .join(' · ')}
             </p>
           )}
         </details>
       ))}
-
-      {/* A UNIT DISAGREEMENT IS A RESULT, NOT A REASON TO HIDE THE READINGS.
-          Two scales on one axis is the failure 6z caught once already, so no
-          line is drawn -- but the values are the laboratory's and the reader
-          is entitled to them, with the disagreement named. */}
-      {blocked.length ? (
-        <div className="lab-series__blocked">
-          {blocked.map((entry) => (
-            <p key={entry.key}>
-              <strong>{entry.name}</strong>{' '}
-              {entry.points
-                .map((p) => `${p.value} ${p.unit || ''}`.trim())
-                .join(' \u2192 ')}
-              {' \u2014 '}
-              reported in different units ({entry.blocked.units.join(' and ')}),
-              so these are not plotted together.
-            </p>
-          ))}
-        </div>
-      ) : null}
-
-      {/* WHAT WAS CONSIDERED, so a reader seeing ten panels can tell that
-          twenty-two parameters were looked at. An absence that is counted is
-          not the same as one that is silent. */}
-      <p className="hint">
-        {data.consideredCount} parameter
-        {data.consideredCount === 1 ? '' : 's'} considered.
-        {data.singleReportCount
-          ? ` ${data.singleReportCount} appeared on only one report, so there is nothing to compare them against.`
-          : ''}
-        {data.notNumericCount
-          ? ` ${data.notNumericCount} were not reported as numbers.`
-          : ''}
-      </p>
-    </section>
+    </>
   );
 }
 
-function Trends({ data, history }) {
+function Trends({ data, history, labSeries }) {
   const features = data?.features ? Object.values(data.features) : [];
   const summary = data?.summary;
+  const hasLab = Boolean(
+    (labSeries?.series || []).length || (labSeries?.readings || []).length
+  );
+
+  // WHAT THIS CARD CAN ACTUALLY DRAW, DECIDED ONCE.
+  //
+  // Two kinds of feature produce no chart: one that is not a quantity with a
+  // trajectory at all (`age`, `sex`), and one with no reading to place. Both
+  // used to keep a row in a table below this list, and that table carried the
+  // service's own sentence saying why.
+  //
+  // THAT TABLE IS GONE. It printed the same direction word and the same
+  // refusal sentence already shown on every chart above it, for the nine
+  // features that have a chart -- the reader asked for the repetition to go.
+  // The three that had no chart (`age`, `sex`, `smoking_history`) are profile
+  // answers rather than laboratory results, and they still appear in the
+  // comparison table further down this page.
+  //
+  // THE PREDICATE LIVES HERE AND NOWHERE ELSE. The empty line at the bottom
+  // of this card depends on it too, and it used to hang off `features.length`
+  // -- which was safe only while a table printed a row per feature. A payload
+  // carrying nothing but unchartable features would now leave this card
+  // completely blank, saying neither a trend nor why there is none. A second
+  // copy of the test is how the two come to disagree.
+  const charted = features.filter(
+    (trend) =>
+      !NOT_A_TRAJECTORY.has(trend.outcome) && (trend.points || []).length > 0
+  );
 
   return (
     <section className="card">
@@ -336,16 +444,12 @@ function Trends({ data, history }) {
         </p>
       ) : null}
 
-      {/* THE CHARTS SIT ABOVE THE TABLE AND SAY THE SAME THINGS. The table
-          stays the record -- it carries the service's own refusal sentence for
-          every feature, including the ones with nothing to plot; the charts
-          carry what a table cannot, which is where the line STOPS. */}
-      {features.map((trend) => {
-        if (NOT_A_TRAJECTORY.has(trend.outcome)) return null;
+      {/* THE CHARTS ARE THE RECORD NOW. Each one carries the direction word,
+          the service's own refusal sentence when there is no direction, and
+          the thing a table could never show -- where the line STOPS. The
+          table that used to repeat the first two is gone; see `charted`. */}
+      {charted.map((trend) => {
         const props = chartPropsFor(trend);
-        // At least one real reading, or there is nothing to place: the row
-        // below still carries the service's own sentence saying why.
-        if (!props.points.length) return null;
         // CLOSED BY DEFAULT, AND THE SUMMARY CARRIES THE FINDING.
         //
         // Nine charts at ~200px each were most of this page. Collapsing them
@@ -367,6 +471,13 @@ function Trends({ data, history }) {
           >
             <summary className="disclosure__summary">
               <h3 className="trend-chart__title">{props.label}</h3>
+              {/* Module 28's OWN pair. Absent on a feature with one usable
+                  reading, which is the same feature that gets no line. */}
+              <ChangePair
+                from={trend.change?.first_value}
+                to={trend.change?.last_value}
+                unit={trend.canonical_unit}
+              />
               {declared ? (
                 <span className={`trend trend--${trend.trend}`}>{trend.trend}</span>
               ) : (
@@ -401,23 +512,13 @@ function Trends({ data, history }) {
         );
       })}
 
-      {features.length ? (
-        <table className="lab-table">
-          <thead>
-            <tr>
-              <th scope="col">Parameter</th>
-              <th scope="col">Direction</th>
-              <th scope="col">First → latest</th>
-              <th scope="col">Readings</th>
-            </tr>
-          </thead>
-          <tbody>
-            {features.map((trend) => (
-              <TrendRow key={trend.feature} trend={trend} />
-            ))}
-          </tbody>
-        </table>
-      ) : (
+      {/* THE SAME LIST, NOT A SECOND ONE. See LabPanels. */}
+      <LabPanels data={labSeries} />
+
+      {charted.length || hasLab ? null : (
+        // Only when there is genuinely nothing on this card. The charts and
+        // panels above are parameters that WERE followed, so printing this
+        // beside them would be the page contradicting itself.
         <p className="empty">
           No parameters could be followed across your reports yet.
         </p>
@@ -855,8 +956,11 @@ export default function Timeline() {
         <p className="error" role="alert">{state.trendsError}</p>
       ) : (
         <>
-          <Trends data={state.trends?.trends} history={state.trends?.history} />
-          <LabSeries data={state.trends?.labSeries} />
+          <Trends
+            data={state.trends?.trends}
+            history={state.trends?.history}
+            labSeries={state.trends?.labSeries}
+          />
         </>
       )}
 

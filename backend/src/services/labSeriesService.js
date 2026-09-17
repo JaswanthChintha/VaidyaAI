@@ -129,6 +129,80 @@ function numericBound(raw) {
 }
 
 /**
+ * THE LABORATORY'S OWN HIGH/LOW MARKING, lower-cased, or null.
+ *
+ * `high`, `low`, `normal` or `critical` as Module 4 recorded it. Not this
+ * platform's verdict and never presented as one -- every field carrying it is
+ * named `labFlag` for that reason.
+ */
+function labFlagOf(raw) {
+  if (typeof raw !== 'string') return null;
+  const text = raw.trim().toLowerCase();
+  return text === '' ? null : text;
+}
+
+/**
+ * WHICH WAY THE NUMBERS WENT. Arithmetic, not a judgement.
+ *
+ * ==========================================================================
+ * WHY THIS IS NOT `improving` / `worsening` / `stable`, AND CANNOT BE
+ * ==========================================================================
+ *
+ * Those three words are Module 28's, and each needs something this module does
+ * not have and must not invent:
+ *
+ *   - `improving` / `worsening` need POLARITY -- whether a rising value is
+ *     better or worse for the patient. Nothing here knows that for an
+ *     unassessed test. Module 28 refuses with CLINICAL_DIRECTION_UNKNOWN
+ *     rather than guess, and so does this.
+ *   - `stable` needs a STABILITY BAND -- the reference change value below
+ *     which two draws from an unchanged person differ anyway. Without one,
+ *     calling a 7 % move "stable" states something nobody measured, which is
+ *     the single most repeated hazard on this project.
+ *
+ * `rose`, `fell` and `same` need neither. They describe the reader's own two
+ * numbers and claim nothing about what the change means. Module 28 keeps the
+ * same separation for exactly this reason -- cholesterol came back
+ * `trend: stable` with `direction: falling`, and both were true.
+ *
+ * FIRST TO LATEST, which is what the word means and all it means. A series
+ * whose first and last readings match reports `same` even if it moved in
+ * between; the chart beside it shows every point.
+ */
+/*
+ * THE WORD AND THE TWO VALUES IT IS ABOUT, FROM ONE COMPARISON.
+ *
+ * This returned the word alone. The page now prints the pair beside it on the
+ * collapsed row, so the values are returned WITH the word rather than left to
+ * be picked out again by the consumer.
+ *
+ * WHAT THIS IS NOT. It is not guarding against a null in the middle of a
+ * series: `points` is built from `numeric`, which is already
+ * `entries.filter((e) => e.value !== null)`, so every point a series carries
+ * has a number and the filter below can remove nothing. Checked, rather than
+ * assumed -- the first version of this comment claimed the opposite and was
+ * wrong. The filter stays as this file's belt-and-braces convention for a
+ * caller who later widens what a point may hold, the same reasoning 6au
+ * recorded for the re-check in `assembleHistory`.
+ *
+ * WHAT IT IS FOR: one comparison, one place. `points[0]` and the last point
+ * happen to give the same answer today, and a frontend reading them would be
+ * a second copy of the rule that decides WHICH readings this word describes.
+ * If that rule ever changes -- to skip a questionable reading, say -- the word
+ * and the numbers beside it move together instead of drifting apart. A row
+ * whose numbers disagree with its own direction word is the failure 6z caught
+ * on the assessed charts.
+ */
+function movementOf(points) {
+  const values = points.map((p) => p.value).filter((v) => v !== null);
+  if (values.length < 2) return null;
+  const first = values[0];
+  const last = values[values.length - 1];
+  const word = last === first ? 'same' : last > first ? 'rose' : 'fell';
+  return { word, first, last };
+}
+
+/**
  * THE SCALE, AS THE UNION OF WHAT THE REPORTS PRINTED.
  *
  * ==========================================================================
@@ -258,6 +332,14 @@ function buildLabSeries(snapshots, printed) {
         printed: String(name),
         unit: entry.unit === null || entry.unit === undefined ? null : String(entry.unit),
         value: numericValue(entry.value_raw),
+        // AS THE LABORATORY PRINTED IT. A reading that is not a number is
+        // still a result -- "Negative", "Trace", "Not Detected" -- and the
+        // only way to show one is to show the text.
+        valueRaw:
+          entry.value_raw === null || entry.value_raw === undefined
+            ? null
+            : String(entry.value_raw),
+        labFlag: labFlagOf(source && source.flag),
         labReferenceLow: numericBound(source && source.reference_low),
         labReferenceHigh: numericBound(source && source.reference_high),
         // AS PRINTED. The only honest thing to show for `F: 36 - 46 M: 40 -
@@ -271,6 +353,19 @@ function buildLabSeries(snapshots, printed) {
   }
 
   const series = [];
+  // PARAMETERS THAT CANNOT MAKE A SERIES, BUT ARE STILL ON THE REPORT.
+  //
+  // These used to be counted and discarded. A reader holding two reports with
+  // 22 parameters between them saw twelve, and a number saying twenty-two had
+  // been "considered" -- which answers the question "how many did you look at"
+  // and not the question they were asking, which is "where are the rest".
+  //
+  // A parameter seen once cannot be trended and nothing here pretends
+  // otherwise: these carry readings and dates, no line, no direction and no
+  // scale. But "we cannot draw this" is not a reason to withhold the
+  // laboratory's own number, and withholding it is this file's standing
+  // failure mode -- an absence that reads as though there were nothing there.
+  const readings = [];
   let singleReportCount = 0;
   let notNumericCount = 0;
 
@@ -280,18 +375,43 @@ function buildLabSeries(snapshots, printed) {
     entries.sort((a, b) => new Date(a.date) - new Date(b.date));
 
     const numeric = entries.filter((e) => e.value !== null);
-    if (entries.length < 2) {
-      singleReportCount += 1;
-      continue;
-    }
-    if (numeric.length < 2) {
-      notNumericCount += 1;
-      continue;
-    }
 
     // The name the reader saw most recently, so the label matches the report
     // in their hand rather than an older spelling of the same test.
     const name = entries[entries.length - 1].printed;
+
+    // THE MARKING ON THE MOST RECENT REPORT, AND ONLY THAT ONE.
+    //
+    // Strictly the last row's flag, never the last row that HAPPENED to carry
+    // one. PCV is the case that decides it: the older report marked it low and
+    // the newer marked nothing, and reaching back for the older marking would
+    // present a stale verdict as the reader's current status. Null here means
+    // "the latest laboratory marked nothing", which is a different fact from
+    // "normal" and stays different all the way to the screen.
+    const latestFlagOf = (rows) => (rows.length ? rows[rows.length - 1].labFlag : null);
+
+    // EVERY row, numeric or not, as printed. Used only by `readings`.
+    const asPrinted = () =>
+      entries.map((e) => ({
+        date: e.date,
+        reportId: e.reportId,
+        printed: e.printed,
+        value: e.value,
+        valueRaw: e.valueRaw,
+        unit: e.unit,
+        labFlag: e.labFlag,
+      }));
+
+    if (entries.length < 2) {
+      singleReportCount += 1;
+      readings.push({ key, name, reason: 'one_report', rows: asPrinted(), latestFlag: latestFlagOf(entries) });
+      continue;
+    }
+    if (numeric.length < 2) {
+      notNumericCount += 1;
+      readings.push({ key, name, reason: 'not_numeric', rows: asPrinted(), latestFlag: latestFlagOf(entries) });
+      continue;
+    }
 
     const units = [...new Set(numeric.map((e) => unitKey(e.unit)))];
     const blocked =
@@ -317,10 +437,14 @@ function buildLabSeries(snapshots, printed) {
       // THE LABORATORY'S OWN, and named so no reader of this object can
       // mistake whose numbers they are -- the same naming
       // `dashboardService.buildUnanalysedSection` uses for the same fact.
+      labFlag: e.labFlag,
       labReferenceLow: e.labReferenceLow,
       labReferenceHigh: e.labReferenceHigh,
       labReferenceRaw: e.labReferenceRaw,
     }));
+
+    // ONE CALL, because the word and the pair below come out of it together.
+    const movement = blocked ? null : movementOf(points);
 
     series.push({
       key,
@@ -328,6 +452,23 @@ function buildLabSeries(snapshots, printed) {
       unit: blocked ? null : numeric[numeric.length - 1].unit,
       blocked,
       points,
+      // WHICH WAY THE NUMBERS WENT -- arithmetic, never a verdict. See
+      // `movementOf` for why this is not improving/worsening/stable.
+      //
+      // NULL ON A BLOCKED SERIES. Two reports printing different units have
+      // not been shown to have moved at all: 101.9 U/L and 13 IU/L may be the
+      // same measurement twice, and "fell" would be this file asserting a
+      // change it refused to plot one line above.
+      movement: movement ? movement.word : null,
+      // THE TWO READINGS THE WORD IS ABOUT, so the collapsed row can show
+      // them without choosing them. Null exactly when `movement` is null --
+      // a blocked series and a series with fewer than two usable numbers both
+      // get no pair, because in neither case has a change been established.
+      movementFrom: movement ? movement.first : null,
+      movementTo: movement ? movement.last : null,
+      // The laboratory's marking for the MOST RECENT reading -- the report in
+      // the reader's hand. Null when that laboratory marked nothing.
+      latestFlag: latestFlagOf(points),
       // SETS THE SCALE, IS NOT A BAND, AND IS NEVER DRAWN. Null on a blocked
       // series, so a mixed-unit union cannot be handed to anything.
       referenceScale: blocked ? null : referenceScaleOf(points),
@@ -348,9 +489,12 @@ function buildLabSeries(snapshots, printed) {
   // incidental one -- the order the extraction happened to read them in --
   // would look like a ranking.
   series.sort((a, b) => a.name.localeCompare(b.name));
+  readings.sort((a, b) => a.name.localeCompare(b.name));
 
   return {
     series,
+    // Shown, not just counted. See the declaration above.
+    readings,
     // STATED, NOT IMPLIED BY ABSENCE. A reader who sees nine charts should be
     // able to tell that eighteen parameters were considered.
     consideredCount: groups.size,
@@ -370,8 +514,98 @@ function buildLabSeries(snapshots, printed) {
   };
 }
 
+/**
+ * THE SERIES MODULE 35 CAN BE ASKED ABOUT.
+ *
+ * A series qualifies only when it has everything the classifier needs and
+ * nothing it must not be given:
+ *
+ *   - NOT BLOCKED. Two units have not been shown to have moved at all, so
+ *     there is no change to classify -- the same reason `movement` is null.
+ *   - TWO NUMERIC READINGS, because a trend needs two ends.
+ *
+ * The laboratory's own interval travels with it, for a "both extremes are
+ * unfavourable" polarity to measure against. The model is never asked for one.
+ */
+function classifiableSeries(built) {
+  const rows = (built && Array.isArray(built.series) ? built.series : []).filter(
+    (s) => !s.blocked && s.points.length >= 2
+  );
+  return rows.map((s) => ({
+    test_name: s.name,
+    first_value: s.points[0].value,
+    last_value: s.points[s.points.length - 1].value,
+    unit: s.unit === undefined ? null : s.unit,
+    reference_low: s.referenceScale ? s.referenceScale.low : null,
+    reference_high: s.referenceScale ? s.referenceScale.high : null,
+  }));
+}
+
+/**
+ * Attach Module 35's verdicts to the series they belong to.
+ *
+ * ==========================================================================
+ * A VERDICT IS ONLY ATTACHED WHEN IT CLASSIFIED SOMETHING
+ * ==========================================================================
+ *
+ * `outcome` is what decides this, never `trend` -- the same rule the assessed
+ * timeline branches on, and for the same reason: a payload carrying a
+ * direction without a classification must not be rendered as though it had
+ * one. §6z printed the string "null" as a direction once already.
+ *
+ * A series with no verdict, or a refused one, keeps the `movement` word it
+ * already had and gains nothing. That is the designed degradation: a spent
+ * quota, an unconfigured key and a test whose direction of benefit is not
+ * established all land in the same place, which is the panel saying what the
+ * numbers did and not what it means.
+ *
+ * MATCHED BY THE NAME THAT WAS SENT. `classifiableSeries` sends `s.name` and
+ * this reads `test_name` back, so a service that echoes the name it was given
+ * matches exactly. Nothing is normalised here -- a fuzzy match would let one
+ * test's verdict land on another's panel, which is the worst failure this
+ * whole feature can have.
+ */
+function attachVerdicts(built, verdicts) {
+  const byName = new Map();
+  for (const entry of Array.isArray(verdicts) ? verdicts : []) {
+    const row = entry && typeof entry === 'object' ? entry : {};
+    if (typeof row.test_name === 'string' && row.test_name && !byName.has(row.test_name)) {
+      byName.set(row.test_name, row);
+    }
+  }
+  if (!byName.size) return built;
+
+  const series = (built.series || []).map((s) => {
+    const verdict = byName.get(s.name);
+    const classified =
+      verdict &&
+      verdict.outcome === 'TREND_CLASSIFIED' &&
+      typeof verdict.trend === 'string' &&
+      verdict.trend !== '';
+    if (!classified) return s;
+    return {
+      ...s,
+      trend: verdict.trend,
+      classified: true,
+      // THE ARITHMETIC, CARRIED. A reader who asks why a fall is "stable" is
+      // entitled to the threshold it was measured against, and a reviewer is
+      // entitled to recompute it.
+      significantChangePct: verdict.significant_change_pct ?? null,
+      trendBasis: typeof verdict.basis === 'string' ? verdict.basis : null,
+    };
+  });
+
+  return {
+    ...built,
+    series,
+    classifiedCount: series.filter((s) => s.classified === true).length,
+  };
+}
+
 module.exports = {
   buildLabSeries,
+  classifiableSeries,
+  attachVerdicts,
   nameKey,
   unitKey,
   numericValue,

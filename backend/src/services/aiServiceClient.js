@@ -127,6 +127,7 @@ const PATHS = Object.freeze({
   clinicianSummary: '/api/v1/explain/clinician-summary',
   summaryProse: '/api/v1/explain/summary-prose',
   findingContext: '/api/v1/explain/finding-context',
+  labPolarity: '/api/v1/explain/lab-polarity',
   timeline: '/api/v1/timeline/trends',
   comparison: '/api/v1/comparison/reports',
   progress: '/api/v1/progress/score',
@@ -165,6 +166,7 @@ const STAGES = Object.freeze({
   EXPLANATION: 'explanation',
   GUIDANCE: 'guidance',
   GLOSSARY: 'glossary',
+  LAB_POLARITY: 'lab_polarity',
   // Modules 28, 29, 30 and 32. These four DO have a far-side string to match
   // and they match it exactly: `STAGE_TIMELINE` in app/schemas/timeline.py,
   // `STAGE_COMPARISON` in comparison.py, `STAGE_PROGRESS` in progress.py and
@@ -944,6 +946,53 @@ async function describeParameters({ testNames, requestId }) {
   });
 }
 
+/**
+ * MODULE 35 - improving / worsening / stable for a test this platform does not
+ * assess.
+ *
+ * ==========================================================================
+ * WHY THIS ONE DOES SEND VALUES, AND WHY THAT IS STILL THE SAFETY PROPERTY
+ * ==========================================================================
+ *
+ * `describeParameters` above sends names and nothing else, and its comment
+ * says that is the safety property. This call sends two values per series, and
+ * the property is unchanged - because the boundary that matters is not this
+ * one. Module 35's PROMPT is built from `test_name` alone; the values are
+ * consumed by Module 28's own classifier, running in the Python service, which
+ * has received far more than this on every timeline request since it existed.
+ *
+ * So the split is: the MODEL is asked a question about the TEST, and the
+ * SERVICE does the arithmetic about the PERSON. Sending the values to the
+ * service is what makes it unnecessary to send them to the model.
+ *
+ * `reference_low` / `reference_high` are the interval the PATIENT'S OWN
+ * LABORATORY printed, forwarded so a "both extremes are bad" polarity has real
+ * bounds to measure against. The model is never asked for a range: an invented
+ * one is the most damaging hallucination available here and §6v records one
+ * reaching a patient already.
+ *
+ * The reply is cached per test name inside the Python service, so a second
+ * report carrying the same analytes costs nothing.
+ */
+async function classifyLabSeries({ series, requestId }) {
+  return postJson({
+    path: PATHS.labPolarity,
+    stage: STAGES.LAB_POLARITY,
+    payload: {
+      series: Array.isArray(series) ? series : [],
+    },
+    requestId,
+    // ITS OWN BUDGET, because this stage makes one model call per distinct
+    // test name. See `labPolarityTimeoutMs` - a stage's timeout is a claim
+    // about what it does, and this one must not borrow the model-free trends
+    // budget it travels beside.
+    timeoutMs: config.aiService.labPolarityTimeoutMs,
+    // NO RETRY, for the glossary's reason exactly: a timed-out call has
+    // already spent its model calls, and retrying spends them again.
+    retries: 0,
+  });
+}
+
 // ------------------------- history: trends / comparison / progress (28-30) ---
 
 /**
@@ -1349,6 +1398,7 @@ module.exports = {
   explainReport,
   lifestyleGuidance,
   describeParameters,
+  classifyLabSeries,
   analyseTrends,
   compareReports,
   scoreProgress,

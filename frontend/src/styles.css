@@ -838,6 +838,33 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
 /* Not a direction, and never coloured like one. */
 .trend-chart__nodirection { color: var(--muted); font-size: 13px; }
 
+/* THE TWO READINGS A DIRECTION WORD IS ABOUT, on the shut row.
+   Quiet on purpose: it restates what the chart draws, and it must not compete
+   with the parameter's name or the word beside it. NEVER COLOURED -- green and
+   rust mean better and worse on this page, and two readings mean neither. The
+   numerals are already monospace and tabular through `.value`. */
+.disclosure__pair { color: var(--muted); font-size: 13px; white-space: nowrap; }
+
+/* STATUS ON A PARAMETER THIS PLATFORM DOES NOT ASSESS.
+   Two chips, and neither is a trend classification -- see LabStatus in
+   Timeline.jsx for why improving/worsening/stable cannot be said here. */
+.lab-status { display: inline-flex; gap: 8px; align-items: center; font-size: 13px; }
+
+/* WHICH WAY THE NUMBERS WENT, AND DELIBERATELY UNCOLOURED.
+   Green and rust on this page mean better and worse. "rose" is arithmetic on
+   two readings and carries no such claim, so it must not borrow their ink --
+   a red "rose" beside an ESR would be a verdict nobody computed. */
+.lab-status__move { color: var(--muted); }
+
+/* THE LABORATORY'S OWN MARKING, in the same hues the results table uses for
+   the same fact (.flag--high / .flag--low), so one laboratory verdict does
+   not appear in two colours on two screens. */
+.lab-status__flag { font-weight: 700; }
+.lab-status__flag--high,
+.lab-status__flag--critical { color: var(--high); }
+.lab-status__flag--low { color: var(--medium); }
+.lab-status__flag--normal { color: var(--muted); font-weight: 600; }
+
 /* ==========================================================================
    PARAMETERS THIS TOOL DOES NOT ASSESS
    ==========================================================================
@@ -1538,16 +1565,21 @@ code, kbd, samp, pre { font-family: var(--font-mono); }
   line-height: 1.45;
 }
 
-/* The laboratory's own repeated parameters, where the units disagree.
-   No line is drawn and the readings are shown anyway -- a unit disagreement
-   is a result, not a reason to withhold the numbers. */
-.lab-series__blocked { margin-top: 14px; }
-.lab-series__blocked > p {
-  margin: 0 0 8px;
+/* A PARAMETER WITH READINGS BUT NO LINE, in the panel body where the chart
+   would be. Two kinds reach this: a parameter on a single report, and one
+   whose reports printed different units, where a shared axis would state a
+   comparison nobody can make. Both keep their numbers -- neither a missing
+   second reading nor a unit disagreement is a reason to withhold what the
+   laboratory printed.
+
+   Styled as the panel's quiet body, matching .trend-chart__why, so a panel
+   that opens onto readings does not read as a panel that failed to load. */
+.trend-chart__readings {
+  margin: 0 14px 12px;
   padding: 9px 12px;
   background: var(--header);
   border-radius: 8px;
   color: var(--mono);
   font-size: 13px;
-  line-height: 1.45;
+  line-height: 1.55;
 }
