@@ -287,3 +287,160 @@ def test_nothing_to_do_answers_with_an_empty_set_rather_than_throwing():
     assert out.verdicts == []
     assert out.requested == 0
     assert client.prompts == []
+
+
+def test_a_listed_test_uses_the_table_and_never_calls_the_model():
+    """THE FIX FOR A THRESHOLD THAT MOVED BETWEEN PAGE LOADS.
+
+    EOSINOPHILS was refused on one request and called `stable` on the next,
+    with the data unchanged, because the model returned a different CVi. A
+    listed test now costs no call at all, so the same readings always get the
+    same verdict -- and the figures are somewhere a reviewer can find them.
+    """
+    client = RecordingClient(answer(polarity="higher_is_worse", cva=99.0, cvi=99.0))
+    out = classify_lab_series(
+        [
+            LabSeriesInput(
+                test_name="C-REACTIVE PROTEIN(CRP)",
+                first_value=12.1,
+                last_value=38.9,
+                unit="mg/L",
+            )
+        ],
+        client,
+    )
+
+    # THE MODEL WAS NOT ASKED. Its answer above would have given a wildly
+    # different threshold, and the verdict must not contain it.
+    assert client.prompts == []
+    verdict = out.verdicts[0]
+    assert verdict.variation_source == "table"
+    assert verdict.significant_change_pct == 118
+    assert verdict.trend == "worsening"
+
+
+def test_a_table_threshold_is_NOT_reported_as_verified():
+    """The table is reviewable; that is not the same as reviewed.
+
+    Every row is `verified=False`, so the sentence a reader gets must say the
+    figure has not been checked -- and must name the source so it can be.
+    """
+    client = RecordingClient(answer())
+    out = classify_lab_series(
+        [LabSeriesInput(test_name="ESR", first_value=35.0, last_value=45.0, unit="mm/hr")],
+        client,
+    )
+
+    verdict = out.verdicts[0]
+    assert verdict.variation_verified is False
+    assert "NOT YET CHECKED" in verdict.basis
+    assert "biologicalvariation.eu" in verdict.basis
+
+
+def test_an_unlisted_test_still_asks_the_model_and_says_so():
+    """The fall-through is the previous behaviour, and it is labelled.
+
+    A model-supplied figure has no source to check, and the sentence says that
+    rather than naming one that does not exist.
+    """
+    client = RecordingClient(answer(polarity="higher_is_worse", cva=4.0, cvi=20.0))
+    out = classify_lab_series(
+        [LabSeriesInput(test_name="Frimbulator Factor", first_value=1.0, last_value=100.0)],
+        client,
+    )
+
+    assert len(client.prompts) == 1
+    verdict = out.verdicts[0]
+    assert verdict.variation_source == "model"
+    assert verdict.variation_verified is False
+    assert verdict.variation_reference is None
+    assert "NOT from a reviewable source" in verdict.basis
+
+
+def test_a_series_that_did_not_move_is_stable_not_refused():
+    """0 -> 0 is an ordinary shape on a differential count, and it was broken.
+
+    FOUND LIVE ON BASOPHILS, which is 0 % on both of this account's reports.
+    Module 35 sets `min_absolute_change` to 0.0 because it has no canonical
+    unit to set a floor in, so a zero move cleared the absolute test, fell
+    through to `_is_significant`'s undefined-percentage branch for a zero
+    first value, and came back SIGNIFICANT. `_classify` was then asked to
+    direct a change that had not happened, and refused -- correctly, since both
+    readings sit inside the printed interval. The panel showed "no change" and
+    no trend word while every parameter beside it showed one, and the reader
+    asked why that row was different.
+
+    A MOVE OF ZERO IS NOT A SIGNIFICANT MOVE. No band permits it.
+    """
+    client = RecordingClient(answer(polarity="best_within_range", cva=10.0, cvi=20.2))
+    out = classify_lab_series(
+        [
+            LabSeriesInput(
+                test_name="Zorblex",
+                first_value=0.0,
+                last_value=0.0,
+                unit="%",
+                reference_low=0.0,
+                reference_high=2.0,
+            )
+        ],
+        client,
+    )
+
+    verdict = out.verdicts[0]
+    assert verdict.outcome == "TREND_CLASSIFIED"
+    assert verdict.trend == "stable"
+
+
+def test_a_real_move_from_zero_is_still_judged_on_its_size():
+    """The guard above must not swallow the branch it sits in front of.
+
+    `_is_significant` returns True from a zero first value BECAUSE the
+    percentage is undefined there, and that is right for 0 -> 3: the reader's
+    value went from nothing to something and only the absolute floor can speak.
+    A guard that refused every series starting at zero would delete that.
+    """
+    client = RecordingClient(answer(polarity="higher_is_worse", cva=4.0, cvi=20.0))
+    out = classify_lab_series(
+        [
+            LabSeriesInput(
+                test_name="Zorblex",
+                first_value=0.0,
+                last_value=3.0,
+                unit="%",
+            )
+        ],
+        client,
+    )
+
+    verdict = out.verdicts[0]
+    assert verdict.outcome == "TREND_CLASSIFIED"
+    assert verdict.trend == "worsening"
+
+
+def test_a_move_inside_the_printed_range_that_clears_the_noise_gets_no_direction():
+    """The other half of the rule, so "stable" cannot creep on to it.
+
+    MCH went 26.2 -> 29.2 pg against a printed 26-33 with a 6 % noise band:
+    an 11.5 % move is real, and both readings are inside the laboratory's own
+    interval, so there is no better or worse to state. Calling that "stable"
+    would deny a change the same arithmetic just found.
+    """
+    client = RecordingClient(answer(polarity="best_within_range", cva=1.0, cvi=2.0))
+    out = classify_lab_series(
+        [
+            LabSeriesInput(
+                test_name="Zorblex",
+                first_value=26.2,
+                last_value=29.2,
+                unit="pg",
+                reference_low=26.0,
+                reference_high=33.0,
+            )
+        ],
+        client,
+    )
+
+    verdict = out.verdicts[0]
+    assert verdict.outcome == "CHANGE_WITHIN_REFERENCE_INTERVAL"
+    assert verdict.trend is None

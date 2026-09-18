@@ -3,7 +3,7 @@
 > Living context file for the VaidyaAI build. Keep this in the project folder so the
 > project's history, decisions, and state survive independently of any chat session.
 >
-> **Last updated:** 2026-09-17 (§6av) · **All 32 modules + frontend built, plus 33, 34 and 35**
+> **Last updated:** 2026-09-18 (§6aw) · **All 32 modules + frontend built, plus 33, 34, 35 and 36**
 >
 > The build history is §1–§6w. The recent design and safety work is:
 > the "Instrument" design system (§6x) · the timeline trend chart (§6z) · five
@@ -12,13 +12,14 @@
 > picker for the comparison (§6ah) · and a third session of design, WCAG AA
 > and internal-vocabulary work (§6aj–§6ao).
 >
-> **⚠ READ §6av FIRST, THEN §6au, THEN §6at.** Those are the current
-> handovers. §6av is the newest: it documents Module 35, which existed in an
-> uncommitted tree with no record of it, and it SUPERSEDES §6au's conclusion
-> that improving/worsening/stable could not be produced for an unassessed
-> test. §6au closes one item off §6at's open list; §6at is the long one and
-> still holds except where the two later sections correct it. §6as is older
-> again and its test counts are off by 7.
+> **⚠ READ §6aw FIRST, THEN §6av, THEN §6au.** Those are the current
+> handovers. §6aw is the newest: Module 36 (test-name joining), a hand-written
+> variation table that takes precedence over the model, a zero-change defect
+> in the SHARED significance test, and the comparison card brought to the same
+> coverage as the timeline. §6av documents Module 35 and supersedes §6au's
+> conclusion that improving/worsening/stable could not be produced for an
+> unassessed test. §6at is the long one and still holds except where the later
+> sections correct it. §6as is older again and its test counts are off by 7.
 >
 > The line that stood here — "nothing since `6dc3409` is committed, 45 files,
 > three sessions deep, read §6ap first" — **is history.** Everything is
@@ -39,10 +40,10 @@ about any of them. That is the fifth time on this project.
 
 | | Tests |
 |---|---|
-| `backend/` (Node/Express) | **725** passing + 3 skipped |
-| `ai-service/` (Python/FastAPI) | **3,931** passing + 7 skipped (3,938 collected) |
-| `frontend/` (React/Vitest) | **368** passing, 0 suites failed |
-| **Total** | **5,024** -- ALL THREE re-run green 2026-09-17, at the commit below |
+| `backend/` (Node/Express) | **743** passing + 3 skipped (15 suites, 0 failed) |
+| `ai-service/` (Python/FastAPI) | **3,992** passing + 7 skipped (3,999 collected, 0 failures, 0 errors) |
+| `frontend/` (React/Vitest) | **383** passing, 0 suites failed |
+| **Total** | **5,118** -- ALL THREE re-run green 2026-09-18, at the commit below |
 
 > **⚠ THE 4,852 IN EVERY EARLIER SECTION WAS 7 TOO HIGH.** §6as recorded
 > ai-service's COLLECTED total (3,865) as its PASSED count; that day's real
@@ -75,7 +76,7 @@ about any of them. That is the fifth time on this project.
 > habit is the only reason it wasn't.
 
 
-> ### ▶ NEW CHAT? START AT §6av, THEN §6au, THEN §6at.
+> ### ▶ NEW CHAT? START AT §6aw, THEN §6av, THEN §6au.
 >
 > Between them they have the run commands, the state of the repository, what
 > `Test 2.pdf` and `Test 3.pdf` are and why they matter, and what is open.
@@ -9133,6 +9134,297 @@ repeating every chart~~ · ~~no numbers on a collapsed row~~.
 was available again. **One call to `/lab-polarity` established that before any
 conclusion was drawn from a page** — the alternative is reading a blank panel
 and debugging code that is working exactly as designed. Cost: one of twenty.
+
+---
+
+## 6aw. THE 2026-09-18 SESSION — READ THIS FIRST
+
+**Driven entirely by the reader looking at two screens and counting.** Four
+things, in the order they were found:
+
+1. **A change of ZERO was being called significant** in the SHARED
+   significance test. Reachable only through Module 35.
+2. **MODULE 36** — which printed test names are the same test, from names
+   alone. Ten stranded readings became five trended parameters.
+3. **A HAND-WRITTEN VARIATION TABLE** takes precedence over the model, so a
+   threshold stops moving between page loads and can be reviewed.
+4. **The comparison card** brought to the same coverage as the timeline: 12
+   rows → 25.
+
+| | Tests | Last run |
+|---|---|---|
+| `backend/` | **743** passed, 3 skipped, 15 suites, 0 failed | 2026-09-18 ✅ |
+| `ai-service/` | **3,992** passed, 7 skipped (3,999 collected, 0 failures, 0 errors) | 2026-09-18 ✅ (`.env` moved aside) |
+| `frontend/` | **383** passed, 0 suites failed | 2026-09-18 ✅ |
+| **Total** | **5,118** | |
+
+### ⚠ A CHANGE OF ZERO WAS SIGNIFICANT, IN THE FUNCTION EVERY MODULE SHARES
+
+`trend_analyzer._is_significant`:
+
+```python
+absolute = abs(last - first)            # 0
+if absolute < band.min_absolute_change: # 0 < 0.0 is False -- not caught
+    return False
+if first == 0:
+    return True                         # <- a zero change, called significant
+```
+
+**Reachable ONLY through Module 35**, which passes `min_absolute_change=0.0`
+because it has no canonical unit to set a floor in and documents that choice.
+Every band in `trend_polarity.py` declares a positive floor (0.1 to 25.0), so
+no assessed feature can reach the branch with a zero change. Checked before
+touching shared code.
+
+The symptom the reader saw: **BASOPHILS is 0 % on both reports**, so the zero
+change was handed to `_classify` as a real one, which then refused to direct it
+— and the panel showed "no change" with no trend word while every neighbour had
+one. *"why some are showing stable even though there are changes in the
+values?"* was the question about the OTHER rows; this was the row that had the
+opposite problem.
+
+Fixed with `if absolute == 0: return False`. **Mutation-tested**: the mutant
+(`absolute < 0`, never true) was confirmed by grep to apply and by `ast.parse`
+to parse, then KILLED by the test written for it. Reverted and re-checked.
+
+### ▶ MODULE 36 — WHICH PRINTED NAMES ARE THE SAME TEST
+
+`app/services/lab_name_match.py`. Ten of the reader's unassessed parameters
+were five tests printed twice under names `nameKey` cannot join:
+
+```
+AVERAGE BLOOD GLUCOSE  ·  Estimated Average Glucose
+TOTAL WBC COUNT        ·  WBC Count
+RBC COUNT              ·  T.RBC
+TSH                    ·  TSH (Thyroid Stim Hormone)
+NEUTROPHILS            ·  Polymorphs
+```
+
+A parameter seen once has no first and no latest, so it can carry no direction
+at all — not because anything refused, but because a change needs two numbers.
+**Joining them is the only way those rows get one.**
+
+* **THE PROMPT IS NAMES AND NOTHING ELSE**, and the request model has NO FIELD
+  for a value — a stronger guarantee than Module 35's, which carries the
+  readings and keeps them from the prompt by construction.
+* **ONE CALL FOR THE WHOLE SET**, because "are these the same test" is a
+  question about the set. Cached against the folded name set.
+* **FIVE LOCAL GATES**: echo validation (a name not sent is dropped with its
+  group), group-of-one, **a name in two groups invalidates BOTH** (there is no
+  basis for preferring the one emitted first), the qualifier guard below, and
+  a reported ceiling.
+* **`joinedFrom` reaches the screen.** A reader whose report says `Polymorphs`
+  is looking at a panel headed `NEUTROPHILS`; a join nobody can see is the page
+  rewriting their report rather than regrouping it.
+* **A WRONG JOIN CANNOT DRAW A LINE.** If two joined names disagree about
+  units, `blocked` catches it and the series gets no scale, no movement and no
+  pair — the safety net was already there.
+
+**Backend:** `buildLabSeries(snapshots, printed, aliases)` — optional third
+argument, same degradation pattern as `printed`; `unjoinedNames` and
+`aliasMap`; a two-pass controller (build, ask, rebuild) where every failure
+keeps the first pass.
+
+**SERIES ARE NOT OFFERED FOR JOINING, only readings.** Merging two existing
+series would silently redraw charts the reader has already looked at on the
+strength of a model call. The case exists — a third spelling of an
+already-trended test — and is left alone deliberately.
+
+### ⚠ THE QUALIFIER GUARD, AND THE VERSION OF IT THAT WAS TOO WEAK
+
+First version: contrast SETS, refused only when BOTH names carried a different
+member. It caught `Free Frimbulator` vs `Total Frimbulator` and **let
+`Free T3` vs `T3` straight through**, because the bare name carries no member
+at all. Free and total are different tests, and §6au names that exact pair as
+the reason not to subset-match.
+
+Now: **the qualifiers present on each side must be the SAME SET.**
+
+```
+_QUALIFIERS = free bound direct indirect fasting random postprandial pp
+              pre post left right
+```
+
+**`total` IS DELIBERATELY ABSENT** — it is a clarifier, not a qualifier.
+`TOTAL WBC COUNT` and `WBC Count` are one test, and that is the join the module
+was built for. The asymmetry is real: adding `free` selects a different
+analyte, adding `total` names the whole of the one already meant. 12 of 12
+cases correct, including `Free T3` vs `Free Triiodothyronine` → JOIN.
+
+> **A CONTROL IN A PROMPT IS NOT A CONTROL.** The prompt already said free and
+> total are different. That is an instruction, and the guard is what makes it
+> true — this project's own repeated lesson, applied to a model's output for
+> the first time.
+
+### ▶ THE VARIATION FIGURES MOVED BETWEEN PAGE LOADS, SO THEY MOVED INTO A TABLE
+
+`app/data/lab_variation.py`, 16 rows. The reader asked for the wobble limits to
+be *verified*, after EOSINOPHILS was refused on one request and read `stable`
+on the next **with the data unchanged** — the model had returned a different
+CVi (63 % vs under 60 %).
+
+* **THE TABLE IS CONSULTED FIRST.** A listed test costs NO model call at all:
+  the row carries the polarity as well as the two figures, so the quota stops
+  being a factor for the tests that matter most, and the verdict is
+  reproducible.
+* **A MISS FALLS THROUGH TO THE MODEL**, which is the previous behaviour.
+* **THE TABLE IS NOT EXEMPT FROM THE CV GATE.** A typo here would reach a
+  patient carrying the authority of having been reviewed.
+* **EVERY ROW IS `verified=False`.**
+
+> **⚠ THE NUMBERS ARE NOT VERIFIED AND THE FILE SAYS SO IN THREE PLACES.**
+> They are literature-typical figures recorded WITH the source they should be
+> checked against (EFLM Biological Variation Database; Ricós et al. 1999).
+> **They were not read off that source.** `verified=True` may only be set by a
+> human who has compared a row to its `source` — not by a model, not by the
+> file's author, and not because the number looks reasonable.
+> `test_no_row_claims_to_be_verified` fails loudly if one is flipped.
+>
+> What changed is not that the figures became trustworthy. It is that they
+> became **stable, reviewable and attributable** instead of invisible.
+
+**THREE SENTENCES, NOT ONE.** The old `basis` said "PENDING INDEPENDENT
+VERIFICATION" on every verdict, which was honest and useless — there was no
+table to go to, so it named a task nobody could start. Now it names the source
+to check, or says plainly that there is none. The panel says which, in words:
+*"That figure is from this tool's variation table and has not yet been checked
+against its published source"* versus *"...produced by a language model from
+the test name and comes from no reviewable source."*
+
+**Rows a reviewer should take first**, and each says so in its own `source`:
+**ESR** (sparse published data; the 62 % threshold is what made
+`ESR 35 → 45 stable` possible), **EOSINOPHILS** (figures vary widely),
+**BASOPHILS** (small, noisy counts).
+
+### ⚠ THE SUMMARY LINE WAS COUNTING A SET THAT NO LONGER EXISTED
+
+The reader circled it. `3 improving · 1 worsening · 3 stable · 5 not
+determinable` over a card showing **twenty-six panels**. Both halves wrong:
+
+* it was Module 28's tally of its **twelve assessed features** and counted
+  none of the fourteen laboratory panels beside them, which now carry verdicts;
+* three of the twelve it DID count — `age`, `sex`, `smoking_history` — are no
+  longer rendered anywhere, because §6av's commit removed the table they lived
+  in. **A count of rows the reader cannot see.**
+
+Now `26 parameters · 4 improving · 2 worsening · 13 stable · 7 with no
+direction stated`, computed from the same array that becomes the panels
+(`labPanelsOf` was split out of `LabPanels` for exactly this), and `LabStatus`
+shares the one `panelTrendWord` predicate instead of keeping its own copy.
+
+> **A COUNT THAT CANNOT BE RECONCILED WITH THE ROWS UNDER IT IS WORSE THAN NO
+> COUNT.** A reader who checks it and fails stops trusting the numbers that are
+> right. The total is now stated so the four parts can be checked against it.
+
+### ▶ THE CHART CONTRADICTED ITS OWN ROW, AND ONLY THE SCREEN SAID SO
+
+`NEUTROPHILS` read `stable` on its row while the chart inside the same panel
+said **"No direction was classified for them"** — `classified` and `trend` were
+never passed to `TrendChart` from `LabPanels`. Correct before Module 35 existed
+and wrong the moment it did. Passing them also earns the line its colour: a
+classified `worsening` takes rust exactly as it does on an assessed chart.
+
+**No test caught this. Reading the expanded panel did.** Seventh time on this
+project.
+
+### ▶ THE COMPARISON CARD CARRIED 12 OF 28 PARAMETERS
+
+*"similarly for this comparison part also... i want all parameters to be there
+which are in those 2 reports."* Same gap, same card-by-card discovery.
+
+**`buildLabComparison` IS A TRANSFORM OVER `buildLabSeries`, NOT A SECOND
+COMPARATOR.** Run that over only the two chosen reports and it already answers
+everything a comparison row needs. A second grouping would mean two files
+deciding that `Polymorphs` and `NEUTROPHILS` are one test, and eventually
+disagreeing — in the same page.
+
+* **MODULE 29's OWN CATEGORY VOCABULARY**, chosen by that module's documented
+  precedence rather than translated: `improved` / `worsened` / `unchanged`
+  from a Module 35 verdict, `changed_direction_only` when it moved and nothing
+  will call that better, `newly_abnormal` / `newly_normal` from the
+  LABORATORY's own marking — **and those outrank the change axis**, which is
+  Module 29's rule, not a new one. `MCH 26.2 → 29.2 pg` reads `newly normal`
+  live because the lab marked it low then normal.
+* **A CROSSING IS CLAIMED ONLY WHEN BOTH REPORTS CARRY A MARKING.** PCV is
+  marked low then unmarked; reading the absence as normal would invent a
+  recovery the laboratory never stated.
+* **PREVIOUS AND CURRENT ARE THE REQUESTED PAIR, NOT THE DATE ORDER** — keyed
+  off `ComparisonPair.baseline_report_id` / `comparison_report_id`, read off
+  the schema. The picker allows an out-of-order pair and Module 29 honours it,
+  so one table must not have two ideas of which column is "previous".
+* **A BLOCKED ROW SHOWS BOTH UNITS.** `101.9 U/L` against `13 IU/L` is the
+  reason it cannot be classified; hiding one unit hides the reason.
+* `labComparison` is a **separate response field** — `comparison` stays Module
+  29's payload verbatim.
+
+The two-model-call pipeline was **pulled out of `getTrends` into `labAliases`
+and `labWithVerdicts`**, shared by both endpoints. Aliases are asked over the
+WHOLE history so both cards join the same names and the second call is a cache
+hit.
+
+### ⚠ "unchanged" BESIDE AN ARROW AND TWO DIFFERENT NUMBERS
+
+```
+EOSINOPHILS   5 %       ->  2 %        ↓ unchanged
+ESR           35 mm/hr  ->  45 mm/hr   ↑ unchanged
+```
+
+Mapping Module 35's `stable` onto Module 29's `unchanged` produced a row
+contradicting itself: the arrow says it moved, the numbers say it moved, the
+word says it did not. What the category means is "it moved less than this
+test's own variation" — a much weaker claim.
+
+**The display word is now "no real change", applied to MODULE 29's ASSESSED
+ROWS TOO.** One table must not use one word for the assessed half and another
+for the rest. The category, the payload and `category--unchanged` are all
+untouched; this is display only.
+
+### KNOWN AND OPEN
+
+**Raised this session and NOT resolved:**
+
+* **NOT ONE ROW OF THE VARIATION TABLE HAS BEEN VERIFIED.** This is the single
+  biggest outstanding item: 16 rows, each naming its source, none checked.
+  Until then every threshold on the page is labelled as unchecked — correctly.
+* **`stable` on the timeline and `no real change` on the comparison** are two
+  phrasings of one verdict on one page. Both honest; not settled.
+* **TSH and AVERAGE BLOOD GLUCOSE join and are then BLOCKED on units.** TSH is
+  `1.81 µIU/mL` against `3.51 ulU/mL` — the SAME unit, with OCR reading `µIU`
+  as `ulU`. eAG is `154 mg/dL` against `121.94` with no unit at all. **This is
+  an extraction fix (Module 4/5), and it is the next real win**: normalising
+  those would unblock both rows immediately.
+* **`5.4 → 7 %` prints `7`, not `7.0`** — `formatValue` does not pad, so a pair
+  can look like it has different precision on each end.
+* Module 35's polarity for a table hit is now the table's; a row whose polarity
+  word the module does not recognise falls through and is logged.
+
+**Carried forward, unchanged:** the glucose exclusion message wrong about why
+(three places); the trend chart drawing one line across non-comparable glucose
+points; `referenceAgreement` computed and never shown per panel; PCV scaled
+from one report's interval without saying so; `--rust` at 4.38:1;
+`origin: report_transcription`; `MISSING_PROFESSIONAL_REFERRAL` not blocking;
+Module 32's two-way `present`; **the ai-service suite still needing `.env`
+moved aside** (fix `conftest.py`); `RangeChart.jsx` orphaned.
+
+**Closed this session:** ~~a zero change called significant~~ · ~~ten
+parameters stranded as single readings~~ · ~~a threshold that moved between
+page loads~~ · ~~the summary line counting a set that no longer existed~~ ·
+~~the chart contradicting its own row~~ · ~~the comparison card carrying 12 of
+28 parameters~~ · ~~"unchanged" over a change~~.
+
+### ⚠ THE RATE LIMITER WILL STOP A DEBUG SESSION BEFORE THE QUOTA DOES
+
+History endpoints allow **60 requests per 15 minutes**
+(`HISTORY_RATE_LIMIT_MAX`), and each timeline load fires three, doubled in dev.
+Repeated reloads while checking a render exhausted it and the page went blank
+with `429` — which looks exactly like a broken feature. **The limiter is
+in-memory, so restarting the backend clears it**; that is faster than waiting
+out the window. Check the console for `429` before debugging a blank card.
+
+**Also on stale state:** a `ReferenceError: tally is not defined` in the
+console was HMR holding an intermediate save, and its line numbers did not
+match the file. **Compare the error's line numbers to the current file before
+believing it.**
 
 ---
 

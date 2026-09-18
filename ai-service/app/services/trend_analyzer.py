@@ -719,6 +719,22 @@ def _is_significant(first: float, last: float, band: StabilityBand) -> bool:
     absolute = abs(last - first)
     if absolute < band.min_absolute_change:
         return False
+    # A MOVE OF ZERO IS NOT A SIGNIFICANT MOVE, whatever the band permits.
+    #
+    # REACHED ONLY WHEN `min_absolute_change` IS 0.0, because any positive
+    # floor already caught it one line above -- and every band in
+    # `trend_polarity.py` declares a positive floor (0.1 to 25.0). The caller
+    # that passes 0.0 is Module 35 (`lab_polarity`), which has no canonical
+    # unit to set a floor in and documents that choice.
+    #
+    # Without this, a series that did not move fell through to the `first == 0`
+    # branch below and was called SIGNIFICANT. Found live: BASOPHILS is 0 % on
+    # both of this account's reports, and a zero change was being handed to
+    # `_classify` as a real one -- which then refused to label it, so the panel
+    # showed "no change" and no trend word while every neighbour showed one.
+    # The reader asked why that row was different. This is why.
+    if absolute == 0:
+        return False
     if first == 0:
         return True
     percent = absolute / abs(first) * 100.0

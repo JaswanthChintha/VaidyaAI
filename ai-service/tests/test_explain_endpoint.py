@@ -17,6 +17,7 @@ about which state it is in.
 
 from __future__ import annotations
 
+import re
 from typing import Any, List
 
 import pytest
@@ -81,11 +82,13 @@ def _clear_lab_polarity_cache():
     correct -- one answer per test name is the point -- and a suite that does
     not isolate it is measuring the previous test.
     """
-    from app.services import lab_polarity
+    from app.services import lab_name_match, lab_polarity
 
     lab_polarity.reset_cache()
+    lab_name_match.reset_cache()
     yield
     lab_polarity.reset_cache()
+    lab_name_match.reset_cache()
 
 
 FEATURE_BODY = {
@@ -124,6 +127,12 @@ ROUTES = [
         "post",
         "/api/v1/explain/lab-polarity",
         {"series": [{"test_name": "Blood Urea", "first_value": 1.0, "last_value": 2.0}]},
+    ),
+    # Listed HERE on the day it was written, not after it shipped dead.
+    (
+        "post",
+        "/api/v1/explain/lab-name-match",
+        {"names": ["Blood Urea", "Urea Nitrogen"]},
     ),
     # Listed HERE on the day it was written, not after it shipped dead.
     ("post", "/api/v1/explain/clinician-summary", {"summary": {}}),
@@ -607,6 +616,88 @@ def test_an_oversized_name_list_is_rejected_by_the_schema(explain_client):
     response = explain_client.post(
         "/api/v1/explain/glossary",
         json={"test_names": [f"Test {index}" for index in range(65)]},
+        headers=HEADERS,
+    )
+    assert response.status_code == 422
+
+
+# --------------------------------------------------------------------------
+# Module 36 -- lab-name-match
+# --------------------------------------------------------------------------
+
+_NAME_MATCH_JSON = '{"groups": [["Zorblex Factor", "Frimbulin"]]}'
+
+LAB_NAME_MATCH_BODY = {"names": ["Zorblex Factor", "Frimbulin"]}
+
+
+def test_lab_name_match_answers_inside_the_standard_envelope(client_factory):
+    client = client_factory(FakeTextClient(_NAME_MATCH_JSON))
+    response = client.post(
+        "/api/v1/explain/lab-name-match", json=LAB_NAME_MATCH_BODY, headers=HEADERS
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    assert isinstance(body["data"], dict)
+
+    group = body["data"]["groups"][0]
+    assert sorted(group["names"]) == ["Frimbulin", "Zorblex Factor"]
+    assert body["data"]["accepted"] == 1
+
+
+def test_lab_name_match_answers_with_no_model_configured(client_factory):
+    """An unconfigured key joins nothing, which is the status quo.
+
+    `groups` is empty rather than carrying a guess, so the backend groups by
+    word set exactly as it did before Module 36 existed.
+    """
+    client = client_factory(None)
+    response = client.post(
+        "/api/v1/explain/lab-name-match", json=LAB_NAME_MATCH_BODY, headers=HEADERS
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["groups"] == []
+    assert data["accepted"] == 0
+
+
+def test_lab_name_match_has_nowhere_to_put_a_patient_value(client_factory):
+    """THE SAFETY PROPERTY IS THE SHAPE, and here it is the strongest form.
+
+    Module 35's request carries the readings and keeps them out of the prompt
+    by construction. This request model has no field for a value at all, so a
+    caller cannot leak one even by trying.
+    """
+    client = client_factory(FakeTextClient(_NAME_MATCH_JSON))
+    response = client.post(
+        "/api/v1/explain/lab-name-match",
+        json={"names": ["Zorblex Factor"], "first_value": 12.1},
+        headers=HEADERS,
+    )
+    assert response.status_code == 422
+
+
+def test_lab_name_match_sends_no_figure_to_the_model(client_factory):
+    fake = FakeTextClient(_NAME_MATCH_JSON)
+    client = client_factory(fake)
+    client.post(
+        "/api/v1/explain/lab-name-match", json=LAB_NAME_MATCH_BODY, headers=HEADERS
+    )
+
+    assert fake.prompts, "the model was never called, so this proves nothing"
+    prompt = fake.prompts[-1]
+    assert "Zorblex Factor" in prompt
+    # No digit at all -- see test_lab_name_match.py for why that is the
+    # assertion rather than a list of forbidden words.
+    assert re.search(r"\d", prompt) is None
+
+
+def test_an_oversized_lab_name_list_is_rejected_by_the_schema(explain_client):
+    response = explain_client.post(
+        "/api/v1/explain/lab-name-match",
+        json={"names": [f"Test {index}" for index in range(65)]},
         headers=HEADERS,
     )
     assert response.status_code == 422

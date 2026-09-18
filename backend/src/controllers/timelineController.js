@@ -145,6 +145,98 @@ async function loadHistory(req) {
  * A 404 here would also be wrong in a subtler way: it is the patient's own
  * timeline, and it exists whether or not anything is on it yet.
  */
+/**
+ * MODULE 36 -- which of the unjoinable printed names are one test.
+ *
+ * ==========================================================================
+ * SHARED BY THE TIMELINE AND THE COMPARISON, ON PURPOSE
+ * ==========================================================================
+ *
+ * An alias is a fact about VOCABULARY, not about which two reports are being
+ * looked at, so the answer is the same for both cards and the ai-service
+ * caches it against the name set. Asking once over the WHOLE history rather
+ * than once per card also means the comparison's call is a cache hit.
+ *
+ * It was inline in `getTrends` until the comparison needed it too. Two copies
+ * of a two-model-call pipeline is how they come to disagree about which tests
+ * are the same -- and disagreeing about that means one card joins `Polymorphs`
+ * to `NEUTROPHILS` and the other does not, in the same page.
+ *
+ * ASKS ONLY ABOUT THE NAMES THAT COULD NOT MAKE A SERIES. A parameter already
+ * trending is not offered for joining; see `unjoinedNames`.
+ *
+ * EVERY FAILURE RETURNS AN EMPTY MAP, which groups by word set exactly as this
+ * backend did before Module 36 existed.
+ */
+async function labAliases(history, printed) {
+  const firstPass = labSeriesService.buildLabSeries(history.snapshots, printed);
+  const askAbout = labSeriesService.unjoinedNames(firstPass);
+  if (askAbout.length < 2) return new Map();
+
+  try {
+    const matched = await aiService.matchLabNames({
+      names: askAbout,
+      requestId: historyRequestId(),
+    });
+    return labSeriesService.aliasMap(matched && matched.groups);
+  } catch (error) {
+    // NO PHI. A stage name, a machine code and a count -- never a test name.
+    console.warn(
+      `[lab-name-match] outcome=unavailable asked=${askAbout.length} ` +
+        `code=${(error && error.code) || 'UNKNOWN'}`
+    );
+    return new Map();
+  }
+}
+
+/**
+ * The laboratory's own parameters, grouped and then classified by Module 35.
+ *
+ * ==========================================================================
+ * NEITHER CALL MAY BREAK THE CARD IT FEEDS
+ * ==========================================================================
+ *
+ * The trend words are an addition to pages that worked without them, so every
+ * way this can fail -- a spent quota, an unconfigured key, a timeout, the
+ * service being down -- returns the built series unchanged rather than failing
+ * the request. That is exactly what these cards rendered before Module 35.
+ *
+ * The failure is LOGGED, because a stage that silently degrades is a stage
+ * nobody notices has stopped working: 6at's whole finding was a truncation
+ * that survived two sessions for want of one log line.
+ *
+ * `snapshots` IS A PARAMETER RATHER THAN THE WHOLE HISTORY, because the
+ * comparison card wants exactly the two reports the reader chose while the
+ * timeline wants all of them. The grouping rules are identical either way,
+ * which is the point of passing the list rather than the pair.
+ */
+async function labWithVerdicts(snapshots, printed, aliases) {
+  const built = labSeriesService.buildLabSeries(
+    snapshots,
+    printed,
+    aliases && aliases.size ? aliases : undefined
+  );
+
+  const classifiable = labSeriesService.classifiableSeries(built);
+  if (!classifiable.length) return built;
+
+  try {
+    const verdicts = await aiService.classifyLabSeries({
+      series: classifiable,
+      requestId: historyRequestId(),
+    });
+    return labSeriesService.attachVerdicts(built, verdicts && verdicts.verdicts);
+  } catch (error) {
+    // NO PHI. A stage name, a machine code and a count -- the same shape every
+    // other degraded-stage line in this backend uses.
+    console.warn(
+      `[lab-polarity] outcome=unavailable requested=${classifiable.length} ` +
+        `code=${(error && error.code) || 'UNKNOWN'}`
+    );
+    return built;
+  }
+}
+
 const getTrends = asyncHandler(async (req, res) => {
   if (!aiService.isConfigured()) throw aiService.notConfigured();
 
@@ -162,38 +254,8 @@ const getTrends = asyncHandler(async (req, res) => {
     reportIds: history.snapshots.map((s) => s.report_id),
   });
 
-  // MODULE 35, AND IT MUST NOT BE ABLE TO BREAK THE TIMELINE.
-  //
-  // The trend words on these panels are an addition to a page that worked
-  // without them, and every way this call can fail -- a spent quota, an
-  // unconfigured key, a timeout, the service being down -- is a reason to
-  // render the readings and the movement word, not a reason to fail the
-  // request. So it is caught HERE and the built series passes through
-  // unchanged, which is exactly what the page rendered before this existed.
-  //
-  // The failure is logged, because a stage that silently degrades is a stage
-  // nobody notices has stopped working: §6at's whole finding was a truncation
-  // that survived two sessions for want of one log line.
-  const built = labSeriesService.buildLabSeries(history.snapshots, printed);
-  let labSeries = built;
-  const classifiable = labSeriesService.classifiableSeries(built);
-  if (classifiable.length) {
-    try {
-      const verdicts = await aiService.classifyLabSeries({
-        series: classifiable,
-        requestId: historyRequestId(),
-      });
-      labSeries = labSeriesService.attachVerdicts(built, verdicts && verdicts.verdicts);
-    } catch (error) {
-      // NO PHI. A stage name, a machine code and a count -- the same shape
-      // every other degraded-stage line in this backend uses. Never a test
-      // name, never a value.
-      console.warn(
-        `[lab-polarity] outcome=unavailable requested=${classifiable.length} ` +
-          `code=${(error && error.code) || 'UNKNOWN'}`
-      );
-    }
-  }
+  const aliases = await labAliases(history, printed);
+  const labSeries = await labWithVerdicts(history.snapshots, printed, aliases);
 
   const trends = await aiService.analyseTrends({
     reports: history.snapshots,
@@ -253,8 +315,51 @@ const getComparison = asyncHandler(async (req, res) => {
     requestId: historyRequestId(),
   });
 
+  // THE REST OF THE REPORT, BESIDE MODULE 29's TABLE.
+  //
+  // Module 29 compares the features this platform assesses -- twelve rows,
+  // while the two reports carry 28 parameters between them. The reader counted
+  // them and asked where the others were, exactly as they did on the timeline.
+  //
+  // WHICH TWO REPORTS: the pair Module 29 actually used, read off its own
+  // response rather than from the request. `resolvePair` may return nothing --
+  // no pair was named and Module 29 chose first-versus-latest -- and keying
+  // these rows off a null pair would silently compare a different pair from
+  // the one the table above them shows.
+  // `ComparisonPair`'s OWN FIELD NAMES, read off the schema rather than
+  // guessed: `baseline_report_id` and `comparison_report_id`, both flat. §6w
+  // records a page reading `basis.limitations` where the service writes
+  // `basis.ml.limitations`, and every probability lost its caveat for three
+  // sessions because nobody checked the producer.
+  const used = comparison && comparison.pair;
+  const baselineId = used ? used.baseline_report_id : null;
+  const comparisonId = used ? used.comparison_report_id : null;
+
+  let labComparison = { rows: [], count: 0 };
+  if (baselineId && comparisonId) {
+    const printed = await historyService.loadPrintedParameters({
+      user: req.user,
+      reportIds: [baselineId, comparisonId],
+    });
+    // Aliases over the WHOLE history, so this card joins the same names the
+    // timeline does and the ai-service answers from its cache.
+    const aliases = await labAliases(history, printed);
+    // BUILT OVER THE TWO CHOSEN REPORTS ONLY. A parameter on both of them is
+    // a two-point series and can carry a direction; one on a third report is
+    // not part of this comparison and must not become a point in it.
+    const pairSnapshots = history.snapshots.filter(
+      (s) => s.report_id === baselineId || s.report_id === comparisonId
+    );
+    const built = await labWithVerdicts(pairSnapshots, printed, aliases);
+    labComparison = labSeriesService.buildLabComparison(built, baselineId, comparisonId);
+  }
+
   return sendSuccess(res, 200, {
     history: historyService.summariseHistory(history, excluded),
+    // A SEPARATE FIELD, because `comparison` is Module 29's payload VERBATIM
+    // and merging rows into its table would make this backend the author of
+    // something the ai-service is responsible for.
+    labComparison,
     // Which two reports the caller asked for, so the response says whether the
     // pair was chosen or named. Module 29's own `pair.selection` says which
     // reports were actually used; this says what was requested, and the two

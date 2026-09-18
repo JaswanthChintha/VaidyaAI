@@ -658,6 +658,172 @@ describe('choosing which two reports to compare', () => {
   });
 });
 
+describe('comparison -- the rest of the report', () => {
+  // Module 29 compares the features this platform assesses. The two real
+  // reports carry 28 parameters between them and the card showed twelve, so
+  // the reader counted them and asked where the others were -- the same
+  // question, and the same answer, as the timeline.
+  const labRow = (over = {}) => ({
+    key: 'zbx',
+    name: 'ZORBLEX',
+    joinedFrom: null,
+    previous: 12.1,
+    current: 38.9,
+    previousUnit: 'mg/L',
+    currentUnit: 'mg/L',
+    unit: 'mg/L',
+    blocked: null,
+    previousFlag: null,
+    currentFlag: null,
+    category: 'worsened',
+    symbol: '↑',
+    ...over,
+  });
+
+  const mountPair = (labRows, table = []) =>
+    mount({ comparison: { comparison: { table }, labComparison: { rows: labRows, count: labRows.length } } });
+
+  it('puts unassessed parameters in the SAME table, not a second one', async () => {
+    mountPair([labRow()], [
+      { feature: 'hba1c', description: 'HbA1c', unit: '%', previous: 5.4, current: 7, category: 'worsened' },
+    ]);
+
+    expect(await screen.findByText('ZORBLEX')).toBeInTheDocument();
+    // One table on the card, carrying both kinds of row.
+    expect(document.querySelectorAll('table.lab-table')).toHaveLength(1);
+    const headings = [...document.querySelectorAll('table tbody th')].map((th) =>
+      th.textContent.trim()
+    );
+    expect(headings).toContain('HbA1c');
+    expect(headings.some((h) => h.startsWith('ZORBLEX'))).toBe(true);
+  });
+
+  it('counts every parameter on the card, both kinds', async () => {
+    mountPair([labRow(), labRow({ key: 'frim', name: 'FRIMBULIN' })], [
+      { feature: 'hba1c', description: 'HbA1c', unit: '%', previous: 5.4, current: 7, category: 'worsened' },
+    ]);
+
+    await screen.findByText('ZORBLEX');
+    expect(screen.getByText(/3 parameters across these two reports/)).toBeInTheDocument();
+  });
+
+  it('shows BOTH units when the two reports disagree about them', async () => {
+    // 101.9 U/L against 13 IU/L is the reason the row cannot be classified.
+    // Hiding one unit would hide the reason.
+    mountPair([
+      labRow({
+        previous: 101.9,
+        current: 13,
+        previousUnit: 'U/L',
+        currentUnit: 'IU/L',
+        unit: null,
+        blocked: { reason: 'units_differ', units: ['U/L', 'IU/L'] },
+        category: 'not_classifiable',
+        symbol: null,
+      }),
+    ]);
+
+    await screen.findByText('ZORBLEX');
+    expect(screen.getByText('101.9 U/L')).toBeInTheDocument();
+    expect(screen.getByText('13 IU/L')).toBeInTheDocument();
+    expect(
+      screen.getByText(/different units, so the readings were not compared/)
+    ).toBeInTheDocument();
+  });
+
+  it('renders a parameter on only one of the two reports as not measured', async () => {
+    mountPair([labRow({ current: null, currentUnit: null, category: 'not_classifiable', symbol: null })]);
+
+    await screen.findByText('ZORBLEX');
+    expect(screen.getByText('12.1 mg/L')).toBeInTheDocument();
+    expect(screen.getByText('This parameter was not on that report.')).toBeInTheDocument();
+    // NOT rendered as zero. The whole point of the Absent component.
+    expect(screen.queryByText('0 mg/L')).not.toBeInTheDocument();
+  });
+
+  it('shows a non-numeric result as the text the laboratory printed', async () => {
+    mountPair([
+      labRow({
+        previous: null,
+        current: null,
+        previousRaw: 'Negative',
+        currentRaw: 'Negative',
+        // A NON-NUMERIC RESULT CARRIES NO UNIT, and the first version of this
+        // fixture left `mg/L` on it, so the cell read "Negative mg/L". The
+        // fixture was wrong about the data, not the component about the text.
+        previousUnit: null,
+        currentUnit: null,
+        unit: null,
+        category: 'not_classifiable',
+        symbol: null,
+      }),
+    ]);
+
+    await screen.findByText('ZORBLEX');
+    expect(screen.getAllByText('Negative').length).toBeGreaterThan(0);
+  });
+
+  it("uses Module 29's own category words for these rows too", async () => {
+    // One vocabulary per table. `worsening` on the timeline is `worsened`
+    // here, and these rows must not introduce a third set of words.
+    mountPair([labRow({ category: 'worsened', symbol: '↑' })]);
+
+    await screen.findByText('ZORBLEX');
+    expect(screen.getByText(/worsened/)).toBeInTheDocument();
+    expect(screen.queryByText(/worsening/)).not.toBeInTheDocument();
+  });
+
+  it('names the spellings it treated as one test', async () => {
+    mountPair([labRow({ name: 'NEUTROPHILS', joinedFrom: ['Polymorphs', 'NEUTROPHILS'] })]);
+
+    await screen.findByText(/NEUTROPHILS/);
+    const heading = [...document.querySelectorAll('table tbody th')].find((th) =>
+      th.textContent.includes('NEUTROPHILS')
+    );
+    expect(heading.textContent).toContain('2 names');
+    expect(heading.querySelector('[title]').getAttribute('title')).toContain('Polymorphs');
+  });
+
+  it('never prints "unchanged" beside an arrow and two different numbers', async () => {
+    // THE ROW WAS CONTRADICTING ITSELF ON SCREEN:
+    //     EOSINOPHILS  5 %  ->  2 %   ↓ unchanged
+    // The arrow says it moved, the numbers say it moved, the word says it did
+    // not. What the category means is "it moved less than this test's own
+    // variation", which is a much weaker claim, so it is said in words that
+    // make that claim instead.
+    mountPair([
+      labRow({ name: 'EOSINOPHILS', previous: 5, current: 2, unit: '%', previousUnit: '%', currentUnit: '%', category: 'unchanged', symbol: '↓' }),
+    ]);
+
+    await screen.findByText('EOSINOPHILS');
+    expect(screen.getByText(/no real change/)).toBeInTheDocument();
+    expect(screen.queryByText(/unchanged/)).not.toBeInTheDocument();
+    // The arrow stays. It is the true half of the row.
+    expect(screen.getByText(/↓/)).toBeInTheDocument();
+  });
+
+  it("uses the same words for Module 29's own rows", async () => {
+    // One table must not say "unchanged" for the assessed half and something
+    // else for the rest.
+    mountPair([], [
+      { feature: 'bmi', description: 'Body mass index', unit: 'kg/m2', previous: 25.25, current: 25.25, category: 'unchanged', symbol: '→' },
+    ]);
+
+    await screen.findByText('Body mass index');
+    expect(screen.getByText(/no real change/)).toBeInTheDocument();
+    expect(screen.queryByText(/unchanged/)).not.toBeInTheDocument();
+  });
+
+  it('says nothing extra when there are no unassessed parameters', async () => {
+    mountPair([], [
+      { feature: 'hba1c', description: 'HbA1c', unit: '%', previous: 5.4, current: 7, category: 'worsened' },
+    ]);
+
+    await screen.findByText('HbA1c');
+    expect(screen.getByText(/1 parameter across these two reports/)).toBeInTheDocument();
+  });
+});
+
 describe('comparison', () => {
   it('renders a parameter missing from one report as absent, not as 0', async () => {
     mount({
@@ -1024,6 +1190,97 @@ describe('the trends card names parameters for a reader', () => {
 
     await screen.findByText(/Trends over time/);
     expect(titles()).toContain('some_new_marker');
+  });
+
+  it('counts the panels it actually renders, and the parts add up', async () => {
+    // THE DEFECT THIS EXISTS FOR, and the reader spotted it on the screen.
+    //
+    // The line read `3 improving · 1 worsening · 3 stable · 5 not
+    // determinable` -- Module 28's tally of its twelve ASSESSED features --
+    // over a card showing twenty-six panels. It counted fourteen laboratory
+    // panels not at all, and it counted `age`, `sex` and `smoking_history`,
+    // which are no longer rendered anywhere on the card.
+    //
+    // A COUNT THAT CANNOT BE RECONCILED WITH THE ROWS UNDER IT is worse than
+    // no count, because a reader who checks it stops trusting the ones that
+    // are right. So the four parts must sum to the stated total.
+    mount({
+      trends: {
+        history: { included: 2, considered: 2 },
+        trends: {
+          features: {
+            hba1c: {
+              feature: 'hba1c',
+              outcome: 'TREND_CLASSIFIED',
+              trend: 'worsening',
+              canonical_unit: '%',
+              points: [
+                { date: '2026-09-01', value: 6.1, unit: '%' },
+                { date: '2026-09-11', value: 6.8, unit: '%' },
+              ],
+              gaps: [],
+            },
+            // NOT_TRENDABLE: no chart, no row, and it must not be counted.
+            age: {
+              feature: 'age',
+              outcome: 'NOT_TRENDABLE',
+              trend: null,
+              points: [
+                { date: '2026-09-01', value: 58, unit: 'years' },
+                { date: '2026-09-11', value: 58, unit: 'years' },
+              ],
+              gaps: [],
+            },
+          },
+          // DELIBERATELY DISAGREEING with what is on the card, because this is
+          // the payload field the old line trusted.
+          summary: { improving: 9, worsening: 9, stable: 9, not_determinable: 9 },
+        },
+        labSeries: {
+          series: [
+            {
+              key: 'zbx',
+              name: 'ZORBLEX',
+              unit: 'mg/L',
+              blocked: null,
+              points: [
+                { date: '2026-09-01T00:00:00Z', value: 12.1, unit: 'mg/L' },
+                { date: '2026-09-11T00:00:00Z', value: 38.9, unit: 'mg/L' },
+              ],
+              movementFrom: 12.1,
+              movementTo: 38.9,
+              movement: 'rose',
+              trend: 'stable',
+              classified: true,
+            },
+          ],
+          readings: [
+            {
+              key: 'frim',
+              name: 'FRIMBULIN',
+              reason: 'one_report',
+              rows: [{ date: '2026-09-11T00:00:00Z', valueRaw: '82', unit: '%', value: 82 }],
+              latestFlag: 'high',
+            },
+          ],
+        },
+      },
+    });
+
+    await screen.findByText(/Trends over time/);
+    const line = [...document.querySelectorAll('.card .hint')]
+      .map((e) => e.textContent.replace(/\s+/g, ' ').trim())
+      .find((t) => /improving/.test(t));
+
+    // One assessed chart (hba1c, worsening), one lab series (stable), one lab
+    // reading (no direction). `age` draws nothing and is not counted.
+    expect(line).toMatch(/^3 parameters/);
+    expect(line).toContain('0 improving');
+    expect(line).toContain('1 worsening');
+    expect(line).toContain('1 stable');
+    expect(line).toContain('1 with no direction stated');
+    // The payload's own summary said 9 of everything. It is not this line.
+    expect(line).not.toContain('9');
   });
 
   it('does NOT repeat every chart in a table beneath it', async () => {
@@ -1444,6 +1701,83 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
     ).not.toContain('→');
   });
 
+  it('does not let the chart contradict the row above it', async () => {
+    // FOUND ON SCREEN, NOT BY A TEST. NEUTROPHILS read `stable` on its row
+    // while the chart inside the same panel said "No direction was classified
+    // for them" -- because `classified` and `trend` were never passed down.
+    // They were right to be absent before Module 35 existed and wrong the
+    // moment it did.
+    mountLab(
+      labSeries({
+        series: [
+          series('Frimbulin', [['2026-01-01', 77], ['2026-02-01', 82]], null, '%', {
+            trend: 'stable',
+            classified: true,
+            significantChangePct: 30,
+          }),
+        ],
+        plottedCount: 1,
+      })
+    );
+
+    await screen.findByText(/Trends over time/);
+    const chart = document.querySelector('.trend-chart__block [aria-label]');
+    expect(chart.getAttribute('aria-label')).toMatch(/stable/);
+    expect(chart.getAttribute('aria-label')).not.toMatch(/No direction was classified/);
+  });
+
+  it('still says no direction was classified when there is no verdict', async () => {
+    // The other half. A panel Module 35 refused, or one reached with a spent
+    // quota, must keep saying so -- this is the state the page degrades to.
+    mountLab(
+      labSeries({
+        series: [series('Frimbulin', [['2026-01-01', 77], ['2026-02-01', 82]])],
+        plottedCount: 1,
+      })
+    );
+
+    await screen.findByText(/Trends over time/);
+    const chart = document.querySelector('.trend-chart__block [aria-label]');
+    expect(chart.getAttribute('aria-label')).toMatch(/No direction was classified/);
+  });
+
+  it('names the printed spellings it treated as one test', async () => {
+    // MODULE 36'S JOIN, MADE VISIBLE. The reader's report says one of these
+    // and the panel is headed with the other, so without this line it reads
+    // as a parameter they never had -- and a join nobody can see is the page
+    // rewriting their report rather than regrouping it.
+    mountLab(
+      labSeries({
+        series: [
+          series('Frimbulin', [['2026-01-01', 12.1], ['2026-02-01', 38.9]], null, 'mg/L', {
+            joinedFrom: ['Zorblex Factor', 'Frimbulin'],
+          }),
+        ],
+        plottedCount: 1,
+      })
+    );
+
+    await screen.findByText(/Trends over time/);
+    const note = document.querySelector('.trend-chart__joined');
+    expect(note).not.toBeNull();
+    expect(note.textContent).toContain('Zorblex Factor');
+    expect(note.textContent).toContain('Frimbulin');
+  });
+
+  it('says nothing about names when nothing was joined', async () => {
+    // The commonest case by far, and it must stay silent -- a note on every
+    // panel is the commentary the reader already asked to have removed.
+    mountLab(
+      labSeries({
+        series: [series('Frimbulin', [['2026-01-01', 12.1], ['2026-02-01', 38.9]])],
+        plottedCount: 1,
+      })
+    );
+
+    await screen.findByText(/Trends over time/);
+    expect(document.querySelectorAll('.trend-chart__joined')).toHaveLength(0);
+  });
+
   it('prints no pair for a parameter on only one report', async () => {
     // One reading is not a change. Its value is shown in full when opened.
     mountLab(
@@ -1504,8 +1838,13 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
   // =========================== the status these may carry ==================
   //
   // A reader asked why these showed no status when the assessed panels say
-  // improving / worsening / stable. Those three need polarity or a stability
-  // band and neither exists here, so two TRUE statuses are shown instead:
+  // improving / worsening / stable. Those three need a polarity and a
+  // stability band, and MODULE 35 NOW SUPPLIES BOTH -- from the test name
+  // alone -- so a classified panel carries the clinical word like any other.
+  //
+  // WHAT THESE TESTS STILL PIN is the panel that was NOT classified: a spent
+  // quota, a refused polarity and a variation figure outside the permitted
+  // set all land there, and such a panel must show only what is true of it --
   // which way the numbers went, and the laboratory's own marking.
 
   it('shows which way the numbers went, without a clinical word', async () => {
@@ -1523,9 +1862,18 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
     );
 
     await screen.findByText(/Trends over time/);
-    const section = card();
-    expect(section.textContent).toMatch(/rose/);
-    expect(section.textContent).not.toMatch(/improving|worsening|stable/i);
+    // SCOPED TO THE PANEL, NOT THE CARD, and the rescoping is the point.
+    //
+    // This asserted over the whole card and broke when the card gained its
+    // own tally line -- `26 parameters · 4 improving · 2 worsening · 13
+    // stable · 7 with no direction stated` -- which contains all three words
+    // as LABELS FOR COUNTS. That is not a clinical claim about any parameter.
+    //
+    // What must never happen is one of those words appearing as THIS panel's
+    // status when nothing classified it, so the panel is what is asserted on.
+    const panel = document.querySelector('.trend-chart__block > summary');
+    expect(panel.textContent).toMatch(/rose/);
+    expect(panel.textContent).not.toMatch(/improving|worsening|stable/i);
   });
 
   it("shows the laboratory's own marking, attributed to the laboratory", async () => {

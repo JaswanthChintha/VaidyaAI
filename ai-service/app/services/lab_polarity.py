@@ -85,6 +85,7 @@ from app.data.trend_polarity import (
     TrendPolarity,
     reference_change_value,
 )
+from app.data.lab_variation import variation_for
 from app.safety.fallback import guarded_generation
 from app.safety.validator import SafetyContext
 from app.services.trend_analyzer import _classify, _is_significant
@@ -134,6 +135,20 @@ class PolarityFact(BaseModel):
     significant_change_pct: Optional[float] = None
     available: bool = False
     notice: Optional[str] = None
+    #: WHERE THE VARIATION FIGURES CAME FROM: "table" or "model".
+    #:
+    #: A reader must never be told a reviewable threshold and a model-supplied
+    #: one in the same words, so this travels all the way to the screen. It is
+    #: the same separation `labFlag` keeps between the laboratory's verdict and
+    #: this platform's.
+    variation_source: Optional[str] = None
+    #: True ONLY when the table row was marked verified by a human who compared
+    #: it to its cited source. A model-supplied figure is never verified.
+    variation_verified: bool = False
+    #: The publication a reviewer should check this row against. None for a
+    #: model-supplied figure, because there is nothing to check it against --
+    #: which is the point.
+    variation_reference: Optional[str] = None
 
     @property
     def usable(self) -> bool:
@@ -171,6 +186,12 @@ class LabSeriesVerdict(BaseModel):
     #: trust it -- the same discipline the hand-written table applies.
     basis: Optional[str] = None
     significant_change_pct: Optional[float] = None
+    #: "table" or "model" -- see `PolarityFact`. Carried to the screen so a
+    #: reviewable threshold and a model-supplied one are never described in
+    #: the same words.
+    variation_source: Optional[str] = None
+    variation_verified: bool = False
+    variation_reference: Optional[str] = None
 
 
 class LabPolarityData(BaseModel):
@@ -267,7 +288,71 @@ def _cv(raw: Any) -> Optional[float]:
     return value
 
 
+def _fact_from_table(test_name: str) -> Optional[PolarityFact]:
+    """The hand-written row for this test, or None to ask the model.
+
+    ==========================================================================
+    THE TABLE IS CONSULTED FIRST, AND THAT IS THE WHOLE POINT
+    ==========================================================================
+
+    A row is reproducible, reviewable and diffable. A per-call answer is none
+    of those, and the reader found out the hard way: EOSINOPHILS was refused
+    on one request and called `stable` on the next, same data, because the
+    model returned a different CVi. A threshold that decides whether someone
+    is shown "stable" cannot move between page loads.
+
+    A HIT COSTS NO MODEL CALL AT ALL. The row carries the polarity as well as
+    the two figures, so a listed test never reaches the model -- which also
+    means the daily quota stops being a factor for the tests that matter most.
+
+    A MISS FALLS THROUGH TO THE MODEL, which is the previous behaviour exactly.
+    Adding a row is how a test stops depending on it.
+    """
+    row = variation_for(test_name)
+    if row is None:
+        return None
+
+    word = _POLARITY_WORDS.get(row.polarity)
+    if word is None:
+        # A row whose polarity word this module does not know is a bug in the
+        # table, not a reason to invent one. Fall through rather than guess.
+        logger.warning(
+            "lab_variation_unknown_polarity %s",
+            safe_meta(test=row.test, polarity=row.polarity),
+        )
+        return None
+    kind, harm = word
+
+    # THE SAME GATE THE MODEL'S FIGURES PASS THROUGH. A hand-written table is
+    # not exempt from the check that a CV is the right kind of quantity -- a
+    # typo in this file would otherwise reach a patient with more authority
+    # than a hallucination, because it would be labelled as reviewed.
+    cva = _cv(row.analytical_cv_pct)
+    cvi = _cv(row.within_subject_cv_pct)
+    if cva is None or cvi is None:
+        logger.warning("lab_variation_cv_refused %s", safe_meta(test=row.test))
+        return None
+
+    return PolarityFact(
+        test_name=test_name,
+        kind=kind,
+        direction_of_harm=harm,
+        analytical_cv_pct=cva,
+        within_subject_cv_pct=cvi,
+        significant_change_pct=round(reference_change_value(cva, cvi)),
+        available=True,
+        variation_source="table",
+        variation_verified=bool(row.verified),
+        variation_reference=row.source,
+    )
+
+
 def _fact_for(test_name: str, client: Any) -> PolarityFact:
+    # THE TABLE, BEFORE ANYTHING ELSE AND BEFORE ANY CALL.
+    from_table = _fact_from_table(test_name)
+    if from_table is not None:
+        return from_table
+
     def generate(feedback: Any = None) -> str:
         prompt = _prompt(test_name)
         if feedback is not None:
@@ -358,6 +443,10 @@ def _fact_for(test_name: str, client: Any) -> PolarityFact:
         within_subject_cv_pct=cvi,
         significant_change_pct=round(reference_change_value(cva, cvi)),
         available=True,
+        # MODEL-SUPPLIED, AND NEVER VERIFIED. There is no source to check it
+        # against, which is exactly what `variation_reference=None` says.
+        variation_source="model",
+        variation_verified=False,
     )
 
 
@@ -497,19 +586,45 @@ def _verdict_for(item: LabSeriesInput, fact: PolarityFact) -> LabSeriesVerdict:
 
     outcome, trend, reason_key = _classify(polarity, change, significant)
 
+    # THE PROVENANCE SENTENCE, AND IT SAYS WHICH OF THREE THINGS IS TRUE.
+    #
+    # It used to say "PENDING INDEPENDENT VERIFICATION" on every verdict,
+    # which was honest and useless: there was no table for a reviewer to go
+    # to, so the sentence named a task nobody could start. Now it names the
+    # source to check, or says plainly that there is none.
+    arithmetic = (
+        "RCV = 2**0.5 * 1.96 * sqrt(CVa^2 + CVi^2) = "
+        f"sqrt(2) * 1.96 * sqrt({fact.analytical_cv_pct}^2 + "
+        f"{fact.within_subject_cv_pct}^2) -> {fact.significant_change_pct} %. "
+    )
+    if fact.variation_source == "table" and fact.variation_verified:
+        provenance = (
+            "CVa/CVi are from this service's reviewed variation table, checked "
+            f"against: {fact.variation_reference}"
+        )
+    elif fact.variation_source == "table":
+        provenance = (
+            "CVa/CVi are from this service's hand-written variation table and "
+            "are NOT YET CHECKED against their cited source, which is: "
+            f"{fact.variation_reference}"
+        )
+    else:
+        provenance = (
+            "CVa/CVi were supplied by the model from the test name alone. They "
+            "are NOT from a reviewable source and there is nothing to check "
+            "them against."
+        )
+
     return LabSeriesVerdict(
         test_name=item.test_name,
         outcome=outcome,
         trend=trend,
         reason_key=reason_key,
-        basis=(
-            "RCV = 2**0.5 * 1.96 * sqrt(CVa^2 + CVi^2) = "
-            f"sqrt(2) * 1.96 * sqrt({fact.analytical_cv_pct}^2 + "
-            f"{fact.within_subject_cv_pct}^2) -> {fact.significant_change_pct} %. "
-            "CVa/CVi are literature-typical figures supplied per test name and "
-            "are PENDING INDEPENDENT VERIFICATION."
-        ),
+        basis=arithmetic + provenance,
         significant_change_pct=fact.significant_change_pct,
+        variation_source=fact.variation_source,
+        variation_verified=fact.variation_verified,
+        variation_reference=fact.variation_reference,
     )
 
 

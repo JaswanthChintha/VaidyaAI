@@ -311,6 +311,17 @@ const config = {
       180 * 1000
     ),
 
+    // MODULE 36, AND IT IS ONE CALL, NOT ONE PER NAME. The whole unjoined
+    // tail of a report goes in a single prompt, because "are these the same
+    // test" is a question about the SET and cannot be asked name by name. So
+    // this budget is smaller than Module 35's on purpose: it pays for one
+    // generation, and a cache hit after that costs nothing for the rest of
+    // the process's life.
+    labNameMatchTimeoutMs: toInt(
+      process.env.AI_SERVICE_LAB_NAME_MATCH_TIMEOUT_MS,
+      60 * 1000
+    ),
+
     // MODULES 28, 29, 30 AND 32 (trends, comparison, progress score, doctor
     // summary) ARE MODEL-FREE AND OFFLINE ON THE PYTHON SIDE - they are pure
     // computation over feature snapshots the backend supplies, so they belong

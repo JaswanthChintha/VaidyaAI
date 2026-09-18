@@ -128,6 +128,7 @@ const PATHS = Object.freeze({
   summaryProse: '/api/v1/explain/summary-prose',
   findingContext: '/api/v1/explain/finding-context',
   labPolarity: '/api/v1/explain/lab-polarity',
+  labNameMatch: '/api/v1/explain/lab-name-match',
   timeline: '/api/v1/timeline/trends',
   comparison: '/api/v1/comparison/reports',
   progress: '/api/v1/progress/score',
@@ -167,6 +168,7 @@ const STAGES = Object.freeze({
   GUIDANCE: 'guidance',
   GLOSSARY: 'glossary',
   LAB_POLARITY: 'lab_polarity',
+  LAB_NAME_MATCH: 'lab_name_match',
   // Modules 28, 29, 30 and 32. These four DO have a far-side string to match
   // and they match it exactly: `STAGE_TIMELINE` in app/schemas/timeline.py,
   // `STAGE_COMPARISON` in comparison.py, `STAGE_PROGRESS` in progress.py and
@@ -993,6 +995,43 @@ async function classifyLabSeries({ series, requestId }) {
   });
 }
 
+/**
+ * MODULE 36 -- which of these printed test names are the same test.
+ *
+ * ==========================================================================
+ * THIS ONE REALLY DOES SEND NAMES AND NOTHING ELSE
+ * ==========================================================================
+ *
+ * `describeParameters` sends names because it has no use for anything more.
+ * `classifyLabSeries` above sends two values per series and explains why that
+ * is still safe. THIS call has no field for a value at all -- the far side's
+ * request model accepts `names` and forbids extras -- so the guarantee is
+ * structural rather than a property of what this function happens to pass.
+ *
+ * WHY IT IS ONE CALL. "Are these the same test" is a question about the SET.
+ * Asked name by name it has no answer, so the whole unjoined tail goes in one
+ * prompt and the reply is cached in the Python service against that name set.
+ *
+ * WHAT COMES BACK IS A REGROUPING, NEVER A NUMBER. Groups of printed names.
+ * The backend then rebuilds the series from the reader's own stored readings;
+ * nothing the model said reaches a value, a unit or a chart directly.
+ */
+async function matchLabNames({ names, requestId }) {
+  return postJson({
+    path: PATHS.labNameMatch,
+    stage: STAGES.LAB_NAME_MATCH,
+    payload: {
+      names: Array.isArray(names) ? names : [],
+    },
+    requestId,
+    // ONE GENERATION, so a smaller budget than Module 35's. See
+    // `labNameMatchTimeoutMs`.
+    timeoutMs: config.aiService.labNameMatchTimeoutMs,
+    // NO RETRY, same reason: the call has already been paid for.
+    retries: 0,
+  });
+}
+
 // ------------------------- history: trends / comparison / progress (28-30) ---
 
 /**
@@ -1399,6 +1438,7 @@ module.exports = {
   lifestyleGuidance,
   describeParameters,
   classifyLabSeries,
+  matchLabNames,
   analyseTrends,
   compareReports,
   scoreProgress,

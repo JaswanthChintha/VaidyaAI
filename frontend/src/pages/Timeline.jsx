@@ -261,11 +261,15 @@ const LAB_FLAG_WORD = { high: 'High', low: 'Low', critical: 'High', normal: 'In 
 const TREND_WORDS = ['improving', 'worsening', 'stable'];
 
 function LabStatus({ movement, latestFlag, trend, classified }) {
-  // BOTH HALVES, the same predicate the assessed panels use. A payload
+  // BOTH HALVES, and THE SAME FUNCTION THE CARD'S TALLY USES. A payload
   // carrying a direction without a classification is a contradiction, and if
   // one ever arrives the unclassified reading wins -- §6z rendered the string
   // "null" as a direction once on exactly this mistake.
-  const declared = classified === true && TREND_WORDS.includes(trend);
+  //
+  // It was a second copy of that predicate until the tally needed it too, and
+  // a count that decided "declared" differently from the chip beside it would
+  // be the summary line's own defect all over again.
+  const declared = panelTrendWord({ classified, trend }) !== null;
 
   // THE CLINICAL WORD REPLACES THE ARITHMETIC ONE, never sits beside it.
   // "rose" and "worsening" in one row are two answers to one question, and a
@@ -293,10 +297,19 @@ function LabStatus({ movement, latestFlag, trend, classified }) {
   );
 }
 
-function LabPanels({ data }) {
+/**
+ * The laboratory panels this card will render, as ONE list.
+ *
+ * SPLIT OUT OF `LabPanels` SO THE COUNT AND THE RENDER CANNOT DISAGREE.
+ * The card's summary line has to say how many parameters are improving,
+ * worsening and stable, and it was reading Module 28's own tally -- which
+ * counts twelve assessed features and knows nothing about these. The only way
+ * a count can be trusted is if it is taken from the same array that becomes
+ * the panels, so this returns the array and both callers use it.
+ */
+function labPanelsOf(data) {
   const series = data?.series || [];
   const readings = data?.readings || [];
-  if (!series.length && !readings.length) return null;
 
   // ONE LIST, TWO KINDS OF PANEL, and the kind is decided by whether a line
   // can honestly be drawn -- not by which array the parameter arrived in.
@@ -320,6 +333,7 @@ function LabPanels({ data }) {
             // because two units have not been shown to have moved at all.
             movement: entry.movement,
             latestFlag: entry.latestFlag,
+            joinedFrom: entry.joinedFrom,
           }
         : {
             key: entry.key,
@@ -329,6 +343,10 @@ function LabPanels({ data }) {
             latestFlag: entry.latestFlag,
             trend: entry.trend,
             classified: entry.classified,
+            joinedFrom: entry.joinedFrom,
+            significantChangePct: entry.significantChangePct,
+            trendSource: entry.trendSource,
+            trendVerified: entry.trendVerified,
           }
     ),
     // A reading that cannot be trended is still a reading: one report, or a
@@ -341,8 +359,70 @@ function LabPanels({ data }) {
       rows: entry.rows,
       movement: null,
       latestFlag: entry.latestFlag,
+      joinedFrom: entry.joinedFrom,
     })),
   ];
+
+  return panels;
+}
+
+/** The word a panel actually shows, or null when it shows none. */
+function panelTrendWord(panel) {
+  return panel && panel.classified === true && TREND_WORDS.includes(panel.trend)
+    ? panel.trend
+    : null;
+}
+
+/** The word an ASSESSED chart actually shows, or null. Module 28's predicate. */
+function featureTrendWord(trend) {
+  return trend &&
+    trend.outcome === 'TREND_CLASSIFIED' &&
+    isPresent(trend.trend) &&
+    TREND_WORDS.includes(trend.trend)
+    ? trend.trend
+    : null;
+}
+
+/**
+ * The card's own tally, over EVERY panel the card renders.
+ *
+ * ==========================================================================
+ * IT REPLACES MODULE 28's SUMMARY, WHICH HAD STOPPED DESCRIBING THIS CARD
+ * ==========================================================================
+ *
+ * The line read `3 improving · 1 worsening · 3 stable · 5 not determinable`
+ * over a card showing twenty-six panels. Both halves were wrong:
+ *
+ *   - it counted Module 28's twelve ASSESSED features and none of the
+ *     fourteen laboratory panels beside them, which now carry verdicts of
+ *     their own from Module 35; and
+ *   - three of the twelve it did count -- `age`, `sex`, `smoking_history` --
+ *     are no longer rendered anywhere on the card, so `not determinable`
+ *     included rows the reader cannot see.
+ *
+ * A COUNT THAT DOES NOT ADD UP TO WHAT IS ON THE SCREEN IS WORSE THAN NO
+ * COUNT: a reader who tries to check it finds numbers that cannot be
+ * reconciled with the rows in front of them, and stops trusting the ones that
+ * are right. So the total is stated too, and it is the panel count -- the
+ * four parts sum to it by construction.
+ *
+ * Module 28's `summary` is still the right answer to a different question
+ * (how did the ASSESSED features do) and is untouched; it simply is not the
+ * answer to "what is on this card".
+ */
+function cardTally(charted, labPanels) {
+  const counts = { improving: 0, worsening: 0, stable: 0, undirected: 0 };
+  const add = (word) => {
+    if (word && counts[word] !== undefined) counts[word] += 1;
+    else counts.undirected += 1;
+  };
+  for (const trend of charted) add(featureTrendWord(trend));
+  for (const panel of labPanels) add(panelTrendWord(panel));
+  return { ...counts, total: charted.length + labPanels.length };
+}
+
+function LabPanels({ panels }) {
+  if (!panels.length) return null;
 
   return (
     <>
@@ -370,6 +450,40 @@ function LabPanels({ data }) {
             />
             <span className="disclosure__chevron" aria-hidden="true" />
           </summary>
+          {/* WHICH NAMES WERE TREATED AS ONE TEST.
+              A reader whose report says `Polymorphs` is looking at a panel
+              headed `NEUTROPHILS`, and without this line that reads as a
+              parameter they never had. It is also the only place the join is
+              visible at all, and a join nobody can see is a page rewriting
+              someone's report rather than regrouping it.
+              INSIDE the panel, not on the shut row: the row already carries a
+              name, a pair and two chips, and this is the answer to a question
+              only a reader who noticed will ask. */}
+          {/* WHERE THE "STABLE" THRESHOLD CAME FROM.
+              A reader asked why a rise from 35 to 45 reads `stable`, and the
+              answer is a threshold -- so the threshold has to be visible, and
+              so does whether anybody has checked it. THREE STATES, THREE
+              DIFFERENT SENTENCES: a reviewed table row, an unreviewed table
+              row, and a figure the model supplied with no source at all.
+              Absent provenance renders as the most cautious of them, because
+              an unknown source is not a checked one. */}
+          {panelTrendWord(panel) && isPresent(panel.significantChangePct) ? (
+            <p className="trend-chart__threshold">
+              Counted as a change only past {panel.significantChangePct}%.{' '}
+              {panel.trendSource === 'table' && panel.trendVerified === true
+                ? 'That figure is from this tool’s reviewed variation table.'
+                : panel.trendSource === 'table'
+                  ? 'That figure is from this tool’s variation table and has not yet been checked against its published source.'
+                  : 'That figure was produced by a language model from the test name and comes from no reviewable source.'}
+            </p>
+          ) : null}
+          {Array.isArray(panel.joinedFrom) && panel.joinedFrom.length > 1 ? (
+            <p className="trend-chart__joined">
+              Your reports print this test under{' '}
+              {panel.joinedFrom.length} names: {panel.joinedFrom.join(' · ')}. They
+              are shown here as one test.
+            </p>
+          ) : null}
           {panel.chart ? (
             <TrendChart
               label={panel.chart.name}
@@ -383,6 +497,22 @@ function LabPanels({ data }) {
               // own declared optimal range and is drawn as a rectangle, and
               // these numbers belong to the laboratory, not to us.
               scaleOnly={panel.chart.referenceScale}
+              // MODULE 35'S VERDICT, SO THE CHART AND ITS OWN ROW AGREE.
+              //
+              // FOUND BY READING THE SCREEN, not by a test. These were left
+              // off because until Module 35 there was genuinely no direction
+              // for an unassessed test, and the chart's spoken summary ended
+              // "No direction was classified for them" -- correctly. With a
+              // verdict on the row above it, the same panel then said `stable`
+              // in one place and "no direction was classified" in the other.
+              // A chart contradicting the words beside it is the exact fault
+              // these components exist to prevent, and it was on screen.
+              //
+              // It also earns the line its colour: a classified `worsening`
+              // takes rust here for the same reason it does on an assessed
+              // chart, and `stable` takes no hue at all.
+              classified={panel.classified === true}
+              trend={panel.trend}
             />
           ) : (
             <p className="trend-chart__readings">
@@ -402,10 +532,12 @@ function LabPanels({ data }) {
 
 function Trends({ data, history, labSeries }) {
   const features = data?.features ? Object.values(data.features) : [];
-  const summary = data?.summary;
-  const hasLab = Boolean(
-    (labSeries?.series || []).length || (labSeries?.readings || []).length
-  );
+  // THE PANELS, BUILT ONCE AND USED TWICE -- rendered below and counted in the
+  // line above them. `hasLab` is now derived from the same array rather than
+  // from the payload, so "is there anything here" and "what is here" cannot
+  // give different answers.
+  const labPanels = labPanelsOf(labSeries);
+  const hasLab = labPanels.length > 0;
 
   // WHAT THIS CARD CAN ACTUALLY DRAW, DECIDED ONCE.
   //
@@ -432,15 +564,23 @@ function Trends({ data, history, labSeries }) {
       !NOT_A_TRAJECTORY.has(trend.outcome) && (trend.points || []).length > 0
   );
 
+  // Both halves of the card, counted from the arrays that become the panels.
+  const tally = cardTally(charted, labPanels);
+
   return (
     <section className="card">
       <h2>Trends over time</h2>
       <HistorySummary history={history} />
 
-      {summary ? (
+      {/* THE TALLY, OVER THE PANELS BELOW IT. See `cardTally` for what this
+          replaced and why. The total is stated so the four parts can be
+          checked against it -- the old line could not be reconciled with the
+          rows underneath it at all. */}
+      {tally.total ? (
         <p className="hint">
-          {summary.improving} improving · {summary.worsening} worsening ·{' '}
-          {summary.stable} stable · {summary.not_determinable} not determinable
+          {tally.total} parameter{tally.total === 1 ? '' : 's'} · {tally.improving}{' '}
+          improving · {tally.worsening} worsening · {tally.stable} stable ·{' '}
+          {tally.undirected} with no direction stated
         </p>
       ) : null}
 
@@ -513,7 +653,7 @@ function Trends({ data, history, labSeries }) {
       })}
 
       {/* THE SAME LIST, NOT A SECOND ONE. See LabPanels. */}
-      <LabPanels data={labSeries} />
+      <LabPanels panels={labPanels} />
 
       {charted.length || hasLab ? null : (
         // Only when there is genuinely nothing on this card. The charts and
@@ -632,9 +772,136 @@ function PairPicker({ reports, namesById, pair, onChange, busy }) {
   );
 }
 
+/**
+ * THE WORDS A COMPARISON CATEGORY IS SHOWN IN.
+ *
+ * ==========================================================================
+ * `unchanged` BECAME "no real change", AND THE ROW WAS CONTRADICTING ITSELF
+ * ==========================================================================
+ *
+ * The category was printed by replacing its underscores, so `unchanged`
+ * reached the reader as "unchanged" -- next to an arrow and two different
+ * numbers:
+ *
+ *     EOSINOPHILS   5 %       ->  2 %        ↓ unchanged
+ *     ESR           35 mm/hr  ->  45 mm/hr   ↑ unchanged
+ *
+ * The arrow says it moved, the numbers say it moved, and the word says it did
+ * not. What the category actually means is "it moved less than this test's own
+ * variation", which is a different and much weaker claim -- the same
+ * distinction the reader had already had to ask about on the timeline.
+ *
+ * APPLIED TO MODULE 29's OWN ROWS AS WELL, not only the laboratory ones. One
+ * table must not use one word for the assessed half and another for the rest,
+ * and the assessed rows read exactly the same way -- `BMI 25.25 -> 25.25` is
+ * genuinely unchanged, but an assessed feature that moved inside its band was
+ * making the same false statement.
+ *
+ * THE CATEGORY ITSELF IS UNTOUCHED. `category--unchanged` still carries the
+ * styling and the payload still says `unchanged`; this is the display word
+ * only, so nothing downstream has to learn a new vocabulary.
+ */
+const COMPARISON_WORD = {
+  unchanged: 'no real change',
+};
+
+function comparisonWord(category) {
+  return (
+    COMPARISON_WORD[category] || String(category || '').replace(/_/g, ' ')
+  );
+}
+
+/**
+ * ONE ROW OF THE COMPARISON, FOR A TEST THIS PLATFORM DOES NOT ASSESS.
+ *
+ * ==========================================================================
+ * THE SAME FOUR COLUMNS, AND NOTHING NEW CLAIMED IN THEM
+ * ==========================================================================
+ *
+ * Module 29's rows and these sit in one table because they answer one
+ * question, and a reader should not have to learn which service produced a
+ * row to read it. So the `category` vocabulary is MODULE 29's OWN -- improved,
+ * worsened, unchanged, changed_direction_only, newly_abnormal, newly_normal,
+ * not_classifiable -- chosen in `buildLabComparison` by that module's own
+ * documented precedence rather than translated into different words here.
+ *
+ * WHERE THESE ROWS DIFFER, THEY DIFFER HONESTLY:
+ *
+ *   - A BLOCKED ROW SHOWS BOTH UNITS. `101.9 U/L` against `13 IU/L` is the
+ *     whole reason it cannot be classified, so hiding one unit would hide the
+ *     reason. No symbol and no direction either.
+ *   - A NON-NUMERIC RESULT IS SHOWN AS ITS TEXT. "Negative" and "Pale Yellow"
+ *     are results; rendering them blank loses the laboratory's answer.
+ *   - A PARAMETER ON ONE OF THE TWO REPORTS uses the table's existing
+ *     "Not measured" shape rather than being dropped, which is what made this
+ *     card look short in the first place.
+ */
+function LabComparisonRow({ row }) {
+  const blocked = Boolean(row.blocked);
+  // Each side with ITS OWN unit when they disagree, otherwise the shared one.
+  const side = (value, raw, unit) => {
+    if (isPresent(value)) {
+      return <Value value={value} unit={blocked ? unit : row.unit} />;
+    }
+    // A result that is not a number, as printed.
+    if (isPresent(raw)) {
+      return (
+        <span className="value">
+          {raw}
+          {unit ? ` ${unit}` : ''}
+        </span>
+      );
+    }
+    return (
+      <Absent
+        label="Not measured"
+        reason="This parameter was not on that report."
+      />
+    );
+  };
+
+  return (
+    <tr>
+      <th scope="row">
+        {row.name}
+        {Array.isArray(row.joinedFrom) && row.joinedFrom.length > 1 ? (
+          // The join, named where the name is. `title` rather than a second
+          // line, because this table is already four columns wide and the
+          // timeline panel states it in full.
+          <span className="hint" title={`Also printed as: ${row.joinedFrom.join(', ')}`}>
+            {' '}
+            ·{' '}
+            {row.joinedFrom.length} names
+          </span>
+        ) : null}
+      </th>
+      <td>{side(row.previous, row.previousRaw, row.previousUnit)}</td>
+      <td>{side(row.current, row.currentRaw, row.currentUnit)}</td>
+      <td>
+        {isPresent(row.category) && row.category !== 'not_classifiable' ? (
+          <span className={`category category--${row.category}`}>
+            {isPresent(row.symbol) ? `${row.symbol} ` : ''}
+            {comparisonWord(row.category)}
+          </span>
+        ) : (
+          <Absent
+            label="Not classifiable"
+            reason={
+              blocked
+                ? 'The two reports give this parameter in different units, so the readings were not compared.'
+                : 'This parameter is not on both of these reports.'
+            }
+          />
+        )}
+      </td>
+    </tr>
+  );
+}
+
 /** The spec's Parameter / Previous / Current / Trend table. */
-function Comparison({ data, reports, namesById, pair, onPairChange, busy }) {
+function Comparison({ data, lab, reports, namesById, pair, onPairChange, busy }) {
   const rows = data?.table || [];
+  const labRows = lab?.rows || [];
 
   return (
     <section className="card">
@@ -662,7 +929,18 @@ function Comparison({ data, reports, namesById, pair, onPairChange, busy }) {
         </p>
       ) : null}
 
-      {rows.length ? (
+      {/* THE COUNT, OVER BOTH HALVES OF THE TABLE. The timeline's summary line
+          was counting twelve assessed features over a card of twenty-six
+          panels and the reader caught it; this card had the same shape of
+          error waiting, so the number is taken from what is rendered. */}
+      {rows.length + labRows.length ? (
+        <p className="hint">
+          {rows.length + labRows.length} parameter
+          {rows.length + labRows.length === 1 ? '' : 's'} across these two reports.
+        </p>
+      ) : null}
+
+      {rows.length + labRows.length ? (
         <table className="lab-table">
           <thead>
             <tr>
@@ -694,7 +972,9 @@ function Comparison({ data, reports, namesById, pair, onPairChange, busy }) {
                   {isPresent(row.category) ? (
                     <span className={`category category--${row.category}`}>
                       {isPresent(row.symbol) ? `${row.symbol} ` : ''}
-                      {row.category.replace(/_/g, ' ')}
+                      {/* MODULE 29's ROWS GET THE SAME WORDS. One table, one
+                          vocabulary -- see `COMPARISON_WORD`. */}
+                      {comparisonWord(row.category)}
                     </span>
                   ) : (
                     <Absent
@@ -704,6 +984,12 @@ function Comparison({ data, reports, namesById, pair, onPairChange, busy }) {
                   )}
                 </td>
               </tr>
+            ))}
+            {/* THE REST OF THE REPORT, IN THE SAME TABLE. Not a second
+                section: the reader asked for these to sit with the rest on
+                the timeline and the same answer applies here. */}
+            {labRows.map((row) => (
+              <LabComparisonRow key={`lab-${row.key}`} row={row} />
             ))}
           </tbody>
         </table>
@@ -969,6 +1255,10 @@ export default function Timeline() {
       ) : (
         <Comparison
           data={state.comparison?.comparison}
+          // A SEPARATE PROP, because `data` is Module 29's payload verbatim
+          // and these rows are this backend's. Merging them before they reach
+          // the page would hide which service is answerable for a row.
+          lab={state.comparison?.labComparison}
           reports={state.comparison?.history?.reports || state.trends?.history?.reports}
           namesById={names}
           /* THE PAIR ON SCREEN, not the one requested. With no explicit choice

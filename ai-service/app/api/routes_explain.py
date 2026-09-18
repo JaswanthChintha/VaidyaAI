@@ -83,6 +83,10 @@ from app.services.lab_polarity import (
     LabSeriesInput,
     classify_lab_series,
 )
+from app.services.lab_name_match import (
+    NameMatchData,
+    match_names,
+)
 from app.services.terminology import (
     MAX_TERM_CHARS,
     TerminologyAnswer,
@@ -537,6 +541,50 @@ def lab_polarity_endpoint(
             request.series, llm, max_calls=LAB_POLARITY_MAX_PER_REQUEST
         )
     )
+
+
+class LabNameMatchRequest(BaseModel):
+    """Test names to group. THERE IS NOWHERE IN THIS SHAPE TO PUT A VALUE.
+
+    Module 35's request carries the readings and keeps them from the prompt by
+    construction. This one has no field for them at all, which is the stronger
+    version of the same guarantee: a caller cannot leak a patient value through
+    an endpoint that does not accept one.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    names: List[str] = Field(default_factory=list, max_length=64)
+
+
+class LabNameMatchResponse(BaseModel):
+    """The `{success, data}` envelope -- see `GlossaryResponse` for why."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    success: bool = True
+    data: NameMatchData
+
+
+@router.post(
+    "/lab-name-match",
+    response_model=LabNameMatchResponse,
+    response_model_exclude_none=False,
+    summary="Group printed laboratory test names that are the same test",
+)
+def lab_name_match_endpoint(
+    request: LabNameMatchRequest,
+    llm: Any = Depends(get_explanation_llm),
+) -> LabNameMatchResponse:
+    """Which of these printed names are one test.
+
+    Returns an empty set rather than erroring when no model is configured. The
+    caller then groups by word set exactly as it did before this existed -- an
+    unjoined name is the status quo, not a finding about anyone.
+    """
+    if llm is None:
+        return LabNameMatchResponse(data=NameMatchData())
+    return LabNameMatchResponse(data=match_names(request.names, llm))
 
 
 class ClinicianSummaryRequest(BaseModel):

@@ -301,7 +301,22 @@ function referenceAgreementOf(points) {
  * needing to decide they are the same string. (That they are the same TEST is
  * `nameKey`'s job, above, and is a separate question.)
  */
-function buildLabSeries(snapshots, printed) {
+/*
+ * `aliases` IS OPTIONAL AND IS MODULE 36'S ANSWER, NOTHING MORE.
+ *
+ * A `Map` from one `nameKey` to the key it should be grouped under, so two
+ * names built from different WORDS can form one series -- which word-set
+ * equality cannot do and was never going to. Omit it and every group is
+ * exactly what it was before this existed, which is the same degradation
+ * `printed` offers: an older caller, a spent quota and an unconfigured key all
+ * land on the previous behaviour rather than on a wrong one.
+ *
+ * IT REGROUPS AND DOES NOTHING ELSE. No value is created, no unit converted,
+ * no name rewritten. When a join turns out to unite two units, `blocked`
+ * catches it one screen later exactly as it already does -- so a wrong join
+ * cannot produce a drawn line across two units even if one gets through.
+ */
+function buildLabSeries(snapshots, printed, aliases) {
   const rows = Array.isArray(snapshots) ? snapshots : [];
   const groups = new Map();
 
@@ -317,8 +332,13 @@ function buildLabSeries(snapshots, printed) {
 
     for (const entry of unmapped) {
       const name = entry && entry.test_name;
-      const key = nameKey(name);
-      if (!key || !when) continue;
+      const own = nameKey(name);
+      if (!own || !when) continue;
+      // MODULE 36'S REGROUPING, OR THIS ROW'S OWN KEY. `own` is kept on the
+      // entry so a group can afterwards say whether it was assembled from more
+      // than one printed vocabulary -- a join the reader can see is the whole
+      // difference between regrouping their data and quietly rewriting it.
+      const key = (aliases instanceof Map && aliases.get(own)) || own;
       // The extraction row this reading was read off, in THIS report. Absent
       // whenever the caller supplied no printed parameters at all, and absent
       // for a single row whose name the extraction and the feature engineer
@@ -330,6 +350,7 @@ function buildLabSeries(snapshots, printed) {
         date: when,
         reportId: snapshot.report_id,
         printed: String(name),
+        sourceKey: own,
         unit: entry.unit === null || entry.unit === undefined ? null : String(entry.unit),
         value: numericValue(entry.value_raw),
         // AS THE LABORATORY PRINTED IT. A reading that is not a number is
@@ -378,7 +399,23 @@ function buildLabSeries(snapshots, printed) {
 
     // The name the reader saw most recently, so the label matches the report
     // in their hand rather than an older spelling of the same test.
+    //
+    // THIS RULE IS KEPT FOR JOINED GROUPS TOO, in preference to Module 36's
+    // own `display_name`. The newest report is the one the reader is holding,
+    // and a panel titled with the words on it is easier to find than a panel
+    // titled with the longest name available.
     const name = entries[entries.length - 1].printed;
+
+    // WAS THIS GROUP ASSEMBLED FROM MORE THAN ONE PRINTED NAME?
+    //
+    // More than one `sourceKey` means Module 36 joined names that word-set
+    // equality kept apart, and the reader is entitled to know which -- their
+    // report says `Polymorphs` and this panel says `NEUTROPHILS`, and without
+    // the list that looks like a parameter they never had. Null when nothing
+    // was joined, which is every group when no aliases were supplied.
+    const sourceKeys = new Set(entries.map((e) => e.sourceKey));
+    const joinedFrom =
+      sourceKeys.size > 1 ? [...new Set(entries.map((e) => e.printed))] : null;
 
     // THE MARKING ON THE MOST RECENT REPORT, AND ONLY THAT ONE.
     //
@@ -404,12 +441,12 @@ function buildLabSeries(snapshots, printed) {
 
     if (entries.length < 2) {
       singleReportCount += 1;
-      readings.push({ key, name, reason: 'one_report', rows: asPrinted(), latestFlag: latestFlagOf(entries) });
+      readings.push({ key, name, joinedFrom, reason: 'one_report', rows: asPrinted(), latestFlag: latestFlagOf(entries) });
       continue;
     }
     if (numeric.length < 2) {
       notNumericCount += 1;
-      readings.push({ key, name, reason: 'not_numeric', rows: asPrinted(), latestFlag: latestFlagOf(entries) });
+      readings.push({ key, name, joinedFrom, reason: 'not_numeric', rows: asPrinted(), latestFlag: latestFlagOf(entries) });
       continue;
     }
 
@@ -449,6 +486,8 @@ function buildLabSeries(snapshots, printed) {
     series.push({
       key,
       name,
+      // The other printed names merged into this one, or null. See above.
+      joinedFrom,
       unit: blocked ? null : numeric[numeric.length - 1].unit,
       blocked,
       points,
@@ -592,6 +631,13 @@ function attachVerdicts(built, verdicts) {
       // entitled to recompute it.
       significantChangePct: verdict.significant_change_pct ?? null,
       trendBasis: typeof verdict.basis === 'string' ? verdict.basis : null,
+      // WHERE THE THRESHOLD CAME FROM, carried to the screen. A reviewable
+      // figure and a model-supplied one must not be described in the same
+      // words -- the same separation `labFlag` keeps between the laboratory's
+      // verdict and this platform's. `null` is treated as unknown provenance
+      // by the page, which renders the more cautious of the two.
+      trendSource: typeof verdict.variation_source === 'string' ? verdict.variation_source : null,
+      trendVerified: verdict.variation_verified === true,
     };
   });
 
@@ -602,10 +648,230 @@ function attachVerdicts(built, verdicts) {
   };
 }
 
+/**
+ * The printed names that could not make a series, to ask Module 36 about.
+ *
+ * ==========================================================================
+ * READINGS ONLY, AND THAT IS A DELIBERATE LIMIT
+ * ==========================================================================
+ *
+ * A `readings` entry is a parameter seen on one report, or one whose results
+ * are not numbers. Those are the rows a join can rescue: two of them under
+ * different words become a two-point series and can carry a direction.
+ *
+ * SERIES ARE NOT OFFERED FOR JOINING. A series already has its points, and
+ * merging two of them would silently redraw charts the reader has already
+ * looked at on the strength of a model call. The case exists -- a third
+ * spelling of an already-trended test -- and it is left alone until somebody
+ * asks for it, because the cost of being wrong is higher there and the gain
+ * is smaller.
+ */
+function unjoinedNames(built) {
+  const rows = built && Array.isArray(built.readings) ? built.readings : [];
+  const names = [];
+  for (const row of rows) {
+    if (row && typeof row.name === 'string' && row.name) names.push(row.name);
+  }
+  return [...new Set(names)];
+}
+
+/**
+ * Module 36's groups, turned into the `aliases` map `buildLabSeries` takes.
+ *
+ * ==========================================================================
+ * THE CANONICAL KEY IS CHOSEN BY A RULE, NOT BY THE MODEL
+ * ==========================================================================
+ *
+ * Every name in a group is pointed at the SMALLEST of the group's own keys,
+ * sorted as strings. Any member would group them equally well; picking the
+ * smallest makes the result stable across calls, so two page loads that get
+ * the same groups in a different order produce the same `key` -- and `key`
+ * reaches React as a list key. A group whose identity wandered between
+ * requests would remount panels for no reason.
+ *
+ * A NAME THAT DOES NOT FOLD TO A KEY IS DROPPED, and a group left with fewer
+ * than two keys is skipped: aliasing a single key to itself is a no-op that
+ * would only make `joinedFrom` claim a join that did not happen.
+ */
+function aliasMap(groups) {
+  const out = new Map();
+  for (const group of Array.isArray(groups) ? groups : []) {
+    const names = group && Array.isArray(group.names) ? group.names : [];
+    const keys = [...new Set(names.map((n) => nameKey(n)).filter(Boolean))];
+    if (keys.length < 2) continue;
+    const canonical = keys.slice().sort()[0];
+    for (const key of keys) {
+      // FIRST GROUP WINS. Module 36 already refuses a name that appears in two
+      // groups, so this cannot normally fire; if a future producer stops
+      // enforcing that, one test's readings must not migrate onto another's
+      // chart on the strength of emission order.
+      if (!out.has(key)) out.set(key, canonical);
+    }
+  }
+  return out;
+}
+
+/*
+ * MODULE 29's TABLE COVERS THE FEATURES THIS PLATFORM ASSESSES. THIS COVERS
+ * THE REST OF THE REPORT.
+ *
+ * The comparison card showed twelve rows while the two reports carried 28
+ * parameters between them -- the same gap the timeline had before
+ * `buildLabSeries`, and the reader found it the same way: by counting what was
+ * on their reports and what was on the screen.
+ *
+ * IT IS A TRANSFORM OVER `buildLabSeries`, NOT A SECOND COMPARATOR. Run that
+ * over ONLY the two chosen reports and it already answers everything a
+ * comparison row needs: which parameters both reports carry, which only one
+ * does, which disagree about units, what the laboratory marked, and -- once
+ * Module 35's verdicts are attached -- whether the change was better or worse.
+ * Writing a second grouping would mean two files deciding that
+ * `Polymorphs` and `NEUTROPHILS` are one test, and eventually disagreeing.
+ *
+ * PREVIOUS AND CURRENT ARE THE REQUESTED PAIR, NOT THE DATE ORDER. The picker
+ * allows an out-of-order pair and the card says so; Module 29 keys its own
+ * rows off the requested baseline and comparison, so these are keyed off the
+ * report ids too. Otherwise one table would have two ideas of which column is
+ * "previous".
+ */
+const COMPARISON_CATEGORY = {
+  improving: 'improved',
+  worsening: 'worsened',
+  stable: 'unchanged',
+};
+
+/** The laboratory's own transition, and ONLY when it marked both reports. */
+function transitionOf(previousFlag, currentFlag) {
+  // A NULL FLAG IS NOT "NORMAL". PCV is marked low on the older report and
+  // unmarked on the newer, and reading the absence as normal would invent a
+  // recovery. Both sides must carry a marking before a crossing is claimed.
+  if (!previousFlag || !currentFlag) return null;
+  const wasNormal = previousFlag === 'normal';
+  const isNormal = currentFlag === 'normal';
+  if (wasNormal && !isNormal) return 'newly_abnormal';
+  if (!wasNormal && isNormal) return 'newly_normal';
+  return null;
+}
+
+function symbolOf(previous, current) {
+  if (previous === null || current === null) return null;
+  if (current > previous) return '↑';
+  if (current < previous) return '↓';
+  return '→';
+}
+
+function buildLabComparison(built, baselineId, comparisonId) {
+  const rows = [];
+  const pick = (entries, reportId) =>
+    (entries || []).find((e) => e.reportId === reportId) || null;
+
+  for (const entry of (built && built.series) || []) {
+    const before = pick(entry.points, baselineId);
+    const after = pick(entry.points, comparisonId);
+    if (!before && !after) continue;
+
+    const previous = before ? before.value : null;
+    const current = after ? after.value : null;
+    const blocked = Boolean(entry.blocked);
+    const comparable = !blocked && previous !== null && current !== null;
+
+    // THE SAME PRECEDENCE MODULE 29 USES, in its own words: a reference
+    // interval crossing outranks the change axis, then the change axis, then
+    // "it moved but nobody will say whether that is better".
+    const transition = comparable
+      ? transitionOf(before.labFlag, after.labFlag)
+      : null;
+    let category = 'not_classifiable';
+    if (!comparable) {
+      category = 'not_classifiable';
+    } else if (transition) {
+      category = transition;
+    } else if (entry.classified === true && COMPARISON_CATEGORY[entry.trend]) {
+      category = COMPARISON_CATEGORY[entry.trend];
+    } else if (previous !== current) {
+      // It moved and no polarity would call that better or worse -- which is
+      // what `changed_direction_only` means in `report_comparator._category`.
+      category = 'changed_direction_only';
+    } else {
+      // Two identical numbers. Arithmetic, not a judgement about a band.
+      category = 'unchanged';
+    }
+
+    rows.push({
+      key: entry.key,
+      name: entry.name,
+      joinedFrom: entry.joinedFrom,
+      previous,
+      current,
+      // AS PRINTED ON EACH SIDE. A blocked row's two units are the whole
+      // reason it is not classifiable, so both are carried rather than one
+      // being chosen to stand for the pair.
+      previousUnit: before ? before.unit : null,
+      currentUnit: after ? after.unit : null,
+      unit: blocked ? null : entry.unit,
+      blocked: entry.blocked || null,
+      previousFlag: before ? before.labFlag : null,
+      currentFlag: after ? after.labFlag : null,
+      category,
+      symbol: comparable ? symbolOf(previous, current) : null,
+      trend: entry.trend === undefined ? null : entry.trend,
+      classified: entry.classified === true,
+      significantChangePct:
+        entry.significantChangePct === undefined ? null : entry.significantChangePct,
+      trendSource: entry.trendSource === undefined ? null : entry.trendSource,
+      trendVerified: entry.trendVerified === true,
+    });
+  }
+
+  // A PARAMETER ON ONE OF THE TWO REPORTS IS STILL ON A REPORT.
+  //
+  // The existing table already has a shape for this -- "Not measured. This
+  // parameter was not on the later report." -- so these rows use it rather
+  // than being dropped, which is what made the card look short in the first
+  // place.
+  for (const entry of (built && built.readings) || []) {
+    const before = pick(entry.rows, baselineId);
+    const after = pick(entry.rows, comparisonId);
+    if (!before && !after) continue;
+
+    rows.push({
+      key: entry.key,
+      name: entry.name,
+      joinedFrom: entry.joinedFrom,
+      previous: before ? before.value : null,
+      current: after ? after.value : null,
+      // AS PRINTED, so a non-numeric result is shown as the text it is.
+      previousRaw: before ? before.valueRaw : null,
+      currentRaw: after ? after.valueRaw : null,
+      previousUnit: before ? before.unit : null,
+      currentUnit: after ? after.unit : null,
+      unit: (after && after.unit) || (before && before.unit) || null,
+      blocked: null,
+      previousFlag: before ? before.labFlag : null,
+      currentFlag: after ? after.labFlag : null,
+      // NEVER a change: one reading cannot be compared with nothing, and a
+      // non-numeric result cannot be compared at all.
+      category: 'not_classifiable',
+      symbol: null,
+      trend: null,
+      classified: false,
+      significantChangePct: null,
+      trendSource: null,
+      trendVerified: false,
+    });
+  }
+
+  rows.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  return { rows, count: rows.length };
+}
+
 module.exports = {
   buildLabSeries,
+  buildLabComparison,
   classifiableSeries,
   attachVerdicts,
+  unjoinedNames,
+  aliasMap,
   nameKey,
   unitKey,
   numericValue,

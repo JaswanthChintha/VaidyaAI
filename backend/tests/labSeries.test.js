@@ -25,6 +25,9 @@ const {
   numericBound,
   classifiableSeries,
   attachVerdicts,
+  unjoinedNames,
+  aliasMap,
+  buildLabComparison,
 } = require('../src/services/labSeriesService');
 
 /** A history snapshot in `historyService`'s own shape. */
@@ -787,5 +790,259 @@ describe('labSeriesService - nothing to do', () => {
       snap('2026-02-01', [row('Zorblex', '2', 'U/L')]),
     ]);
     expect(out.series).toHaveLength(0);
+  });
+});
+
+describe('labSeriesService - the comparison table for unassessed tests', () => {
+  const pairOf = (oldRows, newRows) => [
+    snap('2026-01-01', oldRows, 'A'),
+    snap('2026-02-01', newRows, 'B'),
+  ];
+
+  it('compares a parameter both reports carry', () => {
+    const built = buildLabSeries(pairOf([row('Zorblex', '12.1', 'mg/L')], [row('Zorblex', '38.9', 'mg/L')]));
+    const [only] = buildLabComparison(built, 'A', 'B').rows;
+
+    expect(only.previous).toBe(12.1);
+    expect(only.current).toBe(38.9);
+    expect(only.symbol).toBe('↑');
+    // It moved and nothing declared whether that is better -- which is what
+    // `changed_direction_only` means in report_comparator._category.
+    expect(only.category).toBe('changed_direction_only');
+  });
+
+  it('keeps a parameter that is on only ONE of the two reports', () => {
+    // THE WHOLE REASON THIS EXISTS. These were absent from the card, so two
+    // reports carrying 28 parameters showed twelve rows.
+    const built = buildLabSeries(pairOf([row('OldOnly', '5', '%')], [row('NewOnly', '9', '%')]));
+    const rows = buildLabComparison(built, 'A', 'B').rows;
+
+    expect(rows.map((r) => r.name).sort()).toEqual(['NewOnly', 'OldOnly']);
+    const old = rows.find((r) => r.name === 'OldOnly');
+    expect(old.previous).toBe(5);
+    expect(old.current).toBeNull();
+    expect(old.category).toBe('not_classifiable');
+    expect(old.symbol).toBeNull();
+  });
+
+  it('refuses to classify two different units, and carries BOTH of them', () => {
+    // 101.9 U/L against 13 IU/L. Hiding one unit would hide the reason the
+    // row cannot be classified.
+    const built = buildLabSeries(pairOf([row('Zorblex', '101.9', 'U/L')], [row('Zorblex', '13', 'IU/L')]));
+    const [only] = buildLabComparison(built, 'A', 'B').rows;
+
+    expect(only.category).toBe('not_classifiable');
+    expect(only.symbol).toBeNull();
+    expect(only.previousUnit).toBe('U/L');
+    expect(only.currentUnit).toBe('IU/L');
+    expect(only.unit).toBeNull();
+  });
+
+  it("uses Module 29's own words for a Module 35 verdict", () => {
+    const built = buildLabSeries(pairOf([row('Zorblex', '12.1', 'mg/L')], [row('Zorblex', '38.9', 'mg/L')]));
+    const withVerdict = attachVerdicts(built, [
+      { test_name: 'Zorblex', outcome: 'TREND_CLASSIFIED', trend: 'worsening' },
+    ]);
+    const [only] = buildLabComparison(withVerdict, 'A', 'B').rows;
+
+    // `worsening` on the timeline is `worsened` here. ONE vocabulary per
+    // table -- not a third set of words invented for these rows.
+    expect(only.category).toBe('worsened');
+  });
+
+  it("lets the laboratory's own crossing outrank the change axis", () => {
+    // Module 29's documented precedence: a reference-interval crossing is the
+    // more consequential fact. This is the LABORATORY's marking, not ours.
+    //
+    // THE FLAG COMES FROM THE PRINTED EXTRACTION, NOT FROM THE UNMAPPED ROW.
+    // The first version of this test put `flag` on the row and asserted on it,
+    // and `buildLabSeries` never looks there -- it joins each point to its own
+    // report's extraction. The test failed with `previousFlag: null`, which is
+    // the producer telling the fixture it was wrong.
+    const built = buildLabSeries(
+      pairOf([row('Zorblex', '12.1', 'mg/L')], [row('Zorblex', '38.9', 'mg/L')]),
+      printedFor({
+        A: [{ test_name: 'Zorblex', flag: 'normal' }],
+        B: [{ test_name: 'Zorblex', flag: 'high' }],
+      })
+    );
+    const withVerdict = attachVerdicts(built, [
+      { test_name: 'Zorblex', outcome: 'TREND_CLASSIFIED', trend: 'stable' },
+    ]);
+    const [only] = buildLabComparison(withVerdict, 'A', 'B').rows;
+
+    // `stable` would have given `unchanged`. The crossing outranks it.
+    expect(only.category).toBe('newly_abnormal');
+  });
+
+  it('claims NO crossing when one report marked nothing', () => {
+    // PCV is the case that decides it: marked low on the older report and
+    // unmarked on the newer. Reading the absence as normal would invent a
+    // recovery the laboratory never stated.
+    const built = buildLabSeries(
+      pairOf([row('Zorblex', '34.4', '%')], [row('Zorblex', '37.9', '%')]),
+      printedFor({
+        A: [{ test_name: 'Zorblex', flag: 'low' }],
+        B: [{ test_name: 'Zorblex' }],
+      })
+    );
+    const [only] = buildLabComparison(built, 'A', 'B').rows;
+
+    expect(only.category).not.toBe('newly_normal');
+    expect(only.previousFlag).toBe('low');
+    expect(only.currentFlag).toBeNull();
+  });
+
+  it('follows the REQUESTED pair, not the date order', () => {
+    // The picker allows an out-of-order pair and the card says so. Module 29
+    // keys its rows off the requested baseline, so these must too, or one
+    // table would have two ideas of which column is "previous".
+    const built = buildLabSeries(pairOf([row('Zorblex', '12.1', 'mg/L')], [row('Zorblex', '38.9', 'mg/L')]));
+    const [reversed] = buildLabComparison(built, 'B', 'A').rows;
+
+    expect(reversed.previous).toBe(38.9);
+    expect(reversed.current).toBe(12.1);
+    expect(reversed.symbol).toBe('↓');
+  });
+
+  it('carries a non-numeric result as the text the laboratory printed', () => {
+    const built = buildLabSeries(
+      pairOf([row('Zorblex', 'Negative', null)], [row('Zorblex', 'Negative', null)])
+    );
+    const [only] = buildLabComparison(built, 'A', 'B').rows;
+
+    expect(only.previousRaw).toBe('Negative');
+    expect(only.currentRaw).toBe('Negative');
+    expect(only.category).toBe('not_classifiable');
+  });
+
+  it('returns nothing rather than throwing when there is nothing to compare', () => {
+    expect(buildLabComparison(buildLabSeries([]), 'A', 'B')).toEqual({ rows: [], count: 0 });
+    expect(buildLabComparison(undefined, 'A', 'B')).toEqual({ rows: [], count: 0 });
+  });
+});
+
+describe('labSeriesService - Module 36 name joining', () => {
+  // TWO INVENTED NAMES FOR ONE TEST, sharing no words, so `nameKey` cannot
+  // join them and only an alias can. The real pair this stands in for is
+  // NEUTROPHILS / Polymorphs.
+  const twoNames = () => [
+    snap('2026-01-01', [row('Zorblex Factor', '12.1', 'mg/L')], 'r1'),
+    snap('2026-02-01', [row('Frimbulin', '38.9', 'mg/L')], 'r2'),
+  ];
+
+  it('leaves them as two readings when no aliases are supplied', () => {
+    // THE DEGRADATION, PINNED FIRST. This is what a spent quota, an
+    // unconfigured key and an older caller all get, and it must stay exactly
+    // what the endpoint returned before Module 36 existed.
+    const out = buildLabSeries(twoNames());
+
+    expect(out.series).toHaveLength(0);
+    expect(out.readings).toHaveLength(2);
+    expect(out.readings.every((r) => r.joinedFrom === null)).toBe(true);
+  });
+
+  it('joins them into one series when an alias says they are one test', () => {
+    const aliases = aliasMap([{ names: ['Zorblex Factor', 'Frimbulin'] }]);
+    const out = buildLabSeries(twoNames(), undefined, aliases);
+
+    expect(out.readings).toHaveLength(0);
+    expect(out.series).toHaveLength(1);
+    expect(out.series[0].points.map((p) => p.value)).toEqual([12.1, 38.9]);
+    // OLDEST FIRST, and the movement pair with it -- a join must not reorder.
+    expect(out.series[0].movement).toBe('rose');
+    expect(out.series[0].movementFrom).toBe(12.1);
+    expect(out.series[0].movementTo).toBe(38.9);
+  });
+
+  it('titles the joined panel with the NEWEST report\'s wording', () => {
+    const aliases = aliasMap([{ names: ['Zorblex Factor', 'Frimbulin'] }]);
+    const out = buildLabSeries(twoNames(), undefined, aliases);
+
+    // The reader is holding the newer report. A panel titled with the words
+    // on it is findable; one titled with the older spelling is not.
+    expect(out.series[0].name).toBe('Frimbulin');
+  });
+
+  it('says which names it merged, so no join is silent', () => {
+    const aliases = aliasMap([{ names: ['Zorblex Factor', 'Frimbulin'] }]);
+    const out = buildLabSeries(twoNames(), undefined, aliases);
+
+    // Their report says `Zorblex Factor` and this panel says `Frimbulin`.
+    // Without the list that reads as a parameter they never had.
+    expect(out.series[0].joinedFrom).toEqual(['Zorblex Factor', 'Frimbulin']);
+  });
+
+  it('claims NO join when the group only restates one name', () => {
+    // A group of one key aliases nothing, and `joinedFrom` must not announce
+    // a merge that did not happen.
+    const aliases = aliasMap([{ names: ['Zorblex Factor'] }]);
+    expect(aliases.size).toBe(0);
+
+    const out = buildLabSeries(
+      [
+        snap('2026-01-01', [row('Zorblex Factor', '12.1', 'mg/L')], 'r1'),
+        snap('2026-02-01', [row('Zorblex Factor', '38.9', 'mg/L')], 'r2'),
+      ],
+      undefined,
+      aliases
+    );
+    expect(out.series[0].joinedFrom).toBeNull();
+  });
+
+  it('BLOCKS a join that unites two units instead of drawing across them', () => {
+    // THE SAFETY NET UNDER A WRONG JOIN. Even if the model were wrong about
+    // two names, a series whose units disagree is blocked, gets no scale, no
+    // movement word and no pair -- so the worst a bad join can produce is two
+    // numbers listed side by side, never a line.
+    const aliases = aliasMap([{ names: ['Zorblex Factor', 'Frimbulin'] }]);
+    const out = buildLabSeries(
+      [
+        snap('2026-01-01', [row('Zorblex Factor', '101.9', 'U/L')], 'r1'),
+        snap('2026-02-01', [row('Frimbulin', '13', 'IU/L')], 'r2'),
+      ],
+      undefined,
+      aliases
+    );
+
+    expect(out.series).toHaveLength(1);
+    expect(out.series[0].blocked).not.toBeNull();
+    expect(out.series[0].movement).toBeNull();
+    expect(out.series[0].movementFrom).toBeNull();
+    expect(out.series[0].referenceScale).toBeNull();
+  });
+
+  it('offers only the unjoinable names, never the ones already trending', () => {
+    const out = buildLabSeries([
+      snap('2026-01-01', [row('Zorblex', '1', 'mg/L'), row('Frimbulin', '5', 'mg/L')], 'r1'),
+      snap('2026-02-01', [row('Zorblex', '2', 'mg/L'), row('Quixotor', '9', 'mg/L')], 'r2'),
+    ]);
+
+    // Zorblex is on both reports and already a series; it is NOT offered for
+    // joining, because merging an existing series would redraw a chart the
+    // reader has already looked at.
+    expect(out.series.map((s) => s.name)).toEqual(['Zorblex']);
+    expect(unjoinedNames(out).sort()).toEqual(['Frimbulin', 'Quixotor']);
+  });
+
+  it('picks a canonical key by a rule, so two calls agree', () => {
+    // `key` reaches React as a list key. A group whose identity depended on
+    // the order the model emitted it would remount panels between requests.
+    const forwards = aliasMap([{ names: ['Zorblex Factor', 'Frimbulin'] }]);
+    const backwards = aliasMap([{ names: ['Frimbulin', 'Zorblex Factor'] }]);
+
+    expect([...forwards.entries()].sort()).toEqual([...backwards.entries()].sort());
+  });
+
+  it('keeps a name out of a second group rather than letting it migrate', () => {
+    // Module 36 already refuses an overlapping name. If a future producer
+    // stops, one test's readings must not land on another test's chart
+    // because of emission order.
+    const aliases = aliasMap([
+      { names: ['Zorblex Factor', 'Frimbulin'] },
+      { names: ['Frimbulin', 'Quixotor'] },
+    ]);
+
+    expect(aliases.get(nameKey('Frimbulin'))).toBe(aliases.get(nameKey('Zorblex Factor')));
   });
 });

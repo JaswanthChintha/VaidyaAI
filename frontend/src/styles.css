@@ -838,6 +838,26 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
 /* Not a direction, and never coloured like one. */
 .trend-chart__nodirection { color: var(--muted); font-size: 13px; }
 
+/* THE THRESHOLD A CHANGE HAD TO CROSS, AND WHO STANDS BEHIND IT.
+   Same quiet treatment as the join note: this is the answer to "why does a
+   rise read stable", not a warning banner. */
+.trend-chart__threshold {
+  margin: 0 14px 10px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* WHICH PRINTED NAMES WERE TREATED AS ONE TEST (Module 36).
+   Inside the panel, quiet, and NOT a warning -- a join is an ordinary fact
+   about the reader's two reports, not a caveat about this one. */
+.trend-chart__joined {
+  margin: 0 14px 10px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 /* THE TWO READINGS A DIRECTION WORD IS ABOUT, on the shut row.
    Quiet on purpose: it restates what the chart draws, and it must not compete
    with the parameter's name or the word beside it. NEVER COLOURED -- green and
