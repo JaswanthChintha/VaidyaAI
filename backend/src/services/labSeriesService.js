@@ -1,5 +1,11 @@
 'use strict';
 
+// The declared unit equivalences, as plain data. Kept in its own file because
+// a clinical reviewer should be able to find and read the claims without
+// reading this service -- see its header for why `%` equals `g/dL` for MCHC
+// and for nothing else.
+const { UNIT_EQUIVALENCE } = require('./unitEquivalence');
+
 /**
  * The laboratory's OWN repeated parameters, over time.
  *
@@ -154,6 +160,69 @@ function unitKey(unit) {
     .toLowerCase()
     .replace(/\s+/g, '');
   return text.replace(_MICRO, 'u').replace(_I_L, 'i');
+}
+
+/*
+ * THE DECLARED EQUIVALENCES, INDEXED. See `unitEquivalence.js` for the table
+ * and for why `%` may be equal to `g/dL` for MCHC and for nothing else.
+ *
+ * SPELLING IS FOLDED FIRST. The table is written in the units a laboratory
+ * prints (`U/L`, `g/dL`) and indexed through `unitKey`, so the entries stay
+ * readable and nobody has to hand-write a post-fold string.
+ *
+ * THE CANONICAL MEMBER IS THE FIRST LISTED, by rule rather than by judgement,
+ * so the key a series ends up grouped under does not depend on which report
+ * happened to arrive first.
+ */
+const _EQUIV_GLOBAL = new Map();
+const _EQUIV_SCOPED = new Map();
+
+for (const entry of UNIT_EQUIVALENCE) {
+  const keys = entry.units.map((u) => unitKey(u)).filter(Boolean);
+  if (keys.length < 2) continue;
+  const canonical = keys[0];
+  if (entry.tests === null) {
+    for (const key of keys) {
+      if (!_EQUIV_GLOBAL.has(key)) _EQUIV_GLOBAL.set(key, { canonical, entry });
+    }
+  } else {
+    // NESTED MAPS, NOT A COMPOSITE STRING KEY. The first version joined the
+    // test and the unit with a separator and there is no character safe for
+    // that job: a unit key can hold `/`, `%`, `^` and `.`, and the escape
+    // chosen to avoid them put two real NUL BYTES INTO THIS SOURCE FILE,
+    // which made git treat it as binary and drop the diff. Two maps have no
+    // separator to get wrong.
+    for (const test of entry.tests) {
+      const scope = nameKey(test);
+      if (!scope) continue;
+      if (!_EQUIV_SCOPED.has(scope)) _EQUIV_SCOPED.set(scope, new Map());
+      const byUnit = _EQUIV_SCOPED.get(scope);
+      for (const key of keys) {
+        if (!byUnit.has(key)) byUnit.set(key, { canonical, entry });
+      }
+    }
+  }
+}
+
+/**
+ * The declared equivalence covering this test and unit, or null.
+ *
+ * TEST-SCOPED FIRST, THEN GLOBAL. A claim about one test is more specific than
+ * a claim about a unit string, so it wins -- and a future scoped entry cannot
+ * be silently overridden by a broader one added later.
+ */
+function equivalenceFor(testKey, key) {
+  if (!key) return null;
+  const byUnit = _EQUIV_SCOPED.get(testKey);
+  const scoped = byUnit ? byUnit.get(key) : undefined;
+  if (scoped) return scoped;
+  return _EQUIV_GLOBAL.get(key) || null;
+}
+
+/** This unit's key, moved onto its declared shared scale where there is one. */
+function canonicalUnitKey(testKey, key) {
+  const found = equivalenceFor(testKey, key);
+  return found ? found.canonical : key;
 }
 
 /**
@@ -509,7 +578,38 @@ function buildLabSeries(snapshots, printed, aliases) {
       continue;
     }
 
-    const units = [...new Set(numeric.map((e) => unitKey(e.unit)))];
+    // THE UNIT KEYS, MOVED ONTO ANY DECLARED SHARED SCALE FIRST.
+    //
+    // `unitKey` folds spelling; this folds two unit strings that mean one
+    // scale, which is a clinical claim and lives in `unitEquivalence.js`.
+    // SGPT in `U/L` and `IU/L`, and MCHC in `g/dL` and `%`, are the two on
+    // these reports. Applied per test, because `%` is a mass concentration on
+    // MCHC and a proportion of the white cell count on the differential.
+    //
+    // NO READING IS ALTERED. The declarations carry no factor and cannot: the
+    // numbers were already the same, and this only decides whether they may
+    // share an axis.
+    const rawKeys = numeric.map((e) => unitKey(e.unit));
+    const units = [...new Set(rawKeys.map((k) => canonicalUnitKey(key, k)))];
+    // WHICH DECLARATION WAS RELIED ON, or null. Carried to the screen so a
+    // reader can be told that two differently-labelled readings were treated
+    // as one scale, and on whose authority -- `verified` is false on every
+    // row today, and a reader must not be told a checked equivalence and an
+    // unchecked one in the same words.
+    const appliedEquivalence = (() => {
+      if (new Set(rawKeys).size < 2) return null;
+      for (const k of rawKeys) {
+        const found = equivalenceFor(key, k);
+        if (found && found.canonical !== k) {
+          return {
+            id: found.entry.id,
+            label: found.entry.label,
+            verified: found.entry.verified === true,
+          };
+        }
+      }
+      return null;
+    })();
     // A MISSING UNIT IS NOT A DIFFERENT UNIT.
     //
     // `AVERAGE BLOOD GLUCOSE` is `154 mg/dL` on one report and `121.94` with
@@ -562,6 +662,8 @@ function buildLabSeries(snapshots, printed, aliases) {
       name,
       // The other printed names merged into this one, or null. See above.
       joinedFrom,
+      // The declared unit equivalence this series relied on, or null.
+      unitEquivalence: appliedEquivalence,
       unit: blocked ? null : numeric[numeric.length - 1].unit,
       blocked,
       points,
@@ -875,6 +977,8 @@ function buildLabComparison(built, baselineId, comparisonId) {
       key: entry.key,
       name: entry.name,
       joinedFrom: entry.joinedFrom,
+      // The declared equivalence that let two unit strings share a scale.
+      unitEquivalence: entry.unitEquivalence || null,
       previous,
       current,
       // AS PRINTED ON EACH SIDE. A blocked row's two units are the whole

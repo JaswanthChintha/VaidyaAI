@@ -344,6 +344,7 @@ function labPanelsOf(data) {
             trend: entry.trend,
             classified: entry.classified,
             joinedFrom: entry.joinedFrom,
+            unitEquivalence: entry.unitEquivalence,
             significantChangePct: entry.significantChangePct,
             trendSource: entry.trendSource,
             trendVerified: entry.trendVerified,
@@ -475,6 +476,25 @@ function LabPanels({ panels }) {
                 : panel.trendSource === 'table'
                   ? 'That figure is from this tool’s variation table and has not yet been checked against its published source.'
                   : 'That figure was produced by a language model from the test name and comes from no reviewable source.'}
+            </p>
+          ) : null}
+          {/* TWO UNIT LABELS TREATED AS ONE SCALE, AND ON WHOSE AUTHORITY.
+              SGPT is printed U/L on one report and IU/L on the other; MCHC is
+              g/dL and %. Those are the same scale and the readings are the
+              same numbers -- but the reader is looking at two different
+              labels on their own documents, and a line drawn between them
+              without a word would be this page deciding something it has not
+              said. `verified` is false on every declaration today, so the
+              sentence says which it is rather than implying a review that
+              has not happened. */}
+          {panel.unitEquivalence ? (
+            <p className="trend-chart__joined">
+              Your reports label this test two ways, both meaning{' '}
+              {panel.unitEquivalence.label}, so the readings are shown on one
+              scale.{' '}
+              {panel.unitEquivalence.verified
+                ? 'That equivalence has been reviewed.'
+                : 'That equivalence is a standard convention and has not yet been checked against a published standard.'}
             </p>
           ) : null}
           {Array.isArray(panel.joinedFrom) && panel.joinedFrom.length > 1 ? (

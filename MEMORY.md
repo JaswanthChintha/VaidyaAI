@@ -40,10 +40,10 @@ about any of them. That is the fifth time on this project.
 
 | | Tests |
 |---|---|
-| `backend/` (Node/Express) | **749** passing + 3 skipped (15 suites, 0 failed) |
+| `backend/` (Node/Express) | **754** passing + 3 skipped (15 suites, 0 failed) |
 | `ai-service/` (Python/FastAPI) | **3,992** passing + 7 skipped (3,999 collected, 0 failures, 0 errors) |
 | `frontend/` (React/Vitest) | **385** passing, 0 suites failed |
-| **Total** | **5,126** -- ALL THREE green 2026-09-18; ai-service not re-run for the last commit because nothing in it changed |
+| **Total** | **5,131** -- backend and frontend green 2026-09-18; ai-service NOT re-run for the last two commits because nothing in it changed |
 
 > **⚠ THE 4,852 IN EVERY EARLIER SECTION WAS 7 TOO HIGH.** §6as recorded
 > ai-service's COLLECTED total (3,865) as its PASSED count; that day's real
@@ -9153,14 +9153,14 @@ things, in the order they were found:
 
 | | Tests | Last run |
 |---|---|---|
-| `backend/` | **749** passed, 3 skipped, 15 suites, 0 failed | 2026-09-18 ✅ |
+| `backend/` | **754** passed, 3 skipped, 15 suites, 0 failed | 2026-09-18 ✅ |
 | `ai-service/` | **3,992** passed, 7 skipped (3,999 collected, 0 failures, 0 errors) | 2026-09-18 ✅ (`.env` moved aside) |
 | `frontend/` | **385** passed, 0 suites failed | 2026-09-18 ✅ |
-| **Total** | **5,126** | |
+| **Total** | **5,131** | |
 
-**FIVE things, not four** — the fifth was taken off this section's own open list
-later the same day: the TSH unit artefact. See the unit-folding subsection
-below the comparison one.
+**SIX things, not four.** Two were taken off this section's own open list later
+the same day, both about units: the TSH OCR artefact, and then SGPT and MCHC.
+See the two unit subsections below the comparison one.
 
 ### ⚠ A CHANGE OF ZERO WAS SIGNIFICANT, IN THE FUNCTION EVERY MODULE SHARES
 
@@ -9432,6 +9432,88 @@ failure mode in miniature.
 > the eighth time on this project that the screen found what the suite did
 > not. There are now two frontend tests pinning both sentences.
 
+### ▶ SGPT AND MCHC: A DECLARED EQUIVALENCE, NOT A SPELLING REPAIR
+
+Also taken off this section's open list. `unitKey`'s folding is enough for one
+unit misspelled; it is not enough for two different unit STRINGS that denote
+the same scale:
+
+```
+SGPT   101.9 U/L   and  13 IU/L
+MCHC   30.8 g/dL   and  33 %
+```
+
+Saying those are the same scale is a CLINICAL CLAIM, so it is written down in
+`backend/src/services/unitEquivalence.js` where a reviewer can find it, not
+folded into a regular expression. Each entry carries a `label`, a `basis` that
+argues for it and names what to check it against, and `verified: false`.
+
+**THERE IS NO CONVERSION FACTOR IN THAT FILE AND THERE STRUCTURALLY CANNOT
+BE.** Every entry declares units whose numbers are ALREADY the same: 101.9 U/L
+is 101.9 IU/L, and 33 % MCHC is 33 g/dL. Nothing is multiplied and no reading
+is altered — the entries only decide whether two readings may share an axis. A
+pair needing a multiplier IS a conversion and belongs in Module 5
+(`unit_conversions.py`, whose own header calls itself safety-critical and
+records the molar mass behind every factor). A test asserts no entry carries
+any numeric field at all.
+
+> **⚠ THE SCOPING IS THE LOAD-BEARING PART, AND IT IS WHY THIS COULD NOT GO IN
+> MODULE 5's `UNIT_ALIASES`.** That table is a flat global string map. `%` is a
+> MASS CONCENTRATION on MCHC and a PROPORTION OF THE WHITE CELL COUNT on the
+> differential — so `g/dL == %` is true for MCHC and false everywhere else.
+> Declared globally it would have made every haemoglobin in g/dL
+> interchangeable with a percentage, which is the worst defect available in
+> this area. `tests: ['MCHC', ...]` is what prevents it; `tests: null` is
+> reserved for pairs where the unit strings are synonymous whatever the
+> analyte, and the enzyme entry argues for that in its own `basis`.
+
+Applied at the BLOCKING decision rather than inside `unitKey`, because that is
+where the test name is known. The series records which declaration it relied
+on, and the panel says so: *"Your reports label this test two ways, both
+meaning units of enzyme activity per litre... That equivalence is a standard
+convention and has not yet been checked against a published standard."*
+
+**Mutation-tested on the scope guard** — making the MCHC entry global was
+killed by THREE tests, one of them pre-existing. Live: `SGPT 101.9 -> 13 IU/L
+improving`, `MCHC 30.8 -> 33 % improving`, and the tally moved to 6 improving
+/ 2 worsening / 14 stable / 4 undirected.
+
+> **⚠ EIGHT PRE-EXISTING TESTS USED `U/L` AGAINST `IU/L` AS THEIR EXAMPLE OF
+> "TWO DIFFERENT UNITS".** Declaring the pair equal invalidated all of them at
+> once — a useful signal that this codebase had been treating them as
+> different. They were re-pointed at `U/L` against `U/mL`, which differ by a
+> factor of 1000 and are not declared equivalent, so each fixture keeps its
+> intent and is now a truer example than it was.
+
+**`SGPT 101.9 -> 13 improving` is a substantial new clinical statement resting
+entirely on the U/L == IU/L declaration.** It is labelled unchecked on the
+page. It is the row to verify first.
+
+### ⚠ A UNICODE ESCAPE PUT TWO REAL NUL BYTES IN A SOURCE FILE
+
+Worth knowing because it is silent and it is not the heredoc trap the working
+notes already warn about. A map key was built by joining two strings with a
+U+0000 separator, written in the source as a backslash-u unicode escape, and
+**the file received two actual NUL bytes** rather than the six characters of
+the escape. Git immediately treated `labSeriesService.js` as BINARY and
+dropped its diff entirely; `grep` reported "Binary file matches" instead of
+line numbers, which is how it was noticed.
+
+**IT THEN HAPPENED A SECOND TIME, IN THIS FILE, WHILE WRITING THIS PARAGRAPH**
+— quoting the escape inside a code span put a NUL byte into MEMORY.md and
+turned the handover binary. So: **do not write that escape in any file here,
+not even inside backticks.** Name the code point as U+0000 in prose, as this
+paragraph now does.
+
+Replaced with nested Maps, which need no separator at all — and there is no
+character safe for that job anyway, since a unit key can hold `/`, `%`, `^`
+and `.`.
+
+> **CHECK FOR NUL BYTES WHEN GIT OR GREP STARTS CALLING A SOURCE FILE BINARY.**
+> `[System.IO.File]::ReadAllBytes($p)` and count zeros — and note that .NET
+> resolves a RELATIVE path against the process working directory, not
+> PowerShell's location, so use an absolute one or it reports `bytes: 0`.
+
 ### ⚠ "unchanged" BESIDE AN ARROW AND TWO DIFFERENT NUMBERS
 
 ```
@@ -9463,10 +9545,11 @@ untouched; this is display only.
   missing unit equals the present one, which is an assumption about absent
   data. **The real fix is upstream** — the extraction should carry eAG's unit,
   which is always mg/dL on these reports.
-* **`SGPT` and `MCHC` are still blocked** and should probably stay that way
-  until Module 5 declares the equivalences: U/L to IU/L for enzyme activity,
-  and g/dL to % for MCHC. Both are clinical claims and neither belongs in a
-  trend calculation.
+* **The two unit equivalences are DECLARED BUT UNCHECKED.** `U/L == IU/L` and,
+  for MCHC only, `g/dL == %`. Both are standard conventions and both say
+  `verified: false`. `SGPT 101.9 -> 13 improving` rests entirely on the first
+  one, which makes it the row to verify first — the page says it is unchecked,
+  but it is now making a clinical statement it was not making before.
 * **THE OCR CONFUSION IS REPAIRED AT THE COMPARISON KEY, NOT AT SOURCE.** The
   stored extraction still says `ulU/mL`, so every consumer that folds units
   itself would hit the same defect. **A Module 4/5 normalisation is still the
@@ -9489,7 +9572,8 @@ parameters stranded as single readings~~ · ~~a threshold that moved between
 page loads~~ · ~~the summary line counting a set that no longer existed~~ ·
 ~~the chart contradicting its own row~~ · ~~the comparison card carrying 12 of
 28 parameters~~ · ~~"unchanged" over a change~~ · ~~TSH blocked by one unit
-spelled two ways~~ · ~~a missing unit reported as a different one~~.
+spelled two ways~~ · ~~a missing unit reported as a different one~~ · ~~SGPT
+and MCHC blocked for want of a declared equivalence~~.
 
 ### ⚠ THE RATE LIMITER WILL STOP A DEBUG SESSION BEFORE THE QUOTA DOES
 

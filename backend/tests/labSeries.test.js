@@ -95,14 +95,14 @@ describe('labSeriesService - units', () => {
     // still exists and still carries its readings; it simply draws no line.
     const out = buildLabSeries([
       snap('2026-01-01', [row('Frimbulator', '101.9', 'U/L')]),
-      snap('2026-02-01', [row('Frimbulator', '13', 'IU/L')]),
+      snap('2026-02-01', [row('Frimbulator', '13', 'U/mL')]),
     ]);
 
     expect(out.series).toHaveLength(1);
     const s = out.series[0];
     expect(s.blocked).not.toBeNull();
     expect(s.blocked.reason).toBe('units_differ');
-    expect(s.blocked.units.sort()).toEqual(['IU/L', 'U/L']);
+    expect(s.blocked.units.sort()).toEqual(['U/L', 'U/mL']);
     expect(s.unit).toBeNull();
     // NOT DROPPED. The values are still there to be shown.
     expect(s.points.map((p) => p.value)).toEqual([101.9, 13]);
@@ -155,7 +155,7 @@ describe('labSeriesService - units', () => {
     // panel it replaced. These pairs must never join.
     const pairs = [
       ['mg/L', 'mg/dL'],
-      ['U/L', 'IU/L'],
+      ['U/L', 'U/mL'],
       ['mmol/L', 'µmol/L'],
       ['10^3/µL', '10^6/µL'],
       ['g/dL', '%'],
@@ -177,6 +177,89 @@ describe('labSeriesService - units', () => {
     // `10^3/µL` with `10^6/µL`, which are different units.
     expect(unitKey('10^3/µL')).toContain('1');
     expect(unitKey('10^3/µL')).not.toBe(unitKey('10^6/µL'));
+  });
+
+  it('joins U/L with IU/L, because they are the same quantity', () => {
+    // SGPT is 101.9 U/L on one of this account's reports and 13 IU/L on the
+    // other. U and IU of catalytic activity are the same quantity, so the
+    // number per litre is the same figure under either name.
+    const out = buildLabSeries([
+      snap('2026-01-01', [row('Frimbulase', '101.9', 'U/L')], 'A'),
+      snap('2026-02-01', [row('Frimbulase', '13', 'IU/L')], 'B'),
+    ]);
+
+    expect(out.series[0].blocked).toBeNull();
+    expect(out.series[0].movement).toBe('fell');
+    // NO READING WAS ALTERED. The declarations carry no factor.
+    expect(out.series[0].movementFrom).toBe(101.9);
+    expect(out.series[0].movementTo).toBe(13);
+    expect(out.series[0].unitEquivalence.id).toBe('enzyme_activity_per_litre');
+    expect(out.series[0].unitEquivalence.verified).toBe(false);
+  });
+
+  it('joins g/dL with % FOR MCHC', () => {
+    const out = buildLabSeries([
+      snap('2026-01-01', [row('MCHC', '30.8', 'g/dL')], 'A'),
+      snap('2026-02-01', [row('MCHC', '33', '%')], 'B'),
+    ]);
+
+    expect(out.series[0].blocked).toBeNull();
+    expect(out.series[0].movementFrom).toBe(30.8);
+    expect(out.series[0].movementTo).toBe(33);
+    expect(out.series[0].unitEquivalence.id).toBe('mchc_mass_concentration');
+  });
+
+  it('does NOT let % mean g/dL on any other test', () => {
+    // THE MOST IMPORTANT TEST IN THIS FILE.
+    //
+    // `%` is a mass concentration on MCHC and a proportion of the white cell
+    // count on the differential. A global `g/dL == %` declaration -- which is
+    // what putting it in Module 5's flat alias map would be -- would make
+    // every haemoglobin in g/dL interchangeable with a percentage. That is
+    // the worst defect available here, and the scoping is what prevents it.
+    for (const test of ['EOSINOPHILS', 'LYMPHOCYTES', 'Haemoglobin', 'Frimbulator']) {
+      const out = buildLabSeries([
+        snap('2026-01-01', [row(test, '5', '%')], 'A'),
+        snap('2026-02-01', [row(test, '2', 'g/dL')], 'B'),
+      ]);
+      expect(out.series[0].blocked).not.toBeNull();
+      expect(out.series[0].unitEquivalence).toBeNull();
+    }
+  });
+
+  it('leaves a series with one unit entirely alone', () => {
+    const out = buildLabSeries([
+      snap('2026-01-01', [row('Zorblex', '35', 'mm/hr')], 'A'),
+      snap('2026-02-01', [row('Zorblex', '45', 'mm/hr')], 'B'),
+    ]);
+    // No declaration was needed, so none is claimed -- a note on every panel
+    // would be the commentary the reader asked to have removed.
+    expect(out.series[0].unitEquivalence).toBeNull();
+  });
+
+  it('declares NO conversion factor anywhere in the table', () => {
+    // The table may only ever say "these two labels mean one scale". A pair
+    // needing a multiplier is a CONVERSION and belongs in Module 5, upstream
+    // of storage, whose own header calls itself safety-critical. This asserts
+    // the shape so a factor added later fails here rather than silently
+    // rescaling somebody's reading.
+    const { UNIT_EQUIVALENCE } = require('../src/services/unitEquivalence');
+    const allowed = new Set(['id', 'units', 'tests', 'label', 'basis', 'verified']);
+
+    expect(UNIT_EQUIVALENCE.length).toBeGreaterThan(0);
+    for (const entry of UNIT_EQUIVALENCE) {
+      for (const field of Object.keys(entry)) {
+        expect(allowed.has(field)).toBe(true);
+      }
+      // Nothing numeric at all: no factor, no offset, no multiplier.
+      for (const value of Object.values(entry)) {
+        expect(typeof value).not.toBe('number');
+      }
+      // And every entry argues for itself where a reviewer will read it.
+      expect(entry.basis.length).toBeGreaterThan(40);
+      expect(entry.basis).toMatch(/CHECK AGAINST/);
+      expect(entry.verified).toBe(false);
+    }
   });
 
   it('calls a MISSING unit missing, not different', () => {
@@ -418,7 +501,7 @@ describe('labSeriesService - the printed reference interval', () => {
     const out = buildLabSeries(
       [
         snap('2026-01-01', [row('Zorblex', '101.9', 'U/L')], 'r1'),
-        snap('2026-02-01', [row('Zorblex', '13', 'IU/L')], 'r2'),
+        snap('2026-02-01', [row('Zorblex', '13', 'U/mL')], 'r2'),
       ],
       printedFor({
         r1: [ref('Zorblex', null, 40, 'UP TO 40')],
@@ -436,7 +519,7 @@ describe('labSeriesService - the printed reference interval', () => {
     const out = buildLabSeries(
       [
         snap('2026-01-01', [row('Zorblex', '1', 'U/L'), row('Quibblease', '5', 'mg/L')], 'r1'),
-        snap('2026-02-01', [row('Zorblex', '2', 'IU/L'), row('Quibblease', '6', 'mg/L')], 'r2'),
+        snap('2026-02-01', [row('Zorblex', '2', 'U/mL'), row('Quibblease', '6', 'mg/L')], 'r2'),
       ],
       printedFor({
         r1: [ref('Zorblex', 0, 40), ref('Quibblease', 1, 9)],
@@ -559,7 +642,7 @@ describe('labSeriesService - readings that cannot be trended', () => {
   it('lists a BLOCKED series nowhere either -- it already shows its readings', () => {
     const out = buildLabSeries([
       snap('2026-01-01', [row('Zorblex', '101.9', 'U/L')], 'r1'),
-      snap('2026-02-01', [row('Zorblex', '13', 'IU/L')], 'r2'),
+      snap('2026-02-01', [row('Zorblex', '13', 'U/mL')], 'r2'),
     ]);
 
     expect(out.blockedCount).toBe(1);
@@ -578,7 +661,7 @@ describe('labSeriesService - readings that cannot be trended', () => {
       ], 'r1'),
       snap('2026-02-01', [
         row('Zorblex', '2', 'U/L'),
-        row('Quibblease', '13', 'IU/L'),
+        row('Quibblease', '13', 'U/mL'),
         row('Snarflax', 'Negative', null),
       ], 'r2'),
     ]);
@@ -632,7 +715,7 @@ describe('labSeriesService - movement and the laboratory\'s marking', () => {
     // would assert a change the same file refused to draw a line through.
     const out = buildLabSeries([
       snap('2026-01-01', [row('Zorblex', '101.9', 'U/L')], 'r1'),
-      snap('2026-02-01', [row('Zorblex', '13', 'IU/L')], 'r2'),
+      snap('2026-02-01', [row('Zorblex', '13', 'U/mL')], 'r2'),
     ]);
 
     expect(out.series[0].blocked).not.toBeNull();
@@ -673,7 +756,7 @@ describe('labSeriesService - movement and the laboratory\'s marking', () => {
     // absent is not enough if the numbers still claim it.
     const out = buildLabSeries([
       snap('2026-01-01', [row('Zorblex', '101.9', 'U/L')], 'r1'),
-      snap('2026-02-01', [row('Zorblex', '13', 'IU/L')], 'r2'),
+      snap('2026-02-01', [row('Zorblex', '13', 'U/mL')], 'r2'),
     ]);
 
     expect(out.series[0].movementFrom).toBeNull();
@@ -757,7 +840,7 @@ describe('labSeriesService - attaching a trend verdict', () => {
     const built = buildLabSeries(
       [
         snap('2026-01-01', [row('Zorblex', '15', '%'), row('Quibblease', '1', 'U/L')], 'r1'),
-        snap('2026-02-01', [row('Zorblex', '14', '%'), row('Quibblease', '2', 'IU/L')], 'r2'),
+        snap('2026-02-01', [row('Zorblex', '14', '%'), row('Quibblease', '2', 'U/mL')], 'r2'),
       ],
       printedFor({
         r1: [ref('Zorblex', 22, 45), ref('Quibblease', 0, 40)],
@@ -917,13 +1000,13 @@ describe('labSeriesService - the comparison table for unassessed tests', () => {
   it('refuses to classify two different units, and carries BOTH of them', () => {
     // 101.9 U/L against 13 IU/L. Hiding one unit would hide the reason the
     // row cannot be classified.
-    const built = buildLabSeries(pairOf([row('Zorblex', '101.9', 'U/L')], [row('Zorblex', '13', 'IU/L')]));
+    const built = buildLabSeries(pairOf([row('Zorblex', '101.9', 'U/L')], [row('Zorblex', '13', 'U/mL')]));
     const [only] = buildLabComparison(built, 'A', 'B').rows;
 
     expect(only.category).toBe('not_classifiable');
     expect(only.symbol).toBeNull();
     expect(only.previousUnit).toBe('U/L');
-    expect(only.currentUnit).toBe('IU/L');
+    expect(only.currentUnit).toBe('U/mL');
     expect(only.unit).toBeNull();
   });
 
@@ -1088,7 +1171,7 @@ describe('labSeriesService - Module 36 name joining', () => {
     const out = buildLabSeries(
       [
         snap('2026-01-01', [row('Zorblex Factor', '101.9', 'U/L')], 'r1'),
-        snap('2026-02-01', [row('Frimbulin', '13', 'IU/L')], 'r2'),
+        snap('2026-02-01', [row('Frimbulin', '13', 'U/mL')], 'r2'),
       ],
       undefined,
       aliases
