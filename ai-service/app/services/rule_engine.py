@@ -139,7 +139,43 @@ NOTE_AGE_UNKNOWN = (
 )
 NOTE_NOT_AVAILABLE = "this value was not available in the submitted report"
 NOTE_FACTOR_COUNTED = "counted as a cardiovascular risk factor"
-NOTE_FACTOR_NOT_COUNTED = "present, but not counted as a cardiovascular risk factor"
+NOTE_FACTOR_NOT_COUNTED = "not counted as a cardiovascular risk factor"
+
+#: Prefix for a criterion that was EVALUATED AND NOT MET.
+#:
+#: ==========================================================================
+#: A FACTOR LABEL IS A CRITERION AND ONLY READS AS A FINDING WHEN IT HOLDS
+#: ==========================================================================
+#:
+#: `RiskFactorDefinition.label` states the test, not the result: "body mass
+#: index at or above 30.0", "current or lifetime smoking recorded in the
+#: patient profile", "age at or above the sex-specific cardiovascular age
+#: threshold". Emitted BARE beside a value that does not meet it, every one of
+#: those asserts the opposite of the truth.
+#:
+#: FOUND ON A REAL REPORT, 2026-09-18. Heart Disease on Test 3 stored three
+#: evidence lines, all three false:
+#:
+#:     bmi 25.25          -> "body mass index at or above 30.0; present,
+#:                            but not counted as a cardiovascular risk factor"
+#:     age 20             -> "age at or above the sex-specific cardiovascular
+#:                            age threshold; present, but not counted..."
+#:     smoking_history    -> "current or lifetime smoking recorded in the
+#:       (never)             patient profile; present, but not counted..."
+#:
+#: The patient is 20, has a BMI of 25.25 and has never smoked.
+#:
+#: `present` MADE IT WORSE and is gone. It meant "the value was available",
+#: but beside a risk-factor label it reads as "the risk factor is present" --
+#: the same collapse one word smaller. "criterion not met" already says the
+#: factor was evaluated, so nothing is lost by dropping it.
+#:
+#: THE ABSENT PATH IS A DIFFERENT BRANCH and keeps its own note: a feature
+#: that was never supplied gets `NOTE_NOT_AVAILABLE`, never this. The class
+#: docstring on `RiskFactorDefinition` already promised absence would never
+#: read as a stated negative; this is the other half of that promise -- a
+#: stated negative must not read as a positive.
+NOTE_FACTOR_NOT_MET = "criterion not met -- "
 NOTE_BELOW_MIN_AGE = (
     "the thresholds for this topic are adult reference values and were not "
     "applied to a recorded age below eighteen years"
@@ -157,6 +193,7 @@ ALL_NOTE_FRAGMENTS: Tuple[str, ...] = (
     NOTE_NOT_AVAILABLE,
     NOTE_FACTOR_COUNTED,
     NOTE_FACTOR_NOT_COUNTED,
+    NOTE_FACTOR_NOT_MET,
     NOTE_BELOW_MIN_AGE,
     NOTE_UNREADABLE,
 )
@@ -585,7 +622,12 @@ def _evaluate_composite_rule(
         evaluable.append(factor.id)
         used.append(view)
         holds, threshold, note = _factor_holds(factor, view, sex, age)
-        notes = [factor.label, NOTE_FACTOR_COUNTED if holds else NOTE_FACTOR_NOT_COUNTED]
+        # THE LABEL IS A CRITERION. It reads as a finding only when it HOLDS,
+        # so a factor that was evaluated and not met says so rather than
+        # stating its own threshold as though the patient had crossed it.
+        # See `NOTE_FACTOR_NOT_MET` for the three false lines this produced.
+        criterion = factor.label if holds else f"{NOTE_FACTOR_NOT_MET}{factor.label}"
+        notes = [criterion, NOTE_FACTOR_COUNTED if holds else NOTE_FACTOR_NOT_COUNTED]
         if note:
             notes.append(note)
         evidence.append(

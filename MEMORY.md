@@ -41,9 +41,9 @@ about any of them. That is the fifth time on this project.
 | | Tests |
 |---|---|
 | `backend/` (Node/Express) | **762** passing + 3 skipped (15 suites, 0 failed) |
-| `ai-service/` (Python/FastAPI) | **4,075** passing + 7 skipped (4,082 collected, 0 failures, 0 errors) |
+| `ai-service/` (Python/FastAPI) | **4,086** passing + 7 skipped (4,093 collected, 0 failures, 0 errors) |
 | `frontend/` (React/Vitest) | **394** passing, 0 suites failed |
-| **Total** | **5,231** -- ALL THREE green 2026-09-18 |
+| **Total** | **5,242** -- ALL THREE green 2026-09-18 |
 
 > **⚠ THE 4,852 IN EVERY EARLIER SECTION WAS 7 TOO HIGH.** §6as recorded
 > ai-service's COLLECTED total (3,865) as its PASSED count; that day's real
@@ -10292,8 +10292,8 @@ would keep claiming figures are unchecked after somebody checked them (1).
 ## 6az. THE CLINICIAN PAGE WAS READ ALOUD · 2026-09-18 · NINTH TIME IT FOUND SOMETHING
 
 §0's open item 4, done. **Five findings, two fixed on the owner's
-instruction, then a third on request.** Frontend **394** (was 390), ai-service **4,075** (was 4,067).
-**Total 5,231.**
+instruction, then two more on request.** Frontend **394** (was 390), ai-service **4,086** (was 4,067).
+**Total 5,242.**
 
 ### ⚠ FIXED 1 — "by the laboratory" WAS FALSE ON THE PAGE A DOCTOR READS
 
@@ -10380,13 +10380,8 @@ fixture carries both, so it exercises the skip in `modelNotes`.
   *"is stated to the reader via DISCUSS_SAMPLE_TIMING"*. That recommendation
   is not on the page. **The rule traded precision for a caveat and the caveat
   is missing.**
-* **`rule_engine.py:588` EMITS `factor.label` UNCONDITIONALLY**, so a factor
-  that does NOT hold prints its own definition as a finding: BMI 25.25 →
-  *"body mass index at or above 30.0; present, but not counted"*; age 20 →
-  *"age at or above the sex-specific cardiovascular age threshold"*; smoking
-  `never` → *"current or lifetime smoking recorded in the patient profile"*.
-  **All three false. Not on any screen today** — the dashboard was checked —
-  but they sit in the 35 evidence lines Module 32 draws from.
+* ~~**`rule_engine.py:588` EMITS `factor.label` UNCONDITIONALLY.**~~
+  **FIXED — see the subsection below.**
 
 ### ✅ TWO THINGS I READ WRONG, AND ONE THAT IS RIGHT
 
@@ -10462,11 +10457,60 @@ because Body mass index was 25.25 kg/m2..."*
 > CONTRIBUTION, dissolved in Module 32's aggregation and not by the narrative.
 > A much smaller thing than I described, and upstream of the file I changed.
 
-**Mutation-tested, six mutants across the three fixes, all killed:** the
+### ✅ FIXED 4 — A CRITERION THAT WAS NOT MET READ AS ONE THAT WAS
+
+`rule_engine.py` emitted `factor.label` whatever the outcome:
+
+```python
+notes = [factor.label, NOTE_FACTOR_COUNTED if holds else NOTE_FACTOR_NOT_COUNTED]
+```
+
+**`RiskFactorDefinition.label` STATES THE TEST, NOT THE RESULT** — *"body mass
+index at or above 30.0"*, *"current or lifetime smoking recorded in the
+patient profile"*. Bare beside a value that does not meet it, every one of the
+seven asserts the opposite of the truth. Heart Disease on Test 3 stored three
+such lines for a 20-year-old with a BMI of 25.25 who has never smoked.
+
+**`present` MADE IT WORSE AND IS GONE.** It meant "the value was available",
+and beside a risk-factor label it reads as "the risk factor is present" — the
+same collapse one word smaller. *"criterion not met"* already says the factor
+was evaluated, so nothing was lost by dropping it.
+
+```
+criterion not met -- body mass index at or above 30.0; not counted as a
+cardiovascular risk factor
+```
+
+**THE ABSENT PATH IS UNTOUCHED AND A TEST PINS THAT.** A feature never
+supplied still gets `NOTE_NOT_AVAILABLE`. `RiskFactorDefinition`'s own
+docstring promised absence would never read as a stated negative; **this is
+the other half — a stated negative must not read as a positive.**
+
+**THE PARAMETRIZED TEST WALKS THE RULE'S OWN FACTOR TUPLE**, not the three
+that happened to be wrong on one report, so a factor added later is covered
+without anyone remembering to extend it. **Three mutants, all killed:** the
+bare label restored (1); the prefix emptied (**10** — it is load-bearing
+everywhere); `present` put back (1).
+
+> **AND MY FIRST TEST ASSERTED THE WRONG KEY.** `factors_evaluable` holds
+> factor IDs (`obesity`), not feature names (`bmi`). It failed, which is how I
+> learned the shape. **Read the producer, then write the consumer** — the same
+> lesson as the payload probe two fixes earlier.
+
+> **⚠ THE STORED EVIDENCE ON EXISTING REPORTS IS NOT REPAIRED.** The fix is at
+> generation time, so Test 3's three false lines are still in
+> `ruleDecisions`. Refreshing them needs a **re-analysis**, which is a full
+> pipeline run with model calls — not a one-field database repair like the eAG
+> flag. **Nothing renders them today** (the dashboard was checked), so this is
+> recorded rather than done.
+
+**Mutation-tested, nine mutants across the four fixes, all killed:** the
 caveat removed from the narrative branch (2 tests — this mutant IS the bug as
 it shipped); the "by the laboratory" heading restored (1); the provenance
 sentence deleted (1); the status gap never firing (2); the proximity check
-widened to the whole document (1); the prompt heading left as `FLAGGED` (1).
+widened to the whole document (1); the prompt heading left as `FLAGGED` (1);
+the bare factor label restored (1); the not-met prefix emptied (10); `present`
+put back (1).
 `attributes the flag and the interval to the LABORATORY` **was replaced, not
 weakened** — it asserted the false attribution, and the new test inverts it.
 

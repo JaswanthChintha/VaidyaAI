@@ -255,6 +255,90 @@ def test_absent_hypertension_is_reported_as_missing_not_as_false():
     assert item.note == engine.NOTE_NOT_AVAILABLE
 
 
+# --------------------------------------------------------------------------
+# A CRITERION THAT WAS NOT MET MUST NOT READ AS ONE THAT WAS
+# --------------------------------------------------------------------------
+#
+# FOUND IN STORED EVIDENCE ON A REAL REPORT, 2026-09-18. `factor.label` states
+# the TEST, not the result, and it was emitted bare whether or not the factor
+# held. Heart Disease on Test 3 carried three lines, all three false:
+#
+#     bmi 25.25       -> "body mass index at or above 30.0; present, but not
+#                         counted as a cardiovascular risk factor"
+#     age 20          -> "age at or above the sex-specific cardiovascular age
+#                         threshold; present, but not counted..."
+#     smoking never   -> "current or lifetime smoking recorded in the patient
+#                         profile; present, but not counted..."
+#
+# The patient is 20, has a BMI of 25.25 and has never smoked. None of it
+# reached a screen -- the dashboard was checked -- but it sits in the evidence
+# Module 32 builds from.
+
+
+def test_a_factor_that_was_not_met_says_so_instead_of_stating_its_threshold():
+    data = evaluate_rules(
+        validated(_cvd_features(bmi=vf("bmi", 25.25), age=vf("age", 20)))
+    )
+    heart = for_rule(data, cr.HEART_DISEASE_RULE.id)
+
+    item = next(e for e in heart.evidence if e.feature == "bmi")
+    assert item.value == 25.25
+    # THE METADATA IS KEYED ON FACTOR ID, NOT FEATURE NAME -- BMI's factor is
+    # `obesity`. Read off the real payload after asserting the wrong key here.
+    assert "obesity" in heart.metadata["factors_evaluable"]
+    assert "obesity" not in heart.metadata["factors_counted"]
+
+    # THE DEFECT, DIRECTLY: the bare criterion must not stand as a statement.
+    assert not item.note.startswith("body mass index at or above 30.0")
+    assert item.note.startswith(engine.NOTE_FACTOR_NOT_MET)
+    assert "body mass index at or above 30.0" in item.note
+    assert engine.NOTE_FACTOR_NOT_COUNTED in item.note
+
+
+def test_a_factor_that_WAS_met_still_states_the_criterion_plainly():
+    """The ANSWERING branch. A criterion that holds IS a finding about the
+    patient, and prefixing it would make a true line read as a refusal."""
+    data = evaluate_rules(validated(_cvd_features()))  # bmi 31.0, age 60
+    heart = for_rule(data, cr.HEART_DISEASE_RULE.id)
+
+    item = next(e for e in heart.evidence if e.feature == "bmi")
+    assert "obesity" in heart.metadata["factors_counted"]
+    assert item.note.startswith("body mass index at or above 30.0")
+    assert engine.NOTE_FACTOR_NOT_MET not in item.note
+    assert engine.NOTE_FACTOR_COUNTED in item.note
+
+
+def test_the_word_present_is_gone_from_the_not_counted_note():
+    """`present` meant "the value was available" and read as "the risk factor
+    is present" -- the same collapse one word smaller."""
+    assert "present" not in engine.NOTE_FACTOR_NOT_COUNTED
+
+
+@pytest.mark.parametrize("factor", cr.HEART_DISEASE_RULE.factors, ids=lambda f: f.id)
+def test_no_factor_label_can_stand_alone_as_a_statement_when_unmet(factor):
+    """EVERY label, not the three that happened to be wrong on one report.
+
+    Gathered from the rule itself so a factor added later is covered without
+    anyone remembering to extend this test.
+    """
+    unmet = f"{engine.NOTE_FACTOR_NOT_MET}{factor.label}"
+    assert unmet.startswith(engine.NOTE_FACTOR_NOT_MET)
+    assert not unmet.startswith(factor.label)
+
+
+def test_an_absent_feature_still_uses_the_ABSENT_note_and_not_this_one():
+    """The two are different claims and must stay different branches.
+
+    "not supplied" and "supplied and did not meet the threshold" are the
+    tri-state distinction this rule's own docstring promises to keep.
+    """
+    data = evaluate_rules(validated(_cvd_features()))
+    heart = for_rule(data, cr.HEART_DISEASE_RULE.id)
+    item = next(e for e in heart.evidence if e.feature == "hypertension")
+    assert item.note == engine.NOTE_NOT_AVAILABLE
+    assert engine.NOTE_FACTOR_NOT_MET not in item.note
+
+
 def test_explicit_false_hypertension_is_evaluable_but_not_counted():
     data = evaluate_rules(
         validated(_cvd_features(hypertension=vf("hypertension", False)))
