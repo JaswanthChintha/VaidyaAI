@@ -10,7 +10,8 @@ Contract rules encoded here:
     `value_raw` always preserves what was printed.
   * `flag` is one of low | normal | high | critical | None, and is only set
     when the report states it or the reference range makes it unambiguous.
-    No clinical inference happens here.
+    No clinical inference happens here. A `normal` flag beside printed text
+    this schema refuses as not-an-interval is dropped -- see the gate below.
   * Every field is nullable except `test_name` and `value_raw`.
 """
 
@@ -67,6 +68,13 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 # its bounds and keeps its text; the parameter is still shown, still carries
 # its value, and simply is not judged against an interval nobody could parse.
 # That is what already happens for the sex-specific ranges.
+#
+# IT ALSO LOSES A `normal` FLAG, AND ONLY A `normal` ONE. Reading the report
+# on 2026-09-18 established that it prints no markings at all, so the flag on
+# that row had been inferred against the very band refused above. Dropping an
+# inferred `normal` cannot under-warn a reader; dropping a `high` would remove
+# a warning, so high/low/critical stand. The argument is in full on
+# `_refuse_bounds_from_text_that_is_not_only_a_range`.
 
 _COMPARATOR = (
     r"(?:<=|>=|<|>|≤|≥|up\s*to|upto|less\s+than|greater\s+than|more\s+than)"
@@ -279,24 +287,71 @@ class ExtractedParameter(BaseModel):
     def _refuse_bounds_from_text_that_is_not_only_a_range(
         self,
     ) -> "ExtractedParameter":
-        """Drop `reference_low`/`high` when the printed text says more.
+        """Drop `reference_low`/`high`, and a `normal` flag, when the printed
+        text says more than an interval.
 
         See `printed_range_is_only_a_range` above for what went wrong and what
         was validated against. THE RAW TEXT IS KEPT: the reader's document is
         not wrong, only this service's reduction of it to two numbers was, and
         a consumer that wants to show what was printed still can.
 
-        `flag` IS LEFT ALONE. It is the laboratory's own marking when the
-        report states one, and this gate is about a range the service misread,
-        not about the laboratory's verdict. A flag the model inferred FROM a
-        refused range is a separate question and is not settled here.
+        ======================================================================
+        AND A `normal` FLAG GOES WITH THE BOUNDS. ONLY `normal`.
+        ======================================================================
+
+        This paragraph used to say `flag` was left alone, because a flag is
+        the laboratory's own marking when the report states one, and "a flag
+        the model inferred FROM a refused range" was named here as a separate
+        question. IT WAS SETTLED BY READING THE REPORT, on 2026-09-18:
+
+          * `Test 3.pdf` PRINTS NO MARKINGS AT ALL -- four columns, name,
+            value, unit, range, and not one H, L or asterisk on either page,
+            including on rows well outside their printed interval. Its 18
+            stored flags are therefore ALL inferred.
+          * So `AVERAGE BLOOD GLUCOSE 154 mg/dL flag=normal` could only have
+            been inferred, and the only thing available to infer it from was
+            `"151 - 180 - Average Control"` -- the band THIS GATE REFUSES. A
+            conclusion whose premise this function withdraws.
+          * The chip it produced said `In range` for an average glucose of
+            154 mg/dL, attributed in the markup to "your laboratory's own
+            marking, from the range printed on that report". Both halves were
+            false.
+
+        WHY ONLY `normal`, AND THE ASYMMETRY IS THE WHOLE ARGUMENT. This gate
+        cannot tell an inferred flag from a printed one -- a laboratory may
+        print both a band table and an `H`. So the question is which way to
+        err, and the two directions are not equivalent:
+
+          * dropping `normal` cannot under-warn anyone. A row with no flag
+            renders as "not checked", never as reassurance -- `LabStatus`
+            gives a null flag no chip and the dashboard's `labFlagVerdict`
+            falls through to the same "not checked" the assessed rows show.
+            That is this project's own standing rule: an absence must not
+            become a negative result.
+          * dropping `high`/`low`/`critical` would REMOVE A WARNING, which is
+            the one error this tool must not make. They stand, even here.
+
+        NOT THE WHOLE OF THE PROBLEM, and the rest is recorded rather than
+        guessed at: the honest fix is for the model to say WHICH source a flag
+        came from -- a printed marking or a numeric comparison, which the
+        extraction prompt already distinguishes in words -- so that every flag
+        carries its provenance instead of one class of them being repaired
+        here. That is a schema and prompt change plus a migration for the
+        flags already stored without it, and it is deliberately not attempted
+        in this function.
         """
         if printed_range_is_only_a_range(self.reference_range_raw):
             return self
-        if self.reference_low is None and self.reference_high is None:
-            return self
-        object.__setattr__(self, "reference_low", None)
-        object.__setattr__(self, "reference_high", None)
+        # NOT AN `elif`, AND NOT BEHIND THE EARLY RETURN THAT USED TO STAND
+        # HERE. The bounds being already absent says nothing about the flag: a
+        # model that returns `normal` against a band and no numbers at all
+        # reaches this line, and the old `return self` on two null bounds
+        # would have carried that flag straight through.
+        if self.reference_low is not None or self.reference_high is not None:
+            object.__setattr__(self, "reference_low", None)
+            object.__setattr__(self, "reference_high", None)
+        if self.flag == Flag.NORMAL:
+            object.__setattr__(self, "flag", None)
         return self
 
 

@@ -41,9 +41,9 @@ about any of them. That is the fifth time on this project.
 | | Tests |
 |---|---|
 | `backend/` (Node/Express) | **762** passing + 3 skipped (15 suites, 0 failed) |
-| `ai-service/` (Python/FastAPI) | **4,022** passing + 7 skipped (4,029 collected, 0 failures, 0 errors) |
+| `ai-service/` (Python/FastAPI) | **4,031** passing + 7 skipped (4,038 collected, 0 failures, 0 errors) |
 | `frontend/` (React/Vitest) | **384** passing, 0 suites failed |
-| **Total** | **5,168** -- ALL THREE green 2026-09-18 |
+| **Total** | **5,177** -- ALL THREE green 2026-09-18 |
 
 > **⚠ THE 4,852 IN EVERY EARLIER SECTION WAS 7 TOO HIGH.** §6as recorded
 > ai-service's COLLECTED total (3,865) as its PASSED count; that day's real
@@ -96,14 +96,22 @@ about any of them. That is the fifth time on this project.
 >    `g/dL == %` for MCHC only, in
 >    `backend/src/services/unitEquivalence.js`. Both `verified: false`.
 >    `SGPT 101.9 -> 13 improving` rests entirely on the first.
-> 3. **DECIDE eAG's `flag: "normal"`.** The last piece of the interpretation-band
->    defect. Almost certainly inferred against the band now refused, but it
->    cannot be told from a genuine printed marking by looking at the stored
->    row, so the panel still shows `In range` for 154 mg/dL. **Open Test 3 and
->    look at whether that row carries its own H/L marking.**
+> 3. **RUN THE ONE OUTSTANDING DATABASE WRITE.** ~~Decide eAG's
+>    `flag: "normal"`.~~ **DECIDED** — `Test 3.pdf` prints no markings at all,
+>    so the flag was inferred against the band already refused. The gate now
+>    drops a `normal` on a refused range, mutation-tested. **But the stored
+>    row is untouched and the panel still shows `In range` for 154 mg/dL.**
+>    The repair is dry-run clean; the write was blocked by a sandbox, not by a
+>    problem. See §6aw's eAG subsections for the command and the after-check.
 > 4. **READ THE CLINICIAN PAGE ALOUD.** Every screen-reading session on this
 >    project has found something no suite did — eight times now. The timeline
->    and comparison cards were read this session; the clinician page was not.
+>    and comparison cards were read on 2026-09-18; the clinician page was not.
+> 5. **GIVE FLAGS A PROVENANCE.** `flag_source` of `printed_marking` vs
+>    `inferred_from_range`, which the extraction prompt already distinguishes
+>    in words, plus a migration for the 44 flags stored without it. Item 3
+>    repaired one class of unprovenanced flag by inference; this is the fix
+>    that makes the page's "your laboratory's own marking" true for all of
+>    them.
 
 > ### ▶ RUN AND TEST, IN ONE PLACE
 >
@@ -9220,15 +9228,22 @@ things, in the order they were found:
 | | Tests | Last run |
 |---|---|---|
 | `backend/` | **762** passed, 3 skipped, 15 suites, 0 failed | 2026-09-18 ✅ |
-| `ai-service/` | **4,022** passed, 7 skipped (4,029 collected, 0 failures, 0 errors) | 2026-09-18 ✅ (`.env` moved aside) |
+| `ai-service/` | **4,031** passed, 7 skipped (4,038 collected, 0 failures, 0 errors) | 2026-09-18 ✅ (`.env` moved aside) |
 | `frontend/` | **384** passed, 0 suites failed | 2026-09-18 ✅ |
-| **Total** | **5,168** | |
+| **Total** | **5,177** | |
 
-**NINE things, not four.** Five were taken off this section's own open list
+> The ai-service row was **4,022** for most of this session and moved to
+> **4,031** with the eAG flag work (+9 net: 10 tests added, 1 replaced).
+
+**TEN things, not four.** Six were taken off this section's own open list
 later the same day, three of them about units: the TSH OCR artefact, then
 SGPT and MCHC, then the silent unit on eAG -- **and that last one exposed a
 false `improving` on a rising blood sugar, which is the most serious thing
-this session found.** The unit subsections are below the comparison one.
+this session found.** The unit subsections are below the comparison one. The
+tenth is eAG's `flag`, settled by rendering `Test 3.pdf` and looking at it:
+**the report prints no markings at all**, so the flag was inferred against the
+band this session had already refused. Its subsection follows the stored-bound
+repair.
 
 ### ⚠ A CHANGE OF ZERO WAS SIGNIFICANT, IN THE FUNCTION EVERY MODULE SHARES
 
@@ -9709,6 +9724,140 @@ fixed".
 re-runnable database rewrite sitting in `src/` is a footgun; the method above
 is the record, and it is reproducible from it.
 
+### ✅ AND eAG's `flag: "normal"` IS SETTLED — BY LOOKING AT THE REPORT
+
+The last piece of the interpretation-band defect, and the item this section's
+own KNOWN AND OPEN said "needs the report in front of a human". It did. The
+answer took one look and it was not a judgement call.
+
+**`Test 3.pdf` PRINTS NO MARKINGS AT ALL.** Both pages rendered at 160 dpi and
+read. The report has FOUR COLUMNS — test name, value, unit, reference range —
+and there is no flag column, no H, no L, no asterisk, no "High"/"Low" text, on
+any row of either page. `NEUTROPHILS 82` against `40 - 70`,
+`LYMPHOCYTES 14` against `20-40` and `ESR 45` against `0 - 20` are marked with
+**nothing**. This laboratory does not mark.
+
+> **THE ONLY MARKS ON THAT DOCUMENT ARE HANDWRITTEN.** Pen ticks, and ink
+> circles around `HbA1c 7.0 %` and `CRP 38.9 mg/L` — a human reader, after
+> printing. They did not circle 154. Worth knowing before anyone reads a
+> circle as a laboratory marking.
+
+So all 18 flags stored from that report are INFERRED, which §8's contract
+permits (`flag` is set when the report says so **or** the range makes it
+unambiguous). **The mechanism is working:** the three rows with no flag are
+`HEMOGLOBIN` and `PCV` (sex-specific) and `GLYCATED HAEMOGLOBIN`
+(interpretation table) — the model declined in exactly the places the printed
+range was not usable. eAG got a flag because its band *looked* like a range.
+
+**AUDITED DATABASE-WIDE, judged by IMPORTING `printed_range_is_only_a_range`**
+from the shipped schema rather than restating its rule — the same three-step
+separation the bound repair used, and for the same reason:
+
+```
+rows: 91      carrying a flag: 44
+  ...with NO bounds at all:  1
+     A) printed text REFUSED by the gate: 1   <- AVERAGE BLOOD GLUCOSE
+     B) printed text accepted or absent:  0
+REFUSED TEXT STILL HOLDING BOUNDS (expected 0): 0
+```
+
+**eAG is the sole member of the class**, and the bound repair's converse check
+still holds. Of the 5 refused rows, 4 already carried no flag and none carried
+a warning, so nothing was competing with this.
+
+Two things sharpen the verdict beyond "unprovenanced":
+
+* **"Average Control" was never "normal" even taken at face value.** On the
+  report's own table 154 is the THIRD OF FIVE control-quality bands, with
+  `181 - 210 - Action Suggested` and `> 211 - Panic Value` above it, in a
+  patient whose HbA1c is 7.0 %.
+* **THE CHIP'S OWN TOOLTIP WAS FALSE IN BOTH HALVES.** `LabStatus` renders it
+  with `title="Your laboratory's own marking, from the range printed on that
+  report"`. This laboratory made no marking, and that range had already been
+  deleted. **The page was attributing to the laboratory a judgement this
+  service made** — which is a worse sentence than the wrong chip.
+
+### ▶ SO THE GATE LEARNED ABOUT FLAGS, AND ONLY ABOUT `normal`
+
+`extraction.py` said in so many words that `flag` was left alone because "a
+flag the model inferred FROM a refused range is a separate question and is not
+settled here". It is settled now, so the gate drops a `normal` alongside the
+bounds it refuses.
+
+**ONLY `normal`, AND THE ASYMMETRY IS THE WHOLE ARGUMENT.** The gate cannot
+tell an inferred flag from a printed one — a laboratory may print both a band
+table and an `H` — so the question is which way to err, and the two directions
+are not equivalent:
+
+* **dropping `normal` cannot under-warn anyone.** A row with no flag renders
+  as "not checked", never as reassurance. This project's standing rule, in the
+  one place it most needed applying.
+* **dropping `high`/`low`/`critical` would REMOVE A WARNING**, which is the
+  one error this tool must not make. They stand, even on a refused range.
+
+**THE FRONTEND NEEDED NO CHANGE, AND THAT WAS CHECKED BEFORE THE CLAIM WAS
+MADE.** `LabStatus` gives a null flag no chip (`latestFlag ? … : null`), and
+the dashboard's `labFlagVerdict` falls through to the same "not checked" the
+assessed rows show once both bounds are null — which they are. **No crossing
+can shift either:** Test 2's `Estimated Average Glucose` already carries no
+flag, and §6aw's own rule claims a crossing only when both reports are marked.
+
+**THE EARLY RETURN HAD TO GO.** `if reference_low is None and reference_high
+is None: return self` was correct while the validator only touched bounds; it
+would have carried a `normal` straight through for a model that answers
+against a band without offering numbers. Restructured so the flag decision
+does not sit behind it.
+
+**MUTATION-TESTED, THREE MUTANTS, each confirmed by grep to apply and by
+`ast.parse` AND an import to load before its verdict was believed:**
+
+```
+M1  guard absent        (`if False and ...`)        KILLED by 2 tests
+M2  guard too broad     (`if self.flag is not None`) KILLED by all 3 warning cases
+M3  early return restored                            KILLED by 1 test
+```
+
+M2 is the one worth having: it is the mutant that removes a warning, and the
+test that kills it exists only because the asymmetry was argued for rather
+than assumed.
+
+**`test_the_flag_is_left_alone_by_this_gate` WAS REPLACED, NOT WEAKENED**, and
+the reason it went is written where it stood. It pinned a question this gate
+deliberately left open; reading the report answered it. A test that pins a
+state the producer can no longer reach is a test that will be satisfied by
+reintroducing the defect — §6aw's own lesson, applied to §6aw's own test.
+
+**THE PROMPT WAS TIGHTENED TOO, and this is belt-and-braces, not the control.**
+Clause (b) let the model set a flag from "the reference range" without
+excluding a band it had just been told not to reduce to bounds. It now says
+(b) means a range the model was ABLE to reduce — if it left the bounds null,
+there is no interval and the flag is null too unless the report marks the row.
+
+**TESTS: +9 net in `test_schemas.py`** (10 added, 1 replaced) — the real row,
+the three warning cases, the no-bounds case, four accepted ranges that must
+KEEP their `normal`, and the nothing-printed case. All three suites green:
+backend **762** + 3 skipped, ai-service **4,031** + 7 skipped (4,038
+collected, 0 failures, 0 errors), frontend **384** (0 suites failed, no file
+reporting zero assertions). **5,177.**
+
+> ### ⚠ THE STORED ROW IS NOT YET REPAIRED — ONE COMMAND IS OUTSTANDING
+>
+> The gate protects new uploads. **The already-stored `flag: "normal"` on
+> `AVERAGE BLOOD GLUCOSE` in report `6aa698387a3bd7401512a5f3` is still
+> there**, so the panel still shows `In range` for 154 mg/dL until it is
+> nulled — exactly the split the bound repair had, one layer along.
+>
+> Collected, judged and DRY-RUN CLEAN (1 target, 0 refused, name-at-index
+> verified, whole before-state backed up). The write itself was refused by
+> this session's sandbox as a shared-resource modification and was NOT worked
+> around. **The scripts are in the session scratchpad, not the repository**,
+> on the same footgun reasoning as the bound repair.
+>
+> **AFTER RUNNING IT:** re-run the audit over the whole database and expect 0
+> in both buckets, which is the statement worth having — the stored data
+> matching what the live gate would now produce, rather than "the row we knew
+> about is fixed".
+
 ### ⚠ A UNICODE ESCAPE PUT TWO REAL NUL BYTES IN A SOURCE FILE
 
 Worth knowing because it is silent and it is not the heredoc trap the working
@@ -9760,14 +9909,21 @@ untouched; this is display only.
   Until then every threshold on the page is labelled as unchecked — correctly.
 * **`stable` on the timeline and `no real change` on the comparison** are two
   phrasings of one verdict on one page. Both honest; not settled.
-* **⚠ eAG STILL CARRIES `flag: "normal"`, AND THIS IS THE LAST PIECE OF THAT
-  DEFECT.** Almost certainly inferred by the model against the band that has
-  now been refused — the extraction prompt sets a flag either from a marking
-  the report shows OR from an unambiguous numeric comparison, and here only
-  the second was available. But **this cannot be told apart from a genuine
-  printed marking by looking at the stored row**, which is why neither the
-  gate nor the repair touched it. The panel therefore still shows `In range`
-  for 154 mg/dL. Deciding it needs the report in front of a human.
+* **⚠ eAG's `flag` IS SETTLED IN THE CODE BUT THE STORED ROW IS NOT REPAIRED.**
+  The report was rendered and read: **it prints no markings at all**, so the
+  flag was inferred against the refused band, and the gate now drops a
+  `normal` on a refused range (only `normal` — a warning is never removed).
+  **One database write is outstanding**, dry-run clean and blocked by this
+  session's sandbox; until it runs the panel still shows `In range` for
+  154 mg/dL. See the two subsections above the NUL-byte one.
+* **FLAGS CARRY NO PROVENANCE, AND THAT IS THE HONEST FIX.** All 44 stored
+  flags say what they are and not where they came from, so one class of them
+  had to be repaired by inference about the range beside them. The real
+  answer is a `flag_source` of `printed_marking` vs `inferred_from_range` —
+  which the extraction prompt already distinguishes IN WORDS — plus a
+  migration for the flags already stored without it. **Not attempted; it
+  wants its own session.** The same shape as the OCR fold repaired at the
+  comparison key with Module 4/5 named as where it really belongs.
 * **eAG is shown but not trended**, which is deliberate, and the extraction
   still stores no unit for it. The unit is now taken from the reader's other
   report; the upstream fix is still that extraction should carry it.
@@ -9803,7 +9959,10 @@ and MCHC blocked for want of a declared equivalence~~ · ~~a silent unit
 treated as a disagreement~~ · ~~one change given two opposite verdicts~~ ·
 ~~an interpretation-table band accepted as a reference interval~~ ·
 ~~the stored `151 - 180` bounds~~ (gated at extraction AND repaired in the
-database; the whole stored set now re-audits clean).
+database; the whole stored set now re-audits clean) · ~~eAG's `flag:
+"normal"`, and whether the report marked that row at all~~ (it marks nothing,
+anywhere — gated in code and mutation-tested; **the stored row still awaits
+one write**).
 
 ### ⚠ THE RATE LIMITER WILL STOP A DEBUG SESSION BEFORE THE QUOTA DOES
 

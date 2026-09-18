@@ -503,20 +503,101 @@ def test_the_gate_has_no_opinion_when_nothing_was_printed():
     assert (p.reference_low, p.reference_high) == (3.0, 9.0)
 
 
-def test_the_flag_is_left_alone_by_this_gate():
-    """It is the laboratory's own marking when the report states one.
+# --------------------------------------------------------------------------
+# AND A `normal` FLAG GOES WITH THE REFUSED BOUNDS. ONLY `normal`.
+# --------------------------------------------------------------------------
+#
+# `test_the_flag_is_left_alone_by_this_gate` STOOD HERE and asserted
+# `p.flag is not None` on exactly the payload below. It was not wrong when
+# written -- it pinned a question this gate deliberately left open -- but the
+# question was answered on 2026-09-18 BY READING THE REPORT:
+#
+#   `Test 3.pdf` prints no markings at all. Four columns -- name, value, unit,
+#   range -- and not one H, L or asterisk on either page, including beside
+#   NEUTROPHILS 82 against 40-70 and ESR 45 against 0-20. So every flag stored
+#   from it was inferred, and `AVERAGE BLOOD GLUCOSE 154 flag=normal` could
+#   only have been inferred from "151 - 180 - Average Control" -- the band
+#   this gate refuses. It rendered as an `In range` chip attributed to "your
+#   laboratory's own marking", and both halves of that were false.
+#
+# THE OLD TEST IS REPLACED, NOT WEAKENED. A test that pins a state the
+# producer can no longer reach is a test that will be satisfied by
+# reintroducing the defect.
 
-    This gate is about a range the service misread, not about the laboratory's
-    verdict. A flag the model inferred FROM a refused range is a separate
-    question and is deliberately not settled here.
-    """
+
+def test_an_inferred_normal_flag_goes_with_the_refused_bounds():
+    """The real row, and the reason this gate learned about flags at all."""
     p = ExtractedParameter(
         test_name="AVERAGE BLOOD GLUCOSE",
         value_raw="154",
+        unit="mg/dL",
         reference_range_raw="151 - 180 - Average Control",
         reference_low=151,
         reference_high=180,
         flag="normal",
     )
     assert (p.reference_low, p.reference_high) == (None, None)
-    assert p.flag is not None
+    assert p.flag is None
+    # THE PRINTED TEXT, THE VALUE AND THE UNIT ARE UNTOUCHED. Only this
+    # service's conclusions about them are withdrawn.
+    assert p.reference_range_raw == "151 - 180 - Average Control"
+    assert p.value_raw == "154"
+    assert p.unit == "mg/dL"
+
+
+@pytest.mark.parametrize("flag", ["high", "low", "critical"])
+def test_a_warning_flag_survives_a_refused_range(flag):
+    """THE ASYMMETRY IS THE WHOLE ARGUMENT, so it gets its own test.
+
+    This gate cannot tell an inferred flag from a printed one -- a laboratory
+    may print both a band table and an `H`. Dropping `normal` cannot
+    under-warn anyone, because a row with no flag renders as "not checked" and
+    never as reassurance. Dropping one of these would REMOVE A WARNING, which
+    is the one error this tool must not make.
+    """
+    p = ExtractedParameter(
+        test_name="AVERAGE BLOOD GLUCOSE",
+        value_raw="240",
+        reference_range_raw="181 - 210 - Action Suggested",
+        reference_low=181,
+        reference_high=210,
+        flag=flag,
+    )
+    assert (p.reference_low, p.reference_high) == (None, None)
+    assert p.flag == flag
+
+
+def test_a_normal_flag_is_dropped_even_when_the_model_supplied_no_bounds():
+    """The early return that used to stand here would have carried it through.
+
+    `if reference_low is None and reference_high is None: return self` was
+    correct while this validator only touched bounds. The bounds being absent
+    says nothing about the flag, and a model that answers `normal` against a
+    band without offering numbers reaches this exact shape.
+    """
+    p = ExtractedParameter(
+        test_name="AVERAGE BLOOD GLUCOSE",
+        value_raw="154",
+        reference_range_raw="151 - 180 - Average Control",
+        flag="normal",
+    )
+    assert p.flag is None
+
+
+@pytest.mark.parametrize("raw", ["70 - 140 mg/dl", "< 100", "UP TO 40", "0.27-5.0"])
+def test_a_normal_flag_survives_a_range_the_gate_accepts(raw):
+    # The gate must not over-reach. Against a plain printed interval a
+    # `normal` is exactly the unambiguous numeric comparison the contract
+    # permits, and it keeps its bounds to be checked against.
+    p = ExtractedParameter(
+        test_name="X", value_raw="1", reference_range_raw=raw, flag="normal"
+    )
+    assert p.flag == "normal"
+
+
+def test_a_normal_flag_survives_when_nothing_was_printed():
+    # Same principle as the bounds: with no printed text there is no evidence
+    # either way, so this gate has no opinion. A flag here is most likely the
+    # laboratory's own marking, which is the legitimate source.
+    p = ExtractedParameter(test_name="X", value_raw="1", flag="normal")
+    assert p.flag == "normal"

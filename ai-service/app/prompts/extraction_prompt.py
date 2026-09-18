@@ -83,6 +83,14 @@ numeric and the comparison is unambiguous. Use "critical" only if the report \
 itself uses critical/panic wording. If the report marks a row abnormal but \
 does not say which direction, and the range does not settle it, use null. \
 NEVER decide clinically on your own.
+      (b) MEANS A RANGE YOU WERE ABLE TO REDUCE TO BOUNDS ABOVE. If you left \
+reference_low and reference_high null because the printed text was a category \
+label or a sex-specific range, then there is no interval to compare against \
+and the flag is null too unless the report marks the row itself. A band from \
+an interpretation table is not this patient's range, so "154 sits inside \
+151 - 180 - Average Control" is not a reason to answer "normal" - and a \
+reader shown "In range" for that value is being reassured by a comparison \
+nobody made.
   - `confidence`: 0.0-1.0, your confidence that this ROW was read correctly. \
 Be honest: lower it for blur, skew, faint print, tight columns, or handwriting.
 
