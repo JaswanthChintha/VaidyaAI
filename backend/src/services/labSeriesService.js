@@ -90,11 +90,70 @@ function nameKey(printed) {
 }
 
 /** The unit as written, reduced to what makes two units the SAME unit. */
+/*
+ * IT REPAIRS SPELLING. IT ASSERTS NO EQUIVALENCE BETWEEN DIFFERENT UNITS.
+ *
+ * ==========================================================================
+ * THE DEFECT: ONE TEST, ONE UNIT, TWO SPELLINGS, NO TREND
+ * ==========================================================================
+ *
+ * TSH is printed `1.81 µIU/mL` on one of the reader's reports and
+ * `3.51 ulU/mL` on the other. THAT IS THE SAME UNIT. The extraction read the
+ * micro sign as a `u` and the capital I as a lowercase l -- the two classic
+ * OCR confusions, both in one short string. Lowercasing alone left `µiu/ml`
+ * against `ulu/ml`, so the series was blocked, drew no line, carried no
+ * movement word and no pair, and the panel told the reader their two reports
+ * disagreed about the unit. They do not; one of them was misread.
+ *
+ * SO TWO CHARACTER CLASSES ARE FOLDED, AND ONLY TWO:
+ *
+ *   - THE MICRO SIGN. `µ` (U+00B5), the Greek mu `μ` (U+03BC) and the ASCII
+ *     `u` all fold to `u`. This is not only an OCR repair: `ug/dL` for µg/dL
+ *     is how laboratories print it when the character set will not carry the
+ *     sign, so the three spellings were always one unit.
+ *   - `i` AND `l`, WHICH ARE THE SAME GLYPH TO AN OCR ENGINE in most fonts
+ *     once case is gone.
+ *
+ * ==========================================================================
+ * WHAT IT MUST NOT DO, CHECKED AGAINST THE REAL DATA
+ * ==========================================================================
+ *
+ * A folding that merged two GENUINELY different units would put two
+ * incomparable readings on one line -- far worse than the blocked panel it
+ * replaced. So it was run over every distinct unit string on this account's
+ * reports plus the plausible neighbours, and the only pairs it merges are:
+ *
+ *     ulU/mL  +  µIU/mL      <- the defect
+ *     umol/L  +  µmol/L      <- also one unit, also two spellings
+ *
+ * AND THESE STAY APART, which is the part that matters:
+ *
+ *     mg/L    -> mg/i        vs  mg/dL  -> mg/di
+ *     U/L     -> u/i         vs  IU/L   -> iu/i
+ *     mmol/L  -> mmoi/i      vs  µmol/L -> umoi/i
+ *     10^3/µL -> 10^3/ui     vs  10^6/µL -> 10^6/ui
+ *
+ * `U/L` AGAINST `IU/L` IS LEFT BLOCKED ON PURPOSE. Enzyme activity in U/L and
+ * IU/L is conventionally the same number, but `U` and `IU` are formally
+ * different units and saying they are equal is a clinical claim, not a
+ * spelling repair. SGPT therefore still shows both readings and no line --
+ * and `MCHC` in `g/dL` against `%` likewise, for the same reason.
+ *
+ * DIGITS ARE NEVER FOLDED. `10^3/µL` and `10^6/µL` are different units and a
+ * confusable class containing `1` would be a step towards merging them.
+ *
+ * FOR COMPARISON ONLY. The reader is always shown the unit their laboratory
+ * printed, misread or not -- `points[].unit` is untouched, and this key never
+ * reaches a screen.
+ */
+const _MICRO = /[µμ]/g;
+const _I_L = /[il]/g;
+
 function unitKey(unit) {
   const text = String(unit === null || unit === undefined ? '' : unit)
     .toLowerCase()
     .replace(/\s+/g, '');
-  return text;
+  return text.replace(_MICRO, 'u').replace(_I_L, 'i');
 }
 
 /**
@@ -451,10 +510,25 @@ function buildLabSeries(snapshots, printed, aliases) {
     }
 
     const units = [...new Set(numeric.map((e) => unitKey(e.unit)))];
+    // A MISSING UNIT IS NOT A DIFFERENT UNIT.
+    //
+    // `AVERAGE BLOOD GLUCOSE` is `154 mg/dL` on one report and `121.94` with
+    // NO unit on the other, and the panel was telling the reader the two
+    // reports gave it in different units. They do not: one of them gave none.
+    // The outcome is the same -- there is no basis for drawing a line, because
+    // an absent unit cannot be confirmed to match a present one -- but the
+    // STATED REASON was false, and `blocked.units` could name only one unit
+    // while claiming they differed.
+    //
+    // This is the project's standing failure mode in miniature: an absence
+    // rendered as a negative result. The values are still shown; only the
+    // sentence changes.
+    const named = units.filter((u) => u !== '');
+    const unitMissing = named.length !== units.length;
     const blocked =
       units.length > 1
         ? {
-            reason: 'units_differ',
+            reason: unitMissing && named.length <= 1 ? 'unit_missing' : 'units_differ',
             // AS PRINTED, not as compared. The reader is being told these two
             // reports disagree; showing them the folded key would be showing
             // them this file's arithmetic instead of their own documents.

@@ -731,6 +731,53 @@ describe('comparison -- the rest of the report', () => {
     ).toBeInTheDocument();
   });
 
+  it('says a missing unit is MISSING, not different', async () => {
+    // TWO DIFFERENT FACTS ABOUT THE READER'S OWN DOCUMENTS. eAG is
+    // `154 mg/dL` on one report and `121.94` with no unit on the other, and
+    // the row said the two reports gave it in different units. They do not;
+    // one of them gave none.
+    //
+    // THE FIRST FIX FOR THIS DID NOT WORK AND LOOKED LIKE IT DID. The branch
+    // read `blocked?.reason` where `blocked` was a Boolean a few lines above,
+    // so it was always `undefined` and every row fell through to the wrong
+    // sentence. The backend had been right all along.
+    mountPair([
+      labRow({
+        previous: 121.94,
+        current: 154,
+        previousUnit: null,
+        currentUnit: 'mg/dL',
+        unit: null,
+        blocked: { reason: 'unit_missing', units: ['mg/dL'] },
+        category: 'not_classifiable',
+        symbol: null,
+      }),
+    ]);
+
+    await screen.findByText('ZORBLEX');
+    expect(screen.getByText(/did not print a unit for this parameter/)).toBeInTheDocument();
+    expect(screen.queryByText(/in different units/)).not.toBeInTheDocument();
+  });
+
+  it('still says different units when they really do differ', async () => {
+    mountPair([
+      labRow({
+        previous: 101.9,
+        current: 13,
+        previousUnit: 'U/L',
+        currentUnit: 'IU/L',
+        unit: null,
+        blocked: { reason: 'units_differ', units: ['U/L', 'IU/L'] },
+        category: 'not_classifiable',
+        symbol: null,
+      }),
+    ]);
+
+    await screen.findByText('ZORBLEX');
+    expect(screen.getByText(/in different units/)).toBeInTheDocument();
+    expect(screen.queryByText(/did not print a unit/)).not.toBeInTheDocument();
+  });
+
   it('renders a parameter on only one of the two reports as not measured', async () => {
     mountPair([labRow({ current: null, currentUnit: null, category: 'not_classifiable', symbol: null })]);
 

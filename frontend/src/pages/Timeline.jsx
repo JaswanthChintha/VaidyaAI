@@ -887,9 +887,22 @@ function LabComparisonRow({ row }) {
           <Absent
             label="Not classifiable"
             reason={
-              blocked
-                ? 'The two reports give this parameter in different units, so the readings were not compared.'
-                : 'This parameter is not on both of these reports.'
+              // THE REASON, NOT A REASON. `unit_missing` and `units_differ`
+              // are different facts about the reader's own documents and the
+              // panel said the wrong one for a whole parameter: eAG is
+              // `154 mg/dL` against `121.94` with no unit, and it was being
+              // described as two reports disagreeing about the unit.
+              // `row.blocked`, NOT `blocked` -- the latter is a Boolean a few
+              // lines up, so `blocked?.reason` was silently `undefined` and
+              // every missing-unit row fell through to the wrong sentence.
+              // The backend was producing `unit_missing` correctly the whole
+              // time; the page threw it away. Caught by reading the row, not
+              // by a test, which is why there is now a test for it.
+              row.blocked?.reason === 'unit_missing'
+                ? 'One of these reports did not print a unit for this parameter, so the two readings were not compared.'
+                : blocked
+                  ? 'The two reports give this parameter in different units, so the readings were not compared.'
+                  : 'This parameter is not on both of these reports.'
             }
           />
         )}

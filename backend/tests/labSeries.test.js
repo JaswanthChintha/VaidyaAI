@@ -120,6 +120,95 @@ describe('labSeriesService - units', () => {
     expect(out.plottedCount).toBe(1);
   });
 
+  it('joins a unit the extraction MISREAD, because it is the same unit', () => {
+    // THE DEFECT, on real data: TSH is printed `1.81 µIU/mL` on one of this
+    // account's reports and `3.51 ulU/mL` on the other. Same unit. The
+    // extraction read the micro sign as `u` and the capital I as lowercase l
+    // -- the two classic OCR confusions in one short string -- and the panel
+    // then told the reader their reports disagreed about the unit.
+    const out = buildLabSeries([
+      snap('2026-01-01', [row('Zorblexin', '3.51', 'ulU/mL')]),
+      snap('2026-02-01', [row('Zorblexin', '1.81', 'µIU/mL')]),
+    ]);
+
+    expect(out.series[0].blocked).toBeNull();
+    expect(out.series[0].movement).toBe('fell');
+    expect(out.plottedCount).toBe(1);
+    // AND THE READER STILL SEES WHAT THEIR LABORATORY PRINTED. The folding is
+    // a comparison key; it never reaches a screen.
+    expect(out.series[0].points.map((p) => p.unit)).toEqual(['ulU/mL', 'µIU/mL']);
+  });
+
+  it('joins the micro sign with its ASCII substitute', () => {
+    // `ug/dL` for µg/dL is how a laboratory prints it when the character set
+    // will not carry the sign. Always one unit, never two.
+    const out = buildLabSeries([
+      snap('2026-01-01', [row('Zorblex', '4', 'µmol/L')]),
+      snap('2026-02-01', [row('Zorblex', '6', 'umol/L')]),
+    ]);
+    expect(out.series[0].blocked).toBeNull();
+  });
+
+  it('still keeps GENUINELY different units apart', () => {
+    // THE HALF THAT MATTERS MORE. A folding that merged two real units would
+    // put incomparable readings on one line, which is worse than the blocked
+    // panel it replaced. These pairs must never join.
+    const pairs = [
+      ['mg/L', 'mg/dL'],
+      ['U/L', 'IU/L'],
+      ['mmol/L', 'µmol/L'],
+      ['10^3/µL', '10^6/µL'],
+      ['g/dL', '%'],
+      ['IU/mL', 'mIU/L'],
+    ];
+
+    for (const [first, second] of pairs) {
+      expect(unitKey(first)).not.toBe(unitKey(second));
+      const out = buildLabSeries([
+        snap('2026-01-01', [row('Zorblex', '10', first)]),
+        snap('2026-02-01', [row('Zorblex', '20', second)]),
+      ]);
+      expect(out.series[0].blocked).not.toBeNull();
+    }
+  });
+
+  it('NEVER folds a digit', () => {
+    // A confusable class containing `1` would be a step towards merging
+    // `10^3/µL` with `10^6/µL`, which are different units.
+    expect(unitKey('10^3/µL')).toContain('1');
+    expect(unitKey('10^3/µL')).not.toBe(unitKey('10^6/µL'));
+  });
+
+  it('calls a MISSING unit missing, not different', () => {
+    // `AVERAGE BLOOD GLUCOSE` is `154 mg/dL` on one report and `121.94` with
+    // no unit on the other, and the panel said the two reports gave it in
+    // different units. They do not: one of them gave none. The outcome is the
+    // same -- an absent unit cannot be confirmed to match a present one -- but
+    // the stated reason was false, and `units` could name only one of the two
+    // it claimed differed.
+    const out = buildLabSeries([
+      snap('2026-01-01', [row('Zorblex', '121.94', null)]),
+      snap('2026-02-01', [row('Zorblex', '154', 'mg/dL')]),
+    ]);
+
+    expect(out.series[0].blocked).not.toBeNull();
+    expect(out.series[0].blocked.reason).toBe('unit_missing');
+    // Still not drawn, still carrying both readings.
+    expect(out.series[0].points.map((p) => p.value)).toEqual([121.94, 154]);
+  });
+
+  it('says units_differ when they really do differ AND one is missing', () => {
+    // Three spellings, two of them real and unequal: the parameter genuinely
+    // has disagreeing units, so `unit_missing` would understate it.
+    const out = buildLabSeries([
+      snap('2026-01-01', [row('Zorblex', '1', null)]),
+      snap('2026-02-01', [row('Zorblex', '2', 'mg/L')]),
+      snap('2026-03-01', [row('Zorblex', '3', 'mg/dL')]),
+    ]);
+
+    expect(out.series[0].blocked.reason).toBe('units_differ');
+  });
+
   it('does not decide that two DIFFERENT units are equal', () => {
     // g/dL and % are numerically close for some tests and are not the same
     // quantity. This file knows no equivalences at all, deliberately.

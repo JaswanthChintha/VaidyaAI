@@ -40,10 +40,10 @@ about any of them. That is the fifth time on this project.
 
 | | Tests |
 |---|---|
-| `backend/` (Node/Express) | **743** passing + 3 skipped (15 suites, 0 failed) |
+| `backend/` (Node/Express) | **749** passing + 3 skipped (15 suites, 0 failed) |
 | `ai-service/` (Python/FastAPI) | **3,992** passing + 7 skipped (3,999 collected, 0 failures, 0 errors) |
-| `frontend/` (React/Vitest) | **383** passing, 0 suites failed |
-| **Total** | **5,118** -- ALL THREE re-run green 2026-09-18, at the commit below |
+| `frontend/` (React/Vitest) | **385** passing, 0 suites failed |
+| **Total** | **5,126** -- ALL THREE green 2026-09-18; ai-service not re-run for the last commit because nothing in it changed |
 
 > **⚠ THE 4,852 IN EVERY EARLIER SECTION WAS 7 TOO HIGH.** §6as recorded
 > ai-service's COLLECTED total (3,865) as its PASSED count; that day's real
@@ -9153,10 +9153,14 @@ things, in the order they were found:
 
 | | Tests | Last run |
 |---|---|---|
-| `backend/` | **743** passed, 3 skipped, 15 suites, 0 failed | 2026-09-18 ✅ |
+| `backend/` | **749** passed, 3 skipped, 15 suites, 0 failed | 2026-09-18 ✅ |
 | `ai-service/` | **3,992** passed, 7 skipped (3,999 collected, 0 failures, 0 errors) | 2026-09-18 ✅ (`.env` moved aside) |
-| `frontend/` | **383** passed, 0 suites failed | 2026-09-18 ✅ |
-| **Total** | **5,118** | |
+| `frontend/` | **385** passed, 0 suites failed | 2026-09-18 ✅ |
+| **Total** | **5,126** | |
+
+**FIVE things, not four** — the fifth was taken off this section's own open list
+later the same day: the TSH unit artefact. See the unit-folding subsection
+below the comparison one.
 
 ### ⚠ A CHANGE OF ZERO WAS SIGNIFICANT, IN THE FUNCTION EVERY MODULE SHARES
 
@@ -9362,6 +9366,72 @@ and `labWithVerdicts`**, shared by both endpoints. Aliases are asked over the
 WHOLE history so both cards join the same names and the second call is a cache
 hit.
 
+### ▶ TSH WAS ONE UNIT SPELLED TWO WAYS, AND `unitKey` NOW FOLDS OCR CONFUSABLES
+
+Taken off this section's own open list. TSH is printed `1.81 µIU/mL` on one
+report and `3.51 ulU/mL` on the other. **That is the same unit** — the
+extraction read the micro sign as a `u` and the capital I as a lowercase l,
+the two classic OCR confusions in one short string. Lowercasing left `µiu/ml`
+against `ulu/ml`, so the series was blocked and the panel told the reader
+their two reports disagreed about the unit. They do not; one was misread.
+
+`unitKey` folds **two character classes and only two**:
+
+* the micro sign — `µ` (U+00B5), Greek `μ` (U+03BC) and ASCII `u` — which was
+  never only an OCR repair: `ug/dL` is how a laboratory prints µg/dL when the
+  character set will not carry the sign;
+* `i` and `l`, the same glyph to an OCR engine once case is gone.
+
+**CHECKED AGAINST EVERY DISTINCT UNIT STRING IN THE REAL DATA BEFORE BEING
+WRITTEN** — 20 of them, pulled off the rendered page. It merges exactly two
+pairs, `ulU/mL`+`µIU/mL` and `umol/L`+`µmol/L`, both genuinely one unit. The
+half that matters more is what stays apart:
+
+```
+mg/L    -> mg/i      vs  mg/dL   -> mg/di
+U/L     -> u/i       vs  IU/L    -> iu/i
+mmol/L  -> mmoi/i    vs  µmol/L  -> umoi/i
+10^3/µL -> 10^3/ui   vs  10^6/µL -> 10^6/ui
+```
+
+**`SGPT` (U/L vs IU/L) AND `MCHC` (g/dL vs %) ARE LEFT BLOCKED ON PURPOSE.**
+Enzyme activity is conventionally the same number in U/L and IU/L, and g/dL
+and % are numerically equal for MCHC — but those are CLINICAL EQUIVALENCE
+CLAIMS, not spelling repairs, and a unit conversion belongs in Module 5
+upstream of storage. **DIGITS ARE NEVER FOLDED**, so `10^3/µL` can never merge
+with `10^6/µL`.
+
+**FOR COMPARISON ONLY.** `points[].unit` is untouched and the key never
+reaches a screen; the panel shows `µIU/mL` because that is the newest report's
+spelling. Live: `TSH 3.51 -> 1.81 µIU/mL stable`, and the timeline tally moved
+with it — 14 stable, 6 undirected, from 13 and 7.
+
+**Mutated in BOTH directions.** Removing the `i`/`l` fold was killed by the
+TSH test; over-folding (adding `1` and `d` to the class) was killed by the
+never-fold-a-digit test. Each mutant was confirmed by grep to apply and by
+`node --check` to parse before its verdict was believed.
+
+### ⚠ A MISSING UNIT WAS BEING REPORTED AS A DIFFERENT ONE
+
+Found while fixing the above, and a separate defect. `AVERAGE BLOOD GLUCOSE`
+is `154 mg/dL` on one report and `121.94` with **no unit** on the other, and
+the row said the two reports gave it in different units. They do not: one gave
+none. `blocked.units` could name only one of the two it claimed differed.
+
+`blocked.reason` is now `unit_missing` when the only disagreement is an
+absence, with its own sentence. **The outcome is unchanged** — an absent unit
+cannot be confirmed to match a present one, so the readings are still not
+compared — but the stated reason was false, which is this project's standing
+failure mode in miniature.
+
+> **⚠ AND MY FIRST FIX FOR IT SILENTLY DID NOTHING.** The branch read
+> `blocked?.reason` where `blocked` was a `Boolean` a few lines above, so it
+> was always `undefined` and every row fell through to the wrong sentence. The
+> backend had been producing `unit_missing` correctly the whole time and its
+> test passed. **Reading the row on screen caught it; no test would have** —
+> the eighth time on this project that the screen found what the suite did
+> not. There are now two frontend tests pinning both sentences.
+
 ### ⚠ "unchanged" BESIDE AN ARROW AND TWO DIFFERENT NUMBERS
 
 ```
@@ -9388,11 +9458,19 @@ untouched; this is display only.
   Until then every threshold on the page is labelled as unchecked — correctly.
 * **`stable` on the timeline and `no real change` on the comparison** are two
   phrasings of one verdict on one page. Both honest; not settled.
-* **TSH and AVERAGE BLOOD GLUCOSE join and are then BLOCKED on units.** TSH is
-  `1.81 µIU/mL` against `3.51 ulU/mL` — the SAME unit, with OCR reading `µIU`
-  as `ulU`. eAG is `154 mg/dL` against `121.94` with no unit at all. **This is
-  an extraction fix (Module 4/5), and it is the next real win**: normalising
-  those would unblock both rows immediately.
+* **`AVERAGE BLOOD GLUCOSE` still is not compared**, and now says why
+  correctly: one report printed no unit. Unblocking it would mean assuming the
+  missing unit equals the present one, which is an assumption about absent
+  data. **The real fix is upstream** — the extraction should carry eAG's unit,
+  which is always mg/dL on these reports.
+* **`SGPT` and `MCHC` are still blocked** and should probably stay that way
+  until Module 5 declares the equivalences: U/L to IU/L for enzyme activity,
+  and g/dL to % for MCHC. Both are clinical claims and neither belongs in a
+  trend calculation.
+* **THE OCR CONFUSION IS REPAIRED AT THE COMPARISON KEY, NOT AT SOURCE.** The
+  stored extraction still says `ulU/mL`, so every consumer that folds units
+  itself would hit the same defect. **A Module 4/5 normalisation is still the
+  right long-term home**; `unitKey` just stopped this one card lying about it.
 * **`5.4 → 7 %` prints `7`, not `7.0`** — `formatValue` does not pad, so a pair
   can look like it has different precision on each end.
 * Module 35's polarity for a table hit is now the table's; a row whose polarity
@@ -9410,7 +9488,8 @@ moved aside** (fix `conftest.py`); `RangeChart.jsx` orphaned.
 parameters stranded as single readings~~ · ~~a threshold that moved between
 page loads~~ · ~~the summary line counting a set that no longer existed~~ ·
 ~~the chart contradicting its own row~~ · ~~the comparison card carrying 12 of
-28 parameters~~ · ~~"unchanged" over a change~~.
+28 parameters~~ · ~~"unchanged" over a change~~ · ~~TSH blocked by one unit
+spelled two ways~~ · ~~a missing unit reported as a different one~~.
 
 ### ⚠ THE RATE LIMITER WILL STOP A DEBUG SESSION BEFORE THE QUOTA DOES
 
