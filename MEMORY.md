@@ -50,33 +50,99 @@ about any of them. That is the fifth time on this project.
 > figure was 3,858 passed + 7 skipped. The row above is a true count, taken
 > from the junit XML. See §6at.
 
-> ### ✅ THAT UNCOMMITTED WORK IS NOW SAVED. THE TREE IS CLEAN
+> ### ✅ EVERYTHING IS COMMITTED AND PUSHED. TREE CLEAN, ONE BRANCH
 >
-> **The 14-path warning that stood here is history.** Those paths were
-> committed on 2026-09-17 together with the session below — one commit, because
-> Module 35 and the timeline row changes touch the same files and could not be
-> split into two states that both build.
+> Verified 2026-09-18: `main` == `origin/main` at **`351b693`**, working tree
+> clean, `origin/main` the only remote branch. **The 14-path uncommitted
+> warning that stood here for two sessions is history.**
 >
-> What went in: **Module 35 (`lab_polarity`)**, which obtains a polarity and a
-> variation band from the model FROM A TEST NAME ALONE and lets Module 28's own
-> classifier do the classifying; the removal of the trends table; and the
-> first-to-latest pair on the collapsed row.
+> **SIX COMMITS ON 2026-09-18**, newest first — the whole of §6av and §6aw:
 >
-> **Verified at the committed state, all three suites, nothing taken on
-> trust:** backend 725 + 3 skipped (15 suites, 0 failed), ai-service 3,931 + 7
-> skipped (3,938 collected, 0 failures, 0 errors), frontend 368 (0 suites
-> failed, no file reporting zero assertions). **5,024.**
+> ```
+> 351b693  docs: the stored bounds are repaired, and the gate was the judge
+> 6b60a8d  the printed range must be only a range
+> e15c184  a silent unit is not a different one -- and one change is not two verdicts
+> a865f75  two labels for one scale, declared where a reviewer can read it
+> f772bc0  one unit spelled two ways is one unit
+> 5142acd  two names for one test, and a threshold you can go and check
+> 0c4930d  the model says which way is worse; this service decides whether it moved
+> ```
 >
-> **§6at's opening says "everything is committed and pushed". That is true
-> again** — but note it was written before §6au and §6av, so read it for its
-> findings, not for its state.
+> **Verified at `351b693`, all three suites, nothing taken on trust:** backend
+> **762** + 3 skipped (15 suites, 0 failed), ai-service **4,022** + 7 skipped
+> (4,029 collected, 0 failures, 0 errors), frontend **384** (0 suites failed,
+> no file reporting zero assertions). **5,168.**
+>
+> **NOTHING CARRIES A CO-AUTHOR TRAILER.** Checked by grep on every commit.
+> Do not add one.
 >
 > **STILL DO `git status` FIRST IN A NEW SESSION.** It cost this project a
 > whole session's work being one bad `git checkout` away from gone, and the
 > habit is the only reason it wasn't.
 
+> ### ▶ WHAT TO DO NEXT, IN ORDER
+>
+> All four are named in §6aw's KNOWN AND OPEN with the evidence.
+>
+> 1. **VERIFY THE VARIATION TABLE.** `ai-service/app/data/lab_variation.py`,
+>    16 rows, **every one `verified: false`** — literature-typical CVa/CVi
+>    recorded with the source to check them against, never read off it. Every
+>    `stable` on the timeline rests on these. `test_no_row_claims_to_be_verified`
+>    fails loudly if a row is flipped without someone doing the comparison.
+>    Take **ESR** (the 62 % threshold that makes `ESR 35 -> 45` read `stable`),
+>    then **EOSINOPHILS**, then **BASOPHILS** — each says so in its own
+>    `source` field.
+> 2. **VERIFY THE TWO UNIT EQUIVALENCES.** `U/L == IU/L` globally, and
+>    `g/dL == %` for MCHC only, in
+>    `backend/src/services/unitEquivalence.js`. Both `verified: false`.
+>    `SGPT 101.9 -> 13 improving` rests entirely on the first.
+> 3. **DECIDE eAG's `flag: "normal"`.** The last piece of the interpretation-band
+>    defect. Almost certainly inferred against the band now refused, but it
+>    cannot be told from a genuine printed marking by looking at the stored
+>    row, so the panel still shows `In range` for 154 mg/dL. **Open Test 3 and
+>    look at whether that row carries its own H/L marking.**
+> 4. **READ THE CLINICIAN PAGE ALOUD.** Every screen-reading session on this
+>    project has found something no suite did — eight times now. The timeline
+>    and comparison cards were read this session; the clinician page was not.
+
+> ### ▶ RUN AND TEST, IN ONE PLACE
+>
+> ```
+> cd ai-service && .venv/Scripts/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+> cd backend   && npm start        # :5000, Mongo Atlas, non-SRV URI
+> cd frontend  && npm run dev      # :5173
+> ```
+>
+> * **Frontend is `http://localhost:5173`, NOT `127.0.0.1:5173`** — Vite binds
+>   `::1` only.
+> * **`curl http://127.0.0.1:5000/api/v1/health`** before believing anything;
+>   it reports `database` and `aiService.reachable`.
+> * **RESTART backend/ai-service after changing them, and restart BEFORE
+>   believing the browser.** A background task reporting "exit 127" usually
+>   means the wrapper died while the server is still serving —
+>   `Get-NetTCPConnection -LocalPort 5000` then `Stop-Process`.
+> * **⚠ HISTORY ENDPOINTS ALLOW 60 REQUESTS PER 15 MINUTES.** Repeated reloads
+>   while checking a render exhaust it and the page goes blank with `429`,
+>   which looks exactly like a broken feature. The limiter is in-memory, so
+>   **restarting the backend clears it** — faster than waiting.
+>
+> ```
+> backend      npm test                      # or: npx jest --json --outputFile=<f>
+> frontend     npx vitest run --reporter=json --outputFile=<f>      FROM frontend/
+> ai-service   pytest --junitxml=<f>         ONLY passes with ai-service/.env moved aside
+> ```
+>
+> **Read `numFailedTestSuites` and PER-FILE assertion counts, never the failure
+> line** — a file that fails to compile reports zero failures. pytest's summary
+> does not survive to tail; parse the junit XML. Vitest's JSON reporter is the
+> reliable one.
+
 
 > ### ▶ NEW CHAT? START AT §6aw, THEN §6av, THEN §6au.
+>
+> **§6aw is the current handover and it is long because the reader drove two
+> real screens for a whole session.** Read its opening list and its KNOWN AND
+> OPEN block first; the rest is evidence for those.
 >
 > Between them they have the run commands, the state of the repository, what
 > `Test 2.pdf` and `Test 3.pdf` are and why they matter, and what is open.
