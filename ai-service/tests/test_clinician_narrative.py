@@ -622,3 +622,139 @@ def test_the_laboratorys_printed_name_is_used_for_the_reason_too(offline_setting
     joined = " ".join(collect_facts(_summary()).triggering["Diabetes"])
     assert "HbA1c" in joined
     assert "NGSP" not in joined
+
+
+# --------------------------------------------------------------------------
+# A BORDERLINE FINDING IS NOT A FLAGGED ONE
+# --------------------------------------------------------------------------
+#
+# READ OFF THE REAL CLINICIAN PAGE, 2026-09-18:
+#
+#     This tool flagged Obesity because Body mass index was 25.25 kg/m2
+#     (>= 25, inside the WHO overweight band of 25.0-29.9).
+#
+# The sentence contradicts its own parenthetical -- 25.25 is overweight and
+# obesity begins at 30.0. Module 8 had it right (BORDERLINE, LOW risk, and it
+# says "overweight band" itself) and the composed document renders
+# `Obesity (borderline)`. Only the WRITTEN narrative lost it, because
+# `_facts_block` handed the model the word FLAGGED for every condition in
+# `abnormal_findings` whatever its status.
+
+
+def _borderline_summary() -> dict:
+    """`_summary()` plus a BORDERLINE Obesity, as the producer returns it.
+
+    The top-level `status` key is what `_qualified` reads, and the live
+    payload carries it on every assessment -- checked against a real Module 32
+    response rather than assumed.
+    """
+    summary = _summary()
+    summary["abnormal_findings"] = ["Diabetes", "Kidney Disease", "Obesity"]
+    summary["assessments"].append(
+        {
+            "condition": "Obesity",
+            "status": "Borderline",
+            "assessed": True,
+            "bases": [
+                {
+                    "status": "Borderline",
+                    "assessed": True,
+                    "source_kind": "clinical_rule",
+                    "rule": {
+                        "triggering_values": [
+                            {
+                                "display_name": "Body mass index",
+                                "value": 25.25,
+                                "unit": "kg/m2",
+                                "comparator": ">=",
+                                "threshold": 25,
+                                "classification": (
+                                    "inside the WHO overweight band of 25.0-29.9"
+                                ),
+                            }
+                        ]
+                    },
+                }
+            ],
+        }
+    )
+    return summary
+
+
+def test_a_borderline_status_is_collected_and_an_indicated_one_is_not():
+    from app.services.clinician_narrative import _qualified
+
+    qualified = _qualified(_borderline_summary())
+    assert qualified == {"Obesity": "Borderline"}
+    # Diabetes and Kidney Disease are `Indicated`; naming them would make the
+    # narrative hedge findings that were not hedged.
+    assert "Diabetes" not in qualified
+
+
+def test_the_model_is_told_BORDERLINE_and_not_FLAGGED():
+    from app.services.clinician_narrative import _facts_block
+
+    block = _facts_block(collect_facts(_borderline_summary()))
+    assert "BORDERLINE -- Obesity:" in block
+    assert "FLAGGED -- Obesity" not in block
+    # The Indicated findings keep the word they had.
+    assert "FLAGGED -- Diabetes:" in block
+
+
+def test_a_narrative_that_calls_a_borderline_finding_flagged_is_a_gap():
+    """THE CONTROL. A prompt instruction alone would not be one.
+
+    A gap is fed back and the narrative regenerated; a second failure refuses
+    it and the page renders the composed document, which has always said
+    `Obesity (borderline)`. **The fallback is already correct**, which is what
+    makes refusing safe.
+    """
+    from app.services.clinician_narrative import _missing
+
+    facts = collect_facts(_borderline_summary())
+    text = (
+        "This tool flagged Obesity because Body mass index was 25.25 kg/m2 "
+        "(>= 25, inside the WHO overweight band of 25.0-29.9)."
+    )
+    assert "status:Obesity" in _missing(text, facts)
+
+
+@pytest.mark.parametrize(
+    "phrasing",
+    [
+        "This tool recorded Obesity as borderline at 25.25 kg/m2.",
+        "Borderline Obesity was recorded, at 25.25 kg/m2.",
+        "Obesity (borderline) was recorded at 25.25 kg/m2.",
+    ],
+)
+def test_the_gap_accepts_any_phrasing_that_carries_the_word(phrasing):
+    """THE SUBSTANCE, NOT ONE PHRASING.
+
+    The sibling `model_only_distinction` check records an earlier version that
+    refused a live narrative for saying the right thing a different way. **A
+    gate that always refuses is a feature that never ships.**
+    """
+    from app.services.clinician_narrative import _missing
+
+    facts = collect_facts(_borderline_summary())
+    assert "status:Obesity" not in _missing(phrasing, facts)
+
+
+def test_the_word_must_be_NEAR_the_condition_not_loose_in_the_document():
+    # Otherwise a borderline remark about something else satisfies it.
+    from app.services.clinician_narrative import _missing
+
+    facts = collect_facts(_borderline_summary())
+    text = (
+        "The glucose result was borderline in an earlier report. "
+        "This tool flagged Obesity because Body mass index was 25.25 kg/m2."
+    )
+    assert "status:Obesity" in _missing(text, facts)
+
+
+def test_an_all_indicated_summary_reports_no_status_gap():
+    """The ANSWERING branch: this must not start refusing ordinary narratives."""
+    from app.services.clinician_narrative import _missing
+
+    facts = collect_facts(_summary())
+    assert not [g for g in _missing(_faithful(), facts) if g.startswith("status:")]

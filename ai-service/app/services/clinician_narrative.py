@@ -354,6 +354,47 @@ def _triggering(summary: Any) -> Dict[str, Tuple[str, ...]]:
     return {k: tuple(v) for k, v in out.items()}, tuple(dict.fromkeys(required))
 
 
+def _qualified(summary: Any) -> Dict[str, str]:
+    """Flagged conditions whose status is NOT a plain `Indicated`.
+
+    ==========================================================================
+    WHY THIS EXISTS: "flagged Obesity" FOR A BMI OF 25.25
+    ==========================================================================
+
+    Read off the real clinician page on 2026-09-18:
+
+        This tool flagged Obesity because Body mass index was 25.25 kg/m2
+        (>= 25, inside the WHO overweight band of 25.0-29.9).
+
+    **The sentence contradicts its own parenthetical.** 25.25 is overweight;
+    obesity begins at 30.0. Module 8 had it right -- `RULE_OBESITY_BMI` puts
+    that value in a BORDERLINE band at LOW risk and labels it the overweight
+    band -- and the composed document renders it right too, as
+    `Obesity (borderline)`. Only the WRITTEN narrative lost it, and it lost it
+    because `_facts_block` handed the model the word FLAGGED for every
+    condition in `abnormal_findings` regardless of status. **The model was
+    told it was flagged, so it wrote that it was flagged.**
+
+    The same collapse hits Diabetes, which holds two separate decisions here --
+    `Indicated` on HbA1c 7 % and `Borderline` on a random glucose of 168 --
+    and was narrated as one flat "flagged ... because A and B".
+
+    THE STATUS IS THE RULE ENGINE'S OWN WORD, carried through rather than
+    re-derived. This function does not decide what is borderline; it reports
+    what Module 8 already decided.
+    """
+    flagged = set(_field(summary, "abnormal_findings") or [])
+    out: Dict[str, str] = {}
+    for assessment in _field(summary, "assessments") or []:
+        condition = _field(assessment, "condition")
+        if condition not in flagged:
+            continue
+        status = _field(assessment, "status")
+        if status and str(status).strip() and str(status).strip() != "Indicated":
+            out[str(condition)] = str(status).strip()
+    return out
+
+
 def _out_of_range(summary: Any) -> Tuple[str, ...]:
     """Laboratory rows outside the interval the laboratory itself printed.
 
@@ -615,6 +656,10 @@ class _Facts(BaseModel):
     #: Per flagged condition, the values that crossed and what they crossed.
     #: This IS the "why" the document is now made of.
     triggering: Dict[str, Tuple[str, ...]] = Field(default_factory=dict)
+    #: Flagged conditions whose status is not a plain `Indicated`, as
+    #: {condition: status}. See `_qualified`: the narrative called a
+    #: BORDERLINE overweight finding "flagged Obesity".
+    qualified: Dict[str, str] = Field(default_factory=dict)
     #: Rows outside the laboratory's own printed interval.
     out_of_range: Tuple[str, ...] = ()
     #: THE BARE VALUES behind the two above, taken from the producer rather
@@ -664,6 +709,7 @@ def collect_facts(summary: Any) -> _Facts:
         model_notes=tuple(_model_notes(summary)),
         no_intervals=no_intervals,
         triggering=triggering,
+        qualified=_qualified(summary),
         out_of_range=out_of_range,
         required_values=trigger_values + range_values,
         unmapped_count=_unmapped_count(summary),
@@ -713,6 +759,28 @@ def _missing(text: str, facts: _Facts) -> Tuple[str, ...]:
     ):
         gaps.append("model_only_distinction")
 
+    # A STATUS THAT IS NOT `Indicated` HAS TO SURVIVE THE REWRITE.
+    #
+    # A CONTROL IN A PROMPT IS NOT A CONTROL -- this project's own repeated
+    # lesson. `_facts_block` now hands the model `BORDERLINE -- Obesity`
+    # instead of `FLAGGED -- Obesity`, and THIS is what makes that stick: a
+    # narrative that still calls it flagged is regenerated with the gap fed
+    # back, and a second failure refuses the narrative altogether. The page
+    # then renders the composed document, which has always said
+    # `Obesity (borderline)` correctly. **The fallback is already right**,
+    # which is what makes refusing safe here.
+    #
+    # THE SUBSTANCE, NOT ONE PHRASING, and in the same sentence as the
+    # condition -- the word loose anywhere in the document would be satisfied
+    # by a borderline remark about something else. Tested against "Obesity is
+    # borderline", "borderline Obesity" and "Obesity (borderline)".
+    for condition, status in facts.qualified.items():
+        word = str(status).split()[0].lower()
+        name = re.escape(str(condition).lower())
+        near = rf"{name}[^.]{{0,100}}\b{re.escape(word)}\b|\b{re.escape(word)}\b[^.]{{0,100}}{name}"
+        if not re.search(near, lowered):
+            gaps.append(f"status:{condition}")
+
     return tuple(dict.fromkeys(gaps))
 
 _INSTRUCTIONS = """You are writing a short handover note for a clinician who has
@@ -742,6 +810,11 @@ Rules:
   Report what was measured and what was flagged, and stop there.
 - Attribute every finding: "this tool flagged X", never "X is present",
   "X is likely" or "the results show X".
+- A HEADING THAT IS NOT "FLAGGED" IS THE STATUS, AND YOU MUST CARRY IT.
+  "BORDERLINE -- Obesity" is not a flag: write that the tool recorded Obesity
+  as borderline, in the same sentence as the name, not that it flagged
+  Obesity. Do not upgrade a borderline finding to a flagged one, and never
+  drop the word.
 - Give the REASON with the finding: the parameter, its value and the threshold
   it crossed, exactly as the facts give them.
 - Do not describe any value as high, low, raised, elevated, poor, good or
@@ -793,7 +866,14 @@ def _facts_block(facts: _Facts) -> str:
     for condition in facts.flagged:
         reasons = facts.triggering.get(condition)
         if reasons:
-            lines.append(f"FLAGGED -- {condition}: " + "; ".join(reasons))
+            # THE STATUS REPLACES THE WORD "FLAGGED", it does not decorate it.
+            # `FLAGGED -- Obesity` and `BORDERLINE -- Obesity` are different
+            # claims, and handing the model the first while the evidence beside
+            # it says "overweight band" is what produced a sentence that
+            # contradicted its own parenthetical. See `_qualified`.
+            status = facts.qualified.get(condition)
+            head = f"{status.upper()} -- {condition}" if status else f"FLAGGED -- {condition}"
+            lines.append(f"{head}: " + "; ".join(reasons))
     # A flagged condition with no triggering value still has to be named, or
     # `_missing` requires a name the model was never given and every narrative
     # is refused forever. That fallback fired for real once already.
@@ -807,7 +887,15 @@ def _facts_block(facts: _Facts) -> str:
                 "cut-off: " + ", ".join(model_only)
             )
         if other:
-            lines.append("ALSO FLAGGED: " + ", ".join(other))
+            # Carries the status here too, or a borderline condition with no
+            # triggering value would arrive as a flat "ALSO FLAGGED".
+            lines.append(
+                "ALSO FLAGGED: "
+                + ", ".join(
+                    f"{c} ({facts.qualified[c].lower()})" if c in facts.qualified else c
+                    for c in other
+                )
+            )
 
     if facts.out_of_range:
         lines.append("OUT OF RANGE: " + "; ".join(facts.out_of_range))

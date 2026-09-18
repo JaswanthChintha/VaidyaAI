@@ -41,9 +41,9 @@ about any of them. That is the fifth time on this project.
 | | Tests |
 |---|---|
 | `backend/` (Node/Express) | **762** passing + 3 skipped (15 suites, 0 failed) |
-| `ai-service/` (Python/FastAPI) | **4,067** passing + 7 skipped (4,074 collected, 0 failures, 0 errors) |
+| `ai-service/` (Python/FastAPI) | **4,075** passing + 7 skipped (4,082 collected, 0 failures, 0 errors) |
 | `frontend/` (React/Vitest) | **394** passing, 0 suites failed |
-| **Total** | **5,223** -- ALL THREE green 2026-09-18 |
+| **Total** | **5,231** -- ALL THREE green 2026-09-18 |
 
 > **⚠ THE 4,852 IN EVERY EARLIER SECTION WAS 7 TOO HIGH.** §6as recorded
 > ai-service's COLLECTED total (3,865) as its PASSED count; that day's real
@@ -10292,8 +10292,8 @@ would keep claiming figures are unchecked after somebody checked them (1).
 ## 6az. THE CLINICIAN PAGE WAS READ ALOUD · 2026-09-18 · NINTH TIME IT FOUND SOMETHING
 
 §0's open item 4, done. **Five findings, two fixed on the owner's
-instruction.** Frontend **394** (was 390); backend and ai-service untouched.
-**Total 5,223.**
+instruction, then a third on request.** Frontend **394** (was 390), ai-service **4,075** (was 4,067).
+**Total 5,231.**
 
 ### ⚠ FIXED 1 — "by the laboratory" WAS FALSE ON THE PAGE A DOCTOR READS
 
@@ -10372,13 +10372,8 @@ fixture carries both, so it exercises the skip in `modelNotes`.
 
 ### ▶ THREE FINDINGS RAISED AND NOT FIXED
 
-* **BORDERLINE IS NARRATED AS "flagged … because".** Obesity is
-  `Borderline/Low`, evidence *"inside the WHO overweight band of 25.0-29.9"*,
-  and the page says *"This tool flagged Obesity because BMI was 25.25"*. BMI
-  25.25 is overweight, not obese — **the sentence contradicts its own
-  parenthetical.** Diabetes likewise merges two separate decisions
-  (`Indicated` on HbA1c, `Borderline` on glucose) into one clause. The rule
-  engine draws the distinction carefully; the narrative erases it.
+* ~~**BORDERLINE IS NARRATED AS "flagged … because".**~~ **FIXED — see the
+  subsection below.**
 * **A RULE'S OWN COMPENSATING CAVEAT NEVER ARRIVES.**
   `RULE_DIABETES_GLUCOSE_UNSPECIFIED` deliberately applies the 2-hour
   post-load boundary to an untimed sample and its `basis` says the uncertainty
@@ -10417,9 +10412,61 @@ session. Harmless and one sign-in to undo, but **a read-only probe is not
 read-only when it spends a single-use credential.** Read the payload from an
 open page's own network log instead.
 
-**Mutation-tested, three mutants, all killed:** the caveat removed from the
-narrative branch (2 tests — this mutant IS the bug as it shipped); the "by the
-laboratory" heading restored (1); the provenance sentence deleted (1).
+### ✅ FIXED 3 — "flagged Obesity" FOR A BMI OF 25.25
+
+The page said *"This tool flagged Obesity because Body mass index was
+25.25 kg/m2 (>= 25, inside the WHO overweight band of 25.0-29.9)."*
+**The sentence contradicted its own parenthetical** — 25.25 is overweight and
+obesity begins at 30.0.
+
+**EVERY LAYER HAD IT RIGHT EXCEPT THE NARRATIVE.** `RULE_OBESITY_BMI` puts
+that value in a BORDERLINE band at LOW risk and labels it the overweight band;
+the composed document renders `Obesity (borderline)`. The written narrative
+lost it because `_facts_block` handed the model **`FLAGGED -- Obesity`** for
+every condition in `abnormal_findings` whatever its status. **The model was
+told it was flagged, so it wrote that it was flagged.**
+
+Three parts, and only the second is a control:
+
+1. `_qualified(summary)` collects flagged conditions whose status is not
+   `Indicated` — **the rule engine's own word, carried through, not
+   re-derived.**
+2. **`_missing` gaps when the status word is absent**, which forces a
+   regeneration with the gap fed back, and a second failure refuses the
+   narrative so the page renders the composed document. **The fallback was
+   already correct**, which is what makes refusing safe here.
+3. The prompt says it too — belt-and-braces. **A CONTROL IN A PROMPT IS NOT A
+   CONTROL**; part 2 is what makes part 3 true.
+
+**THE PROXIMITY CHECK IS THE LOAD-BEARING DETAIL.** The word must appear in
+the same sentence as the condition — loose in the document it would be
+satisfied by a borderline remark about something else. Mutating it to a
+whole-document `word in lowered` was killed by its own test. And it accepts
+any phrasing (`Obesity is borderline`, `borderline Obesity`,
+`Obesity (borderline)`), because the sibling `model_only_distinction` check
+records an earlier version that refused a live narrative for saying the right
+thing a different way — **a gate that always refuses is a feature that never
+ships.**
+
+**LIVE, after clearing the cached note and restarting the ai-service:**
+`outcome: generated, attempts: 1` — the model got it right first time and no
+gap was fed back. The page now reads *"The tool recorded Obesity as borderline
+because Body mass index was 25.25 kg/m2..."*
+
+> **⚠ AND THE DIABETES HALF OF THAT FINDING WAS MY ERROR.** I reported that
+> Diabetes merged an `Indicated` and a `Borderline` decision into one clause.
+> `ruleDecisions` does hold two, but **Module 32 aggregates them into ONE
+> assessment whose status genuinely is `Indicated`**, with both values as
+> triggering reasons — so the narrative is faithful and `_qualified` correctly
+> leaves it alone. What is actually lost is the borderline-ness of the glucose
+> CONTRIBUTION, dissolved in Module 32's aggregation and not by the narrative.
+> A much smaller thing than I described, and upstream of the file I changed.
+
+**Mutation-tested, six mutants across the three fixes, all killed:** the
+caveat removed from the narrative branch (2 tests — this mutant IS the bug as
+it shipped); the "by the laboratory" heading restored (1); the provenance
+sentence deleted (1); the status gap never firing (2); the proximity check
+widened to the whole document (1); the prompt heading left as `FLAGGED` (1).
 `attributes the flag and the interval to the LABORATORY` **was replaced, not
 weakened** — it asserted the false attribution, and the new test inverts it.
 
