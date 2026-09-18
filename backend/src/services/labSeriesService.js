@@ -5,6 +5,10 @@
 // reading this service -- see its header for why `%` equals `g/dL` for MCHC
 // and for nothing else.
 const { UNIT_EQUIVALENCE } = require('./unitEquivalence');
+// Printed rows that restate an ASSESSED feature. Also its own file, and for
+// the same reason: the claim that two things are one measurement should be
+// readable without reading the service that acts on it.
+const { LAB_RESTATEMENTS } = require('./labRestatements');
 
 /**
  * The laboratory's OWN repeated parameters, over time.
@@ -217,6 +221,18 @@ function equivalenceFor(testKey, key) {
   const scoped = byUnit ? byUnit.get(key) : undefined;
   if (scoped) return scoped;
   return _EQUIV_GLOBAL.get(key) || null;
+}
+
+/*
+ * The restatements, indexed by `nameKey` so a printed spelling finds its
+ * entry the same way a test finds its variation row.
+ */
+const _RESTATEMENTS = new Map();
+for (const entry of LAB_RESTATEMENTS) {
+  for (const printed of entry.names) {
+    const key = nameKey(printed);
+    if (key && !_RESTATEMENTS.has(key)) _RESTATEMENTS.set(key, entry);
+  }
 }
 
 /** This unit's key, moved onto its declared shared scale where there is one. */
@@ -517,6 +533,10 @@ function buildLabSeries(snapshots, printed, aliases) {
   const readings = [];
   let singleReportCount = 0;
   let notNumericCount = 0;
+  // COUNTED, because a row this file declines to trend is a decision and the
+  // producer has to be able to say how many it made -- 6at's lesson about
+  // `skipped_over_limit`, which survived two sessions for want of a count.
+  let restatedCount = 0;
 
   for (const [key, entries] of groups) {
     // OLDEST FIRST. The history arrives newest-first; a chart read right to
@@ -567,6 +587,36 @@ function buildLabSeries(snapshots, printed, aliases) {
         labFlag: e.labFlag,
       }));
 
+    /*
+     * A ROW THAT RESTATES A FEATURE THIS PLATFORM ALREADY ASSESSES IS NOT
+     * TRENDED A SECOND TIME.
+     *
+     * Checked BEFORE the reading branches, because the reason matters more
+     * than the shape: this row is excluded whether or not it could have made
+     * a series, and a reader is owed the reason rather than "seen once".
+     *
+     * SHOWN, NOT DROPPED. Readings and dates as printed, no chart, no
+     * direction, no scale -- plus the feature that carries the same
+     * measurement, so a reader can go to the verdict that was actually
+     * reviewed. See `labRestatements.js` for the one entry and for the
+     * contradiction that put it there: HbA1c `worsening` beside
+     * AVERAGE BLOOD GLUCOSE `improving`, which are the same change.
+     */
+    const restatement = _RESTATEMENTS.get(key);
+    if (restatement) {
+      restatedCount += 1;
+      readings.push({
+        key,
+        name,
+        joinedFrom,
+        reason: 'restates_assessed_feature',
+        restates: restatement.restates,
+        rows: asPrinted(),
+        latestFlag: latestFlagOf(entries),
+      });
+      continue;
+    }
+
     if (entries.length < 2) {
       singleReportCount += 1;
       readings.push({ key, name, joinedFrom, reason: 'one_report', rows: asPrinted(), latestFlag: latestFlagOf(entries) });
@@ -590,7 +640,44 @@ function buildLabSeries(snapshots, printed, aliases) {
     // numbers were already the same, and this only decides whether they may
     // share an axis.
     const rawKeys = numeric.map((e) => unitKey(e.unit));
-    const units = [...new Set(rawKeys.map((k) => canonicalUnitKey(key, k)))];
+    const canonKeys = rawKeys.map((k) => canonicalUnitKey(key, k));
+    const distinctKeys = [...new Set(canonKeys)];
+    const presentKeys = distinctKeys.filter((u) => u !== '');
+
+    /*
+     * A READING THAT PRINTED NO UNIT IS NOT EVIDENCE OF A DIFFERENT ONE.
+     *
+     * `Estimated Average Glucose` is stored with `unit: null` -- checked in
+     * the extraction, not inferred: that report did not print one -- while the
+     * other report gives `154 mg/dL`. The series was blocked, and the reader
+     * was told their two reports disagreed about the unit. They do not; one of
+     * them is silent.
+     *
+     * THE BEHAVIOUR WAS ALREADY INCONSISTENT. A series where NO reading
+     * carries a unit plots without complaint, because every key folds to the
+     * empty string and nothing differs. Only the MIXED case blocked. So
+     * adopting the single printed unit for the silent readings removes an
+     * inconsistency rather than adding an assumption.
+     *
+     * TWO DIFFERENT PRINTED UNITS STILL BLOCK, whatever else is missing -- an
+     * absence cannot resolve a real disagreement, only fail to create one.
+     *
+     * AND WHAT ENFORCES THAT IS `units.length > 1` BELOW, NOT A COUNT HERE.
+     * The first version read `presentKeys.length === 1 && ...`, and mutating
+     * it to `>= 1` CHANGED NOTHING AND NO TEST NOTICED -- because when two
+     * printed units exist, `units` becomes those two and the pre-existing
+     * length check blocks the series regardless. That condition was
+     * documentation wearing a guard's clothes, so it is gone and the name now
+     * says what is true: some reading is silent, and a silent reading simply
+     * does not contribute a unit of its own.
+     *
+     * IT INVENTS NO NUMBER. The reading is unchanged; this decides only
+     * whether it may share an axis. And it is DISCLOSED: `unitAssumed` travels
+     * to the screen so a reader is told the unit was not on that report,
+     * rather than being shown a unit their document does not carry.
+     */
+    const someReadingIsSilent = distinctKeys.length > presentKeys.length;
+    const units = someReadingIsSilent ? presentKeys : distinctKeys;
     // WHICH DECLARATION WAS RELIED ON, or null. Carried to the screen so a
     // reader can be told that two differently-labelled readings were treated
     // as one scale, and on whose authority -- `verified` is false on every
@@ -623,17 +710,63 @@ function buildLabSeries(snapshots, printed, aliases) {
     // This is the project's standing failure mode in miniature: an absence
     // rendered as a negative result. The values are still shown; only the
     // sentence changes.
-    const named = units.filter((u) => u !== '');
-    const unitMissing = named.length !== units.length;
+    /*
+     * `unit_missing` STOOD HERE AND IS DELETED, BECAUSE NOTHING CAN REACH IT.
+     *
+     * It was added one commit earlier, when a silent reading beside a printed
+     * one blocked the series and the panel wrongly called that a
+     * disagreement. Adopting the printed unit removed that case entirely, and
+     * with it every input that reached the branch:
+     *
+     *     all readings silent          -> one key, not blocked
+     *     one silent, one printed      -> adopted, not blocked
+     *     silent + two printed units   -> units_differ, and they DO differ
+     *     two printed units            -> units_differ
+     *
+     * Enumerated against the real function rather than reasoned about. A
+     * blocked series now always means the printed units genuinely disagree,
+     * so one reason is the only honest one -- and a branch no input reaches is
+     * a guard this project deletes rather than keeps for comfort.
+     */
     const blocked =
       units.length > 1
         ? {
-            reason: unitMissing && named.length <= 1 ? 'unit_missing' : 'units_differ',
+            reason: 'units_differ',
             // AS PRINTED, not as compared. The reader is being told these two
             // reports disagree; showing them the folded key would be showing
             // them this file's arithmetic instead of their own documents.
             units: [...new Set(numeric.map((e) => e.unit).filter(Boolean))],
           }
+        : null;
+
+    /*
+     * THE NEWEST PRINTED UNIT, WHICH IS NOT ALWAYS THE NEWEST READING'S.
+     *
+     * This was `numeric[numeric.length - 1].unit` -- the label on the report
+     * the reader is holding, which is the right rule and stays the rule. But
+     * once a silent reading can join a series, the newest reading may be the
+     * silent one, and the panel would have shown a pair with no unit at all
+     * while a unit was sitting on the older report. So: the most recent
+     * reading that actually printed one.
+     *
+     * All-silent series keep `null`, exactly as before.
+     */
+    const printedUnit = (() => {
+      for (let i = numeric.length - 1; i >= 0; i -= 1) {
+        if (numeric[i].unit) return numeric[i].unit;
+      }
+      return null;
+    })();
+
+    // THE DISCLOSURE. Null unless a silent reading was taken to be in the
+    // one printed unit -- a reader must not be shown a unit their own
+    // document does not carry without being told where it came from.
+    // `!blocked` IS THE LOAD-BEARING TERM HERE and it is mutation-tested: a
+    // series whose printed units disagree must claim no assumed unit, because
+    // nothing was adopted -- it was refused.
+    const unitAssumed =
+      someReadingIsSilent && !blocked && printedUnit
+        ? { unit: printedUnit, reason: 'not_printed' }
         : null;
 
     const points = numeric.map((e) => ({
@@ -664,7 +797,10 @@ function buildLabSeries(snapshots, printed, aliases) {
       joinedFrom,
       // The declared unit equivalence this series relied on, or null.
       unitEquivalence: appliedEquivalence,
-      unit: blocked ? null : numeric[numeric.length - 1].unit,
+      unit: blocked ? null : printedUnit,
+      // Set when a reading that printed no unit was taken to be in the one
+      // unit the series does print. See `unitAssumed`.
+      unitAssumed,
       blocked,
       points,
       // WHICH WAY THE NUMBERS WENT -- arithmetic, never a verdict. See
@@ -717,6 +853,7 @@ function buildLabSeries(snapshots, printed, aliases) {
     blockedCount: series.filter((s) => s.blocked).length,
     singleReportCount,
     notNumericCount,
+    restatedCount,
     // HOW MANY SERIES GOT A SCALE, so the page can say which sentence it is
     // entitled to say without re-deriving it and getting a different answer.
     //
@@ -979,6 +1116,9 @@ function buildLabComparison(built, baselineId, comparisonId) {
       joinedFrom: entry.joinedFrom,
       // The declared equivalence that let two unit strings share a scale.
       unitEquivalence: entry.unitEquivalence || null,
+      // Set when a reading printed no unit and was taken to be in the one the
+      // series does print.
+      unitAssumed: entry.unitAssumed || null,
       previous,
       current,
       // AS PRINTED ON EACH SIDE. A blocked row's two units are the whole

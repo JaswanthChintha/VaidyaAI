@@ -262,35 +262,94 @@ describe('labSeriesService - units', () => {
     }
   });
 
-  it('calls a MISSING unit missing, not different', () => {
-    // `AVERAGE BLOOD GLUCOSE` is `154 mg/dL` on one report and `121.94` with
-    // no unit on the other, and the panel said the two reports gave it in
-    // different units. They do not: one of them gave none. The outcome is the
-    // same -- an absent unit cannot be confirmed to match a present one -- but
-    // the stated reason was false, and `units` could name only one of the two
-    // it claimed differed.
+  it('takes a reading that printed NO unit to be in the one unit the series prints', () => {
+    // `Estimated Average Glucose` is stored with `unit: null` -- read out of
+    // the extraction, not inferred -- while the other report gives
+    // `154 mg/dL`. The series was blocked and the reader was told the two
+    // reports disagreed about the unit. They do not; one is silent.
     const out = buildLabSeries([
-      snap('2026-01-01', [row('Zorblex', '121.94', null)]),
-      snap('2026-02-01', [row('Zorblex', '154', 'mg/dL')]),
+      snap('2026-01-01', [row('Zorblex', '121.94', null)], 'A'),
+      snap('2026-02-01', [row('Zorblex', '154', 'mg/dL')], 'B'),
+    ]);
+
+    expect(out.series[0].blocked).toBeNull();
+    expect(out.series[0].unit).toBe('mg/dL');
+    expect(out.series[0].movementFrom).toBe(121.94);
+    expect(out.series[0].movementTo).toBe(154);
+    // DISCLOSED. A reader must not be shown a unit their own document does
+    // not carry without being told where it came from.
+    expect(out.series[0].unitAssumed).toEqual({ unit: 'mg/dL', reason: 'not_printed' });
+  });
+
+  it('finds the newest PRINTED unit when the newest reading is the silent one', () => {
+    // The rule is still "the label on the report the reader is holding", but
+    // once a silent reading can join a series that report may be the silent
+    // one -- and the panel would have shown a pair with no unit at all while
+    // a unit sat on the older report.
+    const out = buildLabSeries([
+      snap('2026-01-01', [row('Zorblex', '154', 'mg/dL')], 'A'),
+      snap('2026-02-01', [row('Zorblex', '121.94', null)], 'B'),
+    ]);
+
+    expect(out.series[0].unit).toBe('mg/dL');
+    expect(out.series[0].unitAssumed.unit).toBe('mg/dL');
+  });
+
+  it('claims nothing when NO reading printed a unit', () => {
+    // This case already plotted before any of this, because every key folds
+    // to the empty string and nothing differs. It must keep plotting AND keep
+    // claiming no unit -- there is none to claim.
+    const out = buildLabSeries([
+      snap('2026-01-01', [row('Zorblex', '1', null)], 'A'),
+      snap('2026-02-01', [row('Zorblex', '2', null)], 'B'),
+    ]);
+
+    expect(out.series[0].blocked).toBeNull();
+    expect(out.series[0].unit).toBeNull();
+    expect(out.series[0].unitAssumed).toBeNull();
+  });
+
+  it('will NOT let a silent reading resolve a real disagreement', () => {
+    // THE GUARD. An absence can fail to create a disagreement; it cannot
+    // settle one. Two different printed units block however many readings
+    // are silent.
+    const out = buildLabSeries([
+      snap('2026-01-01', [row('Zorblex', '1', null)], 'A'),
+      snap('2026-02-01', [row('Zorblex', '2', 'mg/L')], 'B'),
+      snap('2026-03-01', [row('Zorblex', '3', 'mg/dL')], 'C'),
     ]);
 
     expect(out.series[0].blocked).not.toBeNull();
-    expect(out.series[0].blocked.reason).toBe('unit_missing');
-    // Still not drawn, still carrying both readings.
-    expect(out.series[0].points.map((p) => p.value)).toEqual([121.94, 154]);
-  });
-
-  it('says units_differ when they really do differ AND one is missing', () => {
-    // Three spellings, two of them real and unequal: the parameter genuinely
-    // has disagreeing units, so `unit_missing` would understate it.
-    const out = buildLabSeries([
-      snap('2026-01-01', [row('Zorblex', '1', null)]),
-      snap('2026-02-01', [row('Zorblex', '2', 'mg/L')]),
-      snap('2026-03-01', [row('Zorblex', '3', 'mg/dL')]),
-    ]);
-
     expect(out.series[0].blocked.reason).toBe('units_differ');
+    expect(out.series[0].unitAssumed).toBeNull();
+    expect(out.series[0].movementFrom).toBeNull();
   });
+
+  it('claims no assumed unit on an ordinary single-unit series', () => {
+    // A note on every panel would be the commentary the reader asked to have
+    // removed.
+    const out = buildLabSeries([
+      snap('2026-01-01', [row('Zorblex', '35', 'mm/hr')], 'A'),
+      snap('2026-02-01', [row('Zorblex', '45', 'mm/hr')], 'B'),
+    ]);
+    expect(out.series[0].unitAssumed).toBeNull();
+  });
+
+  /*
+   * TWO TESTS FOR `unit_missing` STOOD HERE AND ARE DELETED WITH THE BRANCH.
+   *
+   * They pinned the behaviour one commit earlier, when a silent reading beside
+   * a printed one BLOCKED the series and the only defect was the reason given
+   * for it. Adopting the printed unit removed that case, so nothing can reach
+   * `unit_missing` any more -- enumerated against the real function, not
+   * reasoned about.
+   *
+   * A test that pins a state the producer can no longer reach is a test that
+   * will be made to pass by reintroducing it. The behaviour that replaced it
+   * is pinned by `takes a reading that printed NO unit...` above, and the
+   * disagreement half by `will NOT let a silent reading resolve a real
+   * disagreement`.
+   */
 
   it('does not decide that two DIFFERENT units are equal', () => {
     // g/dL and % are numerically close for some tests and are not the same
@@ -1091,6 +1150,87 @@ describe('labSeriesService - the comparison table for unassessed tests', () => {
   it('returns nothing rather than throwing when there is nothing to compare', () => {
     expect(buildLabComparison(buildLabSeries([]), 'A', 'B')).toEqual({ rows: [], count: 0 });
     expect(buildLabComparison(undefined, 'A', 'B')).toEqual({ rows: [], count: 0 });
+  });
+});
+
+describe('labSeriesService - a row that restates an assessed feature', () => {
+  it('does NOT trend it, so one change cannot get two opposite verdicts', () => {
+    // THE DEFECT THIS EXISTS FOR, and it was about to reach a reader:
+    //
+    //   HbA1c (average blood sugar)  5.9 % -> 7 %          worsening
+    //   AVERAGE BLOOD GLUCOSE        121.94 -> 154 mg/dL   improving
+    //
+    // Those are the same change -- eAG = 28.7 x HbA1c - 46.7 gives 122.6 and
+    // 154.2 -- and the reassuring one was the false one. It came from the
+    // extraction storing "151 - 180 - Average Control", a band from an HbA1c
+    // interpretation table, as this patient's reference interval.
+    const out = buildLabSeries([
+      snap('2026-01-01', [row('Estimated Average Glucose', '121.94', null)], 'A'),
+      snap('2026-02-01', [row('AVERAGE BLOOD GLUCOSE', '154', 'mg/dL')], 'B'),
+    ]);
+
+    expect(out.series).toHaveLength(0);
+    expect(out.restatedCount).toBeGreaterThan(0);
+  });
+
+  it('still SHOWS it, with its readings and the feature it restates', () => {
+    // 6au's lesson: a row the reader can find on their document and not on the
+    // screen reads as missing, whatever the reason. Excluded from trending is
+    // not excluded from the page.
+    const out = buildLabSeries([
+      snap('2026-01-01', [row('AVERAGE BLOOD GLUCOSE', '121.94', 'mg/dL')], 'A'),
+      snap('2026-02-01', [row('AVERAGE BLOOD GLUCOSE', '154', 'mg/dL')], 'B'),
+    ]);
+
+    const [only] = out.readings;
+    expect(only.reason).toBe('restates_assessed_feature');
+    expect(only.restates).toBe('hba1c');
+    expect(only.rows.map((r) => r.valueRaw)).toEqual(['121.94', '154']);
+    // NO DIRECTION OF ITS OWN, by any route.
+    expect(only.movement).toBeUndefined();
+    expect(only.trend).toBeUndefined();
+  });
+
+  it('matches the printed spellings by word set, like every other lookup', () => {
+    for (const printed of [
+      'AVERAGE BLOOD GLUCOSE',
+      'Average Blood Glucose',
+      'Estimated Average Glucose',
+      'eAG',
+    ]) {
+      const out = buildLabSeries([
+        snap('2026-01-01', [row(printed, '1', 'mg/dL')], 'A'),
+        snap('2026-02-01', [row(printed, '2', 'mg/dL')], 'B'),
+      ]);
+      expect(out.series).toHaveLength(0);
+      expect(out.readings[0].reason).toBe('restates_assessed_feature');
+    }
+  });
+
+  it('leaves every other parameter trending exactly as before', () => {
+    // The exclusion must be narrow. A glucose that is NOT a restatement --
+    // fasting, random -- is a measurement in its own right and the platform's
+    // refusal to trend those together is a separate and correct decision.
+    const out = buildLabSeries([
+      snap('2026-01-01', [row('RANDOM BLOOD GLUCOSE', '134', 'mg/dL'), row('ESR', '35', 'mm/hr')], 'A'),
+      snap('2026-02-01', [row('RANDOM BLOOD GLUCOSE', '168', 'mg/dL'), row('ESR', '45', 'mm/hr')], 'B'),
+    ]);
+
+    expect(out.series.map((s) => s.name).sort()).toEqual(['ESR', 'RANDOM BLOOD GLUCOSE']);
+    expect(out.restatedCount).toBe(0);
+  });
+
+  it('declares the fixed relationship it rests on, for a reviewer', () => {
+    const { LAB_RESTATEMENTS } = require('../src/services/labRestatements');
+    expect(LAB_RESTATEMENTS.length).toBeGreaterThan(0);
+    for (const entry of LAB_RESTATEMENTS) {
+      // An entry may only claim a FIXED relationship, and must say how it was
+      // checked -- not merely that two tests are related.
+      expect(entry.basis).toMatch(/CHECKED ON THIS ACCOUNT|CHECK AGAINST/);
+      expect(entry.basis.length).toBeGreaterThan(60);
+      expect(typeof entry.restates).toBe('string');
+      expect(entry.names.length).toBeGreaterThan(0);
+    }
   });
 });
 

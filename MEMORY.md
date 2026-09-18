@@ -40,10 +40,10 @@ about any of them. That is the fifth time on this project.
 
 | | Tests |
 |---|---|
-| `backend/` (Node/Express) | **754** passing + 3 skipped (15 suites, 0 failed) |
+| `backend/` (Node/Express) | **762** passing + 3 skipped (15 suites, 0 failed) |
 | `ai-service/` (Python/FastAPI) | **3,992** passing + 7 skipped (3,999 collected, 0 failures, 0 errors) |
-| `frontend/` (React/Vitest) | **385** passing, 0 suites failed |
-| **Total** | **5,131** -- backend and frontend green 2026-09-18; ai-service NOT re-run for the last two commits because nothing in it changed |
+| `frontend/` (React/Vitest) | **384** passing, 0 suites failed |
+| **Total** | **5,138** -- backend and frontend green 2026-09-18; ai-service NOT re-run for the last three commits because nothing in it changed |
 
 > **⚠ THE 4,852 IN EVERY EARLIER SECTION WAS 7 TOO HIGH.** §6as recorded
 > ai-service's COLLECTED total (3,865) as its PASSED count; that day's real
@@ -9153,14 +9153,16 @@ things, in the order they were found:
 
 | | Tests | Last run |
 |---|---|---|
-| `backend/` | **754** passed, 3 skipped, 15 suites, 0 failed | 2026-09-18 ✅ |
+| `backend/` | **762** passed, 3 skipped, 15 suites, 0 failed | 2026-09-18 ✅ |
 | `ai-service/` | **3,992** passed, 7 skipped (3,999 collected, 0 failures, 0 errors) | 2026-09-18 ✅ (`.env` moved aside) |
-| `frontend/` | **385** passed, 0 suites failed | 2026-09-18 ✅ |
-| **Total** | **5,131** | |
+| `frontend/` | **384** passed, 0 suites failed | 2026-09-18 ✅ |
+| **Total** | **5,138** | |
 
-**SIX things, not four.** Two were taken off this section's own open list later
-the same day, both about units: the TSH OCR artefact, and then SGPT and MCHC.
-See the two unit subsections below the comparison one.
+**EIGHT things, not four.** Four were taken off this section's own open list
+later the same day, three of them about units: the TSH OCR artefact, then
+SGPT and MCHC, then the silent unit on eAG -- **and that last one exposed a
+false `improving` on a rising blood sugar, which is the most serious thing
+this session found.** The unit subsections are below the comparison one.
 
 ### ⚠ A CHANGE OF ZERO WAS SIGNIFICANT, IN THE FUNCTION EVERY MODULE SHARES
 
@@ -9489,6 +9491,87 @@ improving`, `MCHC 30.8 -> 33 % improving`, and the tally moved to 6 improving
 entirely on the U/L == IU/L declaration.** It is labelled unchecked on the
 page. It is the row to verify first.
 
+### ▶ A SILENT UNIT IS NOT A DIFFERENT UNIT
+
+`Estimated Average Glucose` is stored with **no unit at all** — read out of the
+extraction, not inferred — while the other report gives `154 mg/dL`. The
+series was blocked and the reader was told their reports disagreed about the
+unit. They do not; one is silent.
+
+**THE BEHAVIOUR WAS ALREADY INCONSISTENT.** A series where NO reading carries
+a unit plots without complaint, because every key folds to the empty string
+and nothing differs. **Only the MIXED case blocked.** Taking the silent
+reading to be in the one unit the series does print removes an inconsistency
+rather than adding an assumption. Two different printed units still block
+whatever else is missing — an absence can fail to create a disagreement, never
+settle one. Disclosed on the panel, because a reader must not be shown a unit
+their own document does not carry without being told where it came from.
+
+> **⚠ TWO OF MY OWN GUARDS DID NOT SURVIVE THE MUTATION ROUND.**
+>
+> The condition written AS the safety check — `presentKeys.length === 1` —
+> changed nothing when mutated to `>= 1`, because when two printed units exist
+> `units` becomes those two and the pre-existing `units.length > 1` check
+> blocks regardless. **It was documentation wearing a guard's clothes.**
+> Deleted, and the name now says what is true (`someReadingIsSilent`).
+>
+> And `unit_missing`, added ONE COMMIT EARLIER, became unreachable. Every
+> shape was enumerated against the real function: all-silent is not blocked,
+> one-silent-one-printed is adopted, and anything with two printed units is
+> `units_differ` and truthfully so. **The branch, its reader-facing sentence
+> and the two tests pinning it are deleted** — a test that pins a state the
+> producer can no longer reach is a test that will be satisfied by
+> reintroducing it. The term that IS load-bearing, `!blocked`, is verified
+> killed by a test.
+
+### ⚠ AND UNBLOCKING IT EXPOSED A FALSE `improving` ON A RISING BLOOD SUGAR
+
+**The most serious thing this session found, and it was one page-read from
+reaching a reader.** With the series plottable, the card was about to show:
+
+```
+HbA1c (average blood sugar)   5.9 % -> 7 %           worsening
+AVERAGE BLOOD GLUCOSE         121.94 -> 154 mg/dL    improving
+```
+
+**Those are the same change.** eAG is a fixed restatement of HbA1c —
+`28.7 x HbA1c - 46.7` gives 122.6 and 154.2, which is what the reports carry.
+One card, one measurement, two opposite verdicts, **and the reassuring one was
+the false one.**
+
+The cause, read out of the stored extraction:
+
+```
+AVERAGE BLOOD GLUCOSE  154 mg/dL
+    reference_range_raw = "151 - 180 - Average Control"   low=151 high=180
+```
+
+That is a band from an **HbA1c interpretation table**, not this patient's
+reference interval, and Module 4's parser accepted it as one. Module 35's
+polarity for the test is `best_within_range`, so judged against a target of
+151-180 a rise INTO that range reads as an improvement — when an average
+glucose of 154 is HbA1c around 7 %, which is worse control. Module 35 itself
+behaves correctly: probed with no interval it returns
+`CLINICAL_DIRECTION_UNKNOWN`. **The bad interval did the damage.**
+
+**Fixed by not trending a row that restates an ASSESSED feature.** Declared in
+`backend/src/services/labRestatements.js`, with the fixed relationship and how
+it was checked. Only a restatement by a FIXED relationship may go in — not a
+test that is merely related, which is why fasting and random glucose stay on
+the page in their own right.
+
+**EXCLUDED FROM TRENDING, NOT FROM THE PAGE.** The row keeps its readings and
+dates, gains no chart, no direction and no scale, and names the feature that
+carries the same measurement so a reader can go to the verdict that was
+actually reviewed. 6au's lesson: a row a reader can find on their document and
+not on the screen reads as missing whatever the reason. The count of rows
+declined is reported rather than silent. Live: 26 panels, nothing blocked.
+
+> **THE PARSER DEFECT UNDERNEATH IS STILL OPEN.** A band label read as a
+> reference interval could reach another parameter, and it would be judged
+> against it. The honest place to stop that is Module 4. This entry removed the
+> contradiction on one row; it did not fix the class.
+
 ### ⚠ A UNICODE ESCAPE PUT TWO REAL NUL BYTES IN A SOURCE FILE
 
 Worth knowing because it is silent and it is not the heredoc trap the working
@@ -9540,11 +9623,17 @@ untouched; this is display only.
   Until then every threshold on the page is labelled as unchecked — correctly.
 * **`stable` on the timeline and `no real change` on the comparison** are two
   phrasings of one verdict on one page. Both honest; not settled.
-* **`AVERAGE BLOOD GLUCOSE` still is not compared**, and now says why
-  correctly: one report printed no unit. Unblocking it would mean assuming the
-  missing unit equals the present one, which is an assumption about absent
-  data. **The real fix is upstream** — the extraction should carry eAG's unit,
-  which is always mg/dL on these reports.
+* **⚠ MODULE 4 ACCEPTED AN INTERPRETATION-TABLE BAND AS A REFERENCE INTERVAL,
+  AND THIS IS THE BIGGEST OPEN DEFECT ON THE PROJECT.**
+  `"151 - 180 - Average Control"` was stored as `low=151 high=180` for
+  `AVERAGE BLOOD GLUCOSE`, and anything judged against it reads a rise toward
+  151-180 as an improvement. Excluding that one row removed the
+  contradiction; **the parser still accepts such a band and the next
+  parameter to carry one will be judged against it.** Fixing it properly
+  means Module 4, and re-analysing the two reports.
+* **eAG is shown but not trended**, which is deliberate, and the extraction
+  still stores no unit for it. The unit is now taken from the reader's other
+  report; the upstream fix is still that extraction should carry it.
 * **The two unit equivalences are DECLARED BUT UNCHECKED.** `U/L == IU/L` and,
   for MCHC only, `g/dL == %`. Both are standard conventions and both say
   `verified: false`. `SGPT 101.9 -> 13 improving` rests entirely on the first
@@ -9573,7 +9662,8 @@ page loads~~ · ~~the summary line counting a set that no longer existed~~ ·
 ~~the chart contradicting its own row~~ · ~~the comparison card carrying 12 of
 28 parameters~~ · ~~"unchanged" over a change~~ · ~~TSH blocked by one unit
 spelled two ways~~ · ~~a missing unit reported as a different one~~ · ~~SGPT
-and MCHC blocked for want of a declared equivalence~~.
+and MCHC blocked for want of a declared equivalence~~ · ~~a silent unit
+treated as a disagreement~~ · ~~one change given two opposite verdicts~~.
 
 ### ⚠ THE RATE LIMITER WILL STOP A DEBUG SESSION BEFORE THE QUOTA DOES
 

@@ -345,6 +345,7 @@ function labPanelsOf(data) {
             classified: entry.classified,
             joinedFrom: entry.joinedFrom,
             unitEquivalence: entry.unitEquivalence,
+            unitAssumed: entry.unitAssumed,
             significantChangePct: entry.significantChangePct,
             trendSource: entry.trendSource,
             trendVerified: entry.trendVerified,
@@ -361,6 +362,9 @@ function labPanelsOf(data) {
       movement: null,
       latestFlag: entry.latestFlag,
       joinedFrom: entry.joinedFrom,
+      // The assessed feature this row restates, when it does. See
+      // `labRestatements.js` -- it is why the row carries no direction.
+      restates: entry.restates,
     })),
   ];
 
@@ -487,6 +491,35 @@ function LabPanels({ panels }) {
               said. `verified` is false on every declaration today, so the
               sentence says which it is rather than implying a review that
               has not happened. */}
+          {/* THE SAME MEASUREMENT, ASSESSED UNDER ANOTHER NAME.
+              This row is on the reader's report and stays on the page, but it
+              is not trended: it restates a feature Module 28 assesses with a
+              reviewed polarity and its own stability band. Trending it a
+              second time gave one change two opposite verdicts -- HbA1c
+              `worsening` beside AVERAGE BLOOD GLUCOSE `improving`. Naming
+              where the real verdict is, is what stops this reading as a
+              parameter that was ignored. */}
+          {panel.restates ? (
+            <p className="trend-chart__joined">
+              This is the same measurement as{' '}
+              {PATIENT_LABEL[panel.restates] || panel.restates}, which is
+              assessed in its own right on this page — so it is shown here but
+              not given a second direction of its own.
+            </p>
+          ) : null}
+          {/* A UNIT THE READER'S OWN DOCUMENT DOES NOT CARRY.
+              One of these reports printed no unit for this test -- checked in
+              the stored extraction, not guessed -- and the reading is shown on
+              the scale the other report names. The reader has to be told
+              that, or the panel is putting a unit on their document that is
+              not on it. */}
+          {panel.unitAssumed ? (
+            <p className="trend-chart__joined">
+              One of your reports did not print a unit for this test. That
+              reading is shown in {panel.unitAssumed.unit}, the unit your other
+              report gives for it.
+            </p>
+          ) : null}
           {panel.unitEquivalence ? (
             <p className="trend-chart__joined">
               Your reports label this test two ways, both meaning{' '}
@@ -907,22 +940,17 @@ function LabComparisonRow({ row }) {
           <Absent
             label="Not classifiable"
             reason={
-              // THE REASON, NOT A REASON. `unit_missing` and `units_differ`
-              // are different facts about the reader's own documents and the
-              // panel said the wrong one for a whole parameter: eAG is
-              // `154 mg/dL` against `121.94` with no unit, and it was being
-              // described as two reports disagreeing about the unit.
-              // `row.blocked`, NOT `blocked` -- the latter is a Boolean a few
-              // lines up, so `blocked?.reason` was silently `undefined` and
-              // every missing-unit row fell through to the wrong sentence.
-              // The backend was producing `unit_missing` correctly the whole
-              // time; the page threw it away. Caught by reading the row, not
-              // by a test, which is why there is now a test for it.
-              row.blocked?.reason === 'unit_missing'
-                ? 'One of these reports did not print a unit for this parameter, so the two readings were not compared.'
-                : blocked
-                  ? 'The two reports give this parameter in different units, so the readings were not compared.'
-                  : 'This parameter is not on both of these reports.'
+              // A `unit_missing` BRANCH STOOD HERE AND IS GONE WITH THE
+              // REASON CODE. A reading that prints no unit is now taken to be
+              // in the one unit the series does print, so it is not blocked at
+              // all -- and a blocked series always means the printed units
+              // genuinely disagree. Keeping a sentence for a state the
+              // backend cannot produce would be the `basis.limitations` trap
+              // from the other direction: a consumer ready for a payload that
+              // no longer exists.
+              blocked
+                ? 'The two reports give this parameter in different units, so the readings were not compared.'
+                : 'This parameter is not on both of these reports.'
             }
           />
         )}

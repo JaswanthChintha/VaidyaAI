@@ -731,33 +731,17 @@ describe('comparison -- the rest of the report', () => {
     ).toBeInTheDocument();
   });
 
-  it('says a missing unit is MISSING, not different', async () => {
-    // TWO DIFFERENT FACTS ABOUT THE READER'S OWN DOCUMENTS. eAG is
-    // `154 mg/dL` on one report and `121.94` with no unit on the other, and
-    // the row said the two reports gave it in different units. They do not;
-    // one of them gave none.
-    //
-    // THE FIRST FIX FOR THIS DID NOT WORK AND LOOKED LIKE IT DID. The branch
-    // read `blocked?.reason` where `blocked` was a Boolean a few lines above,
-    // so it was always `undefined` and every row fell through to the wrong
-    // sentence. The backend had been right all along.
-    mountPair([
-      labRow({
-        previous: 121.94,
-        current: 154,
-        previousUnit: null,
-        currentUnit: 'mg/dL',
-        unit: null,
-        blocked: { reason: 'unit_missing', units: ['mg/dL'] },
-        category: 'not_classifiable',
-        symbol: null,
-      }),
-    ]);
-
-    await screen.findByText('ZORBLEX');
-    expect(screen.getByText(/did not print a unit for this parameter/)).toBeInTheDocument();
-    expect(screen.queryByText(/in different units/)).not.toBeInTheDocument();
-  });
+  /*
+   * A `unit_missing` TEST STOOD HERE AND IS DELETED WITH THE REASON CODE.
+   *
+   * It pinned a sentence for a row the backend can no longer produce: a
+   * reading printing no unit is now taken to be in the one unit the series
+   * does print, so it is not blocked. A fixture asserting a payload the
+   * producer has stopped emitting is the `basis.limitations` trap from 6w in
+   * reverse, and it would keep passing forever while describing nothing.
+   *
+   * What replaced it is pinned on the backend, where the decision is made.
+   */
 
   it('still says different units when they really do differ', async () => {
     mountPair([
