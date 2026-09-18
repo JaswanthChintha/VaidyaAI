@@ -50,15 +50,26 @@ about any of them. That is the fifth time on this project.
 > figure was 3,858 passed + 7 skipped. The row above is a true count, taken
 > from the junit XML. See §6at.
 
-> ### ✅ EVERYTHING IS COMMITTED AND PUSHED. TREE CLEAN, ONE BRANCH
+> ### ✅ EVERYTHING IS COMMITTED. TREE CLEAN, ONE BRANCH — BUT ONE COMMIT IS UNPUSHED
 >
-> Verified 2026-09-18: `main` == `origin/main` at **`351b693`**, working tree
-> clean, `origin/main` the only remote branch. **The 14-path uncommitted
-> warning that stood here for two sessions is history.**
+> Verified 2026-09-18: working tree clean, `origin/main` the only remote
+> branch. **The 14-path uncommitted warning that stood here for two sessions
+> is history.**
 >
-> **SIX COMMITS ON 2026-09-18**, newest first — the whole of §6av and §6aw:
+> **`main` IS AT `d44068c`, WHICH IS ONE COMMIT AHEAD OF `origin/main`.**
+> Nothing is at risk — it is committed — but `git push` has not been run.
+>
+> > **THIS BLOCK SAID `351b693` AND WAS ALREADY TWO COMMITS STALE WHEN THE
+> > NEXT SESSION READ IT.** §6av's own lesson, recurring in the same block
+> > that records it: a handover is written at a moment and the tree moves
+> > after it. **The `git status` is what closes the gap, which is why it is
+> > the first action, and why nothing here should be believed over it.**
+>
+> **EIGHT COMMITS ON 2026-09-18**, newest first — §6av and the whole of §6aw:
 >
 > ```
+> d44068c  the report marks nothing, so that flag was never the laboratory's   <- UNPUSHED
+> 7c55261  docs: section 0 is a cold start again -- state, next four, run and test in one place
 > 351b693  docs: the stored bounds are repaired, and the gate was the judge
 > 6b60a8d  the printed range must be only a range
 > e15c184  a silent unit is not a different one -- and one change is not two verdicts
@@ -68,10 +79,10 @@ about any of them. That is the fifth time on this project.
 > 0c4930d  the model says which way is worse; this service decides whether it moved
 > ```
 >
-> **Verified at `351b693`, all three suites, nothing taken on trust:** backend
-> **762** + 3 skipped (15 suites, 0 failed), ai-service **4,022** + 7 skipped
-> (4,029 collected, 0 failures, 0 errors), frontend **384** (0 suites failed,
-> no file reporting zero assertions). **5,168.**
+> **Verified at `d44068c`, all three suites, nothing taken on trust:** backend
+> **762** + 3 skipped (15 suites, 0 failed), ai-service **4,031** + 7 skipped
+> (4,038 collected, 0 failures, 0 errors), frontend **384** (0 suites failed,
+> no file reporting zero assertions). **5,177.**
 >
 > **NOTHING CARRIES A CO-AUTHOR TRAILER.** Checked by grep on every commit.
 > Do not add one.
