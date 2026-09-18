@@ -220,9 +220,27 @@ class GeminiTextClient(GeminiClient):
 
 def build_text_client(
     settings: Settings, client: Optional[object] = None
-) -> GeminiTextClient:
-    """Construct the client. The single place Modules 23/25 obtain one."""
-    return GeminiTextClient(settings, client)
+) -> object:
+    """Construct the client. The single place Modules 23/25 obtain one.
+
+    RETURNS A `FallbackTextClient` WRAPPING A `GeminiTextClient`, not the
+    Gemini client itself. Callers are unaffected -- `generate_text` is the only
+    method any of them uses, and the wrapper's signature is this module's own,
+    defaults included.
+
+    WHY THE WRAPPER IS ALWAYS BUILT, even with no secondary configured: so
+    that the configured and unconfigured paths are the SAME code path, differing
+    only in whether `secondary` is None. A wrapper applied conditionally would
+    mean the fallback ran through a class that the overwhelmingly common case
+    never exercised, and the first real quota exhaustion would be its first
+    execution.
+
+    The import is local because `text_fallback` imports this module for the
+    primary client's defaults, and a module-level import would be circular.
+    """
+    from app.services.text_fallback import build_fallback_text_client
+
+    return build_fallback_text_client(settings, GeminiTextClient(settings, client))
 
 
 __all__ = [

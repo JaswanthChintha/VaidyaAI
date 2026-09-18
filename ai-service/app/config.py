@@ -58,6 +58,40 @@ class Settings(BaseSettings):
     gemini_temperature: float = 0.0
     gemini_max_output_tokens: int = 32768
 
+    # --- OpenRouter: the SECONDARY PROVIDER for prose, quota-only ---
+    #
+    # Reached ONLY when every Gemini model in the chain above has answered 429,
+    # and ONLY for the text path (`generate_text`). Module 4's extraction stays
+    # on Gemini: it needs vision plus a strict response schema, and an
+    # extraction that succeeds with a weaker reader puts wrong NUMBERS into a
+    # medical pipeline, which is a different class of risk from a missing
+    # paragraph.
+    #
+    # NO KEY MEANS NOTHING CHANGES. With `openrouter_api_key` empty the
+    # fallback is never attempted and the service behaves exactly as it did
+    # before this existed -- which is the state every pre-existing test runs in.
+    openrouter_api_key: SecretStr = Field(default=SecretStr(""))
+    # A PLAIN STRING, split by `openrouter_model_list`, for the same
+    # pydantic-settings reason as `gemini_fallback_models` above.
+    #
+    # BOTH WERE PROBED with this codebase's own Module 35 and Module 27b
+    # prompts before being written here, and both produced answers that parsed,
+    # passed the CV gate and were approved by Module 24. A third candidate
+    # (`google/gemma-4-31b-it:free`) was dropped: it answered 429 from its
+    # upstream provider on every attempt.
+    openrouter_models: str = (
+        "deepseek/deepseek-v4-flash-0731:free,"
+        "nvidia/nemotron-3-super-120b-a12b:free"
+    )
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_timeout_seconds: float = 120.0
+    # Deliberately SHORTER than the Gemini cooldown. A Gemini 429 is a daily
+    # per-model cap, so re-probing soon is waste. An OpenRouter 429 is often
+    # the UPSTREAM provider being briefly busy -- observed live on a candidate
+    # model while the account's own allowance was untouched -- and that does
+    # clear in minutes.
+    openrouter_model_cooldown_seconds: float = 300.0
+
     # --- File intake limits ---
     max_file_size_bytes: int = 15 * 1024 * 1024  # 15 MB
     max_page_count: int = 10
@@ -133,6 +167,43 @@ class Settings(BaseSettings):
     @property
     def has_api_key(self) -> bool:
         return bool(self.gemini_api_key.get_secret_value().strip())
+
+    @property
+    def openrouter_model_list(self) -> List[str]:
+        """`openrouter_models` as a list, deduplicated, order kept.
+
+        Same shape as `fallback_model_list`, and deduplicated for the same
+        reason -- a repeated model spends a second request proving what the
+        first already established.
+        """
+        seen = set()
+        out: List[str] = []
+        for name in self.openrouter_models.split(","):
+            name = name.strip()
+            if name and name not in seen:
+                seen.add(name)
+                out.append(name)
+        return out
+
+    @property
+    def has_openrouter_key(self) -> bool:
+        """Whether the secondary provider is configured at all.
+
+        Whitespace-only is NOT configured. False here means the fallback is
+        never attempted and the service behaves exactly as it did before the
+        secondary provider existed.
+        """
+        return bool(self.openrouter_api_key.get_secret_value().strip())
+
+    @property
+    def openrouter_available(self) -> bool:
+        """A key AND at least one model. Either alone can do nothing.
+
+        Stated as one property so a caller cannot check half of it -- an empty
+        `openrouter_models` with a key set would otherwise reach the transport
+        and fail there rather than degrading quietly.
+        """
+        return self.has_openrouter_key and bool(self.openrouter_model_list)
 
     @property
     def has_service_key(self) -> bool:

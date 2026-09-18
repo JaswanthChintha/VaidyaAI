@@ -41,9 +41,9 @@ about any of them. That is the fifth time on this project.
 | | Tests |
 |---|---|
 | `backend/` (Node/Express) | **762** passing + 3 skipped (15 suites, 0 failed) |
-| `ai-service/` (Python/FastAPI) | **4,031** passing + 7 skipped (4,038 collected, 0 failures, 0 errors) |
+| `ai-service/` (Python/FastAPI) | **4,067** passing + 7 skipped (4,074 collected, 0 failures, 0 errors) |
 | `frontend/` (React/Vitest) | **384** passing, 0 suites failed |
-| **Total** | **5,177** -- ALL THREE green 2026-09-18 |
+| **Total** | **5,213** -- ALL THREE green 2026-09-18 |
 
 > **⚠ THE 4,852 IN EVERY EARLIER SECTION WAS 7 TOO HIGH.** §6as recorded
 > ai-service's COLLECTED total (3,865) as its PASSED count; that day's real
@@ -99,7 +99,15 @@ about any of them. That is the fifth time on this project.
 
 > ### ▶ WHAT TO DO NEXT, IN ORDER
 >
-> All four are named in §6aw's KNOWN AND OPEN with the evidence.
+> **0. ⚠ `validate_text` APPROVES `'You have cirrhosis of the liver.'` — zero
+>    violation codes, under the same `SafetyContext` Module 35 and the glossary
+>    pass.** This is §6r's D1, open since 2026-09-05, and §6ax raised its
+>    priority: a second text provider (OpenRouter) means less provider-side
+>    filtering sits in front of Module 24 than before. **Measured, with the
+>    rules that DO fire listed beside it, in §6ax.** Nothing else on this list
+>    is close.
+>
+> The four below are named in §6aw's KNOWN AND OPEN with the evidence.
 >
 > 1. **VERIFY THE VARIATION TABLE.** `ai-service/app/data/lab_variation.py`,
 >    16 rows, **every one `verified: false`** — literature-typical CVa/CVi
@@ -9994,6 +10002,193 @@ out the window. Check the console for `429` before debugging a blank card.
 console was HMR holding an intermediate save, and its line numbers did not
 match the file. **Compare the error's line numbers to the current file before
 believing it.**
+
+---
+
+## 6ax. OPENROUTER AS A SECONDARY TEXT PROVIDER · 2026-09-18
+
+**Asked for in one line — "add openrouter as a fallback if the gemini api is
+exhausted" — and the whole of the work was deciding WHEN it may be reached.**
+
+| | Tests | Last run |
+|---|---|---|
+| `backend/` | **762** passed, 3 skipped, 0 suites failed | 2026-09-18 ✅ |
+| `ai-service/` | **4,067** passed, 7 skipped (4,074 collected, 0 failures, 0 errors) | 2026-09-18 ✅ |
+| `frontend/` | **384** passed, 0 suites failed | 2026-09-18 ✅ |
+| **Total** | **5,213** | |
+
+### ⚠ READ THIS ONE FIRST — IT IS NOT ABOUT OPENROUTER
+
+**`validate_text` APPROVES A FLAT DIAGNOSIS TODAY.** Found while writing a test
+that assumed the opposite:
+
+```
+'You have cirrhosis of the liver.'   approved=True   codes=(none)
+```
+
+Zero violation codes, under the SAME `SafetyContext` Module 35 and the
+glossary actually pass. Under the bare default context the only code raised is
+`MISSING_PROFESSIONAL_REFERRAL`, **which is non-blocking**, so it is approved
+and a disclaimer is appended to it.
+
+**THIS IS §6r's D1, STILL OPEN.** §0 has named it the top priority since
+2026-09-05 and it has not been done. It is not introduced by this session and
+is not fixed by it. The related rules DO work — measured, not assumed:
+
+```
+'You should stop taking your metformin immediately.'  REFUSED (3 codes)
+'There is no need to see a doctor about this.'        REFUSED (2 codes)
+'Take 500 mg of metformin twice a day.'               REFUSED (3 codes)
+'You definitely have diabetes and need insulin now.'  REFUSED (CERTAINTY_CLAIM)
+'You have cirrhosis of the liver.'                    APPROVED
+```
+
+**The adverb is doing the work in the fourth line, not the diagnosis.** Remove
+"definitely" and the certainty gate has nothing to catch.
+
+> **AND THE SECOND PROVIDER MAKES THIS MATTER MORE, WHICH IS WHY IT IS AT THE
+> TOP OF THIS SECTION.** Gemini applies its own provider-side safety filter
+> before anything reaches Module 24 — this codebase has a whole error code for
+> it, `MODEL_RESPONSE_BLOCKED`. **A free OpenRouter model may apply little or
+> none.** So the platform is about to lean harder on Module 24 alone, in
+> exactly the configuration where Module 24 approves a flat diagnosis. The
+> fallback does not CREATE the hole; it removes a filter that was
+> incidentally covering part of it.
+
+**No test was added pinning this.** Pinning another session's open defect as
+expected behaviour is how it becomes permanent. The test that found it now
+asserts the property this feature actually owns — see below.
+
+### ▶ WHERE IT PLUGS IN, AND WHY THAT PLACE AND NO OTHER
+
+`app/services/text_fallback.py`, a policy object holding two transports and no
+HTTP of its own. `build_text_client` — already **the single place Modules 23/25
+obtain a client** — now returns it, so all eight call sites were untouched.
+
+**IT SITS BELOW `guarded_generation`.** Verified by reading `fallback.py`
+before writing anything: that function validates *text*, not a provider. So
+the secondary's prose meets Module 24 with the calling module's own
+`SafetyContext`, then that module's own local gates. **A different provider
+does not get a different safety pipeline**, and the fallback is placed where it
+cannot acquire one.
+
+**Proven live, not argued:** Module 27b driven with a stubbed-exhausted primary
+and a real OpenRouter client described `SERUM FERRITIN` correctly — and
+**refused `VITAMIN B12`, because the answer contained a digit and the
+glossary's own no-digits gate rejected it.** The secondary being refused by a
+local gate is the property, demonstrated.
+
+### ⚠ THE RULE: EXHAUSTION CROSSES, A REFUSAL NEVER DOES
+
+`gemini_text.py` already said it for models — *a provider safety block is an
+ANSWER, and shopping it around models until one complies is precisely what a
+safety layer must never do.* **CROSSING PROVIDERS MAKES THAT SHARPER, NOT
+WEAKER**, because a second provider is a second set of safety behaviours and
+"ask someone else" is the exact move that would let a refused generation
+through.
+
+So `ModelRateLimitedError` and only that may cross. Timeout, truncation, empty,
+400, credentials, and above all a safety block propagate untouched.
+
+**Mutation-tested, four mutants, each confirmed to apply, parse AND import
+before its verdict was believed:**
+
+```
+M1  cross on any ModelError                KILLED by 5 cases, incl. the safety block
+M2  no break after an account-level 429    KILLED by 2 tests
+M3  every 429 read as account-level        KILLED by the ambiguous-429 test
+M4  the provider_name early return removed KILLED by the upstream-429 test
+```
+
+### ▶ TWO DIFFERENT 429s, AND THE PROBE IS WHY THAT IS KNOWN
+
+**`/api/v1/key` said the free allowance is metered PER ACCOUNT (50/day), so I
+planned one account-wide cooldown. The probe then contradicted half of that.**
+`google/gemma-4-31b-it:free` answered 429 from its UPSTREAM provider (Google AI
+Studio) with the account's own allowance untouched — a per-model, transient
+condition.
+
+Both exist and they mean different things, so `_is_account_exhausted` separates
+them off the real payload shapes:
+
+* `"Provider returned error"` / `provider_name` → **that model** cools down,
+  the chain continues;
+* daily-allowance wording → **the account** cools down and the chain stops,
+  because trying model B would spend a request proving what model A proved.
+* **AMBIGUOUS READS AS THE NARROWER CLAIM.** Treating a blip as an account
+  outage would disable a working chain for the whole cooldown.
+
+Cooldown is 300s, deliberately shorter than Gemini's 1800s: a Gemini 429 is a
+daily per-model cap so re-probing soon is waste, while an upstream blip clears
+in minutes.
+
+> **`free_model_daily_requests.used` STILL READ 0 AFTER FOUR SUCCESSFUL CALLS.**
+> Either it lags or it meters something other than what I assumed. **So
+> nothing reads that counter** — the client reacts to actual 429s, which is
+> both simpler and the only thing observed to be true.
+
+### ▶ MODEL SELECTION WAS PROBED WITH THIS CODEBASE'S OWN PROMPTS AND GATES
+
+Not chosen off a list. The real Module 35 and Module 27b prompts were sent to
+three candidates and the answers handed to the real `_parse`, the real CV gate
+and the real Module 24 validator. `SERUM FERRITIN`, which is deliberately NOT
+in `lab_variation.TABLE` — a listed test costs no model call, so probing one
+would measure nothing.
+
+```
+deepseek/deepseek-v4-flash-0731:free   200  JSON parsed, CVa 5.0 CVi 15.0, approved, USABLE
+nvidia/nemotron-3-super-120b-a12b:free 200  JSON parsed, CVa 5.0 CVi 30.0, approved, USABLE
+google/gemma-4-31b-it:free             429  upstream rate limit on every attempt -- DROPPED
+```
+
+> **THE TWO SURVIVORS DISAGREED ABOUT FERRITIN'S CVi: 15.0 AGAINST 30.0.**
+> Which is the whole reason `lab_variation.py` exists — a threshold that moves
+> between answers cannot be reviewed. It matters only for tests the table does
+> not list, since **the table is consulted first and costs no call at all.**
+
+### ▶ SCOPE, AND WHAT WAS DELIBERATELY LEFT ALONE
+
+**TEXT ONLY.** Module 4's `extract_page` stays on Gemini. It needs vision plus
+a strict response schema, and **an extraction that SUCCEEDS with a weaker
+reader puts wrong NUMBERS into a medical pipeline** — a different class of risk
+from a missing paragraph, and one this project has already been bitten by. A
+failed extraction fails loudly, which is safe.
+
+**NO KEY MEANS NOTHING CHANGES.** With `OPENROUTER_API_KEY` empty the secondary
+is never constructed and the service behaves exactly as before — the state
+every pre-existing test runs in, which is why only one had to change.
+
+**THE WRAPPER IS BUILT EVEN WITH NO SECONDARY**, so the configured and
+unconfigured paths are ONE code path differing only in whether `secondary` is
+None. A conditionally-applied wrapper would mean the first real quota
+exhaustion was also the class's first execution.
+
+**NO RETRY LOOP in the secondary.** It is already the fallback: the primary has
+spent its retries and its whole chain before control arrives, and `analyze` is
+still synchronous with a reader waiting.
+
+**`test_build_text_client_returns_one` WAS MOVED DOWN A LEVEL, NOT WEAKENED.**
+It asserted a bare `GeminiTextClient`; it now asserts the wrapper AND that its
+`primary` is that client. The architecture genuinely changed and the test says
+what is now true.
+
+### KNOWN AND OPEN
+
+* **⚠ THE FLAT-DIAGNOSIS APPROVAL ABOVE. §6r's D1, still open, and now more
+  load-bearing than it was.** Highest priority on this file.
+* **THE KEY WAS PASTED INTO A CHAT TRANSCRIPT and must be rotated.** It is in
+  `ai-service/.env` (gitignored, `SecretStr`, never logged) with a comment
+  saying so. Replacing it is a one-line swap; no code names it.
+* **NOTHING ON SCREEN SAYS WHICH PROVIDER WROTE A PARAGRAPH.** Both are logged
+  (`provider`, `model`, `text_provider_fallback`). This project discloses
+  provenance everywhere else — unverified CVs, `joinedFrom`, "comes from no
+  reviewable source" — so whether a reader should be told is a real question
+  and it is **the owner's call, deliberately not made here.**
+* **The 50/day free allowance is a second exhaustible pool, not an escape from
+  quota.** When both are spent every refusal path renders nothing, by design,
+  and looks exactly like a bug. Check the log.
+* Only the free tier was tested. A paid OpenRouter key would change the
+  cooldown reasoning entirely.
 
 ---
 

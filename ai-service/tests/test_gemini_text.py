@@ -86,8 +86,36 @@ def test_it_is_the_existing_client_with_one_extra_method():
     assert added == {"generate_text"}, added
 
 
-def test_build_text_client_returns_one(settings):
-    assert isinstance(build_text_client(settings, StubSDKClient([])), GeminiTextClient)
+def test_build_text_client_returns_the_fallback_wrapper_around_this_client(settings):
+    """It returned a bare `GeminiTextClient` until a second provider existed.
+
+    The assertion is not weakened -- it is MOVED DOWN ONE LEVEL. What mattered
+    then and matters now is that the single construction point yields something
+    whose prose comes from this client; what changed is that the Gemini client
+    is now wrapped by the policy object that decides whether an EXHAUSTED chain
+    may reach a second provider.
+    """
+    from app.services.text_fallback import FallbackTextClient
+
+    client = build_text_client(settings, StubSDKClient([]))
+    assert isinstance(client, FallbackTextClient)
+    assert isinstance(client.primary, GeminiTextClient)
+
+
+def test_the_wrapper_is_built_even_with_no_secondary_configured(settings):
+    """The configured and unconfigured paths must be ONE code path.
+
+    If the wrapper were applied only when a key is present, the fallback class
+    would be unexercised in the overwhelmingly common case and the first real
+    quota exhaustion would be its first execution. It is always built; only
+    `secondary` differs.
+    """
+    from app.services.text_fallback import FallbackTextClient
+
+    client = build_text_client(settings, StubSDKClient([]))
+    assert isinstance(client, FallbackTextClient)
+    assert settings.has_openrouter_key is False
+    assert client.secondary is None
 
 
 # --------------------------------------------------------------------------
