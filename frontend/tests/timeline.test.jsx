@@ -1772,6 +1772,170 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
     expect(chart.getAttribute('aria-label')).toMatch(/No direction was classified/);
   });
 
+  // ------------------------------------------------------------------
+  // WHERE THE THRESHOLD CAME FROM -- SAID ONCE, NOT ON EVERY PANEL
+  // ------------------------------------------------------------------
+  //
+  // The reader circled the provenance sentence on an ESR panel and asked for
+  // it gone: it ran to two lines beside every one of 26 thresholds, and it
+  // buried the number it was qualifying. It now appears once on the card.
+  //
+  // NOT ONE OF THESE SENTENCES HAD A TEST BEFORE THIS BLOCK. Removing all
+  // three reader-facing provenance wordings left the suite fully green --
+  // 384 passed, nothing failed. That is this project's own failure mode
+  // arriving in the harmless direction for once, and the reason these exist.
+
+  it('states the threshold on the panel, without the provenance clause', async () => {
+    mountLab(
+      labSeries({
+        series: [
+          series('Frimbulin', [['2026-01-01', 35], ['2026-02-01', 45]], null, 'mm/hr', {
+            trend: 'stable',
+            classified: true,
+            significantChangePct: 62,
+            trendSource: 'table',
+            trendVerified: false,
+          }),
+        ],
+        plottedCount: 1,
+      })
+    );
+
+    await screen.findByText(/Trends over time/);
+    const panel = document.querySelector('.trend-chart__threshold');
+    // THE USEFUL HALF STAYS. It is the answer to "why does 35 -> 45 read
+    // stable", which is the question that put this line on the page.
+    expect(panel.textContent).toMatch(/Counted as a change only past 62%/);
+    expect(panel.textContent).not.toMatch(/variation table/);
+    expect(panel.textContent).not.toMatch(/checked against/);
+  });
+
+  it('says once, on the card, that the thresholds are unchecked', async () => {
+    mountLab(
+      labSeries({
+        series: [
+          series('Frimbulin', [['2026-01-01', 35], ['2026-02-01', 45]], null, 'mm/hr', {
+            trend: 'stable',
+            classified: true,
+            significantChangePct: 62,
+            trendSource: 'table',
+            trendVerified: false,
+          }),
+        ],
+        plottedCount: 1,
+      })
+    );
+
+    await screen.findByText(/Trends over time/);
+    expect(card().textContent).toMatch(
+      /change thresholds used here have not been checked against a published source/i
+    );
+  });
+
+  it('says it ONCE even with many panels -- the whole point of the change', async () => {
+    // A caveat repeated per panel does not read as many caveats; it reads as
+    // boilerplate. If this ever regresses to a per-panel sentence, this is
+    // the test that notices.
+    mountLab(
+      labSeries({
+        series: [1, 2, 3, 4, 5].map((n) =>
+          series(`Frimbulin ${n}`, [['2026-01-01', 35], ['2026-02-01', 45]], null, 'mm/hr', {
+            trend: 'stable',
+            classified: true,
+            significantChangePct: 62,
+            trendSource: 'table',
+            trendVerified: false,
+          })
+        ),
+        plottedCount: 5,
+      })
+    );
+
+    await screen.findByText(/Trends over time/);
+    const hits = card().textContent.match(/have not been checked against a published source/g);
+    expect(hits).toHaveLength(1);
+    // ...while every panel still carries its own threshold.
+    expect(document.querySelectorAll('.trend-chart__threshold')).toHaveLength(5);
+
+    // ASSERTED ON STRUCTURE, NOT ON THE SENTENCE. The phrase count above was
+    // the whole test until a mutant put a per-panel caveat back with "has"
+    // where the card says "have" -- and slipped straight past it. A
+    // regression here will not reuse the card's exact wording, so what must
+    // be pinned is that NO PANEL talks about checking at all.
+    document
+      .querySelectorAll('.trend-chart__threshold, .trend-chart__joined')
+      .forEach((el) => {
+        expect(el.textContent).not.toMatch(/checked|variation table|reviewable source/i);
+      });
+  });
+
+  it('says nothing at all when every figure has been reviewed', async () => {
+    // THE SENTENCE MUST DISAPPEAR BY ITSELF once the variation table is
+    // verified. A blanket caveat hard-coded into the card would still be
+    // claiming the figures are unchecked after somebody had checked them.
+    mountLab(
+      labSeries({
+        series: [
+          series('Frimbulin', [['2026-01-01', 35], ['2026-02-01', 45]], null, 'mm/hr', {
+            trend: 'stable',
+            classified: true,
+            significantChangePct: 62,
+            trendSource: 'table',
+            trendVerified: true,
+          }),
+        ],
+        plottedCount: 1,
+      })
+    );
+
+    await screen.findByText(/Trends over time/);
+    expect(card().textContent).not.toMatch(/have not been checked/);
+  });
+
+  it('keeps the stronger wording when a model invented the figure', async () => {
+    // A figure with no reviewable source is weaker than a literature-typical
+    // table row, and collapsing the two would hide that. Absent provenance
+    // counts as the model: an unknown source is not a checked one.
+    mountLab(
+      labSeries({
+        series: [
+          series('Frimbulin', [['2026-01-01', 35], ['2026-02-01', 45]], null, 'mm/hr', {
+            trend: 'stable',
+            classified: true,
+            significantChangePct: 62,
+          }),
+        ],
+        plottedCount: 1,
+      })
+    );
+
+    await screen.findByText(/Trends over time/);
+    expect(card().textContent).toMatch(
+      /produced by a language model from the test name alone/i
+    );
+  });
+
+  it('names the unit equivalences too, and only when unverified', async () => {
+    mountLab(
+      labSeries({
+        series: [
+          series('Frimbulin', [['2026-01-01', 30.8], ['2026-02-01', 33]], null, '%', {
+            unitEquivalence: { label: 'grams per decilitre', verified: false },
+          }),
+        ],
+        plottedCount: 1,
+      })
+    );
+
+    await screen.findByText(/Trends over time/);
+    // WHICH two labels were joined is specific to the panel and stays there.
+    expect(card().textContent).toMatch(/both meaning grams per decilitre/);
+    // Whether anyone reviewed that convention is one fact about the card.
+    expect(card().textContent).toMatch(/unit equivalences used here have not been checked/i);
+    const panel = document.querySelector('.trend-chart__joined');
+    expect(panel.textContent).not.toMatch(/checked against/);
+  });
+
   it('names the printed spellings it treated as one test', async () => {
     // MODULE 36'S JOIN, MADE VISIBLE. The reader's report says one of these
     // and the panel is headed with the other, so without this line it reads

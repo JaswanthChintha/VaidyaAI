@@ -426,6 +426,62 @@ function cardTally(charted, labPanels) {
   return { ...counts, total: charted.length + labPanels.length };
 }
 
+/**
+ * The one provenance sentence for the whole card, or null.
+ *
+ * WHY IT IS HERE AND NOT ON EACH PANEL. It used to be a second sentence
+ * beside every threshold and every unit equivalence -- three possible
+ * wordings, one of them two lines long, on as many as 26 panels. The reader
+ * circled it and asked for it gone. A caveat repeated 26 times does not read
+ * as 26 caveats; it reads as boilerplate, and it buries the number beside it.
+ *
+ * WHAT IS NOT DONE HERE: dropping the caveat. Not one row of the variation
+ * table has been verified, so a page showing `62%` with nothing said would be
+ * presenting a literature-typical figure as an established clinical
+ * threshold. The distinction the panels used to draw is kept intact --
+ * reviewed, unreviewed, or invented by a model from the test name.
+ *
+ * COMPUTED FROM THE PANELS THAT ACTUALLY RENDER, and gated on the same
+ * `panelTrendWord(panel) && isPresent(...)` the threshold line uses, so it
+ * cannot describe a figure no reader can see. A blanket sentence would go
+ * stale the moment every row was verified; this one disappears by itself.
+ */
+function provenanceNote(labPanels) {
+  let uncheckedTable = false;
+  let fromModel = false;
+  let uncheckedEquivalence = false;
+
+  for (const panel of labPanels) {
+    if (panelTrendWord(panel) && isPresent(panel.significantChangePct)) {
+      // ABSENT PROVENANCE COUNTS AS THE MODEL, exactly as the panel sentence
+      // treated it: an unknown source is not a checked one.
+      if (panel.trendSource === 'table') {
+        if (panel.trendVerified !== true) uncheckedTable = true;
+      } else {
+        fromModel = true;
+      }
+    }
+    if (panel.unitEquivalence && !panel.unitEquivalence.verified) {
+      uncheckedEquivalence = true;
+    }
+  }
+
+  const unchecked = [];
+  if (uncheckedTable || fromModel) unchecked.push('change thresholds');
+  if (uncheckedEquivalence) unchecked.push('unit equivalences');
+  if (!unchecked.length) return null;
+
+  return (
+    <>
+      The {unchecked.join(' and ')} used here have not been checked against a
+      published source.
+      {fromModel
+        ? ' Some were produced by a language model from the test name alone.'
+        : ''}
+    </>
+  );
+}
+
 function LabPanels({ panels }) {
   if (!panels.length) return null;
 
@@ -466,20 +522,24 @@ function LabPanels({ panels }) {
               only a reader who noticed will ask. */}
           {/* WHERE THE "STABLE" THRESHOLD CAME FROM.
               A reader asked why a rise from 35 to 45 reads `stable`, and the
-              answer is a threshold -- so the threshold has to be visible, and
-              so does whether anybody has checked it. THREE STATES, THREE
-              DIFFERENT SENTENCES: a reviewed table row, an unreviewed table
-              row, and a figure the model supplied with no source at all.
-              Absent provenance renders as the most cautious of them, because
-              an unknown source is not a checked one. */}
+              answer is a threshold -- so the threshold is visible here.
+
+              THE PROVENANCE SENTENCE THAT USED TO FOLLOW IT IS NOW SAID ONCE
+              ON THE CARD, by `provenanceNote`, and the reason is the reader's
+              own objection: three states meant three sentences, and one of
+              them ran to two lines on EVERY ONE OF 26 PANELS. Repeating a
+              caveat 26 times does not make it 26 times as true -- it makes
+              the useful half (the number) harder to find, which is the
+              opposite of what a disclosure is for.
+
+              WHAT DID NOT CHANGE: the caveat is still on the page, still
+              distinguishes a reviewed figure from an unreviewed one from a
+              model-invented one, and still renders absent provenance as the
+              most cautious of them. It is stated where it applies to
+              everything below it instead of beside each number. */}
           {panelTrendWord(panel) && isPresent(panel.significantChangePct) ? (
             <p className="trend-chart__threshold">
-              Counted as a change only past {panel.significantChangePct}%.{' '}
-              {panel.trendSource === 'table' && panel.trendVerified === true
-                ? 'That figure is from this tool’s reviewed variation table.'
-                : panel.trendSource === 'table'
-                  ? 'That figure is from this tool’s variation table and has not yet been checked against its published source.'
-                  : 'That figure was produced by a language model from the test name and comes from no reviewable source.'}
+              Counted as a change only past {panel.significantChangePct}%.
             </p>
           ) : null}
           {/* TWO UNIT LABELS TREATED AS ONE SCALE, AND ON WHOSE AUTHORITY.
@@ -520,14 +580,16 @@ function LabPanels({ panels }) {
               report gives for it.
             </p>
           ) : null}
+          {/* The "has this been checked" half of this sentence moved to the
+              card for the same reason as the threshold above it. WHICH two
+              labels were treated as one scale is specific to this panel and
+              stays; whether anybody reviewed that convention is one fact
+              about the whole card. */}
           {panel.unitEquivalence ? (
             <p className="trend-chart__joined">
               Your reports label this test two ways, both meaning{' '}
               {panel.unitEquivalence.label}, so the readings are shown on one
-              scale.{' '}
-              {panel.unitEquivalence.verified
-                ? 'That equivalence has been reviewed.'
-                : 'That equivalence is a standard convention and has not yet been checked against a published standard.'}
+              scale.
             </p>
           ) : null}
           {Array.isArray(panel.joinedFrom) && panel.joinedFrom.length > 1 ? (
@@ -619,6 +681,8 @@ function Trends({ data, history, labSeries }) {
 
   // Both halves of the card, counted from the arrays that become the panels.
   const tally = cardTally(charted, labPanels);
+  // One sentence for the whole card, from those same panels. Computed once.
+  const provenance = provenanceNote(labPanels);
 
   return (
     <section className="card">
@@ -636,6 +700,9 @@ function Trends({ data, history, labSeries }) {
           {tally.undirected} with no direction stated
         </p>
       ) : null}
+
+      {/* SAID ONCE, FOR EVERYTHING BELOW IT. See `provenanceNote`. */}
+      {provenance ? <p className="hint">{provenance}</p> : null}
 
       {/* THE CHARTS ARE THE RECORD NOW. Each one carries the direction word,
           the service's own refusal sentence when there is no direction, and

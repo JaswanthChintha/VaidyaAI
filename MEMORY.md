@@ -42,8 +42,8 @@ about any of them. That is the fifth time on this project.
 |---|---|
 | `backend/` (Node/Express) | **762** passing + 3 skipped (15 suites, 0 failed) |
 | `ai-service/` (Python/FastAPI) | **4,067** passing + 7 skipped (4,074 collected, 0 failures, 0 errors) |
-| `frontend/` (React/Vitest) | **384** passing, 0 suites failed |
-| **Total** | **5,213** -- ALL THREE green 2026-09-18 |
+| `frontend/` (React/Vitest) | **390** passing, 0 suites failed |
+| **Total** | **5,219** -- ALL THREE green 2026-09-18 |
 
 > **⚠ THE 4,852 IN EVERY EARLIER SECTION WAS 7 TOO HIGH.** §6as recorded
 > ai-service's COLLECTED total (3,865) as its PASSED count; that day's real
@@ -10220,6 +10220,69 @@ what is now true.
   and looks exactly like a bug. Check the log.
 * Only the free tier was tested. A paid OpenRouter key would change the
   cooldown reasoning entirely.
+
+---
+
+## 6ay. THE PROVENANCE CAVEAT IS SAID ONCE, NOT 26 TIMES · 2026-09-18
+
+**The reader circled it on an ESR panel:** *"why these words like not yet
+checked against published source i dont want words like these... remove it
+just show only whatever useful thats it"*.
+
+The sentence had two halves doing different jobs, and only one was the
+complaint:
+
+* **`Counted as a change only past 62%.`** — the useful half, and the actual
+  answer to "why does 35 → 45 read `stable`". **Kept.**
+* **`That figure is from this tool's variation table and has not yet been
+  checked against its published source.`** — two lines, beside every one of
+  26 thresholds. **Moved.**
+
+**NOT DELETED — MOVED TO THE CARD, SAID ONCE.** Deleting it outright would
+have shown `62%` as though it were an established clinical threshold, when
+**not one row of the variation table has been verified** (still open item 1).
+The owner was asked and chose this over a straight removal.
+
+> **A CAVEAT REPEATED 26 TIMES DOES NOT READ AS 26 CAVEATS. It reads as
+> boilerplate, and it buries the number it is qualifying.** That is the
+> argument for moving it, and it is the reader's argument, not a concession.
+
+`provenanceNote(labPanels)` renders one line under the card tally:
+*"The change thresholds and unit equivalences used here have not been checked
+against a published source."* The same treatment was applied to the
+SGPT/MCHC unit-equivalence sentence, so one page does not use two styles for
+one kind of statement.
+
+**IT KEEPS THE DISTINCTION THE PANELS DREW** — reviewed, unreviewed, or
+invented by a model from the test name (which appends *"Some were produced by
+a language model from the test name alone"*), and absent provenance still
+counts as the model. **COMPUTED FROM THE PANELS THAT ACTUALLY RENDER**, gated
+on the same condition the threshold line uses, so it cannot describe a figure
+no reader can see — **and it disappears by itself** once every row is
+verified, which a hard-coded sentence would not.
+
+### ⚠ NOT ONE OF THE THREE SENTENCES HAD A TEST
+
+**All three reader-facing provenance wordings were deleted and the suite
+stayed fully green — 384 passed, nothing failed.** `significantChangePct`
+appeared in `timeline.test.jsx` only incidentally, in two tests about other
+things. This project's standing failure mode, arriving in the harmless
+direction for once. Six tests now pin the behaviour.
+
+> **⚠ AND MUTATION TESTING CAUGHT A TEST THAT LOOKED STRONGER THAN IT WAS.**
+> The once-only test counted occurrences of the card's exact phrase. Mutant
+> M2 put a per-panel caveat back saying **"has not been checked"** where the
+> card says **"have"** — and slipped straight past a test whose entire purpose
+> was to catch that. **A regression will not reuse the exact wording**, so the
+> test now asserts on STRUCTURE: no `.trend-chart__threshold` or
+> `.trend-chart__joined` element may mention checking at all. Re-run, M2 was
+> killed by two tests instead of one.
+
+**Three mutants, all killed:** the note never rendering (4 tests); the caveat
+back on every panel (2, after strengthening); `trendVerified` ignored, which
+would keep claiming figures are unchecked after somebody checked them (1).
+
+**Frontend 390** (was 384). Backend and ai-service untouched. **Total 5,219.**
 
 ---
 
