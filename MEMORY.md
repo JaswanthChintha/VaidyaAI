@@ -9607,14 +9607,41 @@ with a label after it.
 * The extraction PROMPT now names the hazard too, with examples. That is
   belt-and-braces: the gate is the control.
 
-> **⚠ THE GATE RUNS AT EXTRACTION TIME, SO THE STORED BOUNDS ARE STILL DIRTY.**
-> Verified in Mongo after the change: `AVERAGE BLOOD GLUCOSE` still holds
-> `low=151 high=180`. Nothing re-validates a row already in the database.
-> That row is harmless ONLY because eAG is excluded from trending — remove
-> that exclusion and the false `improving` returns. **Cleaning it needs either
-> a re-analysis of the two reports (model calls, regenerates their stored
-> analyses) or a targeted one-off repair of that one row. Neither was done;
-> it is the owner's call.**
+### ✅ AND THE STORED ROW WAS REPAIRED, WITH THE GATE ITSELF AS THE JUDGE
+
+The gate runs at extraction time, so it protected new uploads and left the
+already-stored bounds dirty: `AVERAGE BLOOD GLUCOSE` still held
+`low=151 high=180`. Repaired on the owner's instruction, in three steps, and
+**the method matters more than the one row it changed**:
+
+1. **Node collected** every stored parameter holding a bound — 91 parameters
+   scanned, 46 with bounds, 42 distinct printed strings — and decided nothing.
+2. **Python judged them by importing `printed_range_is_only_a_range` from the
+   shipped schema**, NOT by restating its rule. A repair that re-implemented
+   the regex could leave the database in a state the live code would never
+   produce, and the two would drift apart silently. **41 accepted, 1 refused.**
+3. **Node applied that verdict**, dry run first, with the whole before-state
+   written to a JSON backup.
+
+**What changed:** `reference_low` and `reference_high` to null, on ONE row.
+**What was kept:** `reference_range_raw` exactly as printed — the reader's
+document is not wrong — and the value, the unit and the flag.
+
+**THE VERIFICATION THAT MATTERS:** re-running the audit over the whole
+database afterwards refuses NOTHING. 91 parameters, 45 with bounds, 41
+distinct strings, 0 refused. **The stored data now matches what the live gate
+would produce**, which is a stronger statement than "the row we knew about is
+fixed".
+
+> **THE FALSE `improving` NOW HAS TWO INDEPENDENT PROTECTIONS.** eAG is
+> excluded from trending by `labRestatements.js`, AND its bounds are gone — so
+> even if that exclusion were removed, Module 35 returns
+> `CLINICAL_DIRECTION_UNKNOWN` for a `best_within_range` polarity with no
+> interval, which was verified by probing it directly.
+
+**The mutation script was deliberately NOT added to the repository.** A
+re-runnable database rewrite sitting in `src/` is a footgun; the method above
+is the record, and it is reproducible from it.
 
 ### ⚠ A UNICODE ESCAPE PUT TWO REAL NUL BYTES IN A SOURCE FILE
 
@@ -9667,16 +9694,14 @@ untouched; this is display only.
   Until then every threshold on the page is labelled as unchecked — correctly.
 * **`stable` on the timeline and `no real change` on the comparison** are two
   phrasings of one verdict on one page. Both honest; not settled.
-* **⚠ THE STORED `151 - 180` BOUNDS ARE STILL IN MONGO.** The gate stops new
-  extractions producing them and is validated against all 46 real ranges, but
-  nothing re-validates a stored row. `AVERAGE BLOOD GLUCOSE` still holds
-  `low=151 high=180` and is harmless only because eAG is excluded from
-  trending. **Re-analysing the two reports, or repairing that one row, is
-  outstanding and is the owner's call.**
-* **eAG still carries `flag: "normal"`** — inferred by the model against that
-  same band. The gate deliberately does not touch `flag`, because a flag is
-  the laboratory's own marking when the report states one and this gate
-  cannot tell the two apart. Worth a separate look.
+* **⚠ eAG STILL CARRIES `flag: "normal"`, AND THIS IS THE LAST PIECE OF THAT
+  DEFECT.** Almost certainly inferred by the model against the band that has
+  now been refused — the extraction prompt sets a flag either from a marking
+  the report shows OR from an unambiguous numeric comparison, and here only
+  the second was available. But **this cannot be told apart from a genuine
+  printed marking by looking at the stored row**, which is why neither the
+  gate nor the repair touched it. The panel therefore still shows `In range`
+  for 154 mg/dL. Deciding it needs the report in front of a human.
 * **eAG is shown but not trended**, which is deliberate, and the extraction
   still stores no unit for it. The unit is now taken from the reader's other
   report; the upstream fix is still that extraction should carry it.
@@ -9710,8 +9735,9 @@ page loads~~ · ~~the summary line counting a set that no longer existed~~ ·
 spelled two ways~~ · ~~a missing unit reported as a different one~~ · ~~SGPT
 and MCHC blocked for want of a declared equivalence~~ · ~~a silent unit
 treated as a disagreement~~ · ~~one change given two opposite verdicts~~ ·
-~~an interpretation-table band accepted as a reference interval~~ (gated at
-extraction; stored rows not cleaned).
+~~an interpretation-table band accepted as a reference interval~~ ·
+~~the stored `151 - 180` bounds~~ (gated at extraction AND repaired in the
+database; the whole stored set now re-audits clean).
 
 ### ⚠ THE RATE LIMITER WILL STOP A DEBUG SESSION BEFORE THE QUOTA DOES
 
