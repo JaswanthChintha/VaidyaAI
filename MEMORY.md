@@ -42,8 +42,8 @@ about any of them. That is the fifth time on this project.
 |---|---|
 | `backend/` (Node/Express) | **762** passing + 3 skipped (15 suites, 0 failed) |
 | `ai-service/` (Python/FastAPI) | **4,067** passing + 7 skipped (4,074 collected, 0 failures, 0 errors) |
-| `frontend/` (React/Vitest) | **390** passing, 0 suites failed |
-| **Total** | **5,219** -- ALL THREE green 2026-09-18 |
+| `frontend/` (React/Vitest) | **394** passing, 0 suites failed |
+| **Total** | **5,223** -- ALL THREE green 2026-09-18 |
 
 > **⚠ THE 4,852 IN EVERY EARLIER SECTION WAS 7 TOO HIGH.** §6as recorded
 > ai-service's COLLECTED total (3,865) as its PASSED count; that day's real
@@ -137,7 +137,10 @@ about any of them. That is the fifth time on this project.
 >    (mutation-tested), the stored row was repaired, the whole database
 >    re-audits clean, and the panel was read afterwards — no chip. See §6aw's
 >    two eAG subsections.
-> 4. **READ THE CLINICIAN PAGE ALOUD.** Every screen-reading session on this
+> 4. ~~**Read the clinician page aloud.**~~ **DONE — see §6az.** Five findings,
+>    two fixed (a false "by the laboratory" attribution, and every model caveat
+>    vanishing once Gemini generated reliably). Three left open there.
+>    ORIGINAL: Every screen-reading session on this
 >    project has found something no suite did — eight times now. The timeline
 >    and comparison cards were read on 2026-09-18; the clinician page was not.
 > 5. **GIVE FLAGS A PROVENANCE.** `flag_source` of `printed_marking` vs
@@ -10283,6 +10286,142 @@ back on every panel (2, after strengthening); `trendVerified` ignored, which
 would keep claiming figures are unchecked after somebody checked them (1).
 
 **Frontend 390** (was 384). Backend and ai-service untouched. **Total 5,219.**
+
+---
+
+## 6az. THE CLINICIAN PAGE WAS READ ALOUD · 2026-09-18 · NINTH TIME IT FOUND SOMETHING
+
+§0's open item 4, done. **Five findings, two fixed on the owner's
+instruction.** Frontend **394** (was 390); backend and ai-service untouched.
+**Total 5,223.**
+
+### ⚠ FIXED 1 — "by the laboratory" WAS FALSE ON THE PAGE A DOCTOR READS
+
+The page said, in bold:
+
+```
+Marked outside the reference interval by the laboratory:
+  NEUTROPHILS 82 % (40–70, high); LYMPHOCYTES 14 % (20–40, low);
+  ESR 45 mm/hr (0–20, high); CRP 38.9 mg/L (≤ 5, high).
+```
+
+**`Test 3.pdf` marks nothing** — established that morning by rendering both
+pages: four columns, no H, no L, no asterisk, including beside NEUTROPHILS 82
+against 40-70. All four rows were inferred by a model from the printed
+interval. The comment in `DoctorSummary.jsx` justified the wording outright
+— *"flags are the laboratory's own and are carried forward untouched"* — and
+that is the false premise, written down.
+
+**THE SAME DEFECT AS THE TIMELINE CHIP FIXED THE SAME MORNING**, one screen
+along and worse: there it was a hover `title`, here it was bold body text on
+the clinician document.
+
+Now: **"Outside the reference interval printed on the report:"** — the fact,
+which is checkable from the page since both numbers are shown — plus one
+sentence: *"Either marked on the report or determined from the interval
+printed beside it; this tool does not record which."* **The agent is not
+named because it is not known**, and `flag_source` (§0 item 5) is what would
+let it be.
+
+### ⚠ FIXED 2 — EVERY MODEL CAVEAT LEFT THE PAGE WHEN GEMINI STARTED WORKING
+
+The page said only *"Kidney Disease was flagged by the statistical model
+alone, and no measured value crossed a cut-off for it."* The payload carried,
+unrendered: **probability 0.885, risk band `high`, ROC-AUC 0.999, trained on
+399 rows at 62.7 % prevalence with 19 of the CKD dataset's 24 attributes
+unavailable** — for a 20-year-old whose creatinine is 0.75. And a 348-character
+note written for exactly this moment:
+
+> *"This came from a pattern model, not from a measurement... its accuracy
+> there flatters it and nothing shows it holds in a screening population where
+> kidney disease is far less common. It is a reason to consider further
+> assessment, never a finding in itself."*
+
+**THE MECHANISM: `modelNotes` was BUILT at the top and RENDERED inside the
+composed branch**, which runs only when the written narrative FAILS. While the
+narrative was usually refused this was invisible; the moment Gemini generated
+reliably, the caveats vanished.
+
+> **THE THIRD RECURRENCE OF §6w, AND A NEW SHAPE OF IT.** The first two were
+> wrong FIELD PATHS (`basis.limitations` vs `basis.ml.limitations`). **This
+> one is a wrong PLACE IN THE TREE, and no fixture can catch it** — the data
+> was always present and always correct. The file's own closing comment
+> records this happening to TWO OTHER sections, which were moved out to be
+> shared. This was the third and was missed.
+
+Built once as `modelOutputLine`, rendered in both branches.
+
+> **AND MY FIRST PLACEMENT TOOK THE WHOLE PAGE DOWN.** Declared beside the
+> other shared constant, which sits ABOVE `byBoth`, `byModel` and
+> `modelNotes` — a temporal dead zone, so every render threw. **26 tests
+> failed at once**, which is the one thing a `const` gets right that a hoisted
+> function would not.
+
+### ▶ READ THE PRODUCER FIRST, AND IT CORRECTED MY OWN PROBE
+
+Before changing a consumer, the live payload was fetched and inspected. It
+showed `author_note.text` as the string `"null"` for Diabetes and Heart
+Disease — which would have printed the word "null" into a clinical document.
+**It was my probe: `String(null)` is `"null"`.** Re-probed with `typeof`: real
+nulls, already guarded by `isPresent`. **A probe's output is a claim about the
+PROBE.**
+
+Also learned there, not assumed: Kidney Disease has **two bases** — a rule
+basis `Not Indicated` (creatinine normal) and a model basis `Indicated`. The
+fixture carries both, so it exercises the skip in `modelNotes`.
+
+### ▶ THREE FINDINGS RAISED AND NOT FIXED
+
+* **BORDERLINE IS NARRATED AS "flagged … because".** Obesity is
+  `Borderline/Low`, evidence *"inside the WHO overweight band of 25.0-29.9"*,
+  and the page says *"This tool flagged Obesity because BMI was 25.25"*. BMI
+  25.25 is overweight, not obese — **the sentence contradicts its own
+  parenthetical.** Diabetes likewise merges two separate decisions
+  (`Indicated` on HbA1c, `Borderline` on glucose) into one clause. The rule
+  engine draws the distinction carefully; the narrative erases it.
+* **A RULE'S OWN COMPENSATING CAVEAT NEVER ARRIVES.**
+  `RULE_DIABETES_GLUCOSE_UNSPECIFIED` deliberately applies the 2-hour
+  post-load boundary to an untimed sample and its `basis` says the uncertainty
+  *"is stated to the reader via DISCUSS_SAMPLE_TIMING"*. That recommendation
+  is not on the page. **The rule traded precision for a caveat and the caveat
+  is missing.**
+* **`rule_engine.py:588` EMITS `factor.label` UNCONDITIONALLY**, so a factor
+  that does NOT hold prints its own definition as a finding: BMI 25.25 →
+  *"body mass index at or above 30.0; present, but not counted"*; age 20 →
+  *"age at or above the sex-specific cardiovascular age threshold"*; smoking
+  `never` → *"current or lifetime smoking recorded in the patient profile"*.
+  **All three false. Not on any screen today** — the dashboard was checked —
+  but they sit in the 35 evidence lines Module 32 draws from.
+
+### ✅ TWO THINGS I READ WRONG, AND ONE THAT IS RIGHT
+
+**Recorded because a wrong suspicion costs the next reader the same hour.**
+
+* **The RBS/140 threshold is NOT a category error.** Applying the 2-hour
+  post-load boundary to an untimed sample is deliberate, documented, and
+  argued as a judgement against over-calling. Only the missing caveat is a
+  defect.
+* **The anaemia rule is NOT sex-blind.** It uses a `ContextualThreshold` with
+  a distinct band for unknown sex. Gender is `male` from the profile, so
+  12.5 < 13.0 is genuinely mild anaemia. **That sentence on the page is
+  correct.**
+* Module 32's own gates were clean: 0 source-report violations, 0 assembled
+  violations, 0 transcriptions withheld.
+
+### ⚠ I SIGNED THE OWNER OUT BY PROBING THE API
+
+Fetching the live payload needed an access token, so the app's refresh token
+was spent against `/auth/refresh`. **The backend ROTATES refresh tokens**, so
+the stored one became invalid, the app failed its next refresh and cleared the
+session. Harmless and one sign-in to undo, but **a read-only probe is not
+read-only when it spends a single-use credential.** Read the payload from an
+open page's own network log instead.
+
+**Mutation-tested, three mutants, all killed:** the caveat removed from the
+narrative branch (2 tests — this mutant IS the bug as it shipped); the "by the
+laboratory" heading restored (1); the provenance sentence deleted (1).
+`attributes the flag and the interval to the LABORATORY` **was replaced, not
+weakened** — it asserted the false attribution, and the new test inverts it.
 
 ---
 

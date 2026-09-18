@@ -845,11 +845,31 @@ describe('Module 32 - reported, not assessed', () => {
     }
   });
 
-  it("attributes the flag and the interval to the LABORATORY", async () => {
+  it("states the fact and NOT an agent, because the agent is not known", async () => {
+    /* THIS TEST ASSERTED THE OPPOSITE AND WAS WRONG ABOUT THE WORLD.
+       It pinned "marked outside the reference interval by the laboratory",
+       and the page said exactly that -- in bold, on the document a clinician
+       reads. Reading `Test 3.pdf` on 2026-09-18 showed that laboratory prints
+       FOUR COLUMNS and not one H, L or asterisk on either page, including
+       beside NEUTROPHILS 82 against 40-70. All four rows under that heading
+       had been inferred by a model from the printed interval.
+
+       Module 4's contract sets `flag` when the report states it OR when the
+       range makes the comparison unambiguous, and the stored row cannot tell
+       the two apart. So the heading now states what IS checkable from this
+       page -- the value against the interval beside it -- and one sentence
+       says plainly that which of the two it was is not recorded.
+
+       REPLACED, NOT WEAKENED: the old assertion is inverted below, so the
+       false attribution cannot come back without failing a test. */
     mountSummary(MINIMAL, {}, null, UNASSESSED);
     const line = await outOfRangeLine();
-    // WHOSE JUDGEMENT IT IS, said in the sentence itself.
-    expect(line).toMatch(/marked outside the reference interval by the laboratory/i);
+
+    expect(line).toMatch(/outside the reference interval printed on the report/i);
+    expect(line).not.toMatch(/by the laboratory/i);
+    // The ambiguity, named rather than resolved in the flattering direction.
+    expect(line).toMatch(/this tool does not record which/i);
+
     // The printed interval, and the one-sided form when only a limit exists.
     expect(line).toContain('0\u20136');
     expect(line).toContain('\u2264 50');
@@ -962,5 +982,113 @@ describe('Module 32 - the out-of-range line survives a generated narrative', () 
   it('still renders it when there is NO narrative', async () => {
     mountSummary(MINIMAL, {}, null, UNASSESSED);
     expect(await outOfRangeLine()).toContain('CRP (C-REACTIVE PROTEIN)');
+  });
+});
+
+describe('Module 32 - the model caveat survives a generated narrative', () => {
+  /* THE THIRD TIME MODEL LIMITATIONS HAVE GONE MISSING FROM THIS PAGE, and
+     the first two were wrong FIELD PATHS (6w, 6o D8). This one was a wrong
+     PLACE IN THE TREE: the paragraph sat inside the composed branch, so it
+     rendered only when the written narrative FAILED. No fixture could catch
+     it -- the data was always present and always correct.
+
+     MEASURED ON A REAL REPORT (Test 3, 2026-09-18). The page said "Kidney
+     Disease was flagged by the statistical model alone" and nothing more,
+     while the payload carried probability 0.885, risk band `high`, ROC-AUC
+     0.999 off 399 rows at 62.7% prevalence, and the note asserted below --
+     for a 20-year-old whose creatinine is normal. */
+
+  const NOTE =
+    'This came from a pattern model, not from a measurement. It is a reason ' +
+    'to consider further assessment, never a finding in itself.';
+
+  const WITH_MODEL = {
+    overall: { status_label: 'Needs Medical Attention', clean_bill_of_health: false },
+    attribution: { report_date: '2026-09-07T04:00:14.776000Z' },
+    patient: { age: 20, gender: 'male' },
+    data_quality: { page_count: 2, pages_unreadable: [], partial_document: false },
+    laboratory: { total: 0, rows: [] },
+    abnormal_findings: ['Kidney Disease'],
+    // TWO BASES, AS THE PRODUCER ACTUALLY RETURNS. Read off the live payload
+    // rather than imagined: the rule basis says Not Indicated (creatinine
+    // 0.75 is normal) and the MODEL basis is the one that flagged. A
+    // single-basis fixture would not exercise the skip in `modelNotes`.
+    assessments: [
+      {
+        condition: 'Kidney Disease',
+        status: 'Indicated',
+        assessed: true,
+        bases: [
+          { status: 'Not Indicated', assessed: true, source_kind: 'clinical_rule' },
+          {
+            status: 'Indicated',
+            assessed: true,
+            source_kind: 'machine_learning',
+            ml: { limitations: { author_note: { text: NOTE } } },
+          },
+        ],
+      },
+    ],
+  };
+
+  const NARRATIVE = {
+    outcome: 'generated',
+    text: 'Kidney Disease was flagged by the statistical model alone.',
+  };
+
+  const modelLine = async () => {
+    await waitFor(() => expect(document.querySelector('.passage')).toBeTruthy());
+    const match = [...document.querySelectorAll('.passage p')].find((p) =>
+      /On the model output/i.test(p.textContent)
+    );
+    return match ? match.textContent : null;
+  };
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('renders the author note WHEN A NARRATIVE WAS GENERATED', async () => {
+    // THE DEFECT, DIRECTLY. This is the state the live page was in.
+    mountSummary(WITH_MODEL, {}, NARRATIVE, null);
+    await screen.findByText(/flagged by the statistical model alone/);
+    const line = await modelLine();
+    expect(line).toBeTruthy();
+    expect(line).toContain('never a finding in itself');
+  });
+
+  it('still renders it when there is NO narrative', async () => {
+    mountSummary(WITH_MODEL, {}, null, null);
+    const line = await modelLine();
+    expect(line).toContain('never a finding in itself');
+  });
+
+  it('says what a model estimate IS, not only the note', async () => {
+    // The lead-in decides how much weight a clinician gives everything after
+    // it, and it must not depend on a model having supplied a note.
+    mountSummary(WITH_MODEL, {}, NARRATIVE, null);
+    const line = await modelLine();
+    expect(line).toMatch(/not a measurement of this patient/i);
+    expect(line).toMatch(/not a statement that a condition is present/i);
+  });
+
+  it('omits the paragraph entirely when no model flagged anything', async () => {
+    // A model that returned Not Indicated produced no output this passage
+    // reports, so its caveat would sit under findings it did not make.
+    const ruleOnly = {
+      ...WITH_MODEL,
+      abnormal_findings: ['Anemia'],
+      assessments: [
+        {
+          condition: 'Anemia',
+          status: 'Indicated',
+          assessed: true,
+          bases: [{ status: 'Indicated', assessed: true, source_kind: 'clinical_rule' }],
+        },
+      ],
+    };
+    mountSummary(ruleOnly, {}, NARRATIVE, null);
+    await waitFor(() => expect(document.querySelector('.passage')).toBeTruthy());
+    expect(await modelLine()).toBeNull();
   });
 });

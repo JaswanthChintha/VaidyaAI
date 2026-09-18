@@ -206,12 +206,37 @@ export default function DoctorSummary() {
      of. One constant, two call sites -- the alternative is duplicating
      the markup and letting the two copies drift.
 
-     Values, units, intervals and flags are the laboratory's own and are
-     carried forward untouched, which is why the sentence says "marked by
-     the laboratory" rather than putting it in this tool's voice. */
+     ==================================================================
+     IT NO LONGER SAYS "BY THE LABORATORY", BECAUSE THAT WAS NOT TRUE
+     ==================================================================
+
+     The heading read "Marked outside the reference interval by the
+     laboratory", and the comment here used to justify it: values, units,
+     intervals and flags are the laboratory's own and carried forward
+     untouched. THE FLAGS ARE NOT.
+
+     Module 4's contract (MEMORY.md 8) sets `flag` when the report states it
+     OR when the reference range makes the comparison unambiguous -- two
+     different provenances that the stored row cannot tell apart. Reading
+     `Test 3.pdf` on 2026-09-18 settled which one this report uses: it prints
+     FOUR COLUMNS -- name, value, unit, range -- and not one H, L or asterisk
+     on either page, including beside NEUTROPHILS 82 against 40-70 and ESR 45
+     against 0-20. **That laboratory marks nothing.** All four rows under this
+     heading were inferred by a model from the printed interval, and the page
+     was attributing them to the laboratory in bold, on the document a
+     clinician reads.
+
+     THE HEADING NOW STATES THE FACT AND NOT AN AGENT. That the value falls
+     outside the interval printed beside it is checkable from this page --
+     both numbers are right there. WHO decided that is not knowable until
+     `flag_source` exists (section 0, item 5), so the line below says plainly
+     that it is not known rather than picking the flattering answer.
+
+     THE SAME DEFECT, one screen along, as the timeline chip whose tooltip
+     said "your laboratory's own marking" -- fixed the same morning. */
   const outOfRangeLine = outOfRange.length ? (
     <p className="passage__outofrange">
-        <strong>Marked outside the reference interval by the laboratory:</strong>{' '}
+        <strong>Outside the reference interval printed on the report:</strong>{' '}
         {outOfRange.map((item, index) => (
           <span key={`${item.testName}-${index}`}>
             {index > 0 ? '; ' : ''}
@@ -222,9 +247,41 @@ export default function DoctorSummary() {
             {')'}
           </span>
         ))}
-        .
+        .{' '}
+        {/* ONE SENTENCE, ON THE CLINICIAN PAGE ONLY, and it is the difference
+            between a fact and a false attribution. A reader who believes the
+            laboratory marked these weighs them differently from one told this
+            tool compared the numbers. This service cannot yet tell the two
+            apart, so it says so. */}
+        <span className="passage__provenance">
+          Either marked on the report or determined from the interval printed
+          beside it; this tool does not record which.
+        </span>
       </p>
   ) : null;
+  /* WHAT A MODEL ESTIMATE IS, AND WHAT ITS AUTHORS SAY ABOUT IT.
+
+     BUILT ONCE AND RENDERED IN BOTH BRANCHES, for exactly the reason the
+     comment at the foot of this file gives about the two sections below it --
+     and this is the THIRD section to have had that fault. It lived inside the
+     composed branch, so it rendered only when the written narrative FAILED.
+     While the narrative was usually refused that went unnoticed; the moment
+     Gemini started generating reliably, every model caveat left the page.
+
+     WHAT THAT COST, MEASURED ON A REAL REPORT (Test 3, 2026-09-18): the page
+     said "Kidney Disease was flagged by the statistical model alone" and
+     showed nothing else about it, while the payload carried probability
+     0.885, risk band `high`, ROC-AUC 0.999 from a 399-row dataset at 62.7%
+     prevalence with 19 of the CKD dataset's 24 attributes unavailable -- and
+     a 348-character note written for this exact moment, ending "It is a
+     reason to consider further assessment, never a finding in itself."
+     A clinician was told a model flagged kidney disease in a 20-year-old
+     whose creatinine is normal, and given nothing to weigh it with.
+
+     THE THIRD RECURRENCE OF 6w's DEFECT: model output shown with no ROC-AUC,
+     no recall and no caveat. The first two were wrong FIELD PATHS; this one
+     is a wrong PLACE IN THE TREE, which no fixture can catch -- the data was
+     always there and always correct. */
   const narrative = data.narrative || null;
   const patient = summary.patient || {};
   const laboratory = summary.laboratory || {};
@@ -288,6 +345,44 @@ export default function DoctorSummary() {
     }
   }
 
+  /* WHAT A MODEL ESTIMATE IS, AND WHAT ITS AUTHORS SAY ABOUT IT.
+
+     BUILT ONCE AND RENDERED IN BOTH BRANCHES, for exactly the reason the
+     comment at the foot of this file gives about the two sections below it --
+     and this is the THIRD section to have had that fault. It lived inside the
+     composed branch, so it rendered only when the written narrative FAILED.
+     While the narrative was usually refused that went unnoticed; the moment
+     Gemini started generating reliably, every model caveat left the page.
+
+     WHAT THAT COST, MEASURED ON A REAL REPORT (Test 3, 2026-09-18): the page
+     said "Kidney Disease was flagged by the statistical model alone" and
+     showed nothing else about it, while the payload carried probability
+     0.885, risk band `high`, ROC-AUC 0.999 from a 399-row dataset at 62.7%
+     prevalence with 19 of the CKD dataset's 24 attributes unavailable -- and
+     a 348-character note written for this exact moment, ending "It is a
+     reason to consider further assessment, never a finding in itself."
+     A clinician was told a model flagged kidney disease in a 20-year-old
+     whose creatinine is normal, and given nothing to weigh it with.
+
+     THE THIRD RECURRENCE OF 6w's DEFECT: model output shown with no ROC-AUC,
+     no recall and no caveat. The first two were wrong FIELD PATHS; this one
+     is a wrong PLACE IN THE TREE, which no fixture can catch -- the data was
+     always there and always correct.
+
+     DECLARED HERE, BELOW `modelNotes` AND THE TWO LISTS IT READS. Declaring
+     it beside the other shared constant higher up threw a temporal dead zone
+     error and took the whole page down -- caught by 26 failing tests, which
+     is the one thing a `const` gets right that a hoisted function would not. */
+  const modelOutputLine =
+    byBoth.length + byModel.length > 0 ? (
+      <p>
+        <strong>On the model output.</strong> A model estimate is a comparison
+        against patterns in past data, not a measurement of this patient, and it
+        is not a statement that a condition is present.
+        {modelNotes.length ? ` ${modelNotes.join(' ')}` : ''}
+      </p>
+    ) : null;
+
   // THE SAME THREE FIELDS WERE BEING NAMED TWICE -- once as "not supplied"
   // and again as "not present in this report". For hypertension, heart
   // disease and smoking history those are the same three names, so a reader
@@ -337,6 +432,12 @@ export default function DoctorSummary() {
             .map((para, index) => (
               <p key={index}>{para}</p>
             ))}
+          {/* THE MODEL CAVEAT BELONGS HERE MOST OF ALL. The narrative names a
+              model flag in one clause -- "flagged by the statistical model
+              alone" -- and a clause is not a qualification. Whatever the
+              narrative says about a model estimate, the model's own authors
+              get the last word on what it is worth. */}
+          {modelOutputLine}
           {/* SAID, NOT IMPLIED. The reader is entitled to know a model wrote
               the prose -- the findings in it were not decided by one, and the
               distinction is the whole reason the composed version existed. */}
@@ -446,14 +547,7 @@ export default function DoctorSummary() {
             rewritten at source for the same reason (app/ml/heart.py,
             app/ml/kidney.py) -- every fact kept, the vocabulary of model
             development dropped. */}
-        {byBoth.length + byModel.length > 0 ? (
-          <p>
-            <strong>On the model output.</strong> A model estimate is a
-            comparison against patterns in past data, not a measurement of this
-            patient, and it is not a statement that a condition is present.
-            {modelNotes.length ? ` ${modelNotes.join(' ')}` : ''}
-          </p>
-        ) : null}
+        {modelOutputLine}
 
         {/* Assessed and not flagged, named -- a clinician needs to know which
             topics were covered, and "not flagged" is not "ruled out". */}
