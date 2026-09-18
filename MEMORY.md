@@ -50,26 +50,36 @@ about any of them. That is the fifth time on this project.
 > figure was 3,858 passed + 7 skipped. The row above is a true count, taken
 > from the junit XML. See §6at.
 
-> ### ✅ EVERYTHING IS COMMITTED. TREE CLEAN, ONE BRANCH — BUT ONE COMMIT IS UNPUSHED
+> ### ✅ ONE BRANCH, AND THIS BLOCK NO LONGER TRIES TO TELL YOU THE TREE STATE
 >
-> Verified 2026-09-18: working tree clean, `origin/main` the only remote
-> branch. **The 14-path uncommitted warning that stood here for two sessions
-> is history.**
+> `origin/main` is the only remote branch. **The 14-path uncommitted warning
+> that stood here for two sessions is history.**
 >
-> **THE LAST SUBSTANTIVE COMMIT IS `d44068c`** (the eAG flag work). Anything
-> after it is this block's own maintenance. **`main` is AHEAD of
-> `origin/main`: committed, so nothing is at risk, but `git push` has not
-> been run.**
+> **THE LAST SUBSTANTIVE COMMITS ARE `fd9ac4c`** (OpenRouter as a secondary
+> text provider, §6ax) **and `d44068c`** (the eAG flag work). Anything after
+> them is this block's own maintenance.
 >
-> > **THIS BLOCK NAMED `351b693` AND WAS ALREADY TWO COMMITS STALE WHEN THE
-> > NEXT SESSION OPENED IT** — §6av's own lesson recurring inside the block
-> > that records it. **Then correcting it made it stale again in the same
-> > minute**, because a block that names its own commit is wrong the moment
-> > the next one lands. So it no longer tries: it names the last commit that
-> > CHANGED SOMETHING and sends you to `git log --oneline -5`.
+> > **THIS BLOCK HAS NOW BEEN WRONG ABOUT THE TREE THREE TIMES IN ONE DAY, IN
+> > THREE DIFFERENT FIELDS.** It named `351b693` and was two commits stale
+> > before the session that read it. Correcting the hash made it stale again
+> > within the minute. Replacing the hash with "ahead of `origin/main`,
+> > `git push` has not been run" was false within the hour, once it was
+> > pushed.
 > >
-> > **RUN `git status` AND `git log` AND BELIEVE THEM OVER THIS FILE.** That
-> > is the whole point of doing it first.
+> > **THE PATTERN IS THE POINT: any fact about the tree that this file states
+> > is a fact it will eventually state wrongly**, because the tree moves after
+> > the handover is written and the file cannot move with it. §6av recorded
+> > exactly this and it kept happening anyway, inside the block that records
+> > it.
+> >
+> > **SO RUN THESE TWO AND BELIEVE THEM OVER ANYTHING WRITTEN HERE:**
+> >
+> > ```
+> > git status -sb        # branch, remote, and divergence in one line
+> > git log --oneline -5
+> > ```
+> >
+> > That is the whole reason `git status` is the first action of a session.
 >
 > **EIGHT COMMITS ON 2026-09-18**, newest first — §6av and the whole of §6aw:
 >
