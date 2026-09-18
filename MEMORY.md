@@ -121,13 +121,12 @@ about any of them. That is the fifth time on this project.
 >    `g/dL == %` for MCHC only, in
 >    `backend/src/services/unitEquivalence.js`. Both `verified: false`.
 >    `SGPT 101.9 -> 13 improving` rests entirely on the first.
-> 3. **RUN THE ONE OUTSTANDING DATABASE WRITE.** ~~Decide eAG's
->    `flag: "normal"`.~~ **DECIDED** — `Test 3.pdf` prints no markings at all,
->    so the flag was inferred against the band already refused. The gate now
->    drops a `normal` on a refused range, mutation-tested. **But the stored
->    row is untouched and the panel still shows `In range` for 154 mg/dL.**
->    The repair is dry-run clean; the write was blocked by a sandbox, not by a
->    problem. See §6aw's eAG subsections for the command and the after-check.
+> 3. ~~**Decide eAG's `flag: "normal"`.**~~ **DONE AND CLOSED.** `Test 3.pdf`
+>    prints no markings at all, so the flag was inferred against the band
+>    already refused. The gate now drops a `normal` on a refused range
+>    (mutation-tested), the stored row was repaired, the whole database
+>    re-audits clean, and the panel was read afterwards — no chip. See §6aw's
+>    two eAG subsections.
 > 4. **READ THE CLINICIAN PAGE ALOUD.** Every screen-reading session on this
 >    project has found something no suite did — eight times now. The timeline
 >    and comparison cards were read on 2026-09-18; the clinician page was not.
@@ -9865,23 +9864,46 @@ backend **762** + 3 skipped, ai-service **4,031** + 7 skipped (4,038
 collected, 0 failures, 0 errors), frontend **384** (0 suites failed, no file
 reporting zero assertions). **5,177.**
 
-> ### ⚠ THE STORED ROW IS NOT YET REPAIRED — ONE COMMAND IS OUTSTANDING
+> ### ✅ THE STORED ROW IS REPAIRED, AND THE PAGE WAS READ AFTERWARDS
 >
-> The gate protects new uploads. **The already-stored `flag: "normal"` on
-> `AVERAGE BLOOD GLUCOSE` in report `6aa698387a3bd7401512a5f3` is still
-> there**, so the panel still shows `In range` for 154 mg/dL until it is
-> nulled — exactly the split the bound repair had, one layer along.
+> Applied on the owner's instruction, same three steps as the bound repair:
+> Node collected and decided nothing, Python judged **by importing
+> `printed_range_is_only_a_range` from the shipped schema**, Node applied with
+> a dry run first and the whole before-state to a JSON backup. The apply step
+> re-checks the test name at the index AND the flag's current value, refusing
+> the row if either has moved — an array position is not an identifier.
 >
-> Collected, judged and DRY-RUN CLEAN (1 target, 0 refused, name-at-index
-> verified, whole before-state backed up). The write itself was refused by
-> this session's sandbox as a shared-resource modification and was NOT worked
-> around. **The scripts are in the session scratchpad, not the repository**,
-> on the same footgun reasoning as the bound repair.
+> **What changed:** `flag` `"normal"` → `null`, on ONE row
+> (`6aa698387a3bd7401512a5f3`, index 15). **What was kept:**
+> `reference_range_raw` exactly as printed, the value, and the unit.
 >
-> **AFTER RUNNING IT:** re-run the audit over the whole database and expect 0
-> in both buckets, which is the statement worth having — the stored data
-> matching what the live gate would now produce, rather than "the row we knew
-> about is fixed".
+> **THE VERIFICATION THAT MATTERS**, re-run over the whole database after:
+>
+> ```
+> rows: 91      carrying a flag: 43   (was 44)
+>   ...with NO bounds at all:  0
+>      A) printed text REFUSED by the gate: 0
+>      B) printed text accepted or absent:  0
+> REFUSED TEXT STILL HOLDING BOUNDS (must be 0): 0
+> ```
+>
+> **The stored data now matches what the live gate would produce**, which is a
+> stronger statement than "the row we knew about is fixed".
+>
+> **AND THE PAGE WAS READ AFTERWARDS, NOT ASSUMED.** The timeline panel for
+> `AVERAGE BLOOD GLUCOSE` now carries no chip at all, while every neighbour
+> still carries its own (`BASOPHILS — In range`, `CRP — High`,
+> `LYMPHOCYTES — Low`). Expanded it reads: *"This is the same measurement as
+> HbA1c (average blood sugar), which is assessed in its own right on this page
+> — so it is shown here but not given a second direction of its own"*, then
+> the Module 36 join disclosure, then `121.94 (9/12/2026) · 154 mg/dL
+> (9/13/2026)`. `HbA1c 5.4 → 7 % worsening` sits ten rows above it. **One
+> measurement, one verdict, and the false reassuring one is gone from the
+> screen.**
+>
+> **The scripts stay in the session scratchpad, NOT the repository**, on the
+> same footgun reasoning as the bound repair: a re-runnable database rewrite
+> sitting in `src/` is a trap. The method above is the record.
 
 ### ⚠ A UNICODE ESCAPE PUT TWO REAL NUL BYTES IN A SOURCE FILE
 
@@ -9934,13 +9956,12 @@ untouched; this is display only.
   Until then every threshold on the page is labelled as unchecked — correctly.
 * **`stable` on the timeline and `no real change` on the comparison** are two
   phrasings of one verdict on one page. Both honest; not settled.
-* **⚠ eAG's `flag` IS SETTLED IN THE CODE BUT THE STORED ROW IS NOT REPAIRED.**
-  The report was rendered and read: **it prints no markings at all**, so the
-  flag was inferred against the refused band, and the gate now drops a
-  `normal` on a refused range (only `normal` — a warning is never removed).
-  **One database write is outstanding**, dry-run clean and blocked by this
-  session's sandbox; until it runs the panel still shows `In range` for
-  154 mg/dL. See the two subsections above the NUL-byte one.
+* ~~**eAG's `flag: "normal"`.**~~ **CLOSED.** The report was rendered and
+  read: it prints no markings at all, so the flag was inferred against the
+  refused band. The gate now drops a `normal` on a refused range (only
+  `normal` — a warning is never removed), the stored row was repaired, the
+  database re-audits clean and the panel was read afterwards. See the two
+  subsections above the NUL-byte one.
 * **FLAGS CARRY NO PROVENANCE, AND THAT IS THE HONEST FIX.** All 44 stored
   flags say what they are and not where they came from, so one class of them
   had to be repaired by inference about the range beside them. The real
