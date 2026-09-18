@@ -67,6 +67,14 @@ printed. Do not supply a unit the report omits, even a conventional one.
   - `reference_low` / `reference_high`: the numeric bounds of that range, or \
 null. For a one-sided range like "< 200", set reference_high to 200 and leave \
 reference_low null. For "Up to 40", reference_high is 40.
+      Set these ONLY when the printed text is a plain interval for THIS \
+patient - numbers, optionally a comparator, optionally a unit, and nothing \
+else. If the text carries a CATEGORY LABEL, leave BOTH null and still put the \
+text in reference_range_raw: "151 - 180 - Average Control", "5.7 - 6.4 \
+Pre-Diabetic" and "< 200 Desirable" are rows of an INTERPRETATION TABLE, not \
+this patient's reference range, and reading one as a target inverts the \
+meaning of a change. Leave both null for a sex- or age-specific range too, \
+such as "F: 36 - 46 M: 40 - 50", which cannot be reduced to one pair.
   - `flag`: one of "low", "normal", "high", "critical", or null.
       Set it ONLY when (a) the report itself marks the row - an H/L/High/Low \
 marker, an asterisk with a legend, bold/highlighted abnormal styling, a \

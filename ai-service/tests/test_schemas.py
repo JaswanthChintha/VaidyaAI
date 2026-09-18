@@ -22,6 +22,7 @@ from app.schemas.extraction import (
     SourceInfo,
     coerce_numeric,
     gemini_response_schema,
+    printed_range_is_only_a_range,
 )
 
 
@@ -387,3 +388,135 @@ def test_gemini_schema_avoids_unsupported_json_schema_constructs():
 def test_gemini_schema_fields_match_the_page_model():
     schema_keys = set(gemini_response_schema()["properties"])
     assert schema_keys <= set(PageExtraction.model_fields)
+
+
+# --------------------------------------------------------------------------
+# The printed range must be ONLY a range
+# --------------------------------------------------------------------------
+#
+# `reference_low`/`high` come from the MODEL; there is no parser. One report
+# prints "151 - 180 - Average Control" against average blood glucose -- a row
+# of an HbA1c interpretation table -- and the model returned 151/180 as this
+# patient's reference interval. Everything downstream judged the reading
+# against a target of 151-180, so a RISE in average glucose read as an
+# improvement, one page-read from telling a reader their diabetes had improved
+# while the HbA1c row beside it said worsening.
+
+
+def test_a_category_label_after_a_range_refuses_the_bounds():
+    p = ExtractedParameter(
+        test_name="AVERAGE BLOOD GLUCOSE",
+        value_raw="154",
+        reference_range_raw="151 - 180 - Average Control",
+        reference_low=151,
+        reference_high=180,
+    )
+
+    assert p.reference_low is None
+    assert p.reference_high is None
+    # THE PRINTED TEXT IS KEPT. The reader's document is not wrong; only this
+    # service's reduction of it to two numbers was.
+    assert p.reference_range_raw == "151 - 180 - Average Control"
+
+
+def test_the_same_defect_with_the_dash_omitted_is_also_refused():
+    # "151 - 180 Normal" would otherwise pass, because a single word fills the
+    # unit slot -- which is why a purely alphabetic remainder has a length cap.
+    p = ExtractedParameter(
+        test_name="X",
+        value_raw="154",
+        reference_range_raw="151 - 180 Normal",
+        reference_low=151,
+        reference_high=180,
+    )
+    assert (p.reference_low, p.reference_high) == (None, None)
+
+
+@pytest.mark.parametrize(
+    "raw,low,high",
+    [
+        # EVERY SHAPE PRINTED ON THE REAL REPORTS. Gathered from the stored
+        # extractions rather than imagined, because a gate on printed text is
+        # only as good as the text it was checked against.
+        ("0 - 20", 0, 20),
+        ("0-2", 0, 2),
+        ("0.27-5.0", 0.27, 5.0),
+        ("0.4 -1.4", 0.4, 1.4),
+        ("00 - 01", 0, 1),
+        ("1.5 - 4.5", 1.5, 4.5),
+        ("11.0 - 13.0 g/dL", 11.0, 13.0),
+        ("27 - 32 pg", 27, 32),
+        ("32 - 36 g/dL", 32, 36),
+        ("4.2 - 5.4 mill/cu.mm", 4.2, 5.4),
+        ("40 - 75 %", 40, 75),
+        ("4000 - 11000 cells/cumm", 4000, 11000),
+        ("70 - 140 mg/dl", 70, 140),
+        ("78-100 fL", 78, 100),
+        ("< 100", None, 100),
+        ("< 6 mg/l", None, 6),
+        ("> 40", 40, None),
+        ("UP TO 40", None, 40),
+    ],
+)
+def test_a_plain_printed_range_keeps_its_bounds(raw, low, high):
+    p = ExtractedParameter(
+        test_name="X",
+        value_raw="1",
+        reference_range_raw=raw,
+        reference_low=low,
+        reference_high=high,
+    )
+    assert p.reference_low == (None if low is None else float(low))
+    assert p.reference_high == (None if high is None else float(high))
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "151 - 180 - Average Control",
+        "151 - 180 Average",
+        "5 - 40 Desirable",
+        "0 - 20 Borderline",
+        # Sex-specific, which the model already refuses; the gate must agree
+        # rather than quietly disagree with it.
+        "F: 36 - 46 M: 40 - 50",
+        "F:11 - 15 M:12 - 16",
+        # The full interpretation tables, which the model also already refuses.
+        "Normal : < 5.7 Diabetes Mellitus : > 6.5",
+        "Non Diabetic : 4.5 -5.6\nPre Diabetic : 5.7 -6.4",
+    ],
+)
+def test_text_that_says_more_than_an_interval_is_refused(raw):
+    assert printed_range_is_only_a_range(raw) is False
+
+
+def test_the_gate_has_no_opinion_when_nothing_was_printed():
+    # A model that supplied bounds without text is not made wrong by this
+    # function: there is no evidence either way, and refusing would lose
+    # legitimate data to a rule that cannot see anything.
+    assert printed_range_is_only_a_range(None) is True
+    assert printed_range_is_only_a_range("") is True
+
+    p = ExtractedParameter(
+        test_name="X", value_raw="1", reference_low=3, reference_high=9
+    )
+    assert (p.reference_low, p.reference_high) == (3.0, 9.0)
+
+
+def test_the_flag_is_left_alone_by_this_gate():
+    """It is the laboratory's own marking when the report states one.
+
+    This gate is about a range the service misread, not about the laboratory's
+    verdict. A flag the model inferred FROM a refused range is a separate
+    question and is deliberately not settled here.
+    """
+    p = ExtractedParameter(
+        test_name="AVERAGE BLOOD GLUCOSE",
+        value_raw="154",
+        reference_range_raw="151 - 180 - Average Control",
+        reference_low=151,
+        reference_high=180,
+        flag="normal",
+    )
+    assert (p.reference_low, p.reference_high) == (None, None)
+    assert p.flag is not None

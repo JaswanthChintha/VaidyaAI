@@ -41,9 +41,9 @@ about any of them. That is the fifth time on this project.
 | | Tests |
 |---|---|
 | `backend/` (Node/Express) | **762** passing + 3 skipped (15 suites, 0 failed) |
-| `ai-service/` (Python/FastAPI) | **3,992** passing + 7 skipped (3,999 collected, 0 failures, 0 errors) |
+| `ai-service/` (Python/FastAPI) | **4,022** passing + 7 skipped (4,029 collected, 0 failures, 0 errors) |
 | `frontend/` (React/Vitest) | **384** passing, 0 suites failed |
-| **Total** | **5,138** -- backend and frontend green 2026-09-18; ai-service NOT re-run for the last three commits because nothing in it changed |
+| **Total** | **5,168** -- ALL THREE green 2026-09-18 |
 
 > **⚠ THE 4,852 IN EVERY EARLIER SECTION WAS 7 TOO HIGH.** §6as recorded
 > ai-service's COLLECTED total (3,865) as its PASSED count; that day's real
@@ -9154,11 +9154,11 @@ things, in the order they were found:
 | | Tests | Last run |
 |---|---|---|
 | `backend/` | **762** passed, 3 skipped, 15 suites, 0 failed | 2026-09-18 ✅ |
-| `ai-service/` | **3,992** passed, 7 skipped (3,999 collected, 0 failures, 0 errors) | 2026-09-18 ✅ (`.env` moved aside) |
+| `ai-service/` | **4,022** passed, 7 skipped (4,029 collected, 0 failures, 0 errors) | 2026-09-18 ✅ (`.env` moved aside) |
 | `frontend/` | **384** passed, 0 suites failed | 2026-09-18 ✅ |
-| **Total** | **5,138** | |
+| **Total** | **5,168** | |
 
-**EIGHT things, not four.** Four were taken off this section's own open list
+**NINE things, not four.** Five were taken off this section's own open list
 later the same day, three of them about units: the TSH OCR artefact, then
 SGPT and MCHC, then the silent unit on eAG -- **and that last one exposed a
 false `improving` on a rising blood sugar, which is the most serious thing
@@ -9567,10 +9567,54 @@ actually reviewed. 6au's lesson: a row a reader can find on their document and
 not on the screen reads as missing whatever the reason. The count of rows
 declined is reported rather than silent. Live: 26 panels, nothing blocked.
 
-> **THE PARSER DEFECT UNDERNEATH IS STILL OPEN.** A band label read as a
-> reference interval could reach another parameter, and it would be judged
-> against it. The honest place to stop that is Module 4. This entry removed the
-> contradiction on one row; it did not fix the class.
+> **THE PARSER DEFECT UNDERNEATH IS GATED NOW** — see the next subsection —
+> **but the already-stored bounds are not cleaned.** This entry removed the
+> contradiction on one row; the gate stops the class recurring on new uploads.
+
+### ▶ AND THE "PARSER" TURNED OUT NOT TO EXIST — SO THE GATE WENT AT THE BOUNDARY
+
+**THERE IS NO INTERVAL PARSER IN MODULE 4 AND THERE NEVER WAS.**
+`reference_low` and `reference_high` are emitted BY THE MODEL; `coerce_numeric`
+only coerces them. So "fix the parser" meant: gate the model's answer after it
+arrives, which is where every other model boundary in this codebase puts its
+control. `extraction.py` now carries
+`printed_range_is_only_a_range` plus a `model_validator`.
+
+**THE RULE.** The printed text must be ONLY an interval — an optional
+comparator, one or two numbers, at most a unit — and anything else refuses the
+numbers while KEEPING `reference_range_raw` exactly as printed. The reader's
+document is not wrong; only this service's reduction of it to two numbers was.
+
+**VALIDATED AGAINST ALL 46 DISTINCT PRINTED RANGES IN THE STORED DATA** before
+being written, pulled out of Mongo rather than imagined, plus four
+labelled-band shapes that do not appear and must also be refused. **50 of 50.**
+
+What the model already refused on its own, and the gate agrees with: both
+multi-line HbA1c interpretation tables, and the sex-specific
+`"F: 36 - 46 M: 40 - 50"`. It accepted exactly ONE shape — a single band row
+with a label after it.
+
+* A unit token carries **no whitespace** (`g/dL`, `pg`, `%`, `cells/cumm`,
+  `mill/cu.mm`, `fL`); a category label is words.
+* **A purely alphabetic remainder longer than 4 characters is prose, not a
+  unit.** Without that cap `"151 - 180 Normal"` — the same defect with the
+  dash omitted — passes, because one word fills the unit slot. Mutating the
+  cap to 99 was **killed by four tests**.
+* **`flag` IS LEFT ALONE.** It is the laboratory's own marking when the report
+  states one, and this gate is about a range the service misread. A flag the
+  model inferred FROM a refused range is a separate question, deliberately not
+  settled here — eAG still carries `flag: "normal"` against that band.
+* The extraction PROMPT now names the hazard too, with examples. That is
+  belt-and-braces: the gate is the control.
+
+> **⚠ THE GATE RUNS AT EXTRACTION TIME, SO THE STORED BOUNDS ARE STILL DIRTY.**
+> Verified in Mongo after the change: `AVERAGE BLOOD GLUCOSE` still holds
+> `low=151 high=180`. Nothing re-validates a row already in the database.
+> That row is harmless ONLY because eAG is excluded from trending — remove
+> that exclusion and the false `improving` returns. **Cleaning it needs either
+> a re-analysis of the two reports (model calls, regenerates their stored
+> analyses) or a targeted one-off repair of that one row. Neither was done;
+> it is the owner's call.**
 
 ### ⚠ A UNICODE ESCAPE PUT TWO REAL NUL BYTES IN A SOURCE FILE
 
@@ -9623,14 +9667,16 @@ untouched; this is display only.
   Until then every threshold on the page is labelled as unchecked — correctly.
 * **`stable` on the timeline and `no real change` on the comparison** are two
   phrasings of one verdict on one page. Both honest; not settled.
-* **⚠ MODULE 4 ACCEPTED AN INTERPRETATION-TABLE BAND AS A REFERENCE INTERVAL,
-  AND THIS IS THE BIGGEST OPEN DEFECT ON THE PROJECT.**
-  `"151 - 180 - Average Control"` was stored as `low=151 high=180` for
-  `AVERAGE BLOOD GLUCOSE`, and anything judged against it reads a rise toward
-  151-180 as an improvement. Excluding that one row removed the
-  contradiction; **the parser still accepts such a band and the next
-  parameter to carry one will be judged against it.** Fixing it properly
-  means Module 4, and re-analysing the two reports.
+* **⚠ THE STORED `151 - 180` BOUNDS ARE STILL IN MONGO.** The gate stops new
+  extractions producing them and is validated against all 46 real ranges, but
+  nothing re-validates a stored row. `AVERAGE BLOOD GLUCOSE` still holds
+  `low=151 high=180` and is harmless only because eAG is excluded from
+  trending. **Re-analysing the two reports, or repairing that one row, is
+  outstanding and is the owner's call.**
+* **eAG still carries `flag: "normal"`** — inferred by the model against that
+  same band. The gate deliberately does not touch `flag`, because a flag is
+  the laboratory's own marking when the report states one and this gate
+  cannot tell the two apart. Worth a separate look.
 * **eAG is shown but not trended**, which is deliberate, and the extraction
   still stores no unit for it. The unit is now taken from the reader's other
   report; the upstream fix is still that extraction should carry it.
@@ -9663,7 +9709,9 @@ page loads~~ · ~~the summary line counting a set that no longer existed~~ ·
 28 parameters~~ · ~~"unchanged" over a change~~ · ~~TSH blocked by one unit
 spelled two ways~~ · ~~a missing unit reported as a different one~~ · ~~SGPT
 and MCHC blocked for want of a declared equivalence~~ · ~~a silent unit
-treated as a disagreement~~ · ~~one change given two opposite verdicts~~.
+treated as a disagreement~~ · ~~one change given two opposite verdicts~~ ·
+~~an interpretation-table band accepted as a reference interval~~ (gated at
+extraction; stored rows not cleaned).
 
 ### ⚠ THE RATE LIMITER WILL STOP A DEBUG SESSION BEFORE THE QUOTA DOES
 

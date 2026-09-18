@@ -20,7 +20,99 @@ import re
 from enum import Enum
 from typing import List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+# --------------------------------------------------------------------------
+# THE PRINTED RANGE MUST BE ONLY A RANGE
+# --------------------------------------------------------------------------
+#
+# `reference_low` and `reference_high` are emitted BY THE MODEL. There is no
+# parser here and never was: the model reads the report and returns two
+# numbers, and `coerce_numeric` only coerces them. So the only place this
+# service can refuse a reading of the printed text is here, after the answer
+# arrives -- the same shape as every other model boundary in this codebase.
+#
+# WHAT WENT WRONG. One of the reader's reports prints, against average blood
+# glucose:
+#
+#     "151 - 180 - Average Control"
+#
+# That is a row from an HbA1c INTERPRETATION TABLE -- a band mapped to a
+# control category -- and the model returned `low=151, high=180` as though it
+# were this patient's reference interval. Everything downstream then judged
+# the reading against a target of 151-180, so a RISE in average glucose read
+# as an improvement toward the healthy range. An average glucose of 154 mg/dL
+# is an HbA1c around 7 %, which is worse control, and the timeline was one
+# page-read away from telling a reader their diabetes had improved while the
+# HbA1c row beside it said worsening.
+#
+# THE MODEL ALREADY REFUSES THE FULL TABLES. Both multi-line HbA1c
+# interpretation blocks on these reports come back `null/null`, and so do the
+# sex-specific ranges -- `"F: 36 - 46 M: 40 - 50"` -- which cannot be reduced
+# to one pair without knowing whose report it is. It accepted exactly one
+# shape: a SINGLE band row with a label after it.
+#
+# THE RULE. The printed text must be ONLY an interval: an optional comparator,
+# one or two numbers, and at most a unit. Anything else and the numbers are
+# refused -- `reference_range_raw` is kept exactly as printed, because the
+# reader's own document is not wrong, and only this service's reduction of it
+# to two numbers was.
+#
+# VALIDATED AGAINST EVERY DISTINCT PRINTED RANGE ON THE REAL REPORTS, 46 of
+# them, before being written -- plus four labelled-band shapes that do not
+# appear in the data and must also be refused. 50 of 50.
+#
+# REFUSING IS THE SAFE DIRECTION. A range this gate does not recognise loses
+# its bounds and keeps its text; the parameter is still shown, still carries
+# its value, and simply is not judged against an interval nobody could parse.
+# That is what already happens for the sex-specific ranges.
+
+_COMPARATOR = (
+    r"(?:<=|>=|<|>|≤|≥|up\s*to|upto|less\s+than|greater\s+than|more\s+than)"
+)
+_NUMBER = r"\d+(?:\.\d+)?"
+_RANGE_SEP = r"(?:-|–|—|to)"
+#: A unit token carries NO WHITESPACE. Every unit printed beside a range on
+#: the real reports is one token -- `g/dL`, `pg`, `%`, `cells/cumm`,
+#: `mill/cu.mm`, `fL` -- while a category label is words.
+_UNIT_TOKEN = r"[A-Za-z%µμ][A-Za-z0-9/%^.µμ]*"
+
+_ONLY_AN_INTERVAL = re.compile(
+    rf"^\s*(?:{_COMPARATOR}\s*)?{_NUMBER}"
+    rf"(?:\s*{_RANGE_SEP}\s*{_NUMBER})?"
+    rf"(?:\s*({_UNIT_TOKEN}))?\s*$",
+    re.IGNORECASE,
+)
+
+#: A purely alphabetic trailing token longer than this is prose, not a unit.
+#:
+#: Every alphabetic-only unit printed beside a range on the real reports is two
+#: characters (`pg`, `fL`); every longer alphabetic remainder seen or imagined
+#: is a category label (`Average`, `Control`, `Normal`, `Desirable`). Without
+#: this, `"151 - 180 Normal"` -- the same defect with the dash omitted -- would
+#: pass, because a single word fills the unit slot.
+_MAX_ALPHABETIC_UNIT = 4
+
+
+def printed_range_is_only_a_range(raw: object) -> bool:
+    """Is this printed text an interval and nothing else?
+
+    True when there is nothing printed -- the gate has no evidence and no
+    opinion, and a model that supplied bounds without text is not made wrong
+    by this function.
+    """
+    if raw is None:
+        return True
+    if not isinstance(raw, str) or not raw.strip():
+        return True
+    match = _ONLY_AN_INTERVAL.match(raw)
+    if match is None:
+        return False
+    unit = match.group(1)
+    if unit and unit.isalpha() and len(unit) > _MAX_ALPHABETIC_UNIT:
+        return False
+    return True
 
 
 class Flag(str, Enum):
@@ -182,6 +274,30 @@ class ExtractedParameter(BaseModel):
             return None
         i = int(f)
         return i if i >= 1 else None
+
+    @model_validator(mode="after")
+    def _refuse_bounds_from_text_that_is_not_only_a_range(
+        self,
+    ) -> "ExtractedParameter":
+        """Drop `reference_low`/`high` when the printed text says more.
+
+        See `printed_range_is_only_a_range` above for what went wrong and what
+        was validated against. THE RAW TEXT IS KEPT: the reader's document is
+        not wrong, only this service's reduction of it to two numbers was, and
+        a consumer that wants to show what was printed still can.
+
+        `flag` IS LEFT ALONE. It is the laboratory's own marking when the
+        report states one, and this gate is about a range the service misread,
+        not about the laboratory's verdict. A flag the model inferred FROM a
+        refused range is a separate question and is not settled here.
+        """
+        if printed_range_is_only_a_range(self.reference_range_raw):
+            return self
+        if self.reference_low is None and self.reference_high is None:
+            return self
+        object.__setattr__(self, "reference_low", None)
+        object.__setattr__(self, "reference_high", None)
+        return self
 
 
 class SourceInfo(BaseModel):
