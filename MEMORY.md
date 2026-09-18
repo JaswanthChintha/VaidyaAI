@@ -41,9 +41,9 @@ about any of them. That is the fifth time on this project.
 | | Tests |
 |---|---|
 | `backend/` (Node/Express) | **762** passing + 3 skipped (15 suites, 0 failed) |
-| `ai-service/` (Python/FastAPI) | **4,086** passing + 7 skipped (4,093 collected, 0 failures, 0 errors) |
+| `ai-service/` (Python/FastAPI) | **4,090** passing + 7 skipped (4,097 collected, 0 failures, 0 errors) |
 | `frontend/` (React/Vitest) | **394** passing, 0 suites failed |
-| **Total** | **5,242** -- ALL THREE green 2026-09-18 |
+| **Total** | **5,246** -- ALL THREE green 2026-09-18 |
 
 > **⚠ THE 4,852 IN EVERY EARLIER SECTION WAS 7 TOO HIGH.** §6as recorded
 > ai-service's COLLECTED total (3,865) as its PASSED count; that day's real
@@ -10291,9 +10291,9 @@ would keep claiming figures are unchecked after somebody checked them (1).
 
 ## 6az. THE CLINICIAN PAGE WAS READ ALOUD · 2026-09-18 · NINTH TIME IT FOUND SOMETHING
 
-§0's open item 4, done. **Five findings, two fixed on the owner's
-instruction, then two more on request.** Frontend **394** (was 390), ai-service **4,086** (was 4,067).
-**Total 5,242.**
+§0's open item 4, done. **Five findings, ALL FIVE FIXED** -- two on the owner's
+instruction and three more on request. Frontend **394** (was 390), ai-service **4,090** (was 4,067).
+**Total 5,246.**
 
 ### ⚠ FIXED 1 — "by the laboratory" WAS FALSE ON THE PAGE A DOCTOR READS
 
@@ -10370,16 +10370,12 @@ Also learned there, not assumed: Kidney Disease has **two bases** — a rule
 basis `Not Indicated` (creatinine normal) and a model basis `Indicated`. The
 fixture carries both, so it exercises the skip in `modelNotes`.
 
-### ▶ THREE FINDINGS RAISED AND NOT FIXED
+### ✅ THE THREE THAT WERE LEFT OPEN ARE NOW CLOSED TOO
 
 * ~~**BORDERLINE IS NARRATED AS "flagged … because".**~~ **FIXED — see the
   subsection below.**
-* **A RULE'S OWN COMPENSATING CAVEAT NEVER ARRIVES.**
-  `RULE_DIABETES_GLUCOSE_UNSPECIFIED` deliberately applies the 2-hour
-  post-load boundary to an untimed sample and its `basis` says the uncertainty
-  *"is stated to the reader via DISCUSS_SAMPLE_TIMING"*. That recommendation
-  is not on the page. **The rule traded precision for a caveat and the caveat
-  is missing.**
+* ~~**A RULE'S OWN COMPENSATING CAVEAT NEVER ARRIVES.**~~ **FIXED, and the
+  finding was PARTLY WRONG — see the subsection below.**
 * ~~**`rule_engine.py:588` EMITS `factor.label` UNCONDITIONALLY.**~~
   **FIXED — see the subsection below.**
 
@@ -10490,7 +10486,8 @@ the other half — a stated negative must not read as a positive.**
 that happened to be wrong on one report, so a factor added later is covered
 without anyone remembering to extend it. **Three mutants, all killed:** the
 bare label restored (1); the prefix emptied (**10** — it is load-bearing
-everywhere); `present` put back (1).
+everywhere); `present` put back (1); the timing phrase dropped from the 140 band (2); `TIMING_FASTING`
+admitted to `only_timing` (2).
 
 > **AND MY FIRST TEST ASSERTED THE WRONG KEY.** `factors_evaluable` holds
 > factor IDs (`obesity`), not feature names (`bmi`). It failed, which is how I
@@ -10504,13 +10501,57 @@ everywhere); `present` put back (1).
 > flag. **Nothing renders them today** (the dashboard was checked), so this is
 > recorded rather than done.
 
-**Mutation-tested, nine mutants across the four fixes, all killed:** the
+### ✅ FIXED 5 — A POST-LOAD THRESHOLD ON A SAMPLE NOBODY CALLED FASTING
+
+The clinician page showed *"RANDOM BLOOD GLUCOSE ( RBS ) was 168 mg/dl (>= 140,
+at or above the 2-hour post-load impaired-glucose-tolerance boundary of
+140 mg/dL)"*. **A clinician reading that would reasonably take it for a
+post-load draw.** It was a random sample.
+
+> **⚠ AND MY FINDING WAS PARTLY WRONG. I SAID THE CAVEAT "NEVER ARRIVES".**
+> The rule's `basis` says the uncertainty *"is stated to the reader via
+> DISCUSS_SAMPLE_TIMING"*, and **on the PATIENT page that is true** — checked
+> live, the recommendation renders: *"Whether a blood sample was taken after
+> fasting changes how a glucose result is read..."* The rule kept its promise
+> to the reader it was written for. **The CLINICIAN page carries no
+> recommendations at all**, deliberately, so the qualification never reached
+> the one reader who would act on the threshold.
+
+**SO IT WENT IN THE BAND LABEL, NOT THE RECOMMENDATION** — and that made the
+fix a quarter the size I had planned. The alternative was carrying
+`metadata["sample_timing"]` through `RuleExplanation`, Module 32's
+`RuleBasisDetail` and the page: three schemas across two services. The label
+reaches **every** reader already.
+
+**WHAT MAKES THE LABEL HONEST IS `only_timing`.** The rule accepts
+`unspecified`, `random` and `post_prandial` and nothing else, so *"not
+established as fasting"* is true of every band on it. **All three bands carry
+it now**, including the normal band.
+
+> **THE INVARIANT IS PINNED BY ITS OWN TEST**, because the label becomes a lie
+> the moment `TIMING_FASTING` is added to that tuple. Mutating it in was
+> killed by that test AND by a pre-existing one — doubly guarded.
+
+**Four mutants, all killed:** the phrase dropped from the 140 band (2 tests,
+one of them end to end through `evaluate_rules`); `TIMING_FASTING` added to
+`only_timing` (2). The fasting rule is asserted NOT to carry the phrase, since
+there it would be false.
+
+> **⚠ THE STORED DECISIONS STILL HOLD THE OLD LABEL**, same as FIXED 4: a band
+> label is baked into `ruleDecisions` at analysis time, so **Test 3 shows the
+> old wording until it is re-analysed** — a full pipeline run with model
+> calls. The end-to-end test drives `evaluate_rules` with the real printed
+> name (`RANDOM BLOOD GLUCOSE ( RBS )`, from which `sample_timing` derives
+> `random`) and is the evidence that new analyses carry it.
+
+**Mutation-tested, thirteen mutants across the five fixes, all killed:** the
 caveat removed from the narrative branch (2 tests — this mutant IS the bug as
 it shipped); the "by the laboratory" heading restored (1); the provenance
 sentence deleted (1); the status gap never firing (2); the proximity check
 widened to the whole document (1); the prompt heading left as `FLAGGED` (1);
 the bare factor label restored (1); the not-met prefix emptied (10); `present`
-put back (1).
+put back (1); the timing phrase dropped from the 140 band (2); `TIMING_FASTING`
+admitted to `only_timing` (2).
 `attributes the flag and the interval to the LABORATORY` **was replaced, not
 weakened** — it asserted the false attribution, and the new test inverts it.
 

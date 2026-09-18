@@ -487,9 +487,27 @@ THRESHOLD_RULES: Tuple[ThresholdRule, ...] = (
                 threshold=200.0,
                 status=DecisionStatus.INDICATED,
                 risk=RiskLevel.HIGH,
+                # THE TIMING IS PART OF THE CLASSIFICATION, NOT A FOOTNOTE.
+                #
+                # This rule's `only_timing` accepts unspecified, random and
+                # post-prandial ONLY, so every band below is used exclusively
+                # on a sample that was NOT established as fasting. Saying so in
+                # the label is therefore always true, and it puts the
+                # qualification wherever the classification goes -- the patient
+                # page, the clinician page and the written narrative alike.
+                #
+                # WHY IT HAD TO GO HERE. The `basis` above says the uncertainty
+                # "is stated to the reader via DISCUSS_SAMPLE_TIMING", and on
+                # the PATIENT page that is true -- the recommendation renders.
+                # The CLINICIAN page carries no recommendations at all, so it
+                # showed "at or above the 2-hour post-load boundary" against a
+                # RANDOM sample with nothing saying the timing was never
+                # established. A clinician reading that would reasonably take
+                # it for a post-load draw. Found 2026-09-18.
                 label=(
                     "at or above the ADA diabetes-range random plasma glucose "
-                    "threshold of 200 mg/dL"
+                    "threshold of 200 mg/dL, on a sample not established as "
+                    "fasting"
                 ),
                 recommendations=_FLAGGED_HIGH + (GENERAL_LIMIT_ADDED_SUGAR,),
                 basis="ADA: random plasma glucose >= 200 mg/dL.",
@@ -499,15 +517,20 @@ THRESHOLD_RULES: Tuple[ThresholdRule, ...] = (
                 threshold=140.0,
                 status=DecisionStatus.BORDERLINE,
                 risk=RiskLevel.MEDIUM,
+                # THE ONE THAT MATTERS MOST. "at or above the 2-hour post-load
+                # boundary" beside a RANDOM glucose reads as a post-load draw
+                # unless the label says otherwise. See the band above.
                 label=(
                     "at or above the 2-hour post-load impaired-glucose-tolerance "
-                    "boundary of 140 mg/dL"
+                    "boundary of 140 mg/dL, applied because the sample was not "
+                    "established as fasting"
                 ),
                 recommendations=_FLAGGED + (GENERAL_LIMIT_ADDED_SUGAR,),
                 basis="ADA: 2-hour post-load plasma glucose 140-199 mg/dL.",
             ),
             _normal_band(
-                "below the 2-hour post-load boundary of 140 mg/dL",
+                "below the 2-hour post-load boundary of 140 mg/dL, applied "
+                "because the sample was not established as fasting",
                 "ADA: 2-hour post-load plasma glucose < 140 mg/dL.",
             ),
         ),

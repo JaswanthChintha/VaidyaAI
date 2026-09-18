@@ -256,6 +256,89 @@ def test_absent_hypertension_is_reported_as_missing_not_as_false():
 
 
 # --------------------------------------------------------------------------
+# A POST-LOAD THRESHOLD ON A SAMPLE NOBODY ESTABLISHED AS FASTING
+# --------------------------------------------------------------------------
+#
+# The clinician page showed, for Test 3 on 2026-09-18:
+#
+#     RANDOM BLOOD GLUCOSE ( RBS ) was 168 mg/dl (>= 140, at or above the
+#     2-hour post-load impaired-glucose-tolerance boundary of 140 mg/dL)
+#
+# A clinician reading that would reasonably take it for a post-load draw. It
+# was a random sample, and the rule's own `basis` says the uncertainty "is
+# stated to the reader via DISCUSS_SAMPLE_TIMING".
+#
+# THAT CLAIM IS TRUE ON THE PATIENT PAGE -- the recommendation renders there,
+# checked live. The CLINICIAN page carries no recommendations at all, so the
+# qualification went in the BAND LABEL instead, where it reaches every reader.
+#
+# WHAT MAKES THE LABEL HONEST is `only_timing`: this rule fires ONLY for
+# unspecified, random and post-prandial samples, so "not established as
+# fasting" is true of every band on it. The first test below pins that
+# invariant, because the label becomes a lie the moment it stops holding.
+
+_NOT_FASTING_PHRASE = "not established as fasting"
+
+
+def test_the_unspecified_glucose_rule_never_sees_a_fasting_sample():
+    """THE INVARIANT THE BAND LABELS REST ON.
+
+    If `TIMING_FASTING` were ever added to this rule, every band would start
+    claiming a sample was not established as fasting when it was.
+    """
+    rule = next(
+        r for r in cr.THRESHOLD_RULES if r.id == "RULE_DIABETES_GLUCOSE_UNSPECIFIED"
+    )
+    assert rule.only_timing
+    assert cr.TIMING_FASTING not in rule.only_timing
+
+
+def test_every_band_of_that_rule_says_the_sample_was_not_established_as_fasting():
+    rule = next(
+        r for r in cr.THRESHOLD_RULES if r.id == "RULE_DIABETES_GLUCOSE_UNSPECIFIED"
+    )
+    for band in rule.bands:
+        assert _NOT_FASTING_PHRASE in band.label, band.label
+
+
+def test_the_FASTING_glucose_rule_does_not_carry_the_phrase():
+    """No over-reach: on a fasting sample the qualification would be false."""
+    rule = next(
+        r for r in cr.THRESHOLD_RULES if r.id == "RULE_DIABETES_GLUCOSE_FASTING"
+    )
+    for band in rule.bands:
+        assert _NOT_FASTING_PHRASE not in band.label, band.label
+
+
+def test_a_random_glucose_reaches_the_reader_with_the_timing_qualification():
+    """END TO END through the engine, not just the table.
+
+    The classification is what the clinician page and the narrative both
+    print, so this is the assertion that matches what a reader sees.
+    """
+    # THE TIMING IS DERIVED FROM THE PRINTED TEST NAME, not from a field --
+    # `sample_timing(original_test_name, matched_synonym)`. Driven the way the
+    # producer does it, with the name Test 3 actually prints.
+    data = evaluate_rules(
+        validated(
+            {
+                "blood_glucose": vf(
+                    "blood_glucose",
+                    168.0,
+                    test_name="RANDOM BLOOD GLUCOSE ( RBS )",
+                )
+            }
+        )
+    )
+    diabetes = [d for d in data.decisions if d.condition == C.DIABETES]
+    assert diabetes, "the unspecified-timing glucose rule did not fire"
+    notes = " ".join(
+        e.note or "" for d in diabetes for e in d.evidence
+    ) + " ".join(str(d.metadata.get("band_label", "")) for d in diabetes)
+    assert _NOT_FASTING_PHRASE in notes
+
+
+# --------------------------------------------------------------------------
 # A CRITERION THAT WAS NOT MET MUST NOT READ AS ONE THAT WAS
 # --------------------------------------------------------------------------
 #
