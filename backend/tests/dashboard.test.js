@@ -1215,4 +1215,115 @@ describe('Module 27 - GET /reports/:id/dashboard', () => {
       expect(() => dashboardService.buildDashboard({})).toThrow(TypeError);
     });
   });
+
+  describe('a value outside its printed interval, with no flag extracted', () => {
+    /* THE DEFECT THIS PINS, AND IT REACHED A READER.
+     *
+     * `labFlaggedAbnormal` used to be the extracted `flag` alone. `Test 3.pdf`
+     * was analysed twice: the first run extracted `flag: "high"` for CRP, the
+     * second returned `flag: null` for CRP, SGPT and TSH while extracting the
+     * same values and the same printed intervals. Extraction is a model call
+     * and is not deterministic -- MEMORY.md 6ba records the same happening to
+     * test NAMES.
+     *
+     * The consequence was not a missing flag. It was C-REACTIVE PROTEIN
+     * 38.9 mg/L, against a printed interval of <= 5, shown to the patient as
+     * "In range" -- because the dashboard reads "an interval was printed" as
+     * "the laboratory compared it and it was fine" and never compared the two
+     * numbers itself. A dropped flag turned a finding into a reassurance.
+     */
+    // ⚠ `value_numeric` AND `value_raw`, COPIED FROM A REAL STORED RECORD.
+    // An earlier version of this fixture used `value:`, which does not exist
+    // on an extracted parameter. The code under test read `source.value` too,
+    // so both were wrong in the same direction and these tests PASSED while
+    // the real page still showed CRP 38.9 mg/L as "In range". A fixture
+    // written from an assumption cannot catch that assumption.
+    const extractionWithoutFlags = {
+      extracted_parameters: [
+        // The real CRP row from `Test 3.pdf`, with the flag the re-extraction
+        // lost. Note `reference_low: null` -- the report prints "< 5.0".
+        {
+          test_name: 'CRP',
+          value_raw: '38.9',
+          value_numeric: 38.9,
+          flag: null,
+          reference_low: null,
+          reference_high: 5,
+        },
+        // Inside its interval, also unflagged: must NOT become abnormal.
+        {
+          test_name: 'TSH',
+          value_raw: '1.81',
+          value_numeric: 1.81,
+          flag: null,
+          reference_low: 0.27,
+          reference_high: 5,
+        },
+        // Below its lower bound, unflagged.
+        {
+          test_name: 'Ferritin',
+          value_raw: '4',
+          value_numeric: 4,
+          flag: null,
+          reference_low: 30,
+          reference_high: 400,
+        },
+        // Non-numeric, no interval: nothing to compare, nothing to claim.
+        { test_name: 'Urine Colour', value_raw: 'Yellow', flag: null },
+      ],
+    };
+
+    // `unmapped` is what puts a row in the unassessed section; `extraction`
+    // supplies the printed value, interval and flag for it. Both are needed,
+    // exactly as in the glossary fixture above.
+    const unmappedRows = {
+      unmapped: [
+        { test_name: 'CRP', value_raw: '38.9', unit: 'mg/L', reason: 'no_feature' },
+        { test_name: 'TSH', value_raw: '1.81', unit: 'uIU/mL', reason: 'no_feature' },
+        { test_name: 'Ferritin', value_raw: '4', unit: 'ng/mL', reason: 'no_feature' },
+        { test_name: 'Urine Colour', value_raw: 'Yellow', reason: 'no_feature' },
+      ],
+    };
+
+    const built = () =>
+      dashboardService.buildDashboard({
+        clinicalReport: clinicalReport(),
+        engineeredFeatures: unmappedRows,
+        extraction: extractionWithoutFlags,
+        parameterGlossary: null,
+      }).unanalysed;
+
+    const row = (name) => built().items.find((item) => item.testName === name);
+
+    it('is abnormal when the value is ABOVE the printed high bound', () => {
+      expect(row('CRP').labFlaggedAbnormal).toBe(true);
+      // A direction the page can print, derived from the two numbers a reader
+      // can see -- not invented, and not attributed to the laboratory.
+      expect(row('CRP').labFlag).toBe('high');
+    });
+
+    it('is abnormal when the value is BELOW the printed low bound', () => {
+      expect(row('Ferritin').labFlaggedAbnormal).toBe(true);
+      expect(row('Ferritin').labFlag).toBe('low');
+    });
+
+    it('is NOT abnormal when the value sits inside the printed interval', () => {
+      // The half that must not collapse: widening this into "no flag means
+      // look again" would flag every normal result on the report.
+      expect(row('TSH').labFlaggedAbnormal).toBe(false);
+      expect(row('TSH').labFlag).toBeNull();
+    });
+
+    it('claims nothing when there is no interval to compare against', () => {
+      expect(row('Urine Colour').labFlaggedAbnormal).toBe(false);
+      expect(row('Urine Colour').labFlag).toBeNull();
+    });
+
+    it('counts the comparison, not the flags', () => {
+      // `labFlaggedCount` feeds the dashboard's summary sentence. With the
+      // flag alone it said 1 on a report with two results outside their
+      // printed intervals.
+      expect(built().labFlaggedCount).toBe(2);
+    });
+  });
 });

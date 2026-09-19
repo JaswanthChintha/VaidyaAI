@@ -1114,16 +1114,31 @@ function InShort({
       ) : null}
 
       {/* ABSENCE #1: topics that could not be checked at all. */}
-      {/* ABSENCE #2: the laboratory's own flags on tests never assessed here.
-          These are results a reader will stop on and a doctor will want
-          raised, and they sit outside every count above -- so leaving them
-          out of the summary would let the reader think the flagged topics
-          were the whole story. */}
+      {/* ABSENCE #2: results outside their printed interval that no topic
+          here assessed. A reader will stop on these and a doctor will want
+          them raised, and they sit outside every count above -- so leaving
+          them out would let the reader think the flagged topics were the
+          whole story.
+
+          ⚠ IT NO LONGER SAYS "YOUR LABORATORY MARKED", WHICH IS 6az's FIX
+          ARRIVING ON A SECOND SCREEN. `labFlaggedAbnormal` is now true when
+          the value sits outside the interval printed beside it, whether or
+          not the report marked it -- because a re-extraction of `Test 3.pdf`
+          dropped the flag on CRP and the page then showed 38.9 mg/L against
+          a printed <= 5 as "In range". See the note on the producer in
+          backend/src/services/dashboardService.js.
+
+          So the claim had to stop naming an agent it cannot know. That the
+          value falls outside the printed interval is checkable from this
+          screen; WHO decided it is not knowable until `flag_source` exists
+          (MEMORY.md section 0, item 5). The clinician page carries the same
+          sentence for the same reason. */}
       {labFlagged.length ? (
         <p className="caveat">
           <strong>
-            Your laboratory marked {labFlagged.length} further result
-            {labFlagged.length === 1 ? '' : 's'} outside its own range
+            {labFlagged.length} further result
+            {labFlagged.length === 1 ? ' is' : 's are'} outside the range
+            printed on the report
           </strong>{' '}
           — {nameList(labFlagged.map((item) => item.testName))}. Worth raising
           with a qualified healthcare professional.

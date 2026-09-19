@@ -1450,10 +1450,22 @@ describe('the closing "In short" summary', () => {
     renderDashboard();
 
     await screen.findByText(/In short/);
-    // THE LABORATORY'S OWN FLAGGED RESULT MUST REACH THE SUMMARY. It sits
-    // outside every condition count above, so dropping it would let the
-    // reader take the flagged conditions for the whole story.
-    expect(summaryText()).toMatch(/marked 1 further result outside its own range/);
+    // THE OUT-OF-RANGE RESULT MUST REACH THE SUMMARY. It sits outside every
+    // condition count above, so dropping it would let the reader take the
+    // flagged conditions for the whole story. That requirement is unchanged.
+    //
+    // ⚠ THE WORDING IS NOT. This asserted "marked 1 further result outside
+    // its OWN range" -- a claim that the LABORATORY did the marking.
+    // `labFlaggedAbnormal` is now also true when the value simply sits
+    // outside the interval printed beside it, flag or no flag, because a
+    // re-extraction of `Test 3.pdf` dropped the flag on CRP and the page then
+    // showed 38.9 mg/L against a printed <= 5 as "In range". So the sentence
+    // can no longer name an agent it does not know -- which is 6az's finding
+    // arriving on a second screen, and the clinician page already says the
+    // same thing the same way.
+    expect(summaryText()).toMatch(/1 further result is outside the range printed on the report/);
+    // And the claim it must NOT make any more.
+    expect(summaryText()).not.toMatch(/laboratory marked/i);
     expect(summaryText()).toMatch(/Potassium/);
     // The unflagged remainder is no longer counted here -- the reader asked
     // for the summary to stop accounting for what this tool does not check.

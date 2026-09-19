@@ -893,6 +893,29 @@ function buildUnanalysedSection(engineeredFeatures, extraction, parameterGlossar
     const item = objectOf(entry);
     const source = objectOf(printed.get(item.test_name));
     const flag = stringOrNull(source.flag);
+
+    // The printed comparison, done here rather than trusted to the flag.
+    // See the long note on `labFlaggedAbnormal` below for why.
+    // ⚠ `value_numeric`, NOT `value`. The extracted parameter carries
+    // `value_raw` (the string as printed) and `value_numeric` (the parsed
+    // number); there is no `value` key on it at all. Reading `source.value`
+    // made this whole comparison a no-op that failed silently -- the page
+    // still showed CRP 38.9 as "In range" -- and the unit test passed anyway,
+    // because its fixture was written from the same wrong assumption instead
+    // of from a real extraction record.
+    const numericValue = numberOrUndefined(source.value_numeric);
+    const printedLow = numberOrUndefined(source.reference_low);
+    const printedHigh = numberOrUndefined(source.reference_high);
+    const above = numericValue !== undefined && printedHigh !== undefined
+      && numericValue > printedHigh;
+    const below = numericValue !== undefined && printedLow !== undefined
+      && numericValue < printedLow;
+    const outsidePrintedInterval = above || below;
+    // Only when the flag itself is missing: a direction the UI can print,
+    // derived from the same two numbers the reader can see.
+    const derivedDirection = outsidePrintedInterval
+      ? (above ? "high" : "low")
+      : null;
     // `undefined` when this test was never asked about, so the two absent
     // cases stay distinguishable all the way to the renderer.
     const glossaryEntry = described.get(item.test_name);
@@ -914,10 +937,38 @@ function buildUnanalysedSection(engineeredFeatures, extraction, parameterGlossar
       // The pipeline's own machine reason for skipping it, kept verbatim.
       reason: stringOrNull(item.reason),
       pageNumber: numberOrUndefined(item.page_number),
-      // THE LABORATORY'S OWN VERDICT, not this platform's. Named so no reader
-      // of this object can mistake whose judgement it is.
-      labFlag: flag,
-      labFlaggedAbnormal: Boolean(flag) && flag.toLowerCase() !== "normal",
+      // OUTSIDE THE INTERVAL PRINTED BESIDE IT, OR CARRYING AN ABNORMAL FLAG.
+      //
+      // ⚠ THIS USED TO BE THE FLAG ALONE, AND A RE-EXTRACTION MADE THAT
+      // DANGEROUS. `Test 3.pdf` was analysed twice. The first run extracted
+      // `flag: "high"` for CRP; the second returned `flag: null` for CRP,
+      // SGPT and TSH while extracting the same values and the same printed
+      // intervals. Extraction is a model call and is not deterministic --
+      // MEMORY.md 6ba records the same thing happening to test NAMES.
+      //
+      // With the flag alone, C-REACTIVE PROTEIN 38.9 mg/L against a printed
+      // interval of <= 5 was reported to the patient as **In range**: nearly
+      // eight times the upper limit, on the results table, because
+      // `labFlagVerdict` reads "an interval was printed" as "the laboratory
+      // compared it and it was fine" and never does the comparison itself.
+      // A dropped flag turned a finding into a reassurance.
+      //
+      // THE ARITHMETIC IS CHECKABLE AND THE FLAG IS NOT. Both numbers are on
+      // the report, so comparing them is a fact a reader can verify; the flag
+      // is a model's reading of the page and 6az established it may be
+      // inferred rather than printed. So the comparison leads and the flag is
+      // kept as an OR -- a flag that says abnormal is never discarded because
+      // the arithmetic disagrees, which keeps this fail-safe in the direction
+      // of flagging.
+      //
+      // ⚠ CONSEQUENCE FOR WORDING: a row can now be abnormal here with NO
+      // laboratory marking at all, so no consumer may say "your laboratory
+      // marked this". See the caveat in frontend/src/pages/Dashboard.jsx,
+      // which was reworded with this change, and 6az for the same fix on the
+      // clinician page.
+      labFlag: flag || derivedDirection,
+      labFlaggedAbnormal:
+        outsidePrintedInterval || (Boolean(flag) && flag.toLowerCase() !== "normal"),
       labReferenceLow: numberOrUndefined(source.reference_low),
       labReferenceHigh: numberOrUndefined(source.reference_high),
     };
