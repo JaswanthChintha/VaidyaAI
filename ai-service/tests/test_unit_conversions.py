@@ -336,3 +336,93 @@ def test_an_unrecognised_unit_is_still_refused_and_never_guessed_at():
     canonical = set(UNIT_ALIASES.values())
     for nonsense in ("furlongs/fortnight", "bananas", "gg/dl"):
         assert normalize_unit(nonsense) not in canonical, nonsense
+
+
+# --------------------------------------------------------------------------
+# THE UNITS THE REAL REPORTS PRINT
+#
+# Added after `Test 3.pdf` shipped three complete-blood-count values that the
+# conversion table did not recognise. The test NAMES had been checked against
+# the real reports before the feature shipped; the UNITS had not, and three of
+# twelve new features silently got no population context on the first real
+# report they were built for.
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "feature,printed,value,expected,why",
+    [
+        (
+            "rbc_count",
+            "Millions/Cumm",
+            4.2,
+            4.2,
+            "1 cumm = 1 uL, so millions/cumm IS 10^6/uL -- identity",
+        ),
+        (
+            "wbc_count",
+            "Cells/cumm",
+            9300.0,
+            9.3,
+            "a bare count per cubic millimetre, /1000",
+        ),
+        (
+            "platelet_count",
+            "Lakhs/cumm",
+            3.03,
+            303.0,
+            "1 lakh = 100,000",
+        ),
+        (
+            "platelet_count",
+            "Cells/cumm",
+            303000.0,
+            303.0,
+            "the same platelet count printed the other way round",
+        ),
+    ],
+)
+def test_the_units_test_3_actually_prints_convert_correctly(
+    feature, printed, value, expected, why
+):
+    """Every one of these was UNRECOGNISED when the CBC features shipped.
+
+    The values are the ones really printed on `Test 3.pdf`, not invented
+    examples: RBC 4.2 Millions/Cumm, WBC 9300 Cells/cumm, platelets
+    3.03 Lakhs/cumm.
+    """
+    key = normalize_unit(printed)
+    assert is_known_unit(key), f"{printed!r} is not a recognised unit"
+    conv = conversion_for(feature, key)
+    assert conv is not None, f"{feature} cannot accept {printed!r}: {why}"
+    assert conv.apply(value) == pytest.approx(expected), why
+
+
+def test_a_lakh_is_a_hundred_thousand_and_getting_it_wrong_is_invisible():
+    """THE conversion in this file whose wrong answer looks plausible.
+
+    A mis-scaled WHITE CELL count is caught: 9300 read as 10^3/uL is far
+    outside the possible band and is rejected. A mis-scaled PLATELET count is
+    not. 3.03 Lakhs/cumm is 303,000/uL, an ordinary healthy count; read as
+    3.03 x10^3/uL it becomes 3,030/uL, which is NOT impossible -- it is
+    severe thrombocytopenia with a spontaneous bleeding risk.
+
+    So the failure mode here is not an error or a refusal. It is a healthy
+    person shown, with full confidence, in the lowest percentile of the
+    population with a number that reads as a haematological emergency. This
+    test exists because nothing downstream would catch it.
+    """
+    from app.data.validation_rules import rule_for
+
+    conv = conversion_for("platelet_count", normalize_unit("Lakhs/cumm"))
+    assert conv.apply(3.03) == pytest.approx(303.0)
+    # 1.5 lakhs and 4.5 lakhs are the ends of the usual adult range.
+    assert conv.apply(1.5) == pytest.approx(150.0)
+    assert conv.apply(4.5) == pytest.approx(450.0)
+
+    # And the proof that the band cannot save us: the WRONG answer is legal.
+    rule = rule_for("platelet_count")
+    assert rule.possible_low <= 3.03 <= rule.possible_high, (
+        "if this ever fails, the possible band has started catching the "
+        "mis-scale and this test's premise needs revisiting"
+    )

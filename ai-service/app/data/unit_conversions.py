@@ -129,11 +129,22 @@ UNIT_ALIASES: Dict[str, str] = {
     # `conversion_for` refuses an unlisted unit rather than assuming it is
     # canonical.
     #
-    # `/ul` IS NOT AMONG THEM AND IS DELIBERATELY ABSENT. A white cell count
-    # printed as 7000 /uL is the same quantity as 7.0 x10^3/uL, but the
-    # scaling differs by a thousand and nothing on the report distinguishes
-    # "7000" from a mis-scaled "7000 x10^3". Rejecting the unit is safer
-    # than silently dividing.
+    # ⚠ THIS COMMENT USED TO ARGUE THE OPPOSITE, AND A REAL REPORT SETTLED IT.
+    # It said a bare per-microlitre count was "deliberately absent" because
+    # nothing distinguishes "7000" from a mis-scaled "7000 x10^3", so
+    # refusing the unit was safer than dividing.
+    #
+    # That was reasoning about a report nobody had read. `Test 3.pdf` prints
+    # `9300 Cells/cumm`, and refusing it meant the white cell count -- a
+    # value the lab measured and printed plainly -- got no population context
+    # at all. REFUSING REAL DATA IS NOT THE SAFE OPTION; it is the "we did
+    # not look" failure in another costume.
+    #
+    # The scaling worry was also checkable rather than arguable, and it was
+    # checked: 9300 read as 10^3/uL lands far outside the possible band in
+    # validation_rules.py and is rejected. The guard already existed.
+    # See `cells/cumm` in CONVERSIONS below -- and the platelet note, which
+    # is the case where this reasoning genuinely does NOT hold.
     "10^3/ul": "10^3/ul",
     "10^3/l": "10^3/ul",
     "103/ul": "10^3/ul",
@@ -169,6 +180,44 @@ UNIT_ALIASES: Dict[str, str] = {
     "picogram": "pg",
     "picogramme": "pg",
     "pgm": "pg",
+    # ============ WHAT THE REPORTS ACTUALLY PRINT ========================
+    #
+    # ⚠ THESE WERE MISSING AND THE OMISSION WAS FOUND BY A REAL REPORT, NOT
+    # BY A TEST. The cell-count aliases above were written from the NHANES
+    # and Western spellings. `Test 3.pdf` prints:
+    #
+    #     RBC COUNT       4.2   Millions/Cumm
+    #     TOTAL WBC COUNT 9300  Cells/cumm
+    #     PLATELET COUNT  3.03  Lakhs/cumm
+    #
+    # None of the three was recognised, so three of the twelve new
+    # complete-blood-count features got no population context at all on the
+    # first real report they were shipped for. `cumm` is a cubic millimetre,
+    # which is exactly one microlitre, and a LAKH is one hundred thousand --
+    # an Indian convention a Western-derived alias list will never contain.
+    "millions/cumm": "10^6/ul",
+    "million/cumm": "10^6/ul",
+    "mill/cumm": "10^6/ul",
+    "millions/cu mm": "10^6/ul",
+    "millions/cmm": "10^6/ul",
+    "mil/cumm": "10^6/ul",
+    # A BARE COUNT PER CUBIC MILLIMETRE. Its own key, because it is NOT
+    # numerically equal to 10^3/uL -- it is a thousand times smaller, and the
+    # conversion below carries that factor per feature.
+    "cells/cumm": "cells/cumm",
+    "cells/cu mm": "cells/cumm",
+    "cells/cmm": "cells/cumm",
+    "cell/cumm": "cells/cumm",
+    "/cumm": "cells/cumm",
+    "cumm": "cells/cumm",
+    "cmm": "cells/cumm",
+    # LAKHS PER CUBIC MILLIMETRE. 1 lakh = 100,000.
+    "lakhs/cumm": "lakhs/cumm",
+    "lakh/cumm": "lakhs/cumm",
+    "lacs/cumm": "lakhs/cumm",
+    "lac/cumm": "lakhs/cumm",
+    "lakhs/cu mm": "lakhs/cumm",
+    "lakhs/cmm": "lakhs/cumm",
 }
 
 
@@ -434,7 +483,19 @@ CONVERSIONS: Dict[str, Dict[str, UnitConversion]] = {
         ),
         "g/l": UnitConversion("g/l", "g/dl", 0.1, basis="decimal prefix"),
     },
-    "wbc_count": {"10^3/ul": _identity("10^3/ul")},
+    "wbc_count": {
+        "10^3/ul": _identity("10^3/ul"),
+        # 9300 cells/cumm = 9300/uL = 9.3 x10^3/uL. A mis-scale IS caught
+        # here: 9300 read as 10^3/uL is 9,300,000 cells/uL, far outside the
+        # possible band in validation_rules.py, so it is rejected rather than
+        # shown. Verified.
+        "cells/cumm": UnitConversion(
+            "cells/cumm",
+            "10^3/ul",
+            0.001,
+            basis="1 cumm (cubic millimetre) = 1 uL; /1000 to reach 10^3/uL",
+        ),
+    },
     # The five differentials are PERCENTAGES OF THE WHITE CELL COUNT, and the
     # only unit they accept is `%`. An absolute count in 10^3/uL is a
     # DIFFERENT QUANTITY, not the same one in another unit, so it is not
@@ -445,7 +506,42 @@ CONVERSIONS: Dict[str, Dict[str, UnitConversion]] = {
     "monocytes": {"%": _identity("%")},
     "eosinophils": {"%": _identity("%")},
     "basophils": {"%": _identity("%")},
-    "platelet_count": {"10^3/ul": _identity("10^3/ul")},
+    "platelet_count": {
+        "10^3/ul": _identity("10^3/ul"),
+        "cells/cumm": UnitConversion(
+            "cells/cumm",
+            "10^3/ul",
+            0.001,
+            basis="1 cumm = 1 uL; /1000 to reach 10^3/uL",
+        ),
+        # ⚠ THE MOST DANGEROUS CONVERSION IN THIS FILE, AND THE REASON IT IS
+        # PINNED BY ITS OWN TEST.
+        #
+        # 1 lakh = 100,000, so 3.03 Lakhs/cumm = 303,000/uL = 303 x10^3/uL --
+        # an ordinary healthy platelet count.
+        #
+        # GET THIS WRONG AND NOTHING CATCHES IT. Unlike the white cell count,
+        # a mis-scaled platelet value stays INSIDE the physiologically
+        # possible band: 3.03 read as 10^3/uL is 3,030 platelets/uL, which is
+        # not impossible -- it is severe, spontaneous-bleeding-risk
+        # thrombocytopenia. So the failure mode is not a rejected value or an
+        # error message. It is a healthy person being placed in the lowest
+        # percentile of the population with a number that looks like a
+        # haematological emergency.
+        #
+        # That is why this entry exists rather than leaving `lakhs/cumm`
+        # unrecognised, and why `test_a_lakh_is_a_hundred_thousand` asserts
+        # the arithmetic directly.
+        "lakhs/cumm": UnitConversion(
+            "lakhs/cumm",
+            "10^3/ul",
+            100.0,
+            basis=(
+                "1 lakh = 100,000 and 1 cumm = 1 uL, so lakhs/cumm x 100 "
+                "gives 10^3/uL. Indian reporting convention."
+            ),
+        ),
+    },
     # ------------------------------------------- patient-profile features --
     "bmi": {"kg/m2": _identity("kg/m2")},
     "age": {"years": _identity("years")},
