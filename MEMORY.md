@@ -47,9 +47,9 @@ about any of them. That is the fifth time on this project.
 | | Tests |
 |---|---|
 | `backend/` (Node/Express) | **767** passing + 3 skipped (15 suites, 0 failed) |
-| `ai-service/` (Python/FastAPI) | **4,107** passing + 7 skipped (4,114 collected, 0 failures, 0 errors) |
+| `ai-service/` (Python/FastAPI) | **4,163** passing + 7 skipped (4,170 collected, 0 failures, 0 errors) |
 | `frontend/` (React/Vitest) | **398** passing, 0 suites failed |
-| **Total** | **5,272** -- ALL THREE green 2026-09-19 |
+| **Total** | **5,328** -- ai-service re-counted 2026-09-19 after §6bd (+56) |
 
 > **⚠ THE 4,852 IN EVERY EARLIER SECTION WAS 7 TOO HIGH.** §6as recorded
 > ai-service's COLLECTED total (3,865) as its PASSED count; that day's real
@@ -116,19 +116,30 @@ about any of them. That is the fifth time on this project.
 
 > ### ▶ WHAT TO DO NEXT, IN ORDER
 >
-> **0. ⚠ `validate_text` APPROVES `'You have cirrhosis of the liver.'` — zero
->    violation codes, under the same `SafetyContext` Module 35 and the glossary
->    pass.** This is §6r's D1, open since 2026-09-05, and §6ax raised its
->    priority: a second text provider (OpenRouter) means less provider-side
->    filtering sits in front of Module 24 than before — **and that fallback
->    has since fired in production** (§6ba), so the exposure is no longer
->    theoretical. **Measured, with the rules that DO fire listed beside it, in
->    §6ax.** Nothing else on this list is close.
+> **0. ~~`validate_text` APPROVES `'You have cirrhosis of the liver.'`~~
+>    **FIXED 2026-09-19 — SEE §6bd. D1 IS NARROWED, NOT CLOSED.** That
+>    sentence and 27 other real conditions now refuse, by morphology rather
+>    than by a longer list. **What is still open is written in §6bd's KNOWN
+>    AND OPEN and it is not nothing** — the irregular names (HIV, gout,
+>    lupus, sepsis, COVID) are still an enumeration, and **no corpus on this
+>    platform can measure this rule's false positives**, because the
+>    platform's own prose contains zero `you have` sentences.
 >
->    Reproduce in one line from `ai-service/`:
->    ```
->    .venv/Scripts/python.exe -c "from app.safety.validator import SafetyContext, validate_text; v=validate_text('You have cirrhosis of the liver.', SafetyContext()); print(v.approved, v.codes)"
->    ```
+>    **⚠ TWO THINGS THIS FILE SAID ABOUT D1 WERE WRONG, AND BOTH WERE
+>    CHECKABLE IN ONE LINE:**
+>    * It said **"zero violation codes"**. It was never zero — one code fired,
+>      `MISSING_PROFESSIONAL_REFERRAL`, and approval survived it. That is a
+>      different defect from "no rule matched": the one control that DID fire
+>      is `REQUIRED` severity, so it appends framing and **cannot reject**.
+>      The file's own comment at `assertion.clinical_state` already said so.
+>    * It described D1 as **one sentence**. It was 28 conditions across three
+>      carriers, and two of the carriers were broken for the ENUMERATED
+>      conditions too (§6bd, first commit).
+>
+>    **THE TRANSFERABLE PART, AND IT IS §6at's LESSON AGAIN:** a defect
+>    described in a handover but not re-probed drifts. This one had been
+>    restated in four sections over two weeks and the restatement was wrong in
+>    both directions — too narrow about scope, too generous about the codes.
 >
 > **ITEMS 1 AND 2 ARE NOW THE SAME SHAPE: the evidence is gathered and cited,
 > the flags are untouched, and only a human may touch them.** Each is a short
@@ -235,7 +246,7 @@ about any of them. That is the fifth time on this project.
 > reliable one.
 
 
-> ### ▶ NEW CHAT? §0, THEN §6bc → §6bb → §6ba → §6az. THEN §6aw, §6av.
+> ### ▶ NEW CHAT? §0, THEN §6bd → §6bc → §6bb → §6ba → §6az. THEN §6aw, §6av.
 >
 > **Read each section's opening list and its KNOWN AND OPEN block first; the
 > rest is evidence for those.** The six sections from 2026-09-18/19 are short.
@@ -10982,6 +10993,171 @@ ambiguity wording removed (1); the MCHC entry claiming `CONFIRMED` (1).
   invisible to this service. Worth knowing before the flag is set.
 * Both citations were **read by a model on 2026-09-19**, which is why each
   names its page and its date.
+
+---
+
+## 6bd. D1, NARROWED — AND TWO CARRIERS THAT WERE BROKEN FOR THE ELEVEN · 2026-09-19
+
+**§0's open item 0, the one that had been top of the list since 2026-09-05.**
+Two commits: `96090a7` (the carriers) and `a5e2b15` (the enumeration).
+**ai-service 4,163** + 7 skipped, was 4,107. **+56 tests.** Backend 767,
+frontend 398. **Total 5,328.**
+
+### ⚠ THE HANDOVER WAS WRONG ABOUT D1 IN BOTH DIRECTIONS
+
+Running the one-line repro §0 supplies gives, verbatim:
+
+```
+approved= True codes= ('MISSING_PROFESSIONAL_REFERRAL',)
+```
+
+**NOT "zero violation codes".** One fires, and approval survives it, because
+`MISSING_PROFESSIONAL_REFERRAL` is `REQUIRED` severity — it appends framing
+and **cannot reject**. `policy.py`'s own comment at `assertion.clinical_state`
+had already diagnosed this in prose, beside the rule, unread.
+
+And it was never one sentence. **28 of 28 unenumerated conditions were
+approved**, across three carriers: leukaemia, lymphoma, multiple myeloma,
+hepatitis, thalassaemia, sickle cell disease, gout, lupus, rheumatoid
+arthritis, sepsis, pancreatitis, nephrotic syndrome, fatty liver disease,
+metabolic syndrome, tuberculosis, HIV, COVID-19, coeliac disease, Crohn's
+disease, polycythaemia, thrombocytopenia, a heart attack, and the rest.
+
+### ⚠ FIRST: TWO CARRIERS WERE BROKEN FOR THE ELEVEN CONDITIONS THAT *WERE* LISTED
+
+Before touching the enumeration at all, the probe found the list was not even
+holding its own eleven.
+
+```
+You have diabetes.               refused
+You are suffering from diabetes. APPROVED     <-- all eleven, every condition
+The patient has diabetes.        refused
+```
+
+`_GAP` is `\W{1,4}` — **non-word characters only, so it cannot cross the WORD
+`from`.** The rule listed `you are suffering` and, separately,
+`you suffer from`: **the `-ing` branch was written without its preposition**,
+which is the one inflection that requires one.
+
+**AND THE CONDITION NAMES KEPT LITERAL SPACES.** `You have kidney  disease.`
+with two spaces, and the tab form, were **APPROVED**. `_GAP` exists precisely
+so a model's wrapping and double-spacing cannot buy an approval — and it had
+been applied to the CARRIER and not to the multi-word names beside it.
+**Half a pattern hardened is the half nobody re-read.**
+
+> **NEITHER OF THESE IS AN ENUMERATION GAP.** They are a listed condition
+> going through a carrier somebody intended to work. That is worse than D1
+> proper, because the list was the only thing anyone was relying on.
+
+### ▶ THEN THE ENUMERATION, REPLACED BY MORPHOLOGY
+
+**The technique was already in this file, twice, for drugs.** The medication
+rule catches unenumerated drugs by suffix — `-sartan`, `-olol`, `-azine`,
+`-sonide` — and the test file documents it as *"NOT enumerated -- caught by
+-sartan"*. Disease names are at least as regular.
+
+* **pathology suffixes** — `-itis -osis -aemia/-emia -opathy -oma -uria
+  -penia -plasia -ataxia -trophy -ectasis`
+* **head nouns** — `disease syndrome disorder deficiency failure
+  insufficiency infection`
+* **event nouns** — `attack infarction embolism aneurysm`, because
+  `You have had a heart attack.` asserts a diagnosis as an EVENT
+* **enumeration ONLY for the irregular** — HIV, gout, lupus, sepsis, COVID,
+  asthma, stroke. That is now the SMALL part.
+
+**STRICTLY ADDITIVE, DELIBERATELY.** The enumerated branch is untouched and
+carries **no excuse clause**, so nothing refused before this change is
+approved after it. Widening a safety rule must not quietly narrow it.
+
+### ⚠ THE RULE REACHED ACROSS SENTENCES, AND THAT WOULD HAVE RENDERED A BLANK
+
+```
+"You have a raised CRP. Infection is one cause among many."   ->  REFUSED
+```
+
+`". "` is two non-word characters, so `_GAP` walked out of one sentence and
+into the next. The reader is told their CRP is raised and that infection is
+*a* cause — and the pair was refused as though they had been told they have
+one. **`UNSUPPORTED_DIAGNOSIS` is PROHIBITED: it refuses the WHOLE generation
+and the page renders nothing.** New `_GAP_SAME_SENTENCE` excludes `.!?;` and
+**keeps newlines**, because wrapped prose is ordinary model output and a line
+break is not a full stop.
+
+**Found by probing. No fixture could have caught it** — see the denominator
+below.
+
+### ⚠ THE MONGO CORPUS COULD NOT ANSWER THE QUESTION, AND SAYING SO IS THE POINT
+
+The plan was: gather every real string, run the candidate, require zero false
+positives. The run said **0 matches on 47,711 strings** — and that was **0
+out of 0**:
+
+| | |
+|---|---|
+| strings harvested (10 reports, every field, recursively) | 47,711 |
+| contain `you` at all | **92** |
+| contain a CARRIER (`you have` / `you've got` / `patient has`) | **0** |
+| contain `you are suffering` / `you suffer from` | **0** |
+
+**THE PLATFORM'S OWN PROSE NEVER USES THE CONSTRUCTION.** A zero
+false-positive count there is not a pass; it is an empty denominator, and it
+was not reported as evidence.
+
+**The second corpus agreed and was almost as empty:** catalogue plus
+knowledge documents, 919 distinct strings, **exactly one** containing a
+carrier — `kb.CANARY_SENTENCE`, which must be refused. It is.
+
+**What DOES carry a denominator:** real refusals over all **1,048 distinct
+stored strings** are **byte-identical before and after** — 2, both
+`MERIDIAN DIAGNOSTICS`, a lab NAME caught by the pre-existing `diagnos\w*`
+branch in a metadata field the validator never sees in production.
+Pre-existing, not introduced here, left alone. Measured by stashing the
+change and re-running, not by reasoning about it.
+
+### ▶ MUTANTS: FIVE, ALL KILLED
+
+Each verified to **apply, parse, import and reach the behaviour** before its
+verdict was believed.
+
+| mutant | failures |
+|---|---|
+| `-ing` preposition reverted | 10 |
+| condition names' `_phrase` removed | 4 of 5 |
+| morphological branch deleted | 27 |
+| excuse lookahead removed | **1** |
+| `_GAP_SAME_SENTENCE` → `_GAP` | 2 |
+
+> **⚠ THE EXCUSE LOOKAHEAD IS BARELY LOAD-BEARING AND THE FILE NOW SAYS SO.**
+> Deleting it breaks **one** of eleven control sentences. The other ten
+> survive on **word distance** — the filler allowance is three and
+> `heart disease` sits four away in `You have a higher risk of heart
+> disease.` **That is luck, not design, and it is fragile in one specific
+> direction: RAISING the filler count would turn those ten into refusals with
+> no test failing first**, because they never depended on the guard. The
+> mutant is what found this; the comment would otherwise have overstated it
+> permanently.
+
+### KNOWN AND OPEN
+
+* **D1 IS NARROWED, NOT CLOSED.** The irregular names are still an
+  enumeration and still incomplete. A condition with no usable suffix and no
+  entry — a proper noun, an abbreviation, a non-English name — still passes.
+* **NO CORPUS ON THIS PLATFORM CAN MEASURE THIS RULE'S FALSE POSITIVES**, and
+  that is the uncomfortable part. The threat model is text from a NEW
+  provider (§6ba: the DeepSeek fallback fired on real patient-facing text),
+  and no stored text resembles it. The evidence here is 4,163 tests, a
+  byte-identical refusal set and 27 hand-built boundary cases — **not a
+  measurement on the population that matters.**
+* **`MERIDIAN DIAGNOSTICS` REFUSES, AND HAS ALL ALONG.** A lab name matching
+  `diagnos\w*`. Harmless today because that field is not validated, and a
+  live landmine if anyone ever routes metadata through Module 24.
+* **`MISSING_PROFESSIONAL_REFERRAL` CANNOT REJECT** and is still the only
+  control firing on a large class of text. Changing its severity was
+  considered and deliberately NOT done — it is load-bearing across the layer
+  and is its own decision.
+* The whitespace fix was found by probing the `_GAP` docstring's own claims
+  against the pattern beside it. **Worth doing to the other rules**; nobody
+  has.
 
 ---
 
