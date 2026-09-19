@@ -380,7 +380,21 @@ const config = {
     // THE ai-service's OWN `DEFAULT_MAX_EXPLANATIONS`** -- the two are separate
     // constants in separate languages and nothing links them, so raising this
     // one alone turns every analyse into a 422.
-    maxExplanations: Math.min(10, Math.max(0, toInt(process.env.AI_SERVICE_MAX_EXPLANATIONS, 10))),
+    //
+    // RAISED 10 -> 24 (2026-09-19), AFTER THE ai-service's OWN CAP WENT FIRST.
+    // The complete blood count took the catalogue from 8 laboratory features
+    // to 20, and `Test 3.pdf` lost six explanations to this ceiling --
+    // neutrophils, lymphocytes, monocytes, eosinophils, basophils and
+    // platelets, which is the entire differential, because they sit last in
+    // row order.
+    //
+    // ⚠ THIS CONSTANT IS THE ONE THAT ACTUALLY BINDS, and it is the easy one
+    // to miss. `max_explanations` is sent EXPLICITLY on every call, so the
+    // ai-service's default is never consulted: raising that side alone
+    // changes nothing at all, silently, and the six results stay missing
+    // while both files claim a cap of 24. The warning above covers the
+    // opposite mistake; this one covers this direction.
+    maxExplanations: Math.min(24, Math.max(0, toInt(process.env.AI_SERVICE_MAX_EXPLANATIONS, 24))),
 
     // Extra attempts after the first, for TRANSIENT failures only (connection
     // refused/reset, timeout, 5xx). A 401 or a 422 is deterministic and is

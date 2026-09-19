@@ -774,3 +774,38 @@ def test_the_policy_states_the_architecture_and_the_prohibitions():
     assert document["pipeline"][2].startswith("Module 24")
     assert document["prohibitions_in_prompt"]
     assert "guarded_generation" in document["policy"]
+
+
+def test_the_cap_covers_every_laboratory_feature():
+    """THE CHECK THAT SHOULD HAVE EXISTED WHEN THE CAP WAS LAST RAISED.
+
+    `DEFAULT_MAX_EXPLANATIONS` bounds how many per-feature explanations one
+    report may generate. It has now silently started dropping results TWICE,
+    both times because the feature catalogue grew and nothing connected the
+    two numbers:
+
+      * at 6, a report with eight laboratory values lost two;
+      * at 10, the complete blood count took `LAB_FEATURES` from 8 to 20 and
+        `Test 3.pdf` lost six -- neutrophils, lymphocytes, monocytes,
+        eosinophils, basophils and platelet_count, which is the whole
+        differential, because they sit last in row order.
+
+    Both times the reader was told a count rather than shown the results. A
+    cap is a legitimate bound on model calls; a cap that quietly falls behind
+    the catalogue is a feature disappearing from a medical document.
+
+    This does not assert a NUMBER -- it asserts the RELATIONSHIP, so raising
+    it stays a deliberate edit and growing the catalogue past it cannot be
+    silent.
+    """
+    from app.data.feature_catalog import LAB_FEATURES
+    from app.services.explanation import DEFAULT_MAX_EXPLANATIONS
+
+    assert DEFAULT_MAX_EXPLANATIONS >= len(LAB_FEATURES), (
+        f"{len(LAB_FEATURES)} laboratory features and a cap of "
+        f"{DEFAULT_MAX_EXPLANATIONS}: a report mapping them all would leave "
+        f"{len(LAB_FEATURES) - DEFAULT_MAX_EXPLANATIONS} results with no "
+        "explanation, and the reader would be told a count rather than shown "
+        "them. Raise the cap in app/services/explanation.py, and read its "
+        "note on what each explanation costs in model calls."
+    )

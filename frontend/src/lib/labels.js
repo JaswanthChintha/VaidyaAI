@@ -25,6 +25,40 @@ export const PATIENT_LABEL = {
   smoking_history: 'smoking history',
   hypertension: 'history of high blood pressure',
   heart_disease: 'history of heart disease',
+
+  // ---- the complete blood count ----
+  //
+  // ⚠ ADDED AFTER THEY REACHED A READER AS RAW KEYS. A feature with no row
+  // here falls back to the producer's `subject`, which is built as
+  // `f"the {feature} result"` from the CANONICAL NAME -- so the explanation
+  // headings on a real dashboard read:
+  //
+  //     "the rbc_count result"   "the wbc_count result"   "the mcv result"
+  //
+  // Underscores and internal identifiers, in the register a patient reads.
+  // The same class of defect as the profile page's "Still blank:
+  // heartDisease" recorded below.
+  //
+  // WORDS A READER USES, not the analyser's. "Red blood cell count", not
+  // "erythrocyte count"; "Haematocrit (PCV)" carries the abbreviation the
+  // report itself prints, because a reader matching this screen against the
+  // paper needs to find the row.
+  //
+  // ⚠ NO PARENTHESISED ABBREVIATION HERE. This string is the table's SUB-LINE
+  // and the laboratory's printed name is the heading directly above it, so
+  // "Average red cell size (MCV)" under a heading of "MCV" says it twice.
+  hematocrit: 'Haematocrit',
+  rbc_count: 'Red blood cell count',
+  mcv: 'Average red cell size',
+  mch: 'Average haemoglobin per red cell',
+  mchc: 'Haemoglobin concentration in red cells',
+  wbc_count: 'White blood cell count',
+  neutrophils: 'Neutrophils',
+  lymphocytes: 'Lymphocytes',
+  monocytes: 'Monocytes',
+  eosinophils: 'Eosinophils',
+  basophils: 'Basophils',
+  platelet_count: 'Platelet count',
 };
 
 /**

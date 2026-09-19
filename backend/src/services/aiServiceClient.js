@@ -43,7 +43,7 @@ const ApiError = require('../utils/ApiError');
  *                 it Module 15's collection) nested VERBATIM under `fusion`.
  *   Explanation   POST /api/v1/explain/report, JSON
  *                 { report: <Module 17's DATA OBJECT, unwrapped>,
- *                   max_explanations: <int, 0..10> }                 Module 23
+ *                   max_explanations: <int, 0..24> }                 Module 23
  *                 -> a ReportExplanationSet. NOTE: a refusal is an HTTP 200
  *                 with `outcome` != "generated", NOT an error - see below.
  *   Guidance      POST /api/v1/explain/guidance, JSON

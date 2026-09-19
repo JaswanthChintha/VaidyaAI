@@ -2560,7 +2560,12 @@ describe('a row the laboratory compared but no rule read', () => {
       withLabRows([
         row({
           feature: 'mcv',
-          displayName: 'MCV',
+          // `originalTestName` is what the laboratory printed and is the row
+          // HEADING; `PATIENT_LABEL` supplies the sub-line. Both are set here
+          // because the real payload carries both, and querying the printed
+          // name is what a reader matching this against the paper does.
+          originalTestName: 'MCV',
+          displayName: 'Mean corpuscular volume',
           value: 88.6,
           unit: 'fl',
           flag: 'normal',
@@ -2586,9 +2591,13 @@ describe('a row the laboratory compared but no rule read', () => {
       withLabRows([
         row({
           feature: 'hematocrit',
+          // What `Test 3.pdf` actually prints for this row.
+          originalTestName: 'PCV',
           displayName: 'Haematocrit (PCV)',
           value: 37.9,
           unit: '%',
+          // Both null because the report prints a SEX-SPECIFIC interval
+          // ("F: 36 - 46  M: 40 - 50") which does not parse to one low/high.
           flag: null,
           referenceLow: null,
           referenceHigh: null,
@@ -2597,7 +2606,7 @@ describe('a row the laboratory compared but no rule read', () => {
     );
     renderDashboard();
 
-    await screen.findAllByText('Haematocrit (PCV)');
-    expect(verdictFor('Haematocrit (PCV)')).toMatch(/not checked/i);
+    await screen.findAllByText('PCV');
+    expect(verdictFor('PCV')).toMatch(/not checked/i);
   });
 });

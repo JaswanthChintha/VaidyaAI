@@ -794,12 +794,37 @@ def explain_terminology_entry(
 #: RAISED FROM 6 TO 10 (2026-09-11) so an ordinary report is explained in full.
 #: At 6, a report carrying eight laboratory values left two of them with no
 #: explanation and the reader was not told which -- and the two that lost were
-#: whichever came last in the row order, not the least important. The platform
-#: maps eight laboratory features today (`FEATURES` also holds age, sex, BMI
-#: and the three history answers, which are context rather than results and no
-#: longer consume the budget), so 10 covers every printed value with headroom
-#: for two more before anyone has to think about this again.
-DEFAULT_MAX_EXPLANATIONS = 10
+#: whichever came last in the row order, not the least important.
+#:
+#: RAISED FROM 10 TO 24 (2026-09-19), AND THE 2026-09-11 NOTE PREDICTED THIS
+#: EXACTLY: "10 covers every printed value with headroom for two more before
+#: anyone has to think about this again." The complete blood count added
+#: TWELVE laboratory features in one commit, taking `LAB_FEATURES` from 8 to
+#: 20, and the cap went straight back to dropping results -- six of them on
+#: `Test 3.pdf`, which maps sixteen:
+#:
+#:     "neutrophils, lymphocytes, monocytes, eosinophils, basophils and
+#:      platelet_count have no explanation above."
+#:
+#: The same failure shape as at 6: whichever came LAST in row order lost, not
+#: the least important, and the whole blood count differential happens to sit
+#: at the end.
+#:
+#: 24 IS `LAB_FEATURES` PLUS FOUR. It is deliberately not a round number: it
+#: is derived from the catalogue, so the next person to add features can see
+#: what it was derived from. `test_the_cap_covers_every_laboratory_feature`
+#: fails if the catalogue outgrows it again, which is the check that should
+#: have existed the first time this was raised.
+#:
+#: ⚠ WHAT IT COSTS, BECAUSE IT IS NOT FREE. Each explanation is one model
+#: call, so a fully-mapped report is now up to 24 calls instead of 10. They
+#: are made ONCE PER ANALYSIS and stored, not per page view, so a reader
+#: re-opening the dashboard spends nothing -- but on the free tiers this
+#: platform runs against (Gemini ~20/day/model, OpenRouter 50/day account
+#: wide) a single re-analysis of a large report can now be most of a day's
+#: budget. `_EXPLANATION_CONCURRENCY` below is the other half of that
+#: arithmetic.
+DEFAULT_MAX_EXPLANATIONS = 24
 
 #: How many per-feature generations may be in flight at once.
 #:
