@@ -420,6 +420,97 @@ PROFESSIONAL_REFERENCE = _p(
 # The pattern rules
 # --------------------------------------------------------------------------
 
+#: A GAP THAT CANNOT LEAVE THE SENTENCE IT STARTED IN.
+#:
+#: `_GAP` is `\W{1,4}`, and `". "` is two non-word characters, so a rule that
+#: walks a few filler words with `_GAP` between them will happily walk out of
+#: one sentence and into the next. Measured, on the morphological branch
+#: below:
+#:
+#:     "You have a raised CRP. Infection is one cause among many."
+#:
+#: `you have` + `a` + `raised` + `CRP` + `.` + `Infection` -- refused, though
+#: the reader is told nothing about having an infection. A PROHIBITED code
+#: refuses the WHOLE generation, so that sentence pair would have rendered a
+#: blank page.
+#:
+#: Newlines stay permitted: wrapped prose is ordinary model output and a line
+#: break is not the end of a sentence. `.!?;` are excluded because they are.
+_GAP_SAME_SENTENCE = r"[^\w.!?;]{1,4}"
+
+#: Who the assertion is about. Shared by both halves of `diagnosis.assertion`.
+_DIAGNOSIS_CARRIER = (
+    r"(?:you" + _GAP + r"have|you've" + _GAP + r"got"
+    r"|you" + _GAP + r"are" + _GAP + r"suffering(?:" + _GAP + r"from)?"
+    r"|you" + _GAP + r"suffer" + _GAP + r"from"
+    r"|patient" + _GAP + r"has)"
+)
+
+#: DISEASE NAMES ARE MORPHOLOGICALLY REGULAR, SO STOP ENUMERATING THEM.
+#:
+#: The enumerated branch of `diagnosis.assertion` listed eleven conditions.
+#: Everything else was APPROVED -- `You have cirrhosis of the liver.` is the
+#: one that has stood in the handover since 2026-09-05, but it was never one
+#: sentence: leukaemia, lymphoma, myeloma, hepatitis, sepsis, tuberculosis,
+#: HIV, thrombocytopenia and twenty more went through the same hole. An
+#: enumeration cannot close it, because the next report names a condition
+#: nobody listed.
+#:
+#: THIS IS THE TECHNIQUE THE MEDICATION RULE ALREADY USES AND THE TEST FILE
+#: ALREADY DOCUMENTS -- `-sartan`, `-olol`, `-azine`, `-sonide` catch drugs
+#: nobody enumerated. Disease names are at least as regular: Greek and Latin
+#: pathology suffixes cover most of them, a handful of head nouns
+#: (`disease`, `syndrome`, `disorder`) cover the compound names, and only
+#: the genuinely irregular ones (HIV, gout, lupus) still need naming.
+_DISEASE_SUFFIX = (
+    r"\w{3,}(?:itis|osis|aemia|emia|opathy|oma|uria|penia|plasia|ataxia"
+    r"|trophy|ectasis|itides|aemic|emic)"
+)
+#: `attack`, `infarction` and friends are here because a diagnosis is not
+#: always a state -- `You have had a heart attack.` asserts one as an EVENT,
+#: and no pathology suffix covers it.
+_DISEASE_HEAD = (
+    r"(?:disease|syndrome|disorder|deficiency|failure|insufficiency|infection"
+    r"|attack|infarction|embolism|aneurysm)"
+)
+_DISEASE_NAMED = (
+    r"(?:hiv|aids|covid(?:-?19)?|gout|lupus|tuberculosis|sepsis|asthma"
+    r"|diabetes|diabetic|anaemia|anemia|anaemic|anemic|hypertension"
+    r"|hypotension|hypothyroidism|hyperthyroidism|cancer|ckd|stroke"
+    r"|cirrhosis|hepatitis|leukaemia|leukemia|lymphoma|myeloma)"
+)
+
+#: WHAT A CARRIER MAY BE FOLLOWED BY WITHOUT ASSERTING A DIAGNOSIS.
+#:
+#: `You have a higher risk of heart disease.` and `You have a family history
+#: of kidney disease.` are legitimate and must survive -- a PROHIBITED code
+#: refuses the WHOLE generation and the patient is shown nothing, so a false
+#: positive here is not a cosmetic problem.
+#:
+#: THIS LOOKAHEAD GUARDS ONLY THE NEW MORPHOLOGICAL BRANCH. The enumerated
+#: branch below keeps its existing behaviour exactly, unexcused: widening the
+#: rule must not quietly narrow it, and `You have a history of diabetes.` has
+#: been a refusal since before this change.
+#:
+#: ⚠ MEASURED, AND LESS LOAD-BEARING THAN IT LOOKS. Deleting this lookahead
+#: breaks exactly ONE of the eleven control sentences pinned in the tests --
+#: `You have an increased risk of diabetes.` The other ten survive on WORD
+#: DISTANCE alone: the filler allowance is three words and `heart disease`
+#: sits four away in `You have a higher risk of heart disease.`
+#:
+#: That is luck, not design, and it is fragile in a specific direction:
+#: RAISING the filler allowance would turn those ten into refusals with no
+#: test failing first, because they never depended on this guard. If you
+#: widen the filler count, re-run the control set before believing it.
+
+_DIAGNOSIS_EXCUSE = (
+    r"(?:an?" + _GAP_SAME_SENTENCE + r")?(?:\w+" + _GAP_SAME_SENTENCE + r"){0,3}?"
+    r"(?:risk|chance|likelihood|probability|predisposition|history"
+    r"|screening|test|tests|result|results|value|values|reading|readings"
+    r"|appointment|follow-?up|question|questions|copy|report|option|options)\b"
+)
+
+
 RULES: Tuple[SafetyRule, ...] = (
     # ---------------------------------------------------- diagnosis --------
     SafetyRule(
@@ -473,6 +564,18 @@ RULES: Tuple[SafetyRule, ...] = (
             )
             + r"\b"
             r"|\byou" + _GAP + r"are" + _GAP + r"(diabetic|anaemic|anemic|hypertensive|pre-?diabetic)\b"
+            # THE MORPHOLOGICAL BRANCH -- §6r's D1. Strictly ADDITIVE: it only
+            # ever adds refusals, so nothing that was refused before this line
+            # existed can become approved because of it.
+            + r"|\b" + _DIAGNOSIS_CARRIER
+            + r"(?!" + _GAP_SAME_SENTENCE + _DIAGNOSIS_EXCUSE + r")"
+            + _GAP_SAME_SENTENCE
+            + r"(?:(?:an?|the|your)" + _GAP_SAME_SENTENCE + r")?"
+            # THREE filler words, not two, so the PERFECT TENSE reaches its
+            # noun: `You have had a heart attack.` spends `had`, `a` and
+            # `heart` before `attack`, and survived a two-word allowance.
+            + r"(?:\w+" + _GAP_SAME_SENTENCE + r"){0,3}?"
+            + r"(?:" + _DISEASE_SUFFIX + r"|" + _DISEASE_HEAD + r"|" + _DISEASE_NAMED + r")\b"
         ),
     ),
     # ------------------------------------------ bare clinical claims -------

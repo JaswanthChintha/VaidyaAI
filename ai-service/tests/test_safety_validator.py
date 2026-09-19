@@ -321,6 +321,130 @@ def test_a_multi_word_condition_name_survives_real_whitespace(
 
 
 @pytest.mark.parametrize(
+    "condition,why",
+    [
+        ("cirrhosis of the liver", "§6r's D1, the sentence in the handover"),
+        ("cirrhosis", "-osis"),
+        ("leukaemia", "-aemia"),
+        ("leukemia", "-emia, US spelling"),
+        ("lymphoma", "-oma"),
+        ("multiple myeloma", "-oma behind a modifier"),
+        ("hepatitis", "-itis"),
+        ("pancreatitis", "-itis"),
+        ("rheumatoid arthritis", "-itis behind a modifier"),
+        ("thalassaemia", "-aemia"),
+        ("polycythaemia", "-aemia"),
+        ("thrombocytopenia", "-penia"),
+        ("tuberculosis", "-osis"),
+        ("nephrotic syndrome", "head noun: syndrome"),
+        ("metabolic syndrome", "head noun: syndrome"),
+        ("sickle cell disease", "head noun behind two modifiers"),
+        ("fatty liver disease", "head noun behind two modifiers"),
+        ("coeliac disease", "head noun"),
+        ("a bleeding disorder", "head noun: disorder"),
+        ("a thyroid disorder", "head noun: disorder"),
+        ("an iron deficiency", "head noun: deficiency"),
+        ("HIV", "irregular -- enumerated, no usable suffix"),
+        ("gout", "irregular"),
+        ("lupus", "irregular"),
+        ("sepsis", "irregular -- `-psis`, not `-osis`"),
+        ("COVID-19", "irregular, and carries a numeral"),
+    ],
+)
+def test_a_diagnosis_is_refused_even_when_nobody_enumerated_the_condition(
+    condition: str, why: str
+) -> None:
+    """§6r's D1. `You have cirrhosis of the liver.` was APPROVED.
+
+    It was never one sentence. The rule enumerated ELEVEN conditions and
+    approved every assertion about any of the others -- leukaemia, HIV,
+    sepsis, tuberculosis and the rest. An enumeration cannot close that,
+    because the next report names something nobody listed.
+
+    Disease names are morphologically regular, so this is matched the way the
+    MEDICATION rule already matches unenumerated drugs -- by suffix
+    (`-itis`, `-osis`, `-aemia`, `-oma`, `-penia`), by head noun (`disease`,
+    `syndrome`, `disorder`) and, only for the genuinely irregular names,
+    by enumeration. The `why` column records which of the three catches each
+    row, so a future reader can see the enumeration is the SMALL part.
+    """
+    verdict = validate_text(f"You have {condition}.", FRAGMENT)
+    assert verdict.verdict == REJECT, why
+    assert has(verdict, ViolationCode.UNSUPPORTED_DIAGNOSIS), why
+
+
+@pytest.mark.parametrize(
+    "text,why",
+    [
+        ("You have a higher risk of heart disease.", "a risk is not a diagnosis"),
+        ("You have an increased risk of diabetes.", "a risk is not a diagnosis"),
+        ("You have a family history of kidney disease.", "a history is not a diagnosis"),
+        ("You have four results outside the reference interval.", "about the report"),
+        ("You have two results that could not be assessed.", "about the report"),
+        ("You have a follow-up appointment with your doctor.", "about an appointment"),
+        ("You have questions about these results.", "about the reader's questions"),
+        ("Cirrhosis is a condition in which the liver becomes scarred.", "education"),
+        ("Anaemia is a condition in which the blood carries less oxygen.", "education"),
+        ("A raised ALT is associated with liver disease.", "association, not assertion"),
+        ("Screening for diabetes may be worth discussing.", "screening"),
+    ],
+)
+def test_a_risk_or_a_history_or_the_report_itself_is_not_a_diagnosis(
+    text: str, why: str
+) -> None:
+    """The widened rule must not refuse the sentences the platform needs.
+
+    UNSUPPORTED_DIAGNOSIS is PROHIBITED, so a false positive refuses the WHOLE
+    generation and the reader is shown NOTHING. Every refusal path on this
+    platform renders a blank by design, which means an over-wide safety rule
+    does not look like an over-wide safety rule -- it looks like a broken
+    feature, and it is the reader who pays for it.
+
+    This is the half of the widening that took the measuring.
+    """
+    verdict = validate_text(text, FRAGMENT)
+    assert not has(verdict, ViolationCode.UNSUPPORTED_DIAGNOSIS), why
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "You have a raised CRP. Infection is one cause among many.",
+        "You have a raised ALT. Liver disease is one possibility.",
+        "You have one result to discuss; anaemia is a common explanation.",
+    ],
+)
+def test_the_diagnosis_rule_does_not_reach_across_a_sentence_boundary(
+    text: str,
+) -> None:
+    """A carrier in one sentence must not bind a condition in the next.
+
+    `_GAP` is `\\W{1,4}` and `". "` is two non-word characters, so a rule that
+    walks filler words with `_GAP` between them walks out of its own sentence.
+    Measured on exactly the first case here: the reader is told their CRP is
+    raised and that infection is A cause, and the pair was REFUSED as though
+    they had been told they have an infection.
+
+    Found by probing, not by a fixture -- no stored report contains this
+    shape, because the corpus contains no `you have` sentences at all.
+    """
+    verdict = validate_text(text, FRAGMENT)
+    assert not has(verdict, ViolationCode.UNSUPPORTED_DIAGNOSIS)
+
+
+def test_the_perfect_tense_reaches_its_noun() -> None:
+    """`You have had a heart attack.` -- a diagnosis asserted as an EVENT.
+
+    Three filler words (`had`, `a`, `heart`) sit between the carrier and the
+    noun, and a two-word allowance let it through. No pathology suffix covers
+    `attack`, so the event nouns are enumerated alongside the head nouns.
+    """
+    verdict = validate_text("You have had a heart attack.", FRAGMENT)
+    assert verdict.verdict == REJECT
+    assert has(verdict, ViolationCode.UNSUPPORTED_DIAGNOSIS)
+
+
+@pytest.mark.parametrize(
     "text,why",
     [
         ("Your doctor may start you on metformin.", "enumerated by name"),
