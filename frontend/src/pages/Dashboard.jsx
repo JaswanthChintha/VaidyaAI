@@ -1862,6 +1862,55 @@ export default function Dashboard() {
     if (verdict) verdicts.set(`lab:${item.testName}:${index}`, verdict);
   });
 
+  /* THE LABORATORY'S OWN COMPARISON, FOR ROWS NO RULE READ.
+     ==================================================================
+
+     "not checked" was correct and was reading as an absence of information
+     the report does not actually have. On Test 3 it sat beside ELEVEN rows
+     the laboratory had compared and printed an interval for:
+
+         RBC COUNT   4.2  (3.8-5.8, normal)      NEUTROPHILS  82  (40-70, high)
+         MCV        88.6  (80-97,   normal)      LYMPHOCYTES  14  (20-40, low)
+         PLATELETS   303  (150-400, normal)      ...and five more
+
+     The page had all of it and threw it away, because `valueVerdicts` only
+     reads CLINICAL RULE EVIDENCE and this platform holds no rule for any
+     complete-blood-count parameter. It holds rules for CONDITIONS -- Diabetes,
+     Anemia -- and a CBC row contributes to none of them, so nothing ever
+     looked at it. That is a fact about this tool's coverage, and the column
+     was reporting it as a fact about the reader's blood.
+
+     ⚠ AND IT CONTRADICTED THE SAME PAGE'S OWN SUMMARY. The clinician view
+     names NEUTROPHILS 82 % (40-70, high) as outside its printed interval
+     while the results table called the same row "not checked".
+
+     THE JUSTIFICATION IS THE ONE ALREADY ACCEPTED DIRECTLY ABOVE. For the
+     unassessed rows, `labFlagVerdict` reasons that a laboratory which printed
+     an interval the value sits inside HAS compared it. That is equally true
+     of a row that happens to have a canonical feature; whether this platform
+     also holds a rule for it is our business, not the laboratory's. Applying
+     one rule to both halves is what stops the column carrying two vocabularies
+     -- which is the reason given for writing into this same map a few lines up.
+
+     WHAT STILL SAYS "not checked", AND CORRECTLY: hemoglobin and haematocrit.
+     Both print SEX-SPECIFIC intervals ("F:11 - 15 M:12 - 16") which do not
+     parse to a single low/high, so `referenceLow`/`referenceHigh` really are
+     absent and nothing has compared them. Haemoglobin still shows Low from
+     the Anemia rule; PCV shows "not checked" because that is the truth.
+     ⚠ PARSING A SEX-SPECIFIC PRINTED RANGE IS A SEPARATE, UNDONE JOB. */
+  reportedLabs.forEach((row) => {
+    if (verdicts.has(row.feature)) return;
+    const verdict = labFlagVerdict({
+      labFlag: row.flag,
+      labFlaggedAbnormal:
+        isPresent(row.flag)
+        && String(row.flag).toLowerCase() !== 'normal',
+      labReferenceLow: row.referenceLow,
+      labReferenceHigh: row.referenceHigh,
+    });
+    if (verdict) verdicts.set(row.feature, verdict);
+  });
+
   // ---- chart data -------------------------------------------------------
   //
   // DERIVED HERE, NOT IN THE CHARTS. The chart components take a shape and a

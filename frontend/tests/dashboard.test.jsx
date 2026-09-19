@@ -2502,3 +2502,102 @@ describe('parameters this tool does not assess', () => {
 // no longer a place where "within up to 100" could be rendered.
 
 
+
+
+/**
+ * A ROW NO RULE READ, WHICH THE LABORATORY NEVERTHELESS COMPARED.
+ *
+ * This platform holds clinical rules for CONDITIONS -- Diabetes, Anemia --
+ * not for individual parameters, so no rule reads a complete-blood-count row.
+ * The verdict column showed "not checked" for all thirteen of them, beside
+ * eleven that carried the laboratory's own interval and flag.
+ *
+ * "not checked" was TRUE of this tool and read as an absence of information
+ * the report does not have. Worse, it contradicted the clinician summary on
+ * the same report, which named NEUTROPHILS 82 % (40-70, high) as outside its
+ * printed interval while this table called the row unchecked.
+ */
+describe('a row the laboratory compared but no rule read', () => {
+  const withLabRows = (rows) => ({
+    overall: { statusLabel: 'Healthy', anyAssessed: true, risk: 'Low' },
+    laboratory: rows,
+    unanalysed: { count: 0, items: [] },
+  });
+
+  const verdictFor = (name) => {
+    const row = [...document.querySelectorAll('.lab-table tr')].find((tr) =>
+      tr.querySelector('th')?.textContent.includes(name)
+    );
+    return row ? row.children[2].textContent.replace(/\s+/g, ' ').trim() : null;
+  };
+
+  const row = (extra) => ({
+    feature: 'neutrophils',
+    displayName: 'Neutrophils',
+    value: 82,
+    unit: '%',
+    state: 'measured',
+    usable: true,
+    ...extra,
+  });
+
+  it('reports the laboratory flag instead of "not checked"', async () => {
+    withDashboard(
+      withLabRows([row({ flag: 'high', referenceLow: 40, referenceHigh: 70 })])
+    );
+    renderDashboard();
+
+    await screen.findAllByText('Neutrophils');
+    expect(verdictFor('Neutrophils')).toMatch(/high/i);
+    expect(verdictFor('Neutrophils')).not.toMatch(/not checked/i);
+  });
+
+  it('says In range when the value sits inside the printed interval', async () => {
+    // The laboratory printed an interval and the value is inside it. That IS
+    // a comparison, and it is the same reasoning already applied to the rows
+    // this tool does not assess at all.
+    withDashboard(
+      withLabRows([
+        row({
+          feature: 'mcv',
+          displayName: 'MCV',
+          value: 88.6,
+          unit: 'fl',
+          flag: 'normal',
+          referenceLow: 80,
+          referenceHigh: 97,
+        }),
+      ])
+    );
+    renderDashboard();
+
+    await screen.findAllByText('MCV');
+    expect(verdictFor('MCV')).toMatch(/in range/i);
+  });
+
+  it('STILL says not checked when nothing compared it', async () => {
+    // ⚠ THE HALF THAT MUST NOT COLLAPSE. Haematocrit prints a SEX-SPECIFIC
+    // interval ("F: 36 - 46 M: 40 - 50") which does not parse to a single
+    // low/high, so there is genuinely no comparison to report. Inventing
+    // "In range" here would be a finding nobody made -- which is the defect
+    // the "not checked" wording exists to prevent, and it stays for exactly
+    // the rows that earned it.
+    withDashboard(
+      withLabRows([
+        row({
+          feature: 'hematocrit',
+          displayName: 'Haematocrit (PCV)',
+          value: 37.9,
+          unit: '%',
+          flag: null,
+          referenceLow: null,
+          referenceHigh: null,
+        }),
+      ])
+    );
+    renderDashboard();
+
+    await screen.findAllByText('Haematocrit (PCV)');
+    expect(verdictFor('Haematocrit (PCV)')).toMatch(/not checked/i);
+  });
+});
