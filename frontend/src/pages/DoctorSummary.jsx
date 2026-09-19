@@ -194,8 +194,75 @@ export default function DoctorSummary() {
   // `labFlaggedAbnormal` is the producer's own boolean -- true only for a flag
   // that is present and not "normal" -- so "unflagged" and "flagged normal"
   // stay distinct from "flagged abnormal" here, as they do on the patient page.
-  const outOfRange = (unassessed?.items || []).filter(
+  /* ONE LIST. IT WAS TWO, AND THE SPLIT WAS THIS PLATFORM'S ARCHITECTURE
+     SHOWING THROUGH THE DOCUMENT.
+
+     The page printed out-of-range parameters in two separate places:
+
+       narrative  "The parameters out of range were RANDOM BLOOD GLUCOSE
+                   ( RBS ) at 168 mg/dl ..., NEUTROPHILS at 82 %, and
+                   LYMPHOCYTES at 14 %."
+       this block "Outside the reference interval printed on the report:
+                   ESR 45 mm/hr (0-20, high); CRP 38.9 mg/L."
+
+     Same fact, same report, DISJOINT SETS, four paragraphs apart. The
+     dividing line was whether this platform holds a canonical feature for
+     the parameter: assessed ones reached the narrative, unassessed ones
+     reached here. A clinician has no idea that line exists and no reason to
+     care -- the comment that used to sit here said exactly that, "a
+     clinician wants the out-of-range results, not a statement about our
+     coverage", and the page was doing the opposite two inches lower.
+
+     IT BECAME VISIBLE WHEN THE BLOOD COUNT WAS ADDED (2026-09-19). Before
+     that, neutrophils and lymphocytes had no canonical feature, so all four
+     rows sat in this block together and the narrative listed only the
+     glucose. Making them features moved two of the four across the boundary
+     and left the reader with two lists that each looked incomplete. The
+     split was always there; the CBC work only exposed it.
+
+     SO BOTH SOURCES ARE MERGED HERE AND THE NARRATIVE NO LONGER LISTS THEM
+     -- see `_out_of_range` in ai-service/app/services/clinician_narrative.py,
+     which no longer reaches the prompt. This list is composed, not written by
+     a model, which is what 6az wanted of it in the first place.
+
+     `labFlaggedAbnormal` is the producer's own boolean for the unassessed
+     rows -- true only for a flag present and not "normal" -- so "unflagged"
+     and "flagged normal" stay distinct from "flagged abnormal". The assessed
+     rows carry the same distinction as `position` plus `printed_flag`, and
+     both are honoured below rather than one standing in for the other. */
+  /* ⚠ READS `summary.laboratory.rows` AND NOT THE `rows` CONST. That const is
+     declared ~100 lines BELOW this point, and a `const` is not hoisted: using
+     it here is a temporal dead zone error that takes the whole page down at
+     render. This file has paid for that once already -- the comment on
+     `modelOutputLine` records it costing 26 failing tests -- so the source is
+     read directly rather than the declaration moved, which would just put the
+     next reader in the same trap from the other side. */
+  const ROW_ABNORMAL_POSITIONS = ['below_reference_interval', 'above_reference_interval'];
+  const assessedOutOfRange = (summary.laboratory?.rows || [])
+    .filter((row) => {
+      if (row.provenance?.source === 'patient_profile') return false;
+      if (row.usable === false || row.value === null || row.value === undefined) return false;
+      const flag = String(row.printed_flag ?? '').trim().toLowerCase();
+      const flagged = flag !== '' && flag !== 'none' && flag !== 'null' && flag !== 'normal';
+      return ROW_ABNORMAL_POSITIONS.includes(String(row.position ?? '')) || flagged;
+    })
+    .map((row) => ({
+      testName: parameterName(row),
+      value: row.value,
+      unit: row.unit,
+      labReferenceLow: row.reference_low ?? undefined,
+      labReferenceHigh: row.reference_high ?? undefined,
+      labFlag: row.printed_flag ?? '',
+    }));
+
+  const unassessedOutOfRange = (unassessed?.items || []).filter(
     (item) => item.labFlaggedAbnormal === true
+  );
+
+  // REPORT ORDER, NOT SOURCE ORDER. Grouping by which list a row came from
+  // would rebuild the seam this merge exists to remove.
+  const outOfRange = [...assessedOutOfRange, ...unassessedOutOfRange].sort((a, b) =>
+    String(a.testName).localeCompare(String(b.testName))
   );
 
   /* OUT OF RANGE, AND IT BELONGS INSIDE THE DOCUMENT.
