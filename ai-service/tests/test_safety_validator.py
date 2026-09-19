@@ -254,6 +254,73 @@ def test_the_mandated_disclaiming_phrasing_is_not_a_diagnosis(text: str) -> None
 
 
 @pytest.mark.parametrize(
+    "condition",
+    [
+        "diabetes",
+        "anaemia",
+        "kidney disease",
+        "chronic kidney disease",
+        "heart disease",
+        "hypertension",
+        "hypothyroidism",
+        "hyperthyroidism",
+        "cancer",
+        "liver disease",
+    ],
+)
+def test_the_suffering_from_carrier_rejects_every_enumerated_condition(
+    condition: str,
+) -> None:
+    """`You are suffering from X.` must refuse wherever `You have X.` does.
+
+    IT DID NOT, FOR ALL ELEVEN CONDITIONS. The rule listed `you are suffering`
+    and, separately, `you suffer from`; the `-ing` branch was written WITHOUT
+    its preposition. The gap between carrier and condition is `_GAP`
+    (`\\W{1,4}`), which matches non-word characters only and therefore cannot
+    cross the WORD `from`. So the most natural way in English to assert a
+    diagnosis of a listed condition was APPROVED, with framing merely
+    appended, while the blunter `You have diabetes.` was rejected.
+
+    This is not a coverage gap in a blocklist -- it is a carrier somebody
+    intended to work that silently did not, which is why it is pinned per
+    condition rather than by one example.
+    """
+    verdict = validate_text(f"You are suffering from {condition}.", FRAGMENT)
+    assert verdict.verdict == REJECT
+    assert has(verdict, ViolationCode.UNSUPPORTED_DIAGNOSIS)
+
+
+@pytest.mark.parametrize(
+    "text,why",
+    [
+        ("You have kidney  disease.", "two spaces inside the condition name"),
+        ("You have kidney\tdisease.", "a tab inside the condition name"),
+        ("You have chronic  kidney disease.", "three-word name, doubled space"),
+        ("You have heart\t disease.", "tab and space together"),
+        ("You  have kidney disease.", "doubled space in the CARRIER (already held)"),
+    ],
+)
+def test_a_multi_word_condition_name_survives_real_whitespace(
+    text: str, why: str
+) -> None:
+    """A doubled space inside a condition name must not buy an approval.
+
+    `_GAP` exists because a model wraps, tabs and double-spaces its output,
+    and a rule written with single spaces misses the result. That fix was
+    applied to the CARRIER (`you` `have`) and NOT to the multi-word condition
+    names beside it, which kept literal single spaces -- so `You have kidney
+    disease.` was refused and `You have kidney  disease.` was APPROVED.
+
+    Half a pattern hardened is the part nobody re-read, and the whitespace an
+    evader would need here is the whitespace a language model produces by
+    accident.
+    """
+    verdict = validate_text(text, FRAGMENT)
+    assert verdict.verdict == REJECT, why
+    assert has(verdict, ViolationCode.UNSUPPORTED_DIAGNOSIS), why
+
+
+@pytest.mark.parametrize(
     "text,why",
     [
         ("Your doctor may start you on metformin.", "enumerated by name"),

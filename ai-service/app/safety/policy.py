@@ -447,12 +447,31 @@ RULES: Tuple[SafetyRule, ...] = (
             # model had disclaimed properly.
             r"\bdiagnos\w*"
             r"|\b(you" + _GAP + r"have|you've" + _GAP + r"got"
-            r"|you" + _GAP + r"are" + _GAP + r"suffering"
+            # `from` IS OPTIONAL AND THAT IS THE WHOLE POINT OF THE GROUP.
+            # This branch read `you are suffering` with nothing after it, and
+            # `_GAP` is `\W{1,4}` -- non-word characters only, so it cannot
+            # cross the WORD `from`. "You are suffering from diabetes" was
+            # therefore APPROVED while "You have diabetes" was refused, for
+            # all eleven enumerated conditions: a carrier that was meant to
+            # work and silently did not. The `-ing` form was written without
+            # its preposition, which is the one inflection that requires one.
+            r"|you" + _GAP + r"are" + _GAP + r"suffering(" + _GAP + r"from)?"
             r"|you" + _GAP + r"suffer" + _GAP + r"from"
             r"|patient" + _GAP + r"has|this" + _GAP + r"is)" + _GAP + r"(an?" + _GAP + r")?"
-            r"(diabetes|diabetic|anaemia|anemia|anaemic|anemic|kidney disease"
-            r"|chronic kidney disease|ckd|heart disease|hypertension"
-            r"|hypothyroidism|hyperthyroidism|cancer|liver disease)\b"
+            # THE CARRIER GOT `_GAP` AND THE CONDITION NAMES DID NOT.
+            # Every multi-word name here was written with a LITERAL SINGLE
+            # SPACE, so `You have kidney  disease.` and the tab form were
+            # APPROVED while `You have kidney disease.` was refused -- the
+            # exact defect `_GAP` was introduced to kill, left behind in the
+            # half of the pattern nobody re-read. `_phrase` rewrites each
+            # space as `_GAP`; it is safe on this alternation because no
+            # character class or `{m,n}` quantifier here contains a space.
+            + _phrase(
+                r"(diabetes|diabetic|anaemia|anemia|anaemic|anemic|kidney disease"
+                r"|chronic kidney disease|ckd|heart disease|hypertension"
+                r"|hypothyroidism|hyperthyroidism|cancer|liver disease)"
+            )
+            + r"\b"
             r"|\byou" + _GAP + r"are" + _GAP + r"(diabetic|anaemic|anemic|hypertensive|pre-?diabetic)\b"
         ),
     ),
