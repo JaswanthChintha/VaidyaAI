@@ -329,21 +329,19 @@ export default function DoctorSummary() {
   }
   const clear = assessments.filter((a) => !flagged.includes(a));
 
-  // The model's own statement of its limits, deduplicated -- one sentence per
-  // distinct note, however many topics a model contributed to.
-  // ONLY FROM A MODEL THAT ACTUALLY FLAGGED. A note qualifies an output, and
-  // a model that returned `Not Indicated` produced no output this passage
-  // reports -- its caveat would sit under findings it did not make. On one
-  // real report that printed the heart model's four-sentence note beside a
-  // Heart Disease flag the heart model had DISAGREED with.
-  const modelNotes = [];
-  for (const assessment of flagged) {
-    for (const basis of assessment.bases || []) {
-      if (basis.status === 'Not Indicated' || basis.assessed === false) continue;
-      const note = basis.ml?.limitations?.author_note?.text;
-      if (isPresent(note) && !modelNotes.includes(note)) modelNotes.push(note);
-    }
-  }
+  /* `modelNotes` WAS HERE AND IS GONE. It collected
+     `basis.ml.limitations.author_note.text` -- the artifact's `honest_read`,
+     written in patient register -- and appended it to the model paragraph on
+     the CLINICIAN page. It is still carried in the payload, still scanned,
+     and still the right text for the patient-facing screens; it was simply
+     addressed to the wrong reader here.
+
+     ⚠ THE REAL LOGIC IT CARRIED IS NOW CARRIED BY `byModel`/`byBoth`, WHICH
+     ARE BUILT FROM `flaggingKinds` AND SKIP A `Not Indicated` BASIS THE SAME
+     WAY. That guard is not decoration: on a real report the heart model's
+     note printed beside a Heart Disease flag that the heart model itself had
+     DISAGREED with. Anything reintroduced here must skip a non-flagging
+     basis, or it will caption a finding its model did not make. */
 
   /* WHAT A MODEL ESTIMATE IS, AND WHAT ITS AUTHORS SAY ABOUT IT.
 
@@ -373,13 +371,47 @@ export default function DoctorSummary() {
      it beside the other shared constant higher up threw a temporal dead zone
      error and took the whole page down -- caught by 26 failing tests, which
      is the one thing a `const` gets right that a hoisted function would not. */
+  /* ONE SENTENCE, IN A REGISTER A CLINICIAN READS. TWO WRONG ONES PRECEDED IT.
+
+     FIRST WRONG REGISTER: `ml.limitations.author_note` -- the artifact's
+     `honest_read`, written for a PATIENT -- printed to a doctor. Five
+     sentences on Test 3, opening "This came from a pattern model, not from a
+     measurement", which repeated the fixed sentence above it almost word for
+     word, then "the two groups separated unusually cleanly, so its accuracy
+     there flatters it". The owner read it on the real page and called it
+     padding. It is good text and it is still carried in the payload and still
+     right for the patient-facing screens; it was addressed to the wrong
+     reader here.
+
+     SECOND WRONG REGISTER, AND MINE: it was replaced with the model's own
+     figures -- `Random Forest, p 0.85, high band. AUC 0.97, precision 0.92,
+     recall 0.70`. Defensible on paper and still wrong in the same way. A
+     clinician reading a handover note on a patient's phone does not work in
+     ROC-AUC, and a model's architecture is not a clinical fact about this
+     person. Swapping lay padding for machine-learning padding is not a fix.
+
+     SO: ONE SENTENCE, SAYING THE ONLY THING THAT CHANGES WHAT A CLINICIAN
+     DOES -- that the flag is an estimate from past records rather than a
+     measurement of this patient. Which check flagged what is already said
+     above, per KEPT item 1 at the top of this file, and that is the part with
+     clinical consequence.
+
+     WHAT 6az ASKED FOR IS STILL HERE, NARROWED. Its finding was that the page
+     showed a model flag with NO qualification at all once Gemini started
+     generating reliably. That is still guarded: this line renders in both
+     branches and is not conditional on the narrative. What changed is its
+     length, not its presence.
+
+     ⚠ IF THIS EVER NEEDS MORE, `ml.band_meaning` IS THE CANDIDATE and the
+     metrics are not. It already reads in plain clinical English -- "on the
+     held-out test split 91.1% of patients in this band were positive" -- and
+     a hit rate is something a clinician can act on. It is deliberately not
+     rendered today because the owner asked for less, not more. */
   const modelOutputLine =
     byBoth.length + byModel.length > 0 ? (
       <p>
-        <strong>On the model output.</strong> A model estimate is a comparison
-        against patterns in past data, not a measurement of this patient, and it
-        is not a statement that a condition is present.
-        {modelNotes.length ? ` ${modelNotes.join(' ')}` : ''}
+        <strong>On the model output.</strong> An estimate from patterns in past
+        records, not a measurement of this patient.
       </p>
     ) : null;
 

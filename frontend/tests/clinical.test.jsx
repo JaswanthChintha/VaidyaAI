@@ -178,13 +178,34 @@ describe('Module 32 -- the clinician summary, as one passage', () => {
     expect(passage()).toMatch(/Diabetes .*crossed one of this tool's cut-offs/);
   });
 
-  it('carries one sentence of model limitation, in the author own words', async () => {
-    // Found missing from this page three separate times (6o D8, 6p, and the
-    // `basis.ml.limitations` path bug).
+  it('qualifies a model flag in one sentence, and does not pad it', async () => {
+    // RENAMED AND NARROWED FROM 'carries one sentence of model limitation, in
+    // the author own words'. It asserted /screening population/ -- a phrase
+    // from `ml.limitations.author_note`, which is written in PATIENT register
+    // and is no longer printed on the clinician page. Keeping that assertion
+    // would mean the only way to pass is to put five sentences of lay prose
+    // back in front of a doctor, which is the thing the owner objected to on
+    // the real page.
+    //
+    // WHAT MUST NOT BE LOST is why this test existed at all: the
+    // qualification went MISSING from this page three separate times (6o D8,
+    // 6p, and the `basis.ml.limitations` path bug), and 6az found it gone
+    // again. So its presence is still asserted -- only its length changed.
     await mountSummary(REPORT);
     await screen.findByText(/Flagged/);
-    expect(passage()).toMatch(/not a measurement/);
-    expect(passage()).toMatch(/screening population/);
+    const text = passage();
+    expect(text).toMatch(/not a measurement/);
+    // One sentence, not a paragraph. The author note ran to five, and the
+    // phrases below are the ones it and the metrics version brought with them.
+    for (const padding of [
+      'screening population',
+      'flatters',
+      'never a finding in itself',
+      'Random Forest',
+      'AUC',
+    ]) {
+      expect(text).not.toContain(padding);
+    }
   });
 
   it('does not put model-development vocabulary in front of a clinician', async () => {
@@ -210,8 +231,19 @@ describe('Module 32 -- the clinician summary, as one passage', () => {
     ]) {
       expect(text).not.toContain(jargon);
     }
-    // And the substance survives the plain wording.
-    expect(text).toMatch(/screening population/);
+    // AND THE SAME LIST NOW COVERS WHAT REPLACED THE NOTE, BRIEFLY. When the
+    // author note was cut, it was first swapped for the model's own figures
+    // -- 'Random Forest, p 0.85, high band. AUC 0.97, precision 0.92, recall
+    // 0.70'. That is a different wrong register, not a fix, and this test
+    // caught it along with the sibling test below that bans 'Random Forest'
+    // by name. The vocabulary list is the guard; it is extended, not relaxed.
+    for (const jargon of ['AUC', 'precision 0.', 'recall 0.', 'Random Forest']) {
+      expect(text).not.toContain(jargon);
+    }
+    // The substance that survives is the one clinical fact: an estimate is
+    // not a measurement. The former assertion here was /screening population/,
+    // a phrase of the patient-register note that no longer prints.
+    expect(text).toMatch(/not a measurement/);
   });
 
   it('omits the model paragraph entirely when no model flagged anything', async () => {
@@ -1048,28 +1080,52 @@ describe('Module 32 - the model caveat survives a generated narrative', () => {
     vi.restoreAllMocks();
   });
 
-  it('renders the author note WHEN A NARRATIVE WAS GENERATED', async () => {
+  /* THESE THREE ASSERTED THE AUTHOR NOTE'S OWN WORDS AND NOW ASSERT THE
+     GUARANTEE THAT MATTERS. 6az's finding was NOT that a particular sentence
+     appeared -- it was that EVERY model qualification vanished from the page
+     the moment Gemini started generating reliably, because the block lived
+     inside the composed branch. That is what is tested here, and it is
+     untouched: the line must render whether or not a narrative was produced.
+
+     What changed is the text. `never a finding in itself` is from
+     `ml.limitations.author_note`, patient register, cut from this page after
+     the owner read five sentences of it on a real report. Asserting it here
+     would mean the only way to pass is to put the padding back. */
+
+  it('qualifies the model flag WHEN A NARRATIVE WAS GENERATED', async () => {
     // THE DEFECT, DIRECTLY. This is the state the live page was in.
     mountSummary(WITH_MODEL, {}, NARRATIVE, null);
     await screen.findByText(/flagged by the statistical model alone/);
     const line = await modelLine();
     expect(line).toBeTruthy();
-    expect(line).toContain('never a finding in itself');
+    expect(line).toMatch(/not a measurement of this patient/i);
   });
 
-  it('still renders it when there is NO narrative', async () => {
+  it('still qualifies it when there is NO narrative', async () => {
     mountSummary(WITH_MODEL, {}, null, null);
     const line = await modelLine();
-    expect(line).toContain('never a finding in itself');
+    expect(line).toMatch(/not a measurement of this patient/i);
   });
 
-  it('says what a model estimate IS, not only the note', async () => {
-    // The lead-in decides how much weight a clinician gives everything after
-    // it, and it must not depend on a model having supplied a note.
+  it('says it in one sentence and imports nothing from the model artifact', async () => {
+    // The qualification must not depend on a model having supplied a note --
+    // that dependency is how it went missing before -- and it must not grow
+    // back into a paragraph. Both halves are asserted, because the page has
+    // now failed in both directions: silence when Gemini worked, then padding
+    // when the note was wired in.
     mountSummary(WITH_MODEL, {}, NARRATIVE, null);
     const line = await modelLine();
     expect(line).toMatch(/not a measurement of this patient/i);
-    expect(line).toMatch(/not a statement that a condition is present/i);
+    expect(line.length).toBeLessThan(200);
+    for (const imported of [
+      'never a finding in itself',
+      'screening population',
+      'flatters',
+      'Random Forest',
+      'AUC',
+    ]) {
+      expect(line).not.toContain(imported);
+    }
   });
 
   it('omits the paragraph entirely when no model flagged anything', async () => {
