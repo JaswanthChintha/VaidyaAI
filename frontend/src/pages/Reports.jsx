@@ -172,9 +172,33 @@ export default function Reports() {
                 {STATUS_COPY[report.status] || report.status}
               </span>
             </div>
+            {/* THE DATE ON THE REPORT, OR THE DAY IT WAS UPLOADED -- SAID.
+
+                This printed `chronoDate` bare. `chronoDate` is
+                `reportDate ?? uploadedAt`, so when the optional date field is
+                left blank it IS the upload clock -- and the row showed it
+                exactly as it shows a date somebody read off their document.
+                A report printed 13 September, uploaded on the 19th, read
+                `9/19/2026`.
+
+                THE `Absent` BRANCH BELOW COULD NEVER FIRE, which is the tell.
+                `chronoDate` is `required: true` on the schema and always
+                falls back, so the honest state this component was written to
+                show was unreachable. It is reachable now, off `reportDate`,
+                which is null exactly when nobody gave one. */}
             <p className="report__meta">
-              {report.chronoDate ? (
-                new Date(report.chronoDate).toLocaleDateString()
+              {report.reportDate ? (
+                new Date(report.reportDate).toLocaleDateString()
+              ) : report.chronoDate ? (
+                <>
+                  <Absent
+                    reason="No date was given for this report, so it is ordered by when it was uploaded."
+                    label="No date on the report"
+                  />{' '}
+                  <span className="report__uploaded">
+                    uploaded {new Date(report.chronoDate).toLocaleDateString()}
+                  </span>
+                </>
               ) : (
                 <Absent reason="No date was recorded for this report." label="No date" />
               )}

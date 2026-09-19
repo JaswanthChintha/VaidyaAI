@@ -790,11 +790,29 @@ function Trends({ data, history, labSeries }) {
 }
 
 
-/** A report, named the way the person who uploaded it would recognise it. */
+/** A report, named the way the person who uploaded it would recognise it.
+ *
+ * THE LABEL SAYS WHICH DATE IT IS. `chronoDate` is `reportDate ?? uploadedAt`,
+ * so printing it bare showed the upload clock as the date on the document: a
+ * report printed 13 September, uploaded on the 19th with the optional field
+ * blank, read `9/19/2026 — Test 3.pdf` in this very picker.
+ *
+ * A reader choosing two reports to compare is choosing two MOMENTS IN THEIR
+ * OWN HISTORY, and "the day I sent it in" is not one of them unless it is
+ * labelled as such. The ordering is unchanged -- `chronoDate` is still the
+ * sort key, and still the right one.
+ */
 function reportLabel(entry, namesById) {
-  const date = entry.chronoDate ? new Date(entry.chronoDate) : null;
-  const when =
-    date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString() : 'undated';
+  const printed = entry.reportDate ? new Date(entry.reportDate) : null;
+  const sortKey = entry.chronoDate ? new Date(entry.chronoDate) : null;
+  const usable = (d) => d && !Number.isNaN(d.getTime());
+
+  const when = usable(printed)
+    ? printed.toLocaleDateString()
+    : usable(sortKey)
+      ? `uploaded ${sortKey.toLocaleDateString()}`
+      : 'undated';
+
   const name = namesById.get(entry.reportId);
   return name ? `${when} — ${name}` : when;
 }

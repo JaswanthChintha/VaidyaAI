@@ -40,10 +40,10 @@ about any of them. That is the fifth time on this project.
 
 | | Tests |
 |---|---|
-| `backend/` (Node/Express) | **762** passing + 3 skipped (15 suites, 0 failed) |
+| `backend/` (Node/Express) | **765** passing + 3 skipped (15 suites, 0 failed) |
 | `ai-service/` (Python/FastAPI) | **4,102** passing + 7 skipped (4,109 collected, 0 failures, 0 errors) |
-| `frontend/` (React/Vitest) | **394** passing, 0 suites failed |
-| **Total** | **5,258** -- ALL THREE green 2026-09-19 |
+| `frontend/` (React/Vitest) | **398** passing, 0 suites failed |
+| **Total** | **5,265** -- ALL THREE green 2026-09-19 |
 
 > **⚠ THE 4,852 IN EVERY EARLIER SECTION WAS 7 TOO HIGH.** §6as recorded
 > ai-service's COLLECTED total (3,865) as its PASSED count; that day's real
@@ -10649,6 +10649,54 @@ polarity model call was made — only two `module: 23` calls, which are Module
 > ends.
 
 **ai-service 4,102** (+12). Backend 762, frontend 394. **Total 5,258.**
+
+### ⚠ AND THE UPLOAD CLOCK WAS BEING PRINTED AS THE DATE ON THE REPORT
+
+Noticed because the re-uploaded Test 3 was labelled **`9/19/2026 — Test 3.pdf`**
+in the comparison picker, for a report printed 13 September. The optional date
+field was left blank on upload.
+
+**THE DATA LAYER WAS ALREADY HONEST.** `chronoDate` is
+`reportDate ?? uploadedAt`, a materialised SORT KEY, and correct as one —
+`toPublicJSON` carries `reportDate` beside it, so a consumer can always tell
+whether a date was given. **Only the DISPLAY collapsed the two**, in both
+places that print a date.
+
+> **THE TELL WAS AN UNREACHABLE BRANCH.** `Reports.jsx` already had an
+> `Absent` case reading *"No date was recorded for this report"* — and
+> `chronoDate` is `required: true` and always falls back, so **the honest
+> state the component was written for could never render.** Dead code as a
+> symptom, not as clutter.
+
+* **Backend:** `reportDate` added to `HISTORY_PROJECTION` and to each
+  `included` entry, explicitly `null` when none was given. **Ordering is
+  untouched** — `chronoDate` is still the sort key and `chrono_date` still
+  goes to the ai-service unchanged.
+* **Reports list:** the printed date when there is one; otherwise *"No date on
+  the report"* plus *"uploaded <day>"* — the upload day is real information
+  and it is what the ordering uses, so it is LABELLED rather than passed off.
+* **Comparison picker:** `9/13/2026 — Test 3.pdf`, or `uploaded 9/19/2026 —
+  Test 3.pdf`. A reader choosing two reports is choosing two moments in their
+  own history, and "the day I sent it in" is not one of them unless it says so.
+
+**Three mutants, all killed:** the picker back to bare `chronoDate` (1); the
+reports row back to bare `chronoDate` (1); the backend sending `chronoDate` as
+`reportDate` (2).
+
+> **⚠ THE NEW DISPLAY CAUGHT A BAD REPAIR OF MY OWN WITHIN A MINUTE.** Earlier
+> I had set the re-uploaded Test 3's `chronoDate` to 13 September and left
+> `reportDate` null — so the row correctly said *no date was given* and then
+> labelled the sort key **"uploaded 9/13/2026"**, for a report uploaded on the
+> 19th. A raw driver `$set` also bypasses the pre-validate hook that derives
+> `chronoDate`, so **both fields have to be written and must agree.** Fixed to
+> `reportDate = chronoDate = 2026-09-13`; `uploadedAt` still says the 19th,
+> which is the truth.
+>
+> **A display that distinguishes absence from value catches bad data. The one
+> that collapsed them had hidden this for as long as it existed.**
+
+**Backend 765** (+3), **frontend 398** (+4), ai-service 4,102.
+**Total 5,265.**
 
 ---
 

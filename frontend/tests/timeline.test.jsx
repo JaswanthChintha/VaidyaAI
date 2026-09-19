@@ -522,6 +522,61 @@ describe('choosing which two reports to compare', () => {
     expect(screen.getAllByText(/02-diabetes\.pdf/).length).toBeGreaterThan(0);
   });
 
+  // THE LABEL SAYS WHICH DATE IT IS.
+  //
+  // `chronoDate` is `reportDate ?? uploadedAt`, so printing it bare showed the
+  // upload clock as the date on the document. On the real page a report
+  // printed 13 September, uploaded on the 19th with the optional field blank,
+  // read `9/19/2026 - Test 3.pdf` in this picker. A reader choosing two
+  // reports is choosing two moments in their own history, and "the day I sent
+  // it in" is not one of them unless it is labelled.
+
+  it('labels an option with the date the reader gave for the report', async () => {
+    const dated = {
+      reports: [
+        { reportId: A, chronoDate: '2026-09-13T00:00:00Z', reportDate: '2026-09-13T00:00:00Z', status: 'processed' },
+        { reportId: B, chronoDate: '2026-09-11T04:26:10.910Z', reportDate: '2026-09-11T04:26:10.910Z', status: 'processed' },
+      ],
+    };
+    mount({
+      comparison: { ...comparisonFor(A, B), history: dated },
+      reports: REPORTS,
+    });
+    await screen.findByText('Comparing two reports');
+
+    const printed = new Date('2026-09-13T00:00:00Z').toLocaleDateString();
+    const option = [...document.querySelectorAll('.pair-picker option')].find((o) =>
+      o.textContent.includes('06-lab-flagged.pdf')
+    );
+    expect(option.textContent).toContain(printed);
+    expect(option.textContent).not.toMatch(/uploaded/i);
+  });
+
+  it('says UPLOADED on an option whose report carried no date', async () => {
+    // THE CASE THAT WAS WRONG. `reportDate` is null exactly when the person
+    // left the field blank; `chronoDate` is then the upload time.
+    const undated = {
+      reports: [
+        { reportId: A, chronoDate: '2026-09-19T04:22:13Z', reportDate: null, status: 'processed' },
+        { reportId: B, chronoDate: '2026-09-11T04:26:10.910Z', reportDate: '2026-09-11T04:26:10.910Z', status: 'processed' },
+      ],
+    };
+    mount({
+      comparison: { ...comparisonFor(A, B), history: undated },
+      reports: REPORTS,
+    });
+    await screen.findByText('Comparing two reports');
+
+    const option = [...document.querySelectorAll('.pair-picker option')].find((o) =>
+      o.textContent.includes('06-lab-flagged.pdf')
+    );
+    expect(option.textContent).toMatch(/uploaded/i);
+    // The day is still there -- it is what the ordering uses -- just labelled.
+    expect(option.textContent).toContain(
+      new Date('2026-09-19T04:22:13Z').toLocaleDateString()
+    );
+  });
+
   it('shows the pair ACTUALLY on screen, not a guess', async () => {
     // With no explicit choice the service picks first-vs-latest. Seeding the
     // selects from its answer is what stops the control naming a comparison

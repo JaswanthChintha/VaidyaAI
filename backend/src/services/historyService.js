@@ -156,7 +156,25 @@ const INCLUSION_FILTER = Object.freeze({
  * even though the query was already owner-scoped - the same deliberate
  * redundancy every other report route applies.
  */
-const HISTORY_PROJECTION = 'user chronoDate status analysis.version +featureValidation';
+/*
+ * `reportDate` IS CARRIED BESIDE `chronoDate`, AND THE DIFFERENCE IS THE POINT.
+ *
+ * `chronoDate` is `reportDate ?? uploadedAt` -- a materialised SORT KEY, and
+ * correct as one. But it is never absent, so a consumer holding only that
+ * cannot tell a report dated by the person who uploaded it from one dated by
+ * the clock when they left the field blank. Both arrive as a date.
+ *
+ * FOUND ON THE REAL PAGE, 2026-09-19. A report printed 13 September, uploaded
+ * on the 19th with the optional date blank, was labelled `9/19/2026 —
+ * Test 3.pdf` in the comparison picker and `9/19/2026` on the reports list.
+ * **The upload clock was being presented as the date on the document.**
+ *
+ * Sending the raw `reportDate` -- null when none was given -- lets the screen
+ * say which it is. Nothing about ordering changes; `chronoDate` remains the
+ * sort key and `chrono_date` still goes to the ai-service unchanged.
+ */
+const HISTORY_PROJECTION =
+  'user chronoDate reportDate status analysis.version +featureValidation';
 
 // ------------------------------------------------------------------ assembly --
 
@@ -172,7 +190,8 @@ const HISTORY_PROJECTION = 'user chronoDate status analysis.version +featureVali
  *        function.
  * @returns {Promise<{
  *   snapshots: object[],  // TimelineReportInput[], OLDEST FIRST
- *   included: {reportId: string, chronoDate: Date, status: string}[],
+ *   included: {reportId: string, chronoDate: Date,
+ *              reportDate: Date|null, status: string}[],
  *   totalReports: number, examined: number, includedCount: number,
  *   cap: number, truncated: boolean,
  *   window: {from: Date, to: Date}|null
@@ -247,6 +266,11 @@ async function assembleHistory({ user }) {
     included.push({
       reportId,
       chronoDate: row.chronoDate,
+      // NULL WHEN THE PERSON GAVE NO DATE, so a screen can say "uploaded on"
+      // instead of printing the upload clock as the date on the report. See
+      // HISTORY_PROJECTION. Explicitly null rather than absent: the two mean
+      // the same here and one of them is easy to read as "not sent".
+      reportDate: row.reportDate || null,
       // Carried so a `failed` or `partial` report on the timeline is visible
       // as such - see the inclusion rule above.
       status: row.status,

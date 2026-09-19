@@ -113,4 +113,40 @@ describe('Module 3 -- the report list', () => {
     expect(form.get('file')).toBeInstanceOf(File);
     expect(form.get('report')).toBeNull();
   });
+
+  // =================================== the date ON the report, or the upload ==
+  //
+  // `chronoDate` is `reportDate ?? uploadedAt`, so printing it bare showed the
+  // upload clock as the date on the document. A report printed 13 September,
+  // uploaded on the 19th with the optional field blank, read `9/19/2026`.
+  //
+  // The `Absent` branch this row already had could never fire: `chronoDate` is
+  // `required: true` on the schema and always falls back, so the honest state
+  // the component was written for was unreachable.
+
+  it('prints the date the person gave for the report', async () => {
+    mount([
+      {
+        ...REPORT,
+        reportDate: '2026-09-13T00:00:00Z',
+        chronoDate: '2026-09-13T00:00:00Z',
+      },
+    ]);
+    const row = (await screen.findByText('labs.pdf')).closest('li');
+    expect(row.textContent).toContain(new Date('2026-09-13T00:00:00Z').toLocaleDateString());
+    expect(row.textContent).not.toMatch(/uploaded/i);
+    expect(row.textContent).not.toMatch(/No date on the report/i);
+  });
+
+  it('SAYS SO when no date was given, instead of printing the upload clock', async () => {
+    // THE CASE THAT WAS WRONG ON THE REAL PAGE.
+    mount([{ ...REPORT, reportDate: null, chronoDate: '2026-09-19T04:22:13Z' }]);
+    const row = (await screen.findByText('labs.pdf')).closest('li');
+
+    expect(row.textContent).toMatch(/No date on the report/i);
+    // The upload day is still shown -- it is real information and it is what
+    // the ordering uses -- but it is LABELLED, not passed off as the other.
+    expect(row.textContent).toMatch(/uploaded/i);
+    expect(row.textContent).toContain(new Date('2026-09-19T04:22:13Z').toLocaleDateString());
+  });
 });

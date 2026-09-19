@@ -814,4 +814,58 @@ describe('historyService - the shared timeline assembler', () => {
       expect(without.excluded).not.toEqual([]);
     });
   });
+
+  // ============================================= the date ON the report ==
+  //
+  // `chronoDate` is `reportDate ?? uploadedAt` and is NEVER absent, so a
+  // consumer holding only that cannot tell a date somebody read off their
+  // document from the clock at upload time. Both arrive as a Date.
+  //
+  // FOUND ON THE REAL PAGE, 2026-09-19: a report printed 13 September,
+  // uploaded on the 19th with the optional field blank, was labelled
+  // `9/19/2026 - Test 3.pdf` in the comparison picker. The upload clock was
+  // being presented as the date on the document.
+
+  describe('reportDate travels beside chronoDate', () => {
+    let user;
+    beforeEach(async () => {
+      user = await makeUser();
+    });
+
+    it('carries the printed date when one was given', async () => {
+      const printed = day(4);
+      await seedReport(user.id, { chronoDate: printed });
+      const history = await historyService.assembleHistory({ user });
+
+      expect(history.included[0].reportDate).toEqual(printed);
+      expect(history.included[0].chronoDate).toEqual(printed);
+    });
+
+    it('carries NULL when none was given, while chronoDate still sorts', async () => {
+      // THE CASE THE PAGE GOT WRONG. `seedReport` maps its `chronoDate`
+      // argument onto the schema's `reportDate`, so omitting it is exactly a
+      // person leaving the optional field blank.
+      await seedReport(user.id, {});
+      const history = await historyService.assembleHistory({ user });
+      const entry = history.included[0];
+
+      expect(entry.reportDate).toBeNull();
+      // The sort key is still a real date -- the upload time -- because
+      // ordering must keep working. That is the whole reason the two fields
+      // are different, and why printing one as the other was wrong.
+      expect(entry.chronoDate).toBeInstanceOf(Date);
+      expect(Number.isNaN(entry.chronoDate.getTime())).toBe(false);
+    });
+
+    it('does not change the ORDER, only what can be said about it', async () => {
+      const older = await seedReport(user.id, { chronoDate: day(1) });
+      const undated = await seedReport(user.id, {}); // sorts on upload time
+      const history = await historyService.assembleHistory({ user });
+
+      // Oldest first, and the undated one sorts by when it arrived -- today,
+      // which is after January.
+      expect(history.snapshots.map((s) => s.report_id)).toEqual([older, undated]);
+      expect(history.included.map((e) => e.reportDate === null)).toEqual([false, true]);
+    });
+  });
 });
