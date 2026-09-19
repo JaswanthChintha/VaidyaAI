@@ -42,6 +42,15 @@ concerning, do not add commentary, do not suggest follow-up.
 printed, including capitalisation, punctuation, abbreviations and any \
 parenthetical. Write "HbA1c (Glycated Haemoglobin)" if that is what is \
 printed - not "hba1c". A later stage handles canonical naming.
+   THE ASSAY METHOD IS NOT PART OF THE NAME. Many reports print the method on \
+its own line under the test - "WESTGARD" under ESR, "PHOTOMETRIC" under SGPT, \
+"HPLC" under GLYCATED HAEMOGLOBIN, "Immunoturbidometric" under C-REACTIVE \
+PROTEIN. Give `test_name` as "ESR", not "ESR WESTGARD". The same test read by \
+a different method on another report is the SAME TEST, and folding the method \
+into the name stops the two being recognised as one.
+   BUT A WORD THAT CHANGES WHAT WAS MEASURED IS PART OF THE NAME. "Direct" in \
+"LDL Cholesterol, Direct", and "Free" or "Total" in a hormone name, select a \
+different measurement and must be kept.
 5. DO NOT EXTRACT THE PATIENT'S NAME. Only report whether a patient name \
 appears anywhere on the page, via the boolean `patient_name_present`.
 

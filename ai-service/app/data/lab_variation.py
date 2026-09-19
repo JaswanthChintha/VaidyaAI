@@ -291,9 +291,88 @@ def _build_index() -> Dict[str, LabVariation]:
 _INDEX: Dict[str, LabVariation] = _build_index()
 
 
+#: Assay methods, which laboratories print on their own line under the test.
+#:
+#: ==========================================================================
+#: A METHOD IS HOW IT WAS MEASURED, NOT WHAT WAS MEASURED
+#: ==========================================================================
+#:
+#: FOUND BY RE-ANALYSING A REPORT, 2026-09-19. The same PDF extracted twice
+#: gave `ESR` one day and `ESR WESTGARD` the next -- the method line folded
+#: into the name. Extraction is a model call and is not deterministic.
+#:
+#: The series still JOINED, because Module 36 matched the two spellings. But
+#: the lookup below is exact, so three tests silently stopped finding their
+#: rows and went back to asking the model for CVa/CVi:
+#:
+#:     ESR WESTGARD                              -> no row
+#:     SGPT PHOTOMETRIC                          -> no row
+#:     C-REACTIVE PROTEIN(CRP) Immunoturbidimetric -> no row
+#:
+#: **That is precisely the defect this table was built to end** -- a threshold
+#: that moves between page loads. The page said so, because the card's
+#: provenance line switched to "produced by a language model from the test
+#: name alone"; that sentence had never been true before.
+#:
+#: EVERY WORD HERE IS AN ASSAY METHOD AND NONE CHANGES THE ANALYTE.
+#: Deliberately absent: `direct`, `free`, `total`, `calculated`. Direct and
+#: calculated LDL are different measurements, and `LDL Cholesterol, Direct` is
+#: in the real data -- stripping `direct` would make two different things one,
+#: which is the failure the qualifier guard in Module 36 exists to prevent.
+#: Checked against all 59 distinct test names stored by this platform: it
+#: changes five and leaves the other fifty-four untouched.
+_METHOD_WORDS = frozenset(
+    {
+        "westgard",  # as this laboratory prints it
+        "westergren",  # as it is properly spelled
+        "photometric",
+        "spectrophotometric",
+        "colorimetric",
+        "immunoturbidimetric",
+        "immunoturbidometric",  # both spellings appear in the real data
+        "turbidimetric",
+        "nephelometric",
+        "hplc",
+        "elisa",
+        "clia",
+        "eclia",
+        "cmia",
+        "chemiluminescence",
+        "enzymatic",
+        "impedance",
+        "cytometry",
+    }
+)
+
+
+def _without_method(name: object) -> str:
+    """`fold`, minus assay-method words. FOR LOOKUP ONLY.
+
+    NOT FOLDED INTO `fold` ITSELF, and that is deliberate: `fold` must stay
+    character-for-character the same rule as `labSeriesService.nameKey` on the
+    backend, which its own docstring promises. Changing it here would make the
+    two services disagree about which printed names are one test, silently and
+    in only one of them.
+    """
+    words = [w for w in _WORD.findall(str(name or "").lower()) if w not in _METHOD_WORDS]
+    return " ".join(sorted(words))
+
+
 def variation_for(test_name: object) -> Optional[LabVariation]:
-    """The row for this printed name, or None to fall through to the model."""
-    return _INDEX.get(fold(test_name))
+    """The row for this printed name, or None to fall through to the model.
+
+    THE EXACT FOLD IS TRIED FIRST, so a name that matches a listed alias can
+    never be diverted by the method fallback below.
+    """
+    row = _INDEX.get(fold(test_name))
+    if row is not None:
+        return row
+    stripped = _without_method(test_name)
+    if not stripped:
+        # Every word was a method word. That is not a test name, and matching
+        # it to anything would be worse than falling through to the model.
+        return None
+    return _INDEX.get(stripped)
 
 
 def duplicate_aliases() -> Tuple[str, ...]:

@@ -98,6 +98,85 @@ def test_the_printed_names_on_real_reports_find_their_row(printed, expected):
     assert row.test == expected
 
 
+# --------------------------------------------------------------------------
+# THE ASSAY METHOD IS NOT PART OF THE TEST NAME
+# --------------------------------------------------------------------------
+#
+# FOUND BY RE-ANALYSING A REPORT, 2026-09-19. The same PDF extracted twice
+# gave `ESR` one day and `ESR WESTGARD` the next -- the method line folded
+# into the name, because extraction is a model call and is not deterministic.
+#
+# The series still joined, because Module 36 matched the two spellings. But
+# this lookup is exact, so three tests silently stopped finding their rows and
+# went back to asking the model for their CVa/CVi -- a threshold that moves
+# between page loads, which is the whole defect this table was built to end.
+
+
+@pytest.mark.parametrize(
+    "printed,expected",
+    [
+        # THE THREE THAT BROKE, exactly as the re-extraction stored them.
+        ("ESR WESTGARD", "esr"),
+        ("SGPT PHOTOMETRIC", "alanine_aminotransferase"),
+        ("C-REACTIVE PROTEIN(CRP) Immunoturbidimetric", "c_reactive_protein"),
+        # Both spellings of the immunoturbidimetric method appear in the wild:
+        # the report prints one and the model returned the other.
+        ("C-REACTIVE PROTEIN(CRP) Immunoturbidometric", "c_reactive_protein"),
+        # Methods this platform has not seen yet, but will.
+        ("TSH ECLIA", "tsh"),
+        ("PLATELET COUNT impedance", "platelet_count"),
+    ],
+)
+def test_a_method_printed_after_the_name_still_finds_the_row(printed, expected):
+    row = variation_for(printed)
+    assert row is not None, printed
+    assert row.test == expected
+
+
+@pytest.mark.parametrize(
+    "printed",
+    [
+        # DIRECT AND CALCULATED LDL ARE DIFFERENT MEASUREMENTS, and
+        # `LDL Cholesterol, Direct` is in the real stored data. Stripping
+        # `direct` would make two different things one -- the same failure the
+        # qualifier guard in Module 36 exists to prevent.
+        "LDL Cholesterol, Direct",
+        "Free Frimbulin",
+        "Total Frimbulin",
+    ],
+)
+def test_a_word_that_changes_the_measurement_is_never_stripped(printed):
+    from app.data.lab_variation import _without_method
+
+    assert _without_method(printed) == fold(printed), printed
+
+
+def test_the_exact_fold_wins_so_the_fallback_cannot_divert_a_listed_name():
+    """A listed alias must never be re-routed by the method fallback."""
+    for alias in ("ESR", "SGPT", "C-REACTIVE PROTEIN(CRP)", "TSH", "MCV"):
+        assert variation_for(alias) is not None, alias
+
+
+def test_a_name_made_only_of_method_words_matches_nothing():
+    # Matching it to anything would be worse than reaching the model.
+    assert variation_for("PHOTOMETRIC HPLC") is None
+    assert variation_for("WESTGARD") is None
+
+
+def test_fold_itself_is_unchanged_because_the_backend_shares_its_rule():
+    """THE INVARIANT THE FIX WAS SHAPED AROUND.
+
+    `fold` must stay the same rule as `labSeriesService.nameKey`, which its
+    own docstring promises. The stripping lives in the LOOKUP instead, so the
+    two services cannot come to disagree about which names are one test --
+    silently, and in only one of them.
+    """
+    from app.data.lab_variation import _without_method
+
+    assert fold("ESR WESTGARD") == "esr westgard"
+    assert _without_method("ESR WESTGARD") == "esr"
+
+
 def test_an_unknown_test_falls_through_rather_than_matching_the_nearest():
     # NOT a fuzzy match. A name this table has never seen must reach the model,
     # not the closest-looking row -- that is how one test's threshold lands on

@@ -41,9 +41,9 @@ about any of them. That is the fifth time on this project.
 | | Tests |
 |---|---|
 | `backend/` (Node/Express) | **762** passing + 3 skipped (15 suites, 0 failed) |
-| `ai-service/` (Python/FastAPI) | **4,090** passing + 7 skipped (4,097 collected, 0 failures, 0 errors) |
+| `ai-service/` (Python/FastAPI) | **4,102** passing + 7 skipped (4,109 collected, 0 failures, 0 errors) |
 | `frontend/` (React/Vitest) | **394** passing, 0 suites failed |
-| **Total** | **5,246** -- ALL THREE green 2026-09-18 |
+| **Total** | **5,258** -- ALL THREE green 2026-09-19 |
 
 > **⚠ THE 4,852 IN EVERY EARLIER SECTION WAS 7 TOO HIGH.** §6as recorded
 > ai-service's COLLECTED total (3,865) as its PASSED count; that day's real
@@ -10554,6 +10554,101 @@ put back (1); the timing phrase dropped from the 140 band (2); `TIMING_FASTING`
 admitted to `only_timing` (2).
 `attributes the flag and the interval to the LABORATORY` **was replaced, not
 weakened** — it asserted the false attribution, and the new test inverts it.
+
+---
+
+## 6ba. RE-ANALYSING A REPORT BROKE THE VARIATION TABLE · 2026-09-19
+
+**Test 3 was re-analysed to pick up the two fixes that are baked in at
+analysis time.** All five of §6az landed. **The re-extraction also renamed
+three tests, and that silently un-did §6aw's variation table.**
+
+### ✅ WHAT THE RE-ANALYSIS CONFIRMED
+
+* **THE EXTRACTION GATE RAN ON A REAL PDF FOR THE FIRST TIME.** It had only
+  ever been proven by tests and a hand-made database repair. eAG came back
+  `flag=null`, bounds null, raw text kept.
+* **AND THE TIGHTENED PROMPT SHOWED ITS WORK.** The model returned the WHOLE
+  five-band table as `reference_range_raw` —
+  `"90 - 120 - Excellent control 121 - 150 ... > 211 - Panic Value"` — instead
+  of plucking `"151 - 180 - Average Control"` out of it as it did in
+  September. It no longer reduces an interpretation table to one band.
+* `criterion not met -- body mass index at or above 30.0` in stored evidence,
+  and *"applied because the sample was not established as fasting"* on the
+  clinician page. Both live.
+
+> **▶ AND THE OPENROUTER FALLBACK FIRED IN ANGER.** Gemini rate-limited
+> mid-analysis; `text_provider_fallback` crossed to
+> `deepseek/deepseek-v4-flash-0731:free`, which produced 113 characters in
+> 6.5 s, and **Module 24 approved it with zero violations.** First production
+> exercise of §6ax, unplanned, on real patient-facing text.
+
+### ⚠ THE SAME PDF EXTRACTED TWICE GAVE DIFFERENT TEST NAMES
+
+```
+ESR                      ->  ESR WESTGARD
+SGPT                     ->  SGPT PHOTOMETRIC
+C-REACTIVE PROTEIN(CRP)  ->  C-REACTIVE PROTEIN(CRP) Immunoturbidimetric
+```
+
+The method line, printed under the test, folded into the name. **Extraction
+is a model call and is not deterministic** — the report did not change.
+
+**THE SERIES STILL JOINED**, because Module 36 matched the spellings. That
+feature did exactly its job. **But `variation_for` is an EXACT lookup**, so
+those three stopped finding their rows and went back to asking the model for
+CVa/CVi — *"a threshold that decides whether a patient is shown stable cannot
+move between page loads"*, which is the sentence at the top of
+`lab_variation.py`.
+
+> **THE PAGE REPORTED ITS OWN REGRESSION.** The card's provenance line gained
+> *"Some were produced by a language model from the test name alone"* — the
+> `fromModel` branch of §6ay's `provenanceNote`, **true for the first time
+> since it was written.** A disclosure added to stop a caveat being
+> boilerplate turned out to be a monitor.
+
+### ▶ FIXED IN BOTH PLACES, AND `fold` WAS LEFT ALONE
+
+**THE PROMPT, which is the cause:** rule 4 now says the assay method is not
+part of the name, names the four that appear on these reports, and adds the
+counter-rule — **a word that changes WHAT WAS MEASURED is part of the name**,
+naming `Direct` and `Free`/`Total`.
+
+**THE LOOKUP, which is the net:** `variation_for` tries the exact fold first,
+then retries with assay-method words removed.
+
+> **⚠ `fold` ITSELF IS UNTOUCHED, AND THAT SHAPED THE FIX.** Its docstring
+> promises it is the same rule as `labSeriesService.nameKey` on the backend.
+> Stripping inside it would have made two services disagree about which names
+> are one test — silently, and in only one of them. The stripping is a
+> separate step used only for this lookup, and a test pins that `fold` still
+> returns `esr westgard`.
+
+**`direct`, `free`, `total` AND `calculated` ARE DELIBERATELY ABSENT from the
+method list.** `LDL Cholesterol, Direct` is in the real stored data, and
+direct and calculated LDL are different measurements — the same trap as free
+versus total that §6aw's qualifier guard exists for.
+
+**VALIDATED AGAINST ALL 59 DISTINCT TEST NAMES IN THE DATABASE**, pulled from
+Mongo rather than imagined: **3 newly matched, 0 matches changed**, 25
+already-matching untouched, 31 still correctly unmatched (`CREATININE
+PHOTOMETRIC` and `HBA1C HPLC` strip cleanly but stay unmatched — they are
+assessed features whose bands live in `trend_polarity.py`).
+
+**Mutation-tested, three mutants, all killed:** the fallback never matching
+(6 tests); `direct` added to the method list (1 — the one that would make two
+measurements one); the stripper made a no-op (7).
+
+**VERIFIED LIVE:** the provenance line lost its second sentence, and no
+polarity model call was made — only two `module: 23` calls, which are Module
+36's name matching.
+
+> **⚠ THE PANEL HEADINGS STILL READ `ESR WESTGARD`.** The prompt fix applies
+> to FUTURE extractions; this report's stored names are from this morning's
+> run. The table now finds them anyway, which is the point of fixing both
+> ends.
+
+**ai-service 4,102** (+12). Backend 762, frontend 394. **Total 5,258.**
 
 ---
 
