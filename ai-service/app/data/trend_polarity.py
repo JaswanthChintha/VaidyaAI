@@ -390,6 +390,203 @@ POLARITY: Dict[str, TrendPolarity] = {
         trendable=False,
         basis="Categorical identity attribute. Not a health trend.",
     ),
+    # =============== the complete blood count: TRENDABLE, UNDECLARED ========
+    #
+    # ALL TWELVE ARE TRENDABLE AND ALL TWELVE REFUSE A DIRECTION, and the two
+    # facts together are the point. A platelet count can be followed over
+    # time, so direction and magnitude are reported; but every one of these is
+    # harmful at BOTH extremes, so "better" has no meaning without a target
+    # interval this service does not have. That is the same reasoning already
+    # written above for `hemoglobin`.
+    #
+    # THE FIVE DIFFERENTIALS HAVE A SECOND, INDEPENDENT REASON: they are
+    # PERCENTAGES OF A TOTAL. A neutrophil percentage can rise because
+    # neutrophils rose or because lymphocytes fell, and those are different
+    # events. Declaring a direction on a proportion would attribute a change
+    # to the wrong cell line.
+    "hematocrit": TrendPolarity(
+        "hematocrit",
+        POLARITY_UNDECLARED,
+        basis=(
+            "REFUSED ON PURPOSE, for the same reason as `hemoglobin`, which "
+            "it tracks at roughly 3x. Harmful at both extremes (anaemia "
+            "below, polycythaemia/hyperviscosity above), so it would have to "
+            "be TOWARD_REFERENCE -- and the interval is sex-specific, "
+            "altitude-sensitive and pregnancy-modified, none of which this "
+            "service records. Direction and magnitude only."
+        ),
+        reader_basis=(
+            "Whether a change in your PCV is an improvement is not reported "
+            "here. It can be too low or too high, and the usual range differs "
+            "between men and women. The change itself is shown; whether it "
+            "matters is a question for a healthcare professional."
+        ),
+    ),
+    "rbc_count": TrendPolarity(
+        "rbc_count",
+        POLARITY_UNDECLARED,
+        basis=(
+            "REFUSED ON PURPOSE. Harmful at both extremes and sex-specific, "
+            "exactly as `hemoglobin` and `hematocrit`."
+        ),
+        reader_basis=(
+            "Whether a change in your red cell count is an improvement is not "
+            "reported here. It can be too low or too high, and the usual "
+            "range differs between men and women."
+        ),
+    ),
+    "mcv": TrendPolarity(
+        "mcv",
+        POLARITY_UNDECLARED,
+        basis=(
+            "REFUSED ON PURPOSE, and this one is not merely a both-extremes "
+            "case: MCV is an INDEX, not a severity measure. A low value "
+            "points toward iron deficiency or thalassaemia and a high one "
+            "toward B12/folate deficiency, alcohol or myelodysplasia. A move "
+            "from 70 toward 90 and a move from 110 toward 90 are opposite "
+            "clinical stories that this service cannot tell apart, because it "
+            "does not know which one the reader has."
+        ),
+        reader_basis=(
+            "Whether a change in your average red cell size is an improvement "
+            "is not reported here. A value can be low or high for very "
+            "different reasons, and the number alone does not say which."
+        ),
+    ),
+    "mch": TrendPolarity(
+        "mch",
+        POLARITY_UNDECLARED,
+        basis=(
+            "REFUSED ON PURPOSE. Derived from haemoglobin and red cell count, "
+            "so it inherits both of their refusals, and it is an index rather "
+            "than a severity measure."
+        ),
+        reader_basis=(
+            "Whether a change in this red cell measurement is an improvement "
+            "is not reported here. It describes the average amount of "
+            "haemoglobin in a red cell, and can be low or high for different "
+            "reasons."
+        ),
+    ),
+    "mchc": TrendPolarity(
+        "mchc",
+        POLARITY_UNDECLARED,
+        basis=(
+            "REFUSED ON PURPOSE, with a reason the others do not have: a "
+            "RAISED MCHC is more often a MEASUREMENT ARTEFACT -- lipaemia, "
+            "haemolysis, cold agglutinins -- than a physiological change. "
+            "Calling a rise 'worse' would be asserting a clinical event where "
+            "the likeliest explanation is the sample itself."
+        ),
+        reader_basis=(
+            "Whether a change in this red cell measurement is an improvement "
+            "is not reported here. A high value is often caused by the sample "
+            "rather than by anything about your health."
+        ),
+    ),
+    "wbc_count": TrendPolarity(
+        "wbc_count",
+        POLARITY_UNDECLARED,
+        basis=(
+            "REFUSED ON PURPOSE. Harmful at both extremes: a low count raises "
+            "infection risk and a high one accompanies infection, "
+            "inflammation, steroids and haematological disease. A fall from "
+            "30 to 10 and a fall from 5 to 1.5 are opposite events."
+        ),
+        reader_basis=(
+            "Whether a change in your white cell count is an improvement is "
+            "not reported here. It can be too low or too high, and a rise can "
+            "mean the body is responding to something rather than that "
+            "anything is wrong."
+        ),
+    ),
+    "neutrophils": TrendPolarity(
+        "neutrophils",
+        POLARITY_UNDECLARED,
+        basis=(
+            "REFUSED ON PURPOSE. A PERCENTAGE OF THE WHITE CELL COUNT: it can "
+            "rise because neutrophils rose or because lymphocytes fell, which "
+            "are different events with different causes. Harmful at both "
+            "extremes besides."
+        ),
+        reader_basis=(
+            "Whether a change in this value is an improvement is not reported "
+            "here. It is a share of your total white cells, so it can move "
+            "because this cell type changed or because another one did."
+        ),
+    ),
+    "lymphocytes": TrendPolarity(
+        "lymphocytes",
+        POLARITY_UNDECLARED,
+        basis=(
+            "REFUSED ON PURPOSE. A percentage of the white cell count; see "
+            "the `neutrophils` row. Harmful at both extremes."
+        ),
+        reader_basis=(
+            "Whether a change in this value is an improvement is not reported "
+            "here. It is a share of your total white cells, so it can move "
+            "because this cell type changed or because another one did."
+        ),
+    ),
+    "monocytes": TrendPolarity(
+        "monocytes",
+        POLARITY_UNDECLARED,
+        basis=(
+            "REFUSED ON PURPOSE. A percentage of the white cell count; see "
+            "the `neutrophils` row."
+        ),
+        reader_basis=(
+            "Whether a change in this value is an improvement is not reported "
+            "here. It is a share of your total white cells, so it can move "
+            "because this cell type changed or because another one did."
+        ),
+    ),
+    "eosinophils": TrendPolarity(
+        "eosinophils",
+        POLARITY_UNDECLARED,
+        basis=(
+            "REFUSED ON PURPOSE. A percentage of the white cell count; see "
+            "the `neutrophils` row. Additionally seasonal and strongly "
+            "right-skewed (allergy, parasitic exposure), so a change between "
+            "two reports frequently reflects the time of year."
+        ),
+        reader_basis=(
+            "Whether a change in this value is an improvement is not reported "
+            "here. It is a share of your total white cells, and it commonly "
+            "moves with allergies or the time of year."
+        ),
+    ),
+    "basophils": TrendPolarity(
+        "basophils",
+        POLARITY_UNDECLARED,
+        basis=(
+            "REFUSED ON PURPOSE. A percentage of the white cell count; see "
+            "the `neutrophils` row. Reported to one decimal place on a range "
+            "of roughly 0-2 %, so the measurement resolution is a large "
+            "fraction of the whole scale."
+        ),
+        reader_basis=(
+            "Whether a change in this value is an improvement is not reported "
+            "here. It is a small share of your total white cells, and the "
+            "numbers involved are so small that ordinary variation looks "
+            "large."
+        ),
+    ),
+    "platelet_count": TrendPolarity(
+        "platelet_count",
+        POLARITY_UNDECLARED,
+        basis=(
+            "REFUSED ON PURPOSE. Harmful at both extremes: a low count raises "
+            "bleeding risk, a high one accompanies thrombocytosis and "
+            "reactive states. A fall from 900 to 400 and a fall from 150 to "
+            "40 are opposite clinical events."
+        ),
+        reader_basis=(
+            "Whether a change in your platelet count is an improvement is not "
+            "reported here. It can be too low or too high, so a fall is not "
+            "automatically good news."
+        ),
+    ),
 }
 
 
@@ -548,6 +745,176 @@ STABILITY: Dict[str, StabilityBand] = {
             "time-of-day weight differences (roughly 1-2 kg in an adult) do "
             "not register as a trend. It is stated as a judgement precisely so "
             "a clinician can overrule it; it is not dressed up as evidence."
+        ),
+    ),
+    # ================ the complete blood count ==============================
+    #
+    # THE CVi FIGURES BELOW ARE NOT NEW. Every one is the EFLM published
+    # median already carried in `app/data/lab_variation.py`, where each row
+    # cites its own meta-analysis page, median and interval. Taking them from
+    # there rather than re-sourcing them keeps ONE number per analyte in the
+    # repository: if the variation table is corrected, these must move with it
+    # and `test_cbc_stability_matches_lab_variation` fails if they do not.
+    #
+    # ⚠ EVERY `CVa` IS STILL UNSOURCED, exactly as `lab_variation.py` records
+    # of itself. Analytical variation is a property of the ANALYSER and the
+    # right source is its own QC data, which this platform never receives.
+    # The RCV arithmetic below is therefore only as good as those placeholders.
+    "hematocrit": StabilityBand(
+        "hematocrit",
+        significant_change_pct=9.0,
+        min_absolute_change=1.0,
+        analytical_cv_pct=1.5,
+        within_subject_cv_pct=2.8,
+        basis=(
+            "⚠ A PROXY, AND SAID SO. Haematocrit has NO ROW in "
+            "app/data/lab_variation.py and therefore no cited CVi of its own. "
+            "The haemoglobin band is reused because haematocrit tracks "
+            "haemoglobin at approximately 3x and their published CVI are "
+            "close -- but that is a REASONED SUBSTITUTION, not a measurement, "
+            "and it is the first thing to replace if a haematocrit row is "
+            "ever added. CVa 1.5 %, CVi 2.8 % -> RCV 8.8 %, taken as 9 %. "
+            "Absolute floor 1.0 percentage point."
+        ),
+    ),
+    "rbc_count": StabilityBand(
+        "rbc_count",
+        significant_change_pct=8.0,
+        min_absolute_change=0.1,
+        analytical_cv_pct=1.5,
+        within_subject_cv_pct=2.6,
+        basis=(
+            _RCV_NOTE + " CVa 1.5 %, CVi 2.6 % (EFLM median, via "
+            "app/data/lab_variation.py) -> RCV 8.3 %, taken as 8 %. Absolute "
+            "floor 0.1 x10^6/uL, the usual reporting increment."
+        ),
+    ),
+    "mcv": StabilityBand(
+        "mcv",
+        significant_change_pct=3.5,
+        min_absolute_change=1.0,
+        analytical_cv_pct=1.0,
+        within_subject_cv_pct=0.8,
+        basis=(
+            _RCV_NOTE + " CVa 1.0 %, CVi 0.8 % (EFLM median) -> RCV 3.5 %. "
+            "⚠ THIS IS THE TIGHTEST BAND IN THE FILE and it has already moved "
+            "a verdict: §6bb records `MCV 85.1 -> 88.6 fl`, a 4.1 % change, "
+            "reading `stable` under the old 4.8 % threshold and `rose` under "
+            "this one. The 1.0 fL absolute floor exists so that a single "
+            "reporting increment cannot alone clear a band this narrow."
+        ),
+    ),
+    "mch": StabilityBand(
+        "mch",
+        significant_change_pct=3.5,
+        min_absolute_change=0.5,
+        analytical_cv_pct=1.0,
+        within_subject_cv_pct=0.8,
+        basis=(
+            _RCV_NOTE + " CVa 1.0 %, CVi 0.8 % (EFLM median) -> RCV 3.5 %. "
+            "Absolute floor 0.5 pg."
+        ),
+    ),
+    "mchc": StabilityBand(
+        "mchc",
+        significant_change_pct=4.0,
+        min_absolute_change=0.5,
+        analytical_cv_pct=1.0,
+        within_subject_cv_pct=1.0,
+        basis=(
+            _RCV_NOTE + " CVa 1.0 %, CVi 1.0 % (EFLM median) -> RCV 3.9 %, "
+            "taken as 4 %. Absolute floor 0.5 g/dL. NOTE that a change "
+            "clearing this band is as likely to be a sample artefact as a "
+            "physiological event -- see the polarity row."
+        ),
+    ),
+    "wbc_count": StabilityBand(
+        "wbc_count",
+        significant_change_pct=32.0,
+        min_absolute_change=0.5,
+        analytical_cv_pct=3.0,
+        within_subject_cv_pct=11.1,
+        basis=(
+            _RCV_NOTE + " CVa 3.0 %, CVi 11.1 % (EFLM median) -> RCV 31.9 %, "
+            "taken as 32 %. A WIDE band, and correctly so: the white cell "
+            "count genuinely swings with infection, stress and time of day, "
+            "so a small change carries little information."
+        ),
+    ),
+    "neutrophils": StabilityBand(
+        "neutrophils",
+        significant_change_pct=36.0,
+        min_absolute_change=1.0,
+        analytical_cv_pct=4.0,
+        within_subject_cv_pct=12.5,
+        basis=(
+            _RCV_NOTE + " CVa 4.0 %, CVi 12.5 % (EFLM median) -> RCV 36.4 %, "
+            "taken as 36 %. Absolute floor 1 percentage point, the reporting "
+            "increment on the reports this service reads."
+        ),
+    ),
+    "lymphocytes": StabilityBand(
+        "lymphocytes",
+        significant_change_pct=30.0,
+        min_absolute_change=1.0,
+        analytical_cv_pct=3.0,
+        within_subject_cv_pct=10.5,
+        basis=(
+            _RCV_NOTE + " CVa 3.0 %, CVi 10.5 % (EFLM median) -> RCV 30.2 %, "
+            "taken as 30 %."
+        ),
+    ),
+    "monocytes": StabilityBand(
+        "monocytes",
+        significant_change_pct=41.0,
+        min_absolute_change=1.0,
+        analytical_cv_pct=5.0,
+        within_subject_cv_pct=14.0,
+        basis=(
+            _RCV_NOTE + " CVa 5.0 %, CVi 14.0 % (EFLM median) -> RCV 41.2 %, "
+            "taken as 41 %."
+        ),
+    ),
+    "eosinophils": StabilityBand(
+        "eosinophils",
+        significant_change_pct=44.0,
+        min_absolute_change=1.0,
+        analytical_cv_pct=5.0,
+        within_subject_cv_pct=15.1,
+        basis=(
+            _RCV_NOTE + " CVa 5.0 %, CVi 15.1 % (EFLM median) -> RCV 44.1 %, "
+            "taken as 44 %. ⚠ §6bb RECORDS WHY THIS NUMBER MATTERS: the "
+            "PREVIOUS figure gave a 59.8 % threshold against a 60.0 % change "
+            "on the owner's own two reports -- a margin of two tenths of a "
+            "point -- so `EOSINOPHILS 5 -> 2` read `stable` on one request "
+            "and was refused on the next. The published median takes it off "
+            "that knife edge."
+        ),
+    ),
+    "basophils": StabilityBand(
+        "basophils",
+        significant_change_pct=45.0,
+        min_absolute_change=0.3,
+        analytical_cv_pct=10.0,
+        within_subject_cv_pct=12.6,
+        basis=(
+            _RCV_NOTE + " CVa 10.0 %, CVi 12.6 % (EFLM median) -> RCV 44.6 %, "
+            "taken as 45 %. ⚠ THE ABSOLUTE FLOOR IS DOING MOST OF THE WORK "
+            "HERE: basophils run at roughly 0-2 % and are reported to one "
+            "decimal place, so a 45 % relative change can be two reporting "
+            "increments. 0.3 percentage points is a reviewer judgement chosen "
+            "so that 0.5 -> 0.7 is not announced as a trend."
+        ),
+    ),
+    "platelet_count": StabilityBand(
+        "platelet_count",
+        significant_change_pct=23.0,
+        min_absolute_change=10.0,
+        analytical_cv_pct=4.0,
+        within_subject_cv_pct=7.3,
+        basis=(
+            _RCV_NOTE + " CVa 4.0 %, CVi 7.3 % (EFLM median) -> RCV 23.1 %, "
+            "taken as 23 %. Absolute floor 10 x10^3/uL."
         ),
     ),
 }

@@ -5,7 +5,7 @@
   "unit": "mg/dl",
   "measurand": "SERUM creatinine (Roche Cobas 6000, enzymatic, IDMS-traceable). Matches VaidyaAI's `creatinine` feature, which is serum creatinine; urine creatinine is a different analyte and is refused upstream by NON_BLOOD_SPECIMEN_TOKENS.",
   "derivation": "computed_by_vaidyaai_from_published_microdata",
-  "built_on": "2026-09-04",
+  "built_on": "2026-09-19",
   "percentile_grid": [
     1.0,
     2.5,

@@ -469,6 +469,53 @@ WEIGHTS: Dict[str, ParameterWeight] = {
         0.0,
         _NOT_A_TREND_BASIS + " A categorical identity attribute.",
     ),
+    # ================ the complete blood count ==============================
+    #
+    # WEIGHT 1.0, AND NONE OF THEM REACHES A SCORE TODAY. All twelve carry
+    # POLARITY_UNDECLARED, so Module 29 returns them as
+    # changed_direction_only or not_classifiable and they are excluded on the
+    # CATEGORY axis -- which is where a "we do not say which way is better"
+    # decision belongs, not here.
+    #
+    # THE WEIGHT IS 1.0 RATHER THAN 0.0 ON PURPOSE, following `hemoglobin`
+    # and `blood_glucose` directly above. 0.0 in this file means "this is not
+    # a trend at all" (gender, smoking history). These twelve ARE trends --
+    # a platelet count can be followed -- so recording them as non-trends
+    # would be false, and declaring a polarity later would then need a second
+    # edit here that somebody would forget.
+    #
+    # ⚠ CONSEQUENCE, STATED BECAUSE IT WAS A DELIBERATE CHOICE: adding these
+    # twelve did NOT change any existing progress score. Verified against all
+    # four stored reports before and after.
+    **{
+        _cbc: ParameterWeight(
+            _cbc,
+            1.0,
+            _EQUAL_WEIGHT_BASIS
+            + " This feature currently has an UNDECLARED polarity -- it is "
+            "harmful at both extremes, and the five differentials are "
+            "proportions of a total besides -- so in practice Module 29 "
+            "returns it as changed_direction_only or not_classifiable and it "
+            "is excluded on the category axis. The weight is 1.0 so that "
+            "declaring a polarity for it later brings it into the score "
+            "without a second edit here. See the `hemoglobin` row, which has "
+            "carried exactly this shape since before these were added.",
+        )
+        for _cbc in (
+            "hematocrit",
+            "rbc_count",
+            "mcv",
+            "mch",
+            "mchc",
+            "wbc_count",
+            "neutrophils",
+            "lymphocytes",
+            "monocytes",
+            "eosinophils",
+            "basophils",
+            "platelet_count",
+        )
+    },
 }
 
 

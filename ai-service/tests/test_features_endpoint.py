@@ -259,7 +259,26 @@ def test_catalog_publishes_the_canonical_feature_space(api):
         "creatinine",
         "cholesterol",
         "triglycerides",
+        # ---- the complete blood count ----
+        "hematocrit",
+        "rbc_count",
+        "mcv",
+        "mch",
+        "mchc",
+        "wbc_count",
+        "neutrophils",
+        "lymphocytes",
+        "monocytes",
+        "eosinophils",
+        "basophils",
+        "platelet_count",
     }
+    # The differentials are PERCENTAGES of the white cell count and accept no
+    # other unit, which the published catalogue has to say out loud: a caller
+    # sending an absolute count in 10^3/uL is sending a different quantity,
+    # not the same one in another unit.
+    assert data["features"]["neutrophils"]["canonical_unit"] == "%"
+    assert list(data["features"]["neutrophils"]["accepted_units"]) == ["%"]
     assert data["features"]["creatinine"]["canonical_unit"] == "mg/dl"
     assert "umol/l" in data["features"]["creatinine"]["accepted_units"]
     assert data["features"]["hypertension"]["value_type"] == "boolean"

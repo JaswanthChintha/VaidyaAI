@@ -466,6 +466,189 @@ RULES: Dict[str, ValidationRule] = {
         "coerced into a binary; narrowing for a binary model is the ML "
         "layer's problem, not validation's.",
     ),
+    # ==================== the complete blood count ==========================
+    #
+    # THE POSSIBLE BANDS ARE WIDER THAN ANY REFERENCE INTERVAL, DELIBERATELY.
+    # `possible_*` asks "could a living person's report really say this?", not
+    # "is this healthy" -- that is Module 8's question. A band drawn at the
+    # reference interval would REJECT the abnormal results this platform
+    # exists to explain, and a rejected value is not shown at all.
+    #
+    # The observed NHANES 2017-2018 range is quoted in each note as a floor
+    # for plausibility, never as the bound itself: NHANES is a household
+    # survey of ambulatory adults and systematically under-samples exactly
+    # the extremes a hospital report shows.
+    # -------------------------------------------------------- hematocrit --
+    "hematocrit": ValidationRule(
+        "hematocrit",
+        "number",
+        "%",
+        # POSSIBLE 5 - 75 %.
+        #   Low: haematocrit tracks haemoglobin at roughly 3x, so the 2 g/dL
+        #   survivable haemoglobin floor corresponds to about 6 %.
+        #   High: polycythaemia vera and severe dehydration reach the 60s;
+        #   75 leaves headroom without admitting a percentage over 100.
+        #   NHANES observed 23.0 - 58.8.
+        possible_low=5.0,
+        possible_high=75.0,
+        extreme_low=20.0,
+        extreme_high=60.0,
+        basis="Tracks haemoglobin at approximately 3x. Extremes set at the "
+        "transfusion-consideration and hyperviscosity thresholds. Printed as "
+        "PCV on most Indian reports.",
+    ),
+    # --------------------------------------------------------- rbc_count --
+    "rbc_count": ValidationRule(
+        "rbc_count",
+        "number",
+        "10^6/ul",
+        # POSSIBLE 0.5 - 12.0 x10^6/uL. NHANES observed 2.32 - 7.84.
+        possible_low=0.5,
+        possible_high=12.0,
+        extreme_low=2.0,
+        extreme_high=8.0,
+        basis="Severe anaemia and polycythaemia bound the possible band. A "
+        "count printed in 10^12/L is NUMERICALLY IDENTICAL to 10^6/uL, so a "
+        "unit mix-up between those two is invisible here and harmless.",
+    ),
+    # --------------------------------------------------------------- mcv --
+    "mcv": ValidationRule(
+        "mcv",
+        "number",
+        "fl",
+        # POSSIBLE 40 - 150 fL. NHANES observed 35.4 - 114.6.
+        #   Severe thalassaemia reaches the 50s; B12 deficiency and
+        #   myelodysplasia reach the 120s-130s.
+        possible_low=40.0,
+        possible_high=150.0,
+        extreme_low=65.0,
+        extreme_high=115.0,
+        basis="Microcytosis and macrocytosis bound the band. An INDEX rather "
+        "than a severity measure: neither end is 'better'.",
+    ),
+    # --------------------------------------------------------------- mch --
+    "mch": ValidationRule(
+        "mch",
+        "number",
+        "pg",
+        # POSSIBLE 10 - 60 pg. NHANES observed 12.4 - 39.2.
+        possible_low=10.0,
+        possible_high=60.0,
+        extreme_low=20.0,
+        extreme_high=40.0,
+        basis="Derived from haemoglobin and red cell count, so its band "
+        "follows theirs.",
+    ),
+    # -------------------------------------------------------------- mchc --
+    "mchc": ValidationRule(
+        "mchc",
+        "number",
+        "g/dl",
+        # POSSIBLE 20 - 50 g/dL. NHANES observed 25.2 - 38.3.
+        #   MCHC is the TIGHTEST of the red cell indices: haemoglobin cannot
+        #   be packed into a red cell beyond about 37 g/dL, so a value above
+        #   that is usually an artefact rather than a physiological state.
+        possible_low=20.0,
+        possible_high=50.0,
+        extreme_low=28.0,
+        extreme_high=37.0,
+        basis="Solubility of haemoglobin bounds the upper end. A raised MCHC "
+        "is more often lipaemia, haemolysis or cold agglutinins than a real "
+        "finding. `%` and `g/dL` are the same scale for MCHC -- see "
+        "backend/src/services/unitEquivalence.js and the conditions it names.",
+    ),
+    # --------------------------------------------------------- wbc_count --
+    "wbc_count": ValidationRule(
+        "wbc_count",
+        "number",
+        "10^3/ul",
+        # POSSIBLE 0.1 - 500 x10^3/uL. NHANES observed 1.9 - 400.0 -- the 400
+        #   is real and is why the upper bound is not drawn at 100.
+        possible_low=0.1,
+        possible_high=500.0,
+        extreme_low=2.0,
+        extreme_high=30.0,
+        basis="Agranulocytosis bounds the low end; leukaemic counts in the "
+        "hundreds bound the high end, and NHANES itself contains a 400. "
+        "10^3/uL and 10^9/L are numerically identical.",
+    ),
+    # ------------------------------------------------------- neutrophils --
+    # THE FIVE DIFFERENTIALS ARE PERCENTAGES, SO 0-100 IS THE HARD BAND.
+    # A value above 100 is an extraction error, not a rare result, and the
+    # absolute-count form of the same analyte would land there constantly --
+    # which is the point of rejecting it.
+    "neutrophils": ValidationRule(
+        "neutrophils",
+        "number",
+        "%",
+        possible_low=0.0,
+        possible_high=100.0,
+        extreme_low=10.0,
+        extreme_high=90.0,
+        basis="A percentage of the white cell count, so bounded by 0 and 100 "
+        "by definition. NHANES observed 8.4 - 92.8.",
+    ),
+    # ------------------------------------------------------- lymphocytes --
+    "lymphocytes": ValidationRule(
+        "lymphocytes",
+        "number",
+        "%",
+        possible_low=0.0,
+        possible_high=100.0,
+        extreme_low=5.0,
+        extreme_high=90.0,
+        basis="A percentage of the white cell count. NHANES observed "
+        "4.4 - 89.7.",
+    ),
+    # --------------------------------------------------------- monocytes --
+    "monocytes": ValidationRule(
+        "monocytes",
+        "number",
+        "%",
+        possible_low=0.0,
+        possible_high=100.0,
+        extreme_high=30.0,
+        basis="A percentage of the white cell count. NHANES observed "
+        "0.7 - 57.2. No low extreme: a monocyte percentage near zero is "
+        "common and is not itself a critical finding.",
+    ),
+    # ------------------------------------------------------- eosinophils --
+    "eosinophils": ValidationRule(
+        "eosinophils",
+        "number",
+        "%",
+        possible_low=0.0,
+        possible_high=100.0,
+        extreme_high=20.0,
+        basis="A percentage of the white cell count. NHANES observed "
+        "0.0 - 29.1, and zero is an ordinary result, so there is no low "
+        "extreme.",
+    ),
+    # --------------------------------------------------------- basophils --
+    "basophils": ValidationRule(
+        "basophils",
+        "number",
+        "%",
+        possible_low=0.0,
+        possible_high=100.0,
+        extreme_high=5.0,
+        basis="A percentage of the white cell count. NHANES observed "
+        "0.1 - 4.8. Zero is an ordinary result, so there is no low extreme.",
+    ),
+    # ---------------------------------------------------- platelet_count --
+    "platelet_count": ValidationRule(
+        "platelet_count",
+        "number",
+        "10^3/ul",
+        # POSSIBLE 1 - 3000 x10^3/uL. NHANES observed 8 - 818.
+        possible_low=1.0,
+        possible_high=3000.0,
+        extreme_low=50.0,
+        extreme_high=1000.0,
+        basis="Extremes set at the usual bleeding-risk threshold and at the "
+        "threshold for extreme thrombocytosis. 10^3/uL and 10^9/L are "
+        "numerically identical, so a report printing either maps correctly.",
+    ),
 }
 
 

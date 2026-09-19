@@ -31,7 +31,26 @@ def offline_settings():
 # --------------------------------------------------------------------------
 
 #: Measured by the Modules 21/22 build as scoring inside the covered range.
-UNCOVERED_TERMS = ["TSH", "ferritin", "WBC", "ALT", "PSA", "CRP"]
+#:
+#: ⚠ `WBC` WAS THE SIXTH ENTRY HERE AND WAS REMOVED, NOT WEAKENED. It is now a
+#: CANONICAL FEATURE with its own knowledge document, shipped alongside the
+#: complete blood count population tables. The test asserted that WBC is
+#: refused rather than answered; leaving it here would mean the only way to
+#: pass would be to un-cover the white cell count, which is the defect this
+#: file's own header warns about -- a test pinning a state the producer can no
+#: longer reach.
+#:
+#: THE TEST'S INTENT IS UNCHANGED and the hazard it guards is undiminished:
+#: five terms remain that TF-IDF cannot separate from covered content, so
+#: exact mapping is still the thing standing between a reader and an
+#: explanation of the wrong organ.
+#:
+#: ⚠ `TSH`, `ALT` AND `CRP` ARE NEXT. All three are Phase 2 candidates with
+#: NHANES distributions available, and each will leave this list the day it
+#: becomes a canonical feature. Whoever does that must move the term out of
+#: here DELIBERATELY and say so, exactly as this note does -- not discover it
+#: as a failing test and quietly delete the row.
+UNCOVERED_TERMS = ["TSH", "ferritin", "ALT", "PSA", "CRP"]
 
 
 @pytest.mark.parametrize("term", UNCOVERED_TERMS)

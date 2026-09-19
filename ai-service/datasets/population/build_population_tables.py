@@ -402,6 +402,271 @@ SPECS: Tuple[Spec, ...] = (
             "supplement use.",
         ),
     ),
+    # ====================================================================
+    # THE COMPLETE BLOOD COUNT, from the file haemoglobin already came from
+    # ====================================================================
+    #
+    # `CBC_J.xpt` was downloaded for `hemoglobin` and carries the whole
+    # count. These twelve therefore cost no new download and no new cycle:
+    # same file, same cycle, same demographic file, same weight variable,
+    # same analytic sample as haemoglobin. Every one of them appears on the
+    # real reports this platform ingests.
+    #
+    # ALL TWELVE ARE `POLARITY_UNDECLARED` IN app/data/trend_polarity.py, and
+    # that is a clinical statement rather than an omission: each is harmful
+    # at BOTH extremes, which is the same reason haemoglobin is undeclared.
+    # A percentile still answers "how common is this value", which is the
+    # only question Module 31 asks.
+    #
+    # THE DIFFERENTIAL IS TAKEN AS PERCENT, NOT ABSOLUTE COUNT. NHANES
+    # publishes both (`LBXNEPCT` and `LBDNENO`). The reports this service
+    # reads print percentages -- `NEUTROPHILS 82 %` on Test 3 -- so the
+    # percentage is the quantity that can actually be matched to a patient
+    # value. Comparing a printed percentage against an absolute-count
+    # distribution would produce a confident and meaningless percentile.
+    Spec(
+        feature="hematocrit",
+        table_id="nhanes_2017_2018_hematocrit",
+        analyte_file="CBC_J.xpt",
+        demo_file="DEMO_J.xpt",
+        column="LBXHCT",
+        unit="%",
+        cycle="2017-2018",
+        cycle_label="NHANES 2017-2018 (cycle J)",
+        analyte_label="LBXHCT - Hematocrit (%)",
+        eligible_ages="examined participants aged 1 year and over",
+        weight_variable="WTMEC2YR",
+        measurand=(
+            "Haematocrit -- the percentage of whole blood volume occupied by "
+            "red cells, Sysmex XN-series. PRINTED AS `PCV` (packed cell "
+            "volume) on the reports this service reads; the two names are the "
+            "same measurement."
+        ),
+        decimals=1,
+        notes=(
+            "Strongly sex-dependent, like haemoglobin, which is why an "
+            "unmatched cohort is never offered.",
+            "Altitude is not adjusted for.",
+        ),
+    ),
+    Spec(
+        feature="rbc_count",
+        table_id="nhanes_2017_2018_rbc_count",
+        analyte_file="CBC_J.xpt",
+        demo_file="DEMO_J.xpt",
+        column="LBXRBCSI",
+        unit="10^6/ul",
+        cycle="2017-2018",
+        cycle_label="NHANES 2017-2018 (cycle J)",
+        analyte_label="LBXRBCSI - Red blood cell count (million cells/uL)",
+        eligible_ages="examined participants aged 1 year and over",
+        weight_variable="WTMEC2YR",
+        measurand="Red blood cell count, Sysmex XN-series automated analyser.",
+        decimals=2,
+        notes=(
+            "Sex-dependent. Harmful at both extremes (anaemia below, "
+            "polycythaemia above), so no direction of harm is declared.",
+        ),
+    ),
+    Spec(
+        feature="mcv",
+        table_id="nhanes_2017_2018_mcv",
+        analyte_file="CBC_J.xpt",
+        demo_file="DEMO_J.xpt",
+        column="LBXMCVSI",
+        unit="fl",
+        cycle="2017-2018",
+        cycle_label="NHANES 2017-2018 (cycle J)",
+        analyte_label="LBXMCVSI - Mean cell volume (fL)",
+        eligible_ages="examined participants aged 1 year and over",
+        weight_variable="WTMEC2YR",
+        measurand="Mean corpuscular volume -- average red cell volume, Sysmex XN-series.",
+        decimals=1,
+        notes=(
+            "An INDEX, not a severity measure. A low MCV points toward iron "
+            "deficiency or thalassaemia and a high one toward B12/folate "
+            "deficiency or alcohol; neither end is 'better'.",
+        ),
+    ),
+    Spec(
+        feature="mch",
+        table_id="nhanes_2017_2018_mch",
+        analyte_file="CBC_J.xpt",
+        demo_file="DEMO_J.xpt",
+        column="LBXMCHSI",
+        unit="pg",
+        cycle="2017-2018",
+        cycle_label="NHANES 2017-2018 (cycle J)",
+        analyte_label="LBXMCHSI - Mean cell hemoglobin (pg)",
+        eligible_ages="examined participants aged 1 year and over",
+        weight_variable="WTMEC2YR",
+        measurand="Mean corpuscular haemoglobin -- average haemoglobin mass per red cell.",
+        decimals=1,
+        notes=("An index derived from haemoglobin and red cell count.",),
+    ),
+    Spec(
+        feature="mchc",
+        table_id="nhanes_2017_2018_mchc",
+        analyte_file="CBC_J.xpt",
+        demo_file="DEMO_J.xpt",
+        column="LBXMC",
+        unit="g/dl",
+        cycle="2017-2018",
+        cycle_label="NHANES 2017-2018 (cycle J)",
+        analyte_label="LBXMC - Mean Cell Hgb Conc. (g/dL)",
+        eligible_ages="examined participants aged 1 year and over",
+        weight_variable="WTMEC2YR",
+        measurand=(
+            "Mean corpuscular haemoglobin CONCENTRATION. NHANES reports it in "
+            "g/dL; some reports print the same quantity as `%`. "
+            "backend/src/services/unitEquivalence.js records that equivalence "
+            "and the assumptions it rests on."
+        ),
+        decimals=1,
+        notes=(
+            "A raised MCHC is more often a measurement artefact (lipaemia, "
+            "haemolysis, cold agglutinins) than a physiological finding.",
+        ),
+    ),
+    Spec(
+        feature="wbc_count",
+        table_id="nhanes_2017_2018_wbc_count",
+        analyte_file="CBC_J.xpt",
+        demo_file="DEMO_J.xpt",
+        column="LBXWBCSI",
+        unit="10^3/ul",
+        cycle="2017-2018",
+        cycle_label="NHANES 2017-2018 (cycle J)",
+        analyte_label="LBXWBCSI - White blood cell count (1000 cells/uL)",
+        eligible_ages="examined participants aged 1 year and over",
+        weight_variable="WTMEC2YR",
+        measurand="Total white blood cell count, Sysmex XN-series.",
+        decimals=1,
+        notes=(
+            "Harmful at both extremes: low counts raise infection risk, high "
+            "counts accompany infection, inflammation and haematological "
+            "disease. The analytic sample includes participants with both.",
+        ),
+    ),
+    Spec(
+        feature="neutrophils",
+        table_id="nhanes_2017_2018_neutrophils",
+        analyte_file="CBC_J.xpt",
+        demo_file="DEMO_J.xpt",
+        column="LBXNEPCT",
+        unit="%",
+        cycle="2017-2018",
+        cycle_label="NHANES 2017-2018 (cycle J)",
+        analyte_label="LBXNEPCT - Segmented neutrophils percent (%)",
+        eligible_ages="examined participants aged 1 year and over",
+        weight_variable="WTMEC2YR",
+        measurand=(
+            "Segmented neutrophils as a PERCENTAGE of the white cell count. "
+            "The percentage, not the absolute count, because that is what the "
+            "reports print."
+        ),
+        decimals=1,
+        notes=(
+            "A PROPORTION of a total. It can move because neutrophils changed "
+            "or because another population did, so a percentile on it is not "
+            "a statement about neutrophil numbers.",
+        ),
+    ),
+    Spec(
+        feature="lymphocytes",
+        table_id="nhanes_2017_2018_lymphocytes",
+        analyte_file="CBC_J.xpt",
+        demo_file="DEMO_J.xpt",
+        column="LBXLYPCT",
+        unit="%",
+        cycle="2017-2018",
+        cycle_label="NHANES 2017-2018 (cycle J)",
+        analyte_label="LBXLYPCT - Lymphocyte percent (%)",
+        eligible_ages="examined participants aged 1 year and over",
+        weight_variable="WTMEC2YR",
+        measurand="Lymphocytes as a PERCENTAGE of the white cell count.",
+        decimals=1,
+        notes=("A proportion of a total; see the neutrophil note.",),
+    ),
+    Spec(
+        feature="monocytes",
+        table_id="nhanes_2017_2018_monocytes",
+        analyte_file="CBC_J.xpt",
+        demo_file="DEMO_J.xpt",
+        column="LBXMOPCT",
+        unit="%",
+        cycle="2017-2018",
+        cycle_label="NHANES 2017-2018 (cycle J)",
+        analyte_label="LBXMOPCT - Monocyte percent (%)",
+        eligible_ages="examined participants aged 1 year and over",
+        weight_variable="WTMEC2YR",
+        measurand="Monocytes as a PERCENTAGE of the white cell count.",
+        decimals=1,
+        notes=("A proportion of a total; see the neutrophil note.",),
+    ),
+    Spec(
+        feature="eosinophils",
+        table_id="nhanes_2017_2018_eosinophils",
+        analyte_file="CBC_J.xpt",
+        demo_file="DEMO_J.xpt",
+        column="LBXEOPCT",
+        unit="%",
+        cycle="2017-2018",
+        cycle_label="NHANES 2017-2018 (cycle J)",
+        analyte_label="LBXEOPCT - Eosinophils percent (%)",
+        eligible_ages="examined participants aged 1 year and over",
+        weight_variable="WTMEC2YR",
+        measurand="Eosinophils as a PERCENTAGE of the white cell count.",
+        decimals=1,
+        notes=(
+            "A proportion of a total; see the neutrophil note.",
+            "Strongly right-skewed and seasonal (allergy, parasitic "
+            "exposure), so the upper percentiles are wide.",
+        ),
+    ),
+    Spec(
+        feature="basophils",
+        table_id="nhanes_2017_2018_basophils",
+        analyte_file="CBC_J.xpt",
+        demo_file="DEMO_J.xpt",
+        column="LBXBAPCT",
+        unit="%",
+        cycle="2017-2018",
+        cycle_label="NHANES 2017-2018 (cycle J)",
+        analyte_label="LBXBAPCT - Basophils percent (%)",
+        eligible_ages="examined participants aged 1 year and over",
+        weight_variable="WTMEC2YR",
+        measurand="Basophils as a PERCENTAGE of the white cell count.",
+        decimals=1,
+        notes=(
+            "A proportion of a total; see the neutrophil note.",
+            "⚠ REPORTED TO ONE DECIMAL PLACE ON A RANGE OF ROUGHLY 0-2 %. "
+            "Adjacent percentiles on the published grid can therefore be the "
+            "SAME printed number, and the service brackets between grid "
+            "points rather than interpolating, which is the right behaviour "
+            "here.",
+        ),
+    ),
+    Spec(
+        feature="platelet_count",
+        table_id="nhanes_2017_2018_platelet_count",
+        analyte_file="CBC_J.xpt",
+        demo_file="DEMO_J.xpt",
+        column="LBXPLTSI",
+        unit="10^3/ul",
+        cycle="2017-2018",
+        cycle_label="NHANES 2017-2018 (cycle J)",
+        analyte_label="LBXPLTSI - Platelet count (1000 cells/uL)",
+        eligible_ages="examined participants aged 1 year and over",
+        weight_variable="WTMEC2YR",
+        measurand="Platelet count, Sysmex XN-series automated analyser.",
+        decimals=0,
+        notes=(
+            "Harmful at both extremes: a low count raises bleeding risk and a "
+            "high one accompanies thrombocytosis. No direction of harm is "
+            "declared.",
+        ),
+    ),
 )
 
 

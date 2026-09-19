@@ -1,6 +1,6 @@
 # Module 31 — Population Distribution Provenance
 
-Every number Module 31 can report about a population comes from the seven JSON
+Every number Module 31 can report about a population comes from the nineteen JSON
 files in `distributions/`. This document says where each of them came from,
 what exactly was computed, what was checked, and what the resulting statement
 does **not** cover.
@@ -23,7 +23,7 @@ Statistics (NCHS), Centers for Disease Control and Prevention.
 **Derivation:** every shipped table declares
 `"derivation": "computed_by_vaidyaai_from_published_microdata"`. These are
 **not** transcriptions of a CDC-published percentile table, and they must never
-be described as such. NCHS does not publish percentile tables for all seven
+be described as such. NCHS does not publish percentile tables for all nineteen
 analytes, on one consistent set of age bands, at the grid this module needs.
 What NCHS *does* publish is the microdata, and a survey-weighted quantile of it
 is a measurement, not an invention: deterministic, and reproducible by anyone
@@ -38,10 +38,17 @@ cd ai-service
 .venv/Scripts/python.exe datasets/population/build_population_tables.py --check
 ```
 
-**Reproducibility, verified 2026-09-04.** The script was re-run against the
-committed `raw/*.xpt` files, writing to a scratch directory, and all seven
-outputs were **byte-identical** to the shipped `distributions/*.json`. The
-build is deterministic and the shipped tables really are its output.
+**Reproducibility, verified 2026-09-04 for the first seven tables.** The
+script was re-run against the committed `raw/*.xpt` files, writing to a
+scratch directory, and all seven outputs were **byte-identical** to the
+shipped `distributions/*.json`. The build is deterministic and those seven
+shipped tables really are its output.
+
+**Re-verified 2026-09-19 for all nineteen.** After the twelve
+complete-blood-count tables were added, the script was re-run against the
+committed `raw/*.xpt` files into a scratch directory and **all nineteen
+outputs were byte-identical** to the shipped `distributions/*.json`
+(`diff -r`, no differences). The determinism claim covers the CBC tables too.
 
 ---
 
@@ -62,7 +69,7 @@ top-codes age at 80, so the top band cannot be split and is open above.
 **Minimum cell size:** a (sex, age band) cell with fewer than **100** unweighted
 observations is **dropped, not published** — a percentile estimated from a
 handful of people is worse than no percentile. **No cell was dropped in any of
-the seven tables**; every table publishes all 14 cells.
+the nineteen tables**; every table publishes all 14 cells.
 
 **Estimator:** the inverse of the survey-weighted empirical CDF (the lower /
 "type 1" quantile). Sort the cell's values ascending, let `W` be the cumulative
@@ -272,6 +279,60 @@ Brief No. 363**, which reports crude estimates for US adults 20+, 2015–2018:
 Both checks are reproducible with `--check`. The residual differences are of
 the size a one-cycle vs two-cycle comparison would produce; neither check is
 claimed to prove more than that.
+
+---
+
+## The complete blood count — twelve tables added 2026-09-19
+
+All twelve come from **`CBC_J.xpt`, NHANES 2017–2018 (cycle J)** — the same
+file, cycle, demographic file (`DEMO_J.xpt`), weight variable (`WTMEC2YR`) and
+analytic sample that `hemoglobin` already used. **No new download, no new
+cohort definition, no new cycle.** The file's sha256 is unchanged and is
+recorded in the source-files table above.
+
+| feature | NHANES column | unit | n (analytic) |
+|---|---|---|---|
+| `hematocrit` | `LBXHCT` | % | 4,981 |
+| `rbc_count` | `LBXRBCSI` | 10^6/uL | 4,981 |
+| `mcv` | `LBXMCVSI` | fL | 4,981 |
+| `mch` | `LBXMCHSI` | pg | 4,981 |
+| `mchc` | `LBXMC` | g/dL | 4,981 |
+| `wbc_count` | `LBXWBCSI` | 10^3/uL | 4,981 |
+| `neutrophils` | `LBXNEPCT` | % | 4,977 |
+| `lymphocytes` | `LBXLYPCT` | % | 4,977 |
+| `monocytes` | `LBXMOPCT` | % | 4,977 |
+| `eosinophils` | `LBXEOPCT` | % | 4,977 |
+| `basophils` | `LBXBAPCT` | % | 4,977 |
+| `platelet_count` | `LBXPLTSI` | 10^3/uL | 4,981 |
+
+14 cohorts each, none dropped.
+
+**THE DIFFERENTIAL IS THE PERCENTAGE, NOT THE ABSOLUTE COUNT.** NHANES
+publishes both (`LBXNEPCT` and `LBDNENO`). The reports this service reads print
+percentages — `NEUTROPHILS 82 %` — so the percentage is the quantity that can
+be matched to a patient's value. An absolute count is a **different quantity**,
+not the same one in another unit, and `app/data/unit_conversions.py` therefore
+lists `%` as the only accepted unit for these five and refuses the rest.
+
+**Eyeball check against clinical expectation** (male / female, 40–49, median):
+haematocrit 44.3 / 40.1 %, RBC 5.00 / 4.47, MCV 89.3 / 89.6 fL, MCH 30.2 /
+30.2 pg, MCHC 34.0 / 33.5 g/dL, WBC 6.6 / 7.4, neutrophils 58.6 / 58.9 %,
+lymphocytes 30.5 / 30.2 %, monocytes 8.0 / 7.1 %, eosinophils 2.3 / 2.1 %,
+basophils 0.7 / 0.7 %, platelets 229 / 263. Every one lands where a haematology
+reference would put it, including the sex differences in haematocrit, RBC and
+platelets.
+
+> **⚠ TIED CUT-POINTS ARE REAL IN THESE TABLES AND WERE NOT IN THE FIRST
+> SEVEN.** Basophils run at roughly 0–2 % and are reported to one decimal
+> place, so adjacent published percentiles can be the **same number** — the
+> male 20–29 cohort publishes 0.3 at both the 1st and the 2.5th. The service
+> brackets with `bisect_right` and so reports the HIGHER of the tied
+> percentiles, which is correct. A test that assumed strictly-increasing grids
+> was corrected rather than the behaviour.
+
+> **⚠ ZERO IS A PUBLISHED VALUE.** The female 70–79 eosinophil cohort publishes
+> 0.0 at the 1st percentile. That is a real result — a share of surveyed adults
+> had no eosinophils detected — not a floor artefact or a missing value.
 
 ---
 

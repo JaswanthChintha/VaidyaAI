@@ -5,7 +5,7 @@
   "unit": "nmol/l",
   "measurand": "Total serum 25-hydroxyvitamin D (25OHD2 + 25OHD3) by HPLC-MS/MS, standardised to the Vitamin D Standardization Program. PUBLISHED IN nmol/L. VaidyaAI's canonical unit is ng/mL, so the SERVICE converts the patient's value into nmol/L before lookup using app.data.unit_conversions -- the table itself is never rescaled.",
   "derivation": "computed_by_vaidyaai_from_published_microdata",
-  "built_on": "2026-09-04",
+  "built_on": "2026-09-19",
   "percentile_grid": [
     1.0,
     2.5,

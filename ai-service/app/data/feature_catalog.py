@@ -72,6 +72,62 @@ FEATURES: Dict[str, FeatureDefinition] = {
     "triglycerides": FeatureDefinition(
         "triglycerides", "mg/dl", "number", SOURCE_LAB_REPORT, "Triglycerides"
     ),
+    # ---- the complete blood count (Module 31 population tables, cycle J) ----
+    #
+    # `description` IS A LABEL, rendered to readers and fed to the RAG
+    # retriever as a search term -- see the note further down this file. These
+    # twelve are named the way a report prints them, not the way NHANES codes
+    # them.
+    #
+    # ALL TWELVE ARE `POLARITY_UNDECLARED`: each is harmful at BOTH extremes,
+    # which is the same reason `hemoglobin` above is undeclared. They are
+    # trendable -- direction and magnitude are reported -- but this service
+    # does not say which way is better.
+    "hematocrit": FeatureDefinition(
+        # Printed as `PCV` (packed cell volume) on both real reports. Same
+        # measurement, and the synonym table carries both spellings.
+        "hematocrit", "%", "number", SOURCE_LAB_REPORT, "Haematocrit (PCV)"
+    ),
+    "rbc_count": FeatureDefinition(
+        "rbc_count", "10^6/ul", "number", SOURCE_LAB_REPORT, "Red blood cell count"
+    ),
+    "mcv": FeatureDefinition(
+        "mcv", "fl", "number", SOURCE_LAB_REPORT, "Mean corpuscular volume"
+    ),
+    "mch": FeatureDefinition(
+        "mch", "pg", "number", SOURCE_LAB_REPORT, "Mean corpuscular haemoglobin"
+    ),
+    "mchc": FeatureDefinition(
+        "mchc",
+        "g/dl",
+        "number",
+        SOURCE_LAB_REPORT,
+        "Mean corpuscular haemoglobin concentration",
+    ),
+    "wbc_count": FeatureDefinition(
+        "wbc_count", "10^3/ul", "number", SOURCE_LAB_REPORT, "White blood cell count"
+    ),
+    # The five differentials are PERCENTAGES of the white cell count, because
+    # that is what the reports print. A percentage of a total can move because
+    # its own population changed or because another one did.
+    "neutrophils": FeatureDefinition(
+        "neutrophils", "%", "number", SOURCE_LAB_REPORT, "Neutrophils"
+    ),
+    "lymphocytes": FeatureDefinition(
+        "lymphocytes", "%", "number", SOURCE_LAB_REPORT, "Lymphocytes"
+    ),
+    "monocytes": FeatureDefinition(
+        "monocytes", "%", "number", SOURCE_LAB_REPORT, "Monocytes"
+    ),
+    "eosinophils": FeatureDefinition(
+        "eosinophils", "%", "number", SOURCE_LAB_REPORT, "Eosinophils"
+    ),
+    "basophils": FeatureDefinition(
+        "basophils", "%", "number", SOURCE_LAB_REPORT, "Basophils"
+    ),
+    "platelet_count": FeatureDefinition(
+        "platelet_count", "10^3/ul", "number", SOURCE_LAB_REPORT, "Platelet count"
+    ),
     # ---- from the patient profile (Module 2 input) ----
     "bmi": FeatureDefinition(
         "bmi", "kg/m2", "number", SOURCE_PATIENT_PROFILE, "Body mass index"
@@ -301,6 +357,137 @@ FEATURE_SYNONYMS: Dict[str, Tuple[Synonym, ...]] = {
         "TGL",
         "Trig",
         "Triglycerides (TG)",
+    ),
+    # ================================ the complete blood count ==============
+    #
+    # EVERY SPELLING BELOW THAT APPEARS ON `Test 2.pdf` OR `Test 3.pdf` IS
+    # TAKEN FROM THE STORED EXTRACTION, not invented: the two reports print
+    # the same analytes differently ("T.RBC" vs "RBC COUNT", "Polymorphs" vs
+    # "NEUTROPHILS", "Platelet count" vs "PLATELET COUNT"), which is exactly
+    # the variation this table exists to absorb.
+    # ------------------------------------------------------- hematocrit --
+    "hematocrit": _s(
+        "PCV",
+        "P.C.V",
+        "Packed Cell Volume",
+        "Haematocrit",
+        "Hematocrit",
+        "HCT",
+        "Hct",
+        "PCV (Packed Cell Volume)",
+        "Haematocrit (PCV)",
+    ),
+    # -------------------------------------------------------- rbc_count --
+    "rbc_count": _s(
+        "RBC Count",
+        "RBC COUNT",
+        "T.RBC",
+        "Total RBC",
+        "Total RBC Count",
+        "Red Blood Cell Count",
+        "Red Cell Count",
+        "RBC",
+        "Erythrocyte Count",
+    ),
+    # -------------------------------------------------------------- mcv --
+    "mcv": _s(
+        "MCV",
+        "M.C.V",
+        "Mean Corpuscular Volume",
+        "Mean Cell Volume",
+    ),
+    # -------------------------------------------------------------- mch --
+    # NOTE the ordering hazard: `MCHC` must never be read as `MCH`. The
+    # synonym matcher folds whole words, so "MCHC" is a different key and
+    # does not collide -- but a SUBSTRING matcher added later would break
+    # this pair first.
+    "mch": _s(
+        "MCH",
+        "M.C.H",
+        "Mean Corpuscular Haemoglobin",
+        "Mean Corpuscular Hemoglobin",
+        "Mean Cell Haemoglobin",
+        "Mean Cell Hemoglobin",
+    ),
+    # ------------------------------------------------------------- mchc --
+    "mchc": _s(
+        "MCHC",
+        "M.C.H.C",
+        "Mean Corpuscular Haemoglobin Concentration",
+        "Mean Corpuscular Hemoglobin Concentration",
+        "Mean Cell Haemoglobin Concentration",
+        "Mean Cell Hemoglobin Concentration",
+    ),
+    # -------------------------------------------------------- wbc_count --
+    "wbc_count": _s(
+        "WBC Count",
+        "WBC COUNT",
+        "Total WBC Count",
+        "TOTAL WBC COUNT",
+        "Total Leucocyte Count",
+        "Total Leukocyte Count",
+        "TLC",
+        "White Blood Cell Count",
+        "White Cell Count",
+        "WBC",
+        "Leucocyte Count",
+        "Leukocyte Count",
+    ),
+    # ------------------------------------------------------ neutrophils --
+    # `Polymorphs` is what Test 2 prints. It is the same cell line.
+    "neutrophils": _s(
+        "Neutrophils",
+        "NEUTROPHILS",
+        "Neutrophil",
+        "Polymorphs",
+        "Polymorphonuclear Cells",
+        "Segmented Neutrophils",
+        "Neutrophils %",
+        "Neutrophil Percentage",
+    ),
+    # ------------------------------------------------------ lymphocytes --
+    "lymphocytes": _s(
+        "Lymphocytes",
+        "LYMPHOCYTES",
+        "Lymphocyte",
+        "Lymphs",
+        "Lymphocytes %",
+        "Lymphocyte Percentage",
+    ),
+    # -------------------------------------------------------- monocytes --
+    "monocytes": _s(
+        "Monocytes",
+        "MONOCYTES",
+        "Monocyte",
+        "Monocytes %",
+        "Monocyte Percentage",
+    ),
+    # ------------------------------------------------------ eosinophils --
+    "eosinophils": _s(
+        "Eosinophils",
+        "EOSINOPHILS",
+        "Eosinophil",
+        "Eosinophils %",
+        "Eosinophil Percentage",
+    ),
+    # -------------------------------------------------------- basophils --
+    "basophils": _s(
+        "Basophils",
+        "BASOPHILS",
+        "Basophil",
+        "Basophils %",
+        "Basophil Percentage",
+    ),
+    # --------------------------------------------------- platelet_count --
+    "platelet_count": _s(
+        "Platelet Count",
+        "PLATELET COUNT",
+        "Platelets",
+        "Platelet",
+        "Thrombocyte Count",
+        "Plt",
+        "PLT",
+        "Platelet Count (PLT)",
     ),
 }
 

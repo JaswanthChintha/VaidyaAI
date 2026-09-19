@@ -66,6 +66,22 @@ def test_lab_and_profile_features_are_disjoint_and_complete():
         "creatinine",
         "cholesterol",
         "triglycerides",
+        # ---- the complete blood count, added with the Module 31 tables ----
+        # Listed one per line rather than derived, so that a feature
+        # disappearing from the catalogue fails here instead of shrinking a
+        # still-green set comparison.
+        "hematocrit",
+        "rbc_count",
+        "mcv",
+        "mch",
+        "mchc",
+        "wbc_count",
+        "neutrophils",
+        "lymphocytes",
+        "monocytes",
+        "eosinophils",
+        "basophils",
+        "platelet_count",
     }
 
 
@@ -242,7 +258,12 @@ def test_lipid_subfractions_are_not_total_cholesterol(printed):
 
 
 @pytest.mark.parametrize(
-    "printed", ["Sodium", "Potassium", "TSH", "ESR", "Platelet Count", "Bilirubin"]
+    # ⚠ "Platelet Count" WAS IN THIS LIST AND IS NOT UNKNOWN ANY MORE. It is
+    # a canonical feature with a population table and a knowledge document,
+    # so asserting that it maps to nothing would now be satisfied only by
+    # removing the mapping. The remaining five are still genuinely unmapped;
+    # TSH and ESR are known gaps recorded in MEMORY.md.
+    "printed", ["Sodium", "Potassium", "TSH", "ESR", "Bilirubin"]
 )
 def test_unknown_tests_report_no_canonical_feature(printed):
     match, reason = lookup_test_name(printed)

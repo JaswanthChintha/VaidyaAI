@@ -15,7 +15,7 @@ What this file covers:
   * `tables.py`'s import-time guards -- proven by INJECTING each failure, not
     merely by observing that the shipped tables pass. A guard nobody has seen
     fail is a guard nobody has tested.
-  * the seven shipped distributions -- grids, cohorts, age bands, units and
+  * every shipped distribution -- grids, cohorts, age bands, units and
     provenance. A table that loses its source, digest or citation fails this
     suite; the loader does not check those, so this file is the only thing that
     does.
@@ -65,9 +65,16 @@ from app.population.tables import (
 TABLE_PATHS: List[Path] = sorted(DISTRIBUTIONS_DIR.glob("*.json"))
 TABLE_NAMES: List[str] = [p.stem for p in TABLE_PATHS]
 
-#: The seven features MEMORY §6m records as table-backed. Hard-coded rather
-#: than derived from the directory so that a table silently disappearing from
-#: `distributions/` is a FAILURE and not a smaller passing run.
+#: The features recorded as table-backed. Hard-coded rather than derived from
+#: the directory so that a table silently disappearing from `distributions/`
+#: is a FAILURE and not a smaller passing run.
+#:
+#: WAS SEVEN, IS NINETEEN. The twelve complete-blood-count tables were built
+#: from `CBC_J.xpt` -- the same NHANES file, cycle and analytic sample that
+#: `hemoglobin` already came from, so they cost no new download and no new
+#: cohort definition. Listing them here EXPLICITLY is the whole point of the
+#: paragraph above: deriving this from the directory would make a lost table
+#: a quieter, smaller, still-green run.
 EXPECTED_COVERED = [
     "hba1c",
     "hemoglobin",
@@ -76,6 +83,19 @@ EXPECTED_COVERED = [
     "creatinine",
     "cholesterol",
     "bmi",
+    # ---- the complete blood count, NHANES 2017-2018 cycle J ----
+    "hematocrit",
+    "rbc_count",
+    "mcv",
+    "mch",
+    "mchc",
+    "wbc_count",
+    "neutrophils",
+    "lymphocytes",
+    "monocytes",
+    "eosinophils",
+    "basophils",
+    "platelet_count",
 ]
 
 #: The one grid every table publishes, from PROVENANCE.md.
@@ -230,7 +250,7 @@ def test_every_canonical_feature_is_either_table_backed_or_explicitly_excluded()
     assert set(COVERED_FEATURES) | set(EXCLUDED_FEATURES) == set(CANONICAL_FEATURES)
 
 
-def test_the_covered_set_is_exactly_the_seven_tables_that_were_built():
+def test_the_covered_set_is_exactly_the_tables_that_were_built():
     """Named explicitly so a table vanishing from `distributions/` fails."""
     assert sorted(COVERED_FEATURES) == sorted(EXPECTED_COVERED)
     assert sorted(TABLES) == sorted(EXPECTED_COVERED)
@@ -519,8 +539,8 @@ def test_an_empty_distributions_directory_stops_the_service(monkeypatch, tmp_pat
 # --------------------------------------------------------------------------
 
 
-def test_there_are_seven_shipped_tables_and_nothing_else_in_the_directory():
-    assert len(TABLE_PATHS) == 7
+def test_the_shipped_tables_are_exactly_the_expected_ones_and_nothing_else():
+    assert len(TABLE_PATHS) == len(EXPECTED_COVERED)
     assert sorted(TABLE_NAMES) == sorted(EXPECTED_COVERED)
 
 
@@ -550,7 +570,20 @@ def test_every_cohort_is_index_aligned_with_the_grid_and_never_decreases(name):
             b >= a for a, b in zip(values, values[1:])
         ), f"{name}/{cell['cohort_id']}: quantiles decrease"
         assert all(isinstance(v, (int, float)) for v in values)
-        assert values[0] > 0, f"{name}/{cell['cohort_id']}: non-positive quantile"
+        # ⚠ ZERO IS A REAL RESULT FOR SOME ANALYTES, AND THIS ASSERTED `> 0`.
+        #
+        # It held for every table shipped before the complete blood count,
+        # because a living person's haemoglobin, creatinine or BMI cannot be
+        # zero. A DIFFERENTIAL PERCENTAGE CAN: the female 70-79 eosinophil
+        # cohort publishes 0.0 at the 1st percentile, and that is not a
+        # missing value or a floor artefact -- a real share of surveyed adults
+        # had no eosinophils detected on the slide.
+        #
+        # The check that matters is that the value is not NEGATIVE, which
+        # would be a sign error or a mis-parse. The physiological floor per
+        # feature is Module 6's job and is asserted in validation_rules.py, so
+        # duplicating it here would put the same judgement in two places.
+        assert values[0] >= 0, f"{name}/{cell['cohort_id']}: negative quantile"
 
 
 @pytest.mark.parametrize("name", sorted(EXPECTED_COVERED))

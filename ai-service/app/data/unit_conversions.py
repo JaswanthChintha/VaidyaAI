@@ -119,6 +119,56 @@ UNIT_ALIASES: Dict[str, str] = {
     "yrs": "years",
     "yr": "years",
     "y": "years",
+    # ================= the complete blood count ==========================
+    #
+    # CELL COUNTS. The SI and the traditional spellings of these are
+    # NUMERICALLY IDENTICAL, which is a trap rather than a convenience:
+    # 10^3/uL and 10^9/L are the same number, and so are 10^6/uL and
+    # 10^12/L. A report printing either needs no arithmetic, so the
+    # conversion is an identity -- but it still has to be DECLARED, because
+    # `conversion_for` refuses an unlisted unit rather than assuming it is
+    # canonical.
+    #
+    # `/ul` IS NOT AMONG THEM AND IS DELIBERATELY ABSENT. A white cell count
+    # printed as 7000 /uL is the same quantity as 7.0 x10^3/uL, but the
+    # scaling differs by a thousand and nothing on the report distinguishes
+    # "7000" from a mis-scaled "7000 x10^3". Rejecting the unit is safer
+    # than silently dividing.
+    "10^3/ul": "10^3/ul",
+    "10^3/l": "10^3/ul",
+    "103/ul": "10^3/ul",
+    "10e3/ul": "10^3/ul",
+    "x10^3/ul": "10^3/ul",
+    "thou/ul": "10^3/ul",
+    "thousand/ul": "10^3/ul",
+    "k/ul": "10^3/ul",
+    "10^9/l": "10^3/ul",
+    "109/l": "10^3/ul",
+    "10e9/l": "10^3/ul",
+    "x10^9/l": "10^3/ul",
+    "10^6/ul": "10^6/ul",
+    "106/ul": "10^6/ul",
+    "10e6/ul": "10^6/ul",
+    "x10^6/ul": "10^6/ul",
+    "mill/ul": "10^6/ul",
+    "million/ul": "10^6/ul",
+    "m/ul": "10^6/ul",
+    "10^12/l": "10^6/ul",
+    "1012/l": "10^6/ul",
+    "10e12/l": "10^6/ul",
+    "x10^12/l": "10^6/ul",
+    # RED CELL INDICES. `um3` (cubic micron) is the old spelling of the
+    # femtolitre and is exactly equal to it.
+    "fl": "fl",
+    "femtolitre": "fl",
+    "femtoliter": "fl",
+    "um3": "fl",
+    "u3": "fl",
+    "cu micron": "fl",
+    "pg": "pg",
+    "picogram": "pg",
+    "picogramme": "pg",
+    "pgm": "pg",
 }
 
 
@@ -342,6 +392,60 @@ CONVERSIONS: Dict[str, Dict[str, UnitConversion]] = {
         "g/l": UnitConversion("g/l", "mg/dl", 100.0, basis="decimal prefix"),
         "mg/l": UnitConversion("mg/l", "mg/dl", 0.1, basis="decimal prefix"),
     },
+    # ======================= the complete blood count =====================
+    #
+    # ALMOST EVERY ENTRY HERE IS AN IDENTITY, AND THAT IS THE FINDING RATHER
+    # THAN A SHORTCUT. The alternative spellings a report uses for these
+    # analytes -- 10^9/L for 10^3/uL, 10^12/L for 10^6/uL, um3 for fL -- are
+    # EQUAL, not merely proportional, so there is no arithmetic to audit.
+    # They still have to be listed, because `conversion_for` returns None for
+    # an unlisted unit and the value is then refused rather than assumed.
+    "hematocrit": {
+        "%": _identity("%"),
+        # Haematocrit is sometimes reported as a FRACTION (L/L): 0.45 L/L is
+        # 45 %. Not listed. A fraction and a percentage of the same sample
+        # differ by 100x, and a report printing "0.45" with no unit at all is
+        # indistinguishable from a percentage that has been mis-extracted.
+        # The plausible band in validation_rules.py starts at 5, so a
+        # fraction would be REJECTED rather than read as a percentage.
+    },
+    "rbc_count": {"10^6/ul": _identity("10^6/ul")},
+    "mcv": {"fl": _identity("fl")},
+    "mch": {"pg": _identity("pg")},
+    "mchc": {
+        "g/dl": _identity("g/dl"),
+        # THE EQUIVALENCE RECORDED IN backend/src/services/unitEquivalence.js.
+        # For MCHC specifically, g/dL and % are the same scale -- 33 g/dL and
+        # 33 % are the same figure -- because it is a mass of haemoglobin per
+        # volume of packed red cells. It holds assuming a red-cell density of
+        # 1 g/mL and negligible plasma haemoglobin; a grossly haemolysed
+        # sample breaks it, and THIS SERVICE CANNOT DETECT THAT. See §6bc.
+        "%": UnitConversion(
+            "%",
+            "g/dl",
+            1.0,
+            basis=(
+                "MCHC only: mass of haemoglobin per volume of packed red "
+                "cells, assuming red-cell density 1 g/mL and negligible "
+                "plasma haemoglobin. NOT a general %/g/dL equivalence -- a "
+                "% on a differential count is a proportion of the white "
+                "cell count and is a different quantity entirely."
+            ),
+        ),
+        "g/l": UnitConversion("g/l", "g/dl", 0.1, basis="decimal prefix"),
+    },
+    "wbc_count": {"10^3/ul": _identity("10^3/ul")},
+    # The five differentials are PERCENTAGES OF THE WHITE CELL COUNT, and the
+    # only unit they accept is `%`. An absolute count in 10^3/uL is a
+    # DIFFERENT QUANTITY, not the same one in another unit, so it is not
+    # listed and is refused -- which is the correct outcome, because there is
+    # no way to convert one into the other without the total.
+    "neutrophils": {"%": _identity("%")},
+    "lymphocytes": {"%": _identity("%")},
+    "monocytes": {"%": _identity("%")},
+    "eosinophils": {"%": _identity("%")},
+    "basophils": {"%": _identity("%")},
+    "platelet_count": {"10^3/ul": _identity("10^3/ul")},
     # ------------------------------------------- patient-profile features --
     "bmi": {"kg/m2": _identity("kg/m2")},
     "age": {"years": _identity("years")},

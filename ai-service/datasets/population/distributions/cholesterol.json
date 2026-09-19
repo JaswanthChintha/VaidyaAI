@@ -5,7 +5,7 @@
   "unit": "mg/dl",
   "measurand": "Serum TOTAL cholesterol, enzymatic assay. Matches VaidyaAI's `cholesterol` feature, which is explicitly TOTAL cholesterol (HDL/LDL/VLDL are separate analytes in feature_catalog.py).",
   "derivation": "computed_by_vaidyaai_from_published_microdata",
-  "built_on": "2026-09-04",
+  "built_on": "2026-09-19",
   "percentile_grid": [
     1.0,
     2.5,

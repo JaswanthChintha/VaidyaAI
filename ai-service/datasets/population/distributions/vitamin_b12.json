@@ -5,7 +5,7 @@
   "unit": "pg/ml",
   "measurand": "Serum vitamin B12 (cobalamin), Roche Elecsys electrochemiluminescence immunoassay.",
   "derivation": "computed_by_vaidyaai_from_published_microdata",
-  "built_on": "2026-09-04",
+  "built_on": "2026-09-19",
   "percentile_grid": [
     1.0,
     2.5,

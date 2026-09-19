@@ -51,6 +51,22 @@ GOOD_VALUE = {
     "creatinine": 0.9,
     "cholesterol": 190.0,
     "bmi": 27.0,
+    # ---- the complete blood count ----
+    # Near the published median for the 40-49 cohorts, in the TABLE's own
+    # unit. Total over COVERED_FEATURES by design: a new table with no row
+    # here fails with a KeyError rather than being skipped.
+    "hematocrit": 42.0,
+    "rbc_count": 4.7,
+    "mcv": 89.0,
+    "mch": 30.0,
+    "mchc": 33.5,
+    "wbc_count": 7.0,
+    "neutrophils": 58.0,
+    "lymphocytes": 30.0,
+    "monocytes": 7.5,
+    "eosinophils": 2.5,
+    "basophils": 0.7,
+    "platelet_count": 250.0,
 }
 
 

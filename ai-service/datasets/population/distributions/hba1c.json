@@ -5,7 +5,7 @@
   "unit": "%",
   "measurand": "Glycohaemoglobin (HbA1c) as a percentage, Tosoh HLC-723 HPLC, NGSP-certified. Matches VaidyaAI's `hba1c` canonical unit '%' (NGSP), NOT IFCC mmol/mol.",
   "derivation": "computed_by_vaidyaai_from_published_microdata",
-  "built_on": "2026-09-04",
+  "built_on": "2026-09-19",
   "percentile_grid": [
     1.0,
     2.5,

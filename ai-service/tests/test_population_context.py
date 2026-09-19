@@ -209,6 +209,29 @@ GOOD_VALUE: Dict[str, float] = {
     "creatinine": 0.9,
     "cholesterol": 190.0,
     "bmi": 27.0,
+    # ---- the complete blood count ----
+    # Each of these sits near the published median for the 40-49 cohorts, so
+    # a band test exercises the MIDDLE of the table rather than an edge. The
+    # values are read off the shipped tables, not invented: see
+    # datasets/population/distributions/<feature>.json.
+    #
+    # THIS DICT IS TOTAL OVER `COVERED_FEATURES` BY DESIGN and the tests
+    # parametrise over that tuple, so shipping a new table without adding a
+    # row here fails with a KeyError rather than silently skipping the
+    # feature. That is the intended behaviour and is why the twelve rows
+    # below arrived with the twelve tables.
+    "hematocrit": 42.0,
+    "rbc_count": 4.7,
+    "mcv": 89.0,
+    "mch": 30.0,
+    "mchc": 33.5,
+    "wbc_count": 7.0,
+    "neutrophils": 58.0,
+    "lymphocytes": 30.0,
+    "monocytes": 7.5,
+    "eosinophils": 2.5,
+    "basophils": 0.7,
+    "platelet_count": 250.0,
 }
 
 COVERED = sorted(COVERED_FEATURES)
@@ -462,6 +485,28 @@ def test_the_band_can_be_re_derived_by_hand_from_the_responses_own_grid(feature)
             probes.append(round(value + 0.01, 4))
             if index + 1 < len(published):
                 probes.append(round((value + published[index + 1]) / 2, 4))
+        # THE SAME RULE THE TWO OUTER PROBES ALREADY FOLLOW, APPLIED TO THE
+        # STEP PROBES. The comment above says a probe must be a value that
+        # could actually arrive, and `_just_below`/`_just_above` honour that
+        # -- but `value - 0.01` did not, and it only started mattering when a
+        # feature whose PUBLISHED FLOOR IS ITS PHYSIOLOGICAL FLOOR arrived.
+        #
+        # Eosinophils publish 0.0 at the 1st percentile for several cohorts,
+        # and a share of the white cell count cannot be negative, so
+        # `0.0 - 0.01` is refused as VALUE_NOT_PHYSIOLOGICAL. That refusal is
+        # CORRECT and is not what this test is about: there is simply no
+        # value both strictly below that grid and physically possible, so
+        # there is nothing to re-derive.
+        #
+        # Dropping the impossible probes keeps every reachable one. The
+        # `checked > 300` floor below is what stops this quietly becoming a
+        # test of nothing.
+        _low, _high = _possible_band_in_table_unit(feature)
+        probes = [
+            p
+            for p in probes
+            if (_low is None or p >= _low) and (_high is None or p <= _high)
+        ]
         for probe in probes:
             entry = one(
                 feature=feature, value=probe, unit=unit, age=age, gender=gender
@@ -548,7 +593,23 @@ def test_the_three_positions_are_reported_exactly_where_they_are_true(feature):
     assert band_for(values[-1]).position == POSITION_AT_OR_ABOVE_HIGHEST
     # Exactly AT the lowest published value has reached it.
     assert band_for(values[0]).position == POSITION_BETWEEN
-    assert band_for(values[0]).lower_percentile == grid[0]
+    # ⚠ THE GRID IS NON-DECREASING, NOT STRICTLY INCREASING, AND ADJACENT
+    # CUT-POINTS CAN BE EQUAL. This line read `== grid[0]`, which quietly
+    # assumed no two published values are ever the same number.
+    #
+    # Basophils are the first shipped analyte where they are: the male 20-29
+    # cohort publishes 0.3 at BOTH the 1st and the 2.5th percentile, because
+    # the analyte runs at roughly 0-2 % and is reported to one decimal place,
+    # so the reporting resolution is a large fraction of the whole scale.
+    #
+    # Reporting the HIGHER of the tied percentiles is correct and is what
+    # `bisect_right` does: a reading of 0.3 is at or above the 2.5th
+    # percentile, and saying "the 1st" would understate where it sits. So the
+    # expectation, not the behaviour, was wrong -- and it was only ever right
+    # by accident, because every earlier table happened to have distinct
+    # values.
+    _tied_upper = max(g for g, v in zip(grid, values) if v == values[0])
+    assert band_for(values[0]).lower_percentile == _tied_upper
 
 
 def test_the_value_reported_is_the_value_that_was_bracketed_after_conversion():

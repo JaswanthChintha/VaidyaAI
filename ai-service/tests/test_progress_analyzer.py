@@ -266,7 +266,13 @@ def test_the_non_zero_weights_are_exactly_the_trendable_features():
     non_zero = {name for name, e in WEIGHTS.items() if e.weight > 0.0}
     trendable = {name for name, p in POLARITY.items() if p.trendable}
     assert non_zero == trendable
-    assert len(non_zero) == 9, sorted(non_zero)
+    # 9 + the twelve complete-blood-count features. They are TRENDABLE --
+    # a platelet count can be followed over time -- but every one carries
+    # POLARITY_UNDECLARED, so they are excluded on the CATEGORY axis and
+    # none of them reaches a score. Weight 0 here would mean 'not a trend
+    # at all', which is what `gender` and `smoking_history` are and what
+    # these are not.
+    assert len(non_zero) == 21, sorted(non_zero)
     assert {name for name, e in WEIGHTS.items() if e.weight == 0.0} == (
         set(CANONICAL_FEATURES) - trendable
     )

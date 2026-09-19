@@ -807,6 +807,18 @@ def test_observed_module_4_output_produces_the_expected_feature_set():
     assert data.unmapped[0].value_raw == "Negative"
 
     # Profile features are absent because no profile was supplied.
+    #
+    # ⚠ AND SO IS THE WHOLE BLOOD COUNT, WHICH IS NEW AND IS CORRECT. This
+    # observed Module 4 payload is a metabolic panel: it prints no CBC at
+    # all, so every one of the twelve complete-blood-count features is
+    # genuinely absent from it. They appear here because the catalogue grew,
+    # not because anything stopped being extracted -- `data.features` is
+    # unchanged at the same six.
+    #
+    # CONSEQUENCE WORTH KNOWING: any report without a blood count now reports
+    # twelve more features as not present, which flows into
+    # `missing_count` in feature_repository.py and into `features_not_present`
+    # on the clinician summary.
     assert set(data.missing_features) == {
         "vitamin_b12",
         "triglycerides",
@@ -816,6 +828,18 @@ def test_observed_module_4_output_produces_the_expected_feature_set():
         "heart_disease",
         "smoking_history",
         "gender",
+        "hematocrit",
+        "rbc_count",
+        "mcv",
+        "mch",
+        "mchc",
+        "wbc_count",
+        "neutrophils",
+        "lymphocytes",
+        "monocytes",
+        "eosinophils",
+        "basophils",
+        "platelet_count",
     }
     assert data.warnings == []
     assert data.summary.parameters_received == 7
@@ -837,4 +861,24 @@ def test_observed_module_4_output_with_profile_context():
     assert data.summary.feature_count == 11
     assert data.features["hypertension"].value is True
     assert "heart_disease" not in data.features
-    assert data.missing_features == ["vitamin_b12", "triglycerides", "heart_disease"]
+    # CATALOGUE ORDER, and the twelve blood-count features sit between
+    # `triglycerides` and the profile features because that is where they are
+    # declared in feature_catalog.py. This payload prints no blood count, so
+    # all twelve are genuinely missing from it.
+    assert data.missing_features == [
+        "vitamin_b12",
+        "triglycerides",
+        "hematocrit",
+        "rbc_count",
+        "mcv",
+        "mch",
+        "mchc",
+        "wbc_count",
+        "neutrophils",
+        "lymphocytes",
+        "monocytes",
+        "eosinophils",
+        "basophils",
+        "platelet_count",
+        "heart_disease",
+    ]
