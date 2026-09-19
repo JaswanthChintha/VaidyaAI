@@ -3,7 +3,7 @@
 > Living context file for the VaidyaAI build. Keep this in the project folder so the
 > project's history, decisions, and state survive independently of any chat session.
 >
-> **Last updated:** 2026-09-18 (§6aw) · **All 32 modules + frontend built, plus 33, 34, 35 and 36**
+> **Last updated:** 2026-09-19 (§6bc) · **All 32 modules + frontend built, plus 33, 34, 35 and 36**
 >
 > The build history is §1–§6w. The recent design and safety work is:
 > the "Instrument" design system (§6x) · the timeline trend chart (§6z) · five
@@ -12,19 +12,25 @@
 > picker for the comparison (§6ah) · and a third session of design, WCAG AA
 > and internal-vocabulary work (§6aj–§6ao).
 >
-> **⚠ READ §6aw FIRST, THEN §6av, THEN §6au.** Those are the current
-> handovers. §6aw is the newest: Module 36 (test-name joining), a hand-written
-> variation table that takes precedence over the model, a zero-change defect
-> in the SHARED significance test, and the comparison card brought to the same
-> coverage as the timeline. §6av documents Module 35 and supersedes §6au's
-> conclusion that improving/worsening/stable could not be produced for an
-> unassessed test. §6at is the long one and still holds except where the later
-> sections correct it. §6as is older again and its test counts are off by 7.
+> **⚠ READ §0 THEN §6bc, §6bb, §6ba, §6az — newest first. Those four are the
+> current handover.** In one line each:
 >
-> The line that stood here — "nothing since `6dc3409` is committed, 45 files,
-> three sessions deep, read §6ap first" — **is history.** Everything is
-> committed and the tree is clean. §6ap and §6ai are stale handovers and §6ap
-> opens with that same uncommitted-work warning; do not act on it.
+> * **§6bc** — the two unit equivalences CHECKED against their sources. Both
+>   hold; each `basis` was incomplete in its own way. Still `verified: false`.
+> * **§6bb** — the variation table checked against EFLM. **13 of 15 figures
+>   erred toward `stable`**, three were outside the published interval, and
+>   **ESR is not in that database at all.** Figures updated, still 0 verified.
+> * **§6ba** — a re-analysis renamed three tests (`ESR` → `ESR WESTGARD`) and
+>   silently broke the table lookup. Fixed at the prompt AND the lookup.
+> * **§6az** — the clinician page read aloud: **five findings, all five
+>   fixed**, including a "marked by the laboratory" attribution that was false
+>   and model caveats that vanished when Gemini started working.
+> * **§6ay** — one provenance caveat instead of 26. **§6ax** — OpenRouter as a
+>   secondary text provider, which has since fired in production.
+>
+> §6aw and §6av are the previous handovers and still hold. §6at is the long
+> one. **§6as's test counts are off by 7; §6ap and §6ai are stale** and §6ap
+> opens with an uncommitted-work warning that is history — do not act on it.
 
 ---
 
@@ -55,9 +61,10 @@ about any of them. That is the fifth time on this project.
 > `origin/main` is the only remote branch. **The 14-path uncommitted warning
 > that stood here for two sessions is history.**
 >
-> **THE LAST SUBSTANTIVE COMMITS ARE `fd9ac4c`** (OpenRouter as a secondary
-> text provider, §6ax) **and `d44068c`** (the eAG flag work). Anything after
-> them is this block's own maintenance.
+> **THE LAST SUBSTANTIVE COMMIT IS `70fc92c`** (the two unit equivalences
+> checked, §6bc). The 2026-09-19 run, newest first, is `70fc92c` (§6bc),
+> `f4699c9` (§6bb), `a8f2238` (the report-date display), `9684b24` (§6ba),
+> `39c59cb` / `2e30a7a` / `550fd51` / `f958ff0` (§6az's five fixes).
 >
 > > **THIS BLOCK HAS NOW BEEN WRONG ABOUT THE TREE THREE TIMES IN ONE DAY, IN
 > > THREE DIFFERENT FIELDS.** It named `351b693` and was two commits stale
@@ -113,11 +120,19 @@ about any of them. That is the fifth time on this project.
 >    violation codes, under the same `SafetyContext` Module 35 and the glossary
 >    pass.** This is §6r's D1, open since 2026-09-05, and §6ax raised its
 >    priority: a second text provider (OpenRouter) means less provider-side
->    filtering sits in front of Module 24 than before. **Measured, with the
->    rules that DO fire listed beside it, in §6ax.** Nothing else on this list
->    is close.
+>    filtering sits in front of Module 24 than before — **and that fallback
+>    has since fired in production** (§6ba), so the exposure is no longer
+>    theoretical. **Measured, with the rules that DO fire listed beside it, in
+>    §6ax.** Nothing else on this list is close.
 >
-> The four below are named in §6aw's KNOWN AND OPEN with the evidence.
+>    Reproduce in one line from `ai-service/`:
+>    ```
+>    .venv/Scripts/python.exe -c "from app.safety.validator import SafetyContext, validate_text; v=validate_text('You have cirrhosis of the liver.', SafetyContext()); print(v.approved, v.codes)"
+>    ```
+>
+> **ITEMS 1 AND 2 ARE NOW THE SAME SHAPE: the evidence is gathered and cited,
+> the flags are untouched, and only a human may touch them.** Each is a short
+> reading job, plus one judgement a citation cannot make.
 >
 > 1. **VERIFY THE VARIATION TABLE — NOW A 15-MINUTE JOB, SEE §6bb.**
 >    `ai-service/app/data/lab_variation.py`, **16 rows, still 0 verified, and
@@ -154,18 +169,22 @@ about any of them. That is the fifth time on this project.
 >    (mutation-tested), the stored row was repaired, the whole database
 >    re-audits clean, and the panel was read afterwards — no chip. See §6aw's
 >    two eAG subsections.
-> 4. ~~**Read the clinician page aloud.**~~ **DONE — see §6az.** Five findings,
->    two fixed (a false "by the laboratory" attribution, and every model caveat
->    vanishing once Gemini generated reliably). Three left open there.
->    ORIGINAL: Every screen-reading session on this
->    project has found something no suite did — eight times now. The timeline
->    and comparison cards were read on 2026-09-18; the clinician page was not.
+> 4. ~~**Read the clinician page aloud.**~~ **DONE — ALL FIVE FINDINGS FIXED,
+>    see §6az.** Ninth time screen-reading found what no suite did.
 > 5. **GIVE FLAGS A PROVENANCE.** `flag_source` of `printed_marking` vs
 >    `inferred_from_range`, which the extraction prompt already distinguishes
->    in words, plus a migration for the 44 flags stored without it. Item 3
->    repaired one class of unprovenanced flag by inference; this is the fix
->    that makes the page's "your laboratory's own marking" true for all of
->    them.
+>    in words, plus a migration for the flags stored without it. Item 3
+>    repaired one class of unprovenanced flag by inference; **this is the fix
+>    that would let the clinician page name WHO decided a value was out of
+>    range** instead of saying "this tool does not record which" (§6az).
+> 6. **RE-READ THE PATIENT DASHBOARD ALOUD.** The clinician page was read on
+>    2026-09-18 and gave five findings. **The patient dashboard has not been
+>    read since the Module 35/36 work landed**, and it is the screen most
+>    people actually see. On this project that has never once come back empty.
+> 7. **FIX `conftest.py` SO THE ai-service SUITE RUNS WITH `.env` PRESENT.**
+>    Carried for many sessions. A suite whose meaning depends on a gitignored
+>    file being absent will mislead somebody, and moving `.env` aside by hand
+>    every run is how it eventually gets left moved.
 
 > ### ▶ RUN AND TEST, IN ONE PLACE
 >
@@ -187,6 +206,22 @@ about any of them. That is the fifth time on this project.
 >   while checking a render exhaust it and the page goes blank with `429`,
 >   which looks exactly like a broken feature. The limiter is in-memory, so
 >   **restarting the backend clears it** — faster than waiting.
+> * **⚠ UPLOAD DOES NOT AUTO-ANALYSE.** A new report sits at "Uploaded, not
+>   yet analysed" with its own **Analyse** button. Learned the hard way on
+>   2026-09-19 after telling the owner the opposite.
+> * **⚠ THE ANALYSIS WRITE LANDS AFTER THE LOG GOES QUIET.** `report_generated`
+>   is NOT the last stage: querying Mongo straight after it returns the OLD
+>   document, or an empty `extraction`. **Poll `status === 'processed'`**, and
+>   never read a count of zero as a result — that is how "0 of 0 names carry a
+>   method token" nearly got reported as a pass.
+> * **⚠ DO NOT SPEND THE REFRESH TOKEN.** Calling `/api/v1/auth/refresh` to get
+>   a bearer token for a probe ROTATES it, invalidates the copy the app holds
+>   and signs the owner out. Read payloads from the open page's own network
+>   log instead (§6az).
+> * **TO DRIVE AN UPLOAD FROM THE BROWSER PANE**, serve the file over HTTP and
+>   let the page's own uploader take it — `fetch` the PDF, build a `File`, put
+>   it in the input via `DataTransfer`, dispatch `change`, click Upload. That
+>   keeps the app's own credentials and route, and touches no token.
 >
 > ```
 > backend      npm test                      # or: npx jest --json --outputFile=<f>
@@ -200,23 +235,52 @@ about any of them. That is the fifth time on this project.
 > reliable one.
 
 
-> ### ▶ NEW CHAT? START AT §6aw, THEN §6av, THEN §6au.
+> ### ▶ NEW CHAT? §0, THEN §6bc → §6bb → §6ba → §6az. THEN §6aw, §6av.
 >
-> **§6aw is the current handover and it is long because the reader drove two
-> real screens for a whole session.** Read its opening list and its KNOWN AND
-> OPEN block first; the rest is evidence for those.
+> **Read each section's opening list and its KNOWN AND OPEN block first; the
+> rest is evidence for those.** The six sections from 2026-09-18/19 are short.
+> §6aw and §6av are the previous handovers and still hold.
 >
-> Between them they have the run commands, the state of the repository, what
-> `Test 2.pdf` and `Test 3.pdf` are and why they matter, and what is open.
+> ### ⚠ THE FIXTURES CHANGED ON 2026-09-19 — `Test 3.pdf` IS A NEW DOCUMENT
+>
+> The old Test 3 report (`6aa698387a3bd7401512a5f3`) was **deleted** and
+> replaced by a fresh upload (`6aae0df5b0b3c22147df56f0`). Any earlier section
+> naming the old id is describing a report that no longer exists.
+>
+> **The replacement is strictly better and that is why it was kept:** it is a
+> clean extraction under every current gate — bare test names (`ESR`, not
+> `ESR WESTGARD`), eAG with `flag: null` and no bounds **out of the pipeline
+> rather than hand-repaired**, and `reportDate` 2026-09-13 matching what the
+> document prints. Four reports on the account; the timeline reads
+> **26 parameters · 6 improving · 2 worsening · 12 stable · 6 undirected**.
+>
+> Between them these sections have the run commands, the state of the
+> repository, what `Test 2.pdf` and `Test 3.pdf` are and why they matter, and
+> what is open.
+>
+> **⚠ `Test 2.pdf` CANNOT TEST THE METHOD-NAME FIX — it prints no method
+> lines at all.** Only Test 3 does (`WESTGARD`, `HPLC`, `PHOTOMETRIC` ×2,
+> `Immunoturbidometric`). A clean result from Test 2 there is a negative
+> control that was always going to pass (§6ba).
 > **§6at opens with a ten-line list of what that session did and a KNOWN AND
 > OPEN list naming four things it raised and did NOT fix.** Read those two
 > blocks before anything else in it — the section is long because the reader
 > drove the real pages for a whole session, not because it all matters equally.
 >
-> **⚠ GEMINI WAS EXHAUSTED ON 2026-09-16.** All three models in the chain hit
-> their daily limits. Every refusal path renders nothing, which is designed
-> behaviour and looks exactly like a bug — check the ai-service log before
-> concluding anything is broken.
+> **⚠ A SPENT QUOTA RENDERS NOTHING, BY DESIGN, AND LOOKS EXACTLY LIKE A BUG.**
+> Check the ai-service log before concluding anything is broken.
+>
+> **THERE IS NOW A SECOND PROVIDER BEHIND IT (§6ax), AND IT HAS FIRED IN
+> PRODUCTION (§6ba).** When Gemini rate-limits, `text_provider_fallback`
+> crosses to OpenRouter and the log says so. **Both pools are exhaustible** —
+> Gemini is ~20/day/model over a four-model chain, OpenRouter is 50/day
+> account-wide. `grep -E "text_provider_fallback|openrouter_text_generated|429"`
+> over the ai-service log answers "is it spent?" in one line.
+>
+> **⚠ THE OPENROUTER KEY WAS PASTED INTO A CHAT TRANSCRIPT ON 2026-09-18 AND
+> SHOULD BE ROTATED.** It lives in `ai-service/.env` (gitignored, `SecretStr`,
+> never logged) with a comment saying so; no code names it, so replacing it is
+> a one-line edit.
 > **NO DECISION IS WAITING. §6as's two open questions were BOTH defects, and
 > both were framed as decisions because nobody had probed them.** The
 > six-finding ceiling was already dropping a raised CRP on Test 3; the certainty
