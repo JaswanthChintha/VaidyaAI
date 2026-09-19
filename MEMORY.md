@@ -40,10 +40,10 @@ about any of them. That is the fifth time on this project.
 
 | | Tests |
 |---|---|
-| `backend/` (Node/Express) | **765** passing + 3 skipped (15 suites, 0 failed) |
+| `backend/` (Node/Express) | **767** passing + 3 skipped (15 suites, 0 failed) |
 | `ai-service/` (Python/FastAPI) | **4,107** passing + 7 skipped (4,114 collected, 0 failures, 0 errors) |
 | `frontend/` (React/Vitest) | **398** passing, 0 suites failed |
-| **Total** | **5,270** -- ALL THREE green 2026-09-19 |
+| **Total** | **5,272** -- ALL THREE green 2026-09-19 |
 
 > **⚠ THE 4,852 IN EVERY EARLIER SECTION WAS 7 TOO HIGH.** §6as recorded
 > ai-service's COLLECTED total (3,865) as its PASSED count; that day's real
@@ -134,10 +134,20 @@ about any of them. That is the fifth time on this project.
 >      that needs a decision, not a figure.
 >    * **EVERY `CVa` IS UNSOURCED** and cannot be fixed from EFLM, which
 >      publishes CVI only. The right source is the analyser's own QC data.
-> 2. **VERIFY THE TWO UNIT EQUIVALENCES.** `U/L == IU/L` globally, and
->    `g/dL == %` for MCHC only, in
->    `backend/src/services/unitEquivalence.js`. Both `verified: false`.
->    `SGPT 101.9 -> 13 improving` rests entirely on the first.
+> 2. **VERIFY THE TWO UNIT EQUIVALENCES — BOTH CHECKED OUT, SEE §6bc.**
+>    `U/L == IU/L` globally and `g/dL == %` for MCHC, in
+>    `backend/src/services/unitEquivalence.js`. **Both still
+>    `verified: false`; only a human may change that.** Each `basis` now names
+>    its source and the date it was read, so this is two readings and two
+>    flags.
+>
+>    **WHAT CHECKING THEM TURNED UP:** `IU` also names the International Unit
+>    of BIOLOGICAL ACTIVITY (vitamins, hormones) — the global scope survives
+>    it, and **why** is now written in the file so the doubt is not
+>    re-litigated. And the MCHC equivalence is **NOT unconditional**: it
+>    assumes red-cell density 1 g/mL and negligible plasma haemoglobin, so a
+>    grossly haemolysed sample breaks it and **this service cannot detect
+>    that**. `SGPT 101.9 -> 13 improving` still rests on the first entry.
 > 3. ~~**Decide eAG's `flag: "normal"`.**~~ **DONE AND CLOSED.** `Test 3.pdf`
 >    prints no markings at all, so the flag was inferred against the band
 >    already refused. The gate now drops a `normal` on a refused range
@@ -10831,6 +10841,83 @@ its own test asserting the basis says `NO SOURCE`.
   is the analyser's own QC data, which this platform does not receive.
 * The figures above were **read off those pages by a model on 2026-09-19**.
   That is why each row carries the page id and the date.
+
+---
+
+## 6bc. THE TWO UNIT EQUIVALENCES, CHECKED · 2026-09-19
+
+**§0's open item 2, worked but NOT closed.** Both claims hold. **Neither
+`basis` said everything it needed to, and each was incomplete in a different
+way** — which is what checking them found. **2 entries, 0 verified**, and
+`verified: true` still needs a human.
+
+### ✅ `U/L == IU/L` — TRUE, and the doubt about it is now answered in place
+
+Confirmed: U and IU of catalytic activity are the same quantity — the amount
+of enzyme converting one micromole of substrate per minute under defined
+conditions, **adopted by the International Union of Biochemistry in 1964**.
+The SI unit is the katal (1 U = 16.67 nkat), adopted by CGPM Resolution 12 of
+1999 on a petition from the IFCC; nothing here converts to it.
+
+> **⚠ BUT `IU` IS AMBIGUOUS, AND IT LOOKS EXACTLY LIKE THE `%` HAZARD.**
+> `IU` also names the International Unit of **BIOLOGICAL ACTIVITY** — the
+> potency unit for vitamins and hormones, set by an arbitrary standard per
+> substance. The enzyme-unit reference warns in as many words: *"there is no
+> relation between the two units, despite their identical names."* hCG, LH and
+> FSH are reported in IU/L and mean potency, not catalysis.
+>
+> **THE GLOBAL SCOPE SURVIVES IT.** For this entry to join two readings
+> wrongly, ONE TEST would have to be printed `IU/L` as a potency and `U/L`
+> elsewhere — and **`U/L` is only ever catalytic activity**, so that test is
+> an enzyme and both readings are catalytic. The ambiguity is real and cannot
+> reach this entry.
+>
+> **IT IS WRITTEN INTO THE FILE BECAUSE THE DOUBT RECURS.** The next reader
+> will notice it too, and a scoped list added in response would be **strictly
+> worse**: `nameKey` folds a whole word set, so `SGPT` and `SGPT PHOTOMETRIC`
+> are different keys, and a scoped entry would start MISSING joins the moment
+> a method suffix reappeared — which §6ba showed happens.
+
+### ⚠ `g/dL == %` FOR MCHC — TRUE, BUT IT WAS WRITTEN AS THOUGH UNCONDITIONAL
+
+It holds **assuming a red-cell density of 1 g/mL and negligible haemoglobin in
+plasma**. Both are standard, **neither is stated on any report**, and a
+grossly haemolysed sample is where the two readings drift — which this entry
+cannot detect.
+
+The `basis` claimed "33 g/dL and 33 % are the same figure" flatly. It now
+names the assumptions and the case that breaks them. **The scope is
+unchanged** and still right: `%` on a differential count is a proportion of
+the white cell count, not a mass concentration.
+
+### ▶ WHAT CHANGED, AND WHAT A TEST NOW HOLDS
+
+Both `basis` strings carry a named source and the date it was read, not a
+promise that one exists. The shape test asserted `CHECK AGAINST` — *"a source
+exists somewhere"*. It now requires **`CHECKED AGAINST:`, a `read 2026-` date
+and `NOT YET CONFIRMED`**, which is what a reviewer actually needs.
+
+Two new tests pin the findings: one that the IU ambiguity and its resolution
+are recorded and the entry is still global, one that the MCHC conditions are
+stated and the scope is still `MCHC`.
+
+**Three mutants, all killed:** the MCHC conditions deleted (1); the IU
+ambiguity wording removed (1); the MCHC entry claiming `CONFIRMED` (1).
+
+**Backend 767** (+2). ai-service 4,107, frontend 398. **Total 5,272.**
+
+### KNOWN AND OPEN
+
+* **STILL NOT VERIFIED — 2 entries, 0 flags, and only a human may set one.**
+  The remaining work is reading the two cited sources and flipping them.
+* **`SGPT 101.9 → 13 improving` STILL RESTS ON THE ENZYME ENTRY**, which §6aw
+  called the row to verify first. The claim now cites its authority and its
+  year; nobody has confirmed it.
+* **THE MCHC ASSUMPTIONS CANNOT BE CHECKED FROM A REPORT.** Haemolysis is not
+  reported as a field, so the one case where the equivalence fails is
+  invisible to this service. Worth knowing before the flag is set.
+* Both citations were **read by a model on 2026-09-19**, which is why each
+  names its page and its date.
 
 ---
 

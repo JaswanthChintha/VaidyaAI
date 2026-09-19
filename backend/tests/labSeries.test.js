@@ -237,6 +237,51 @@ describe('labSeriesService - units', () => {
     expect(out.series[0].unitEquivalence).toBeNull();
   });
 
+  // ======================================================================
+  // WHAT CHECKING THE TWO EQUIVALENCES TURNED UP · 2026-09-19
+  // ======================================================================
+  //
+  // Both hold. Neither `basis` said everything it needed to, and each was
+  // incomplete in a different way -- which is what checking them found.
+
+  it('records that IU is ambiguous, and why the global scope survives it', () => {
+    // `IU` also names the International Unit of BIOLOGICAL ACTIVITY -- the
+    // potency unit for vitamins and hormones, unrelated to catalysis. hCG,
+    // LH and FSH are reported in IU/L and mean potency.
+    //
+    // THE ENTRY IS STILL RIGHT TO BE GLOBAL: for the join to be wrong, one
+    // test would have to be printed `IU/L` as a potency and `U/L` elsewhere,
+    // and `U/L` is only ever catalytic activity -- so that test is an enzyme
+    // and both readings are catalytic. The doubt recurs, so the resolution
+    // is written where the next reader will meet it.
+    const source = require('fs').readFileSync(
+      require('path').join(__dirname, '../src/services/unitEquivalence.js'),
+      'utf8'
+    );
+    expect(source).toMatch(/BIOLOGICAL ACTIVITY/);
+    expect(source).toMatch(/no relation between the two units/);
+
+    const { UNIT_EQUIVALENCE } = require('../src/services/unitEquivalence');
+    const enzyme = UNIT_EQUIVALENCE.find((e) => e.id === 'enzyme_activity_per_litre');
+    expect(enzyme.tests).toBeNull();
+  });
+
+  it('states the assumptions the MCHC equivalence rests on', () => {
+    // It was written as though exact. It holds ASSUMING a red-cell density of
+    // 1 g/mL and negligible plasma haemoglobin -- standard, unstated on any
+    // report, and untrue of a grossly haemolysed sample, which this entry
+    // cannot detect. An equivalence with conditions must name them.
+    const { UNIT_EQUIVALENCE } = require('../src/services/unitEquivalence');
+    const mchc = UNIT_EQUIVALENCE.find((e) => e.id === 'mchc_mass_concentration');
+
+    expect(mchc.basis).toMatch(/NOT UNCONDITIONAL/);
+    expect(mchc.basis).toMatch(/density of 1 g\/mL/);
+    expect(mchc.basis).toMatch(/negligible/);
+    expect(mchc.basis).toMatch(/haemolysed/);
+    // And it stays scoped: % on a differential is not a mass concentration.
+    expect(mchc.tests).toContain('MCHC');
+  });
+
   it('declares NO conversion factor anywhere in the table', () => {
     // The table may only ever say "these two labels mean one scale". A pair
     // needing a multiplier is a CONVERSION and belongs in Module 5, upstream
@@ -256,8 +301,16 @@ describe('labSeriesService - units', () => {
         expect(typeof value).not.toBe('number');
       }
       // And every entry argues for itself where a reviewer will read it.
+      //
+      // THE ASSERTION TIGHTENED ON 2026-09-19. It matched `CHECK AGAINST` --
+      // a promise that a source exists somewhere. Both entries now NAME the
+      // source, the page and the date it was read, so the test asks for the
+      // thing a reviewer actually needs: a citation, and an explicit
+      // statement that nobody has confirmed it yet.
       expect(entry.basis.length).toBeGreaterThan(40);
-      expect(entry.basis).toMatch(/CHECK AGAINST/);
+      expect(entry.basis).toMatch(/CHECKED AGAINST:/);
+      expect(entry.basis).toMatch(/read 2026-/);
+      expect(entry.basis).toMatch(/NOT YET CONFIRMED/);
       expect(entry.verified).toBe(false);
     }
   });
