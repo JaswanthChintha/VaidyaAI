@@ -2622,3 +2622,95 @@ describe('a row the laboratory compared but no rule read', () => {
     expect(verdictFor('PCV')).toMatch(/not checked/i);
   });
 });
+
+/**
+ * THE COUNT IN THE SUMMARY AND THE LIST BELOW IT MUST BE THE SAME FACT.
+ *
+ * The caveat counted only `unanalysed.items` -- the rows with no canonical
+ * feature -- so on `Test 3.pdf` it read "2 further results ... ESR,
+ * C-REACTIVE PROTEIN(CRP)" while the findings list four inches below named
+ * SEVEN, including NEUTROPHILS 82 % and LYMPHOCYTES 14 %: both outside their
+ * printed intervals, both absent from the sentence counting them.
+ *
+ * The divider was whether this platform holds a canonical feature for the
+ * row, which is the same architecture leak as the clinician page's two
+ * out-of-range lists. It only became visible when the blood count made
+ * neutrophils and lymphocytes features and moved them out of the counted set.
+ */
+describe('the count of further out-of-range results', () => {
+  const summaryText = () =>
+    document.querySelector('.in-short')?.textContent.replace(/\s+/g, ' ').trim()
+    || document.body.textContent.replace(/\s+/g, ' ').trim();
+
+  const report = {
+    overall: { statusLabel: 'Needs Monitoring', risk: 'Low', anyAssessed: true, complete: true },
+    // Anemia is NAMED on the page and CITES haemoglobin, so a low haemoglobin
+    // is not a "further" result -- it is the evidence the reader just read.
+    conditions: [
+      {
+        condition: 'Anemia',
+        status: 'Indicated',
+        risk: 'Low',
+        assessed: true,
+        flagged: true,
+        evidenceFeatures: ['hemoglobin'],
+        sources: ['Clinical Rule Engine'],
+        sourceKinds: ['clinical_rule'],
+      },
+    ],
+    laboratory: [
+      {
+        feature: 'hemoglobin', originalTestName: 'HEMOGLOBIN', value: 12.5, unit: 'g/dl',
+        state: 'measured', usable: true, flag: 'low', referenceLow: 13, referenceHigh: 17,
+      },
+      // No rule reads these two, and no condition cites them.
+      {
+        feature: 'neutrophils', originalTestName: 'NEUTROPHILS', value: 82, unit: '%',
+        state: 'measured', usable: true, flag: 'high', referenceLow: 40, referenceHigh: 70,
+      },
+      {
+        feature: 'lymphocytes', originalTestName: 'LYMPHOCYTES', value: 14, unit: '%',
+        state: 'measured', usable: true, flag: 'low', referenceLow: 20, referenceHigh: 40,
+      },
+      // In range, cited by nothing: must not be counted.
+      {
+        feature: 'mcv', originalTestName: 'MCV', value: 88.6, unit: 'fl',
+        state: 'measured', usable: true, flag: 'normal', referenceLow: 80, referenceHigh: 97,
+      },
+    ],
+    unanalysed: {
+      count: 1,
+      labFlaggedCount: 1,
+      items: [{ testName: 'ESR', value: '45', labFlaggedAbnormal: true, labFlag: 'high' }],
+    },
+  };
+
+  it('counts every out-of-range result no condition above accounts for', async () => {
+    withDashboard(report);
+    renderDashboard();
+
+    await screen.findByText(/In short/);
+    const text = summaryText();
+    // neutrophils + lymphocytes + ESR. NOT haemoglobin: Anemia cites it.
+    expect(text).toMatch(/3 further results are outside the range printed on the report/);
+    expect(text).toMatch(/NEUTROPHILS/);
+    expect(text).toMatch(/LYMPHOCYTES/);
+    expect(text).toMatch(/ESR/);
+  });
+
+  it('does not repeat a result the named conditions already explain', async () => {
+    // THE HALF THAT MUST NOT COLLAPSE. Counting every out-of-range row would
+    // pad the summary with the evidence the reader has just been shown, and
+    // "further" would stop meaning anything.
+    withDashboard(report);
+    renderDashboard();
+
+    await screen.findByText(/In short/);
+    const caveat = [...document.querySelectorAll('.caveat')]
+      .map((p) => p.textContent)
+      .find((t) => /further result/.test(t)) || '';
+    expect(caveat).not.toMatch(/HEMOGLOBIN/);
+    // And an in-range result is never counted at all.
+    expect(caveat).not.toMatch(/MCV/);
+  });
+});

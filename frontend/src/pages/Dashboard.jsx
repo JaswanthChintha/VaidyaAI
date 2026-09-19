@@ -989,9 +989,60 @@ function InShort({
 
   const checked = flaggedCards.length + clearCards.length;
   const unanalysed = dashboard.unanalysed || {};
-  const labFlagged = (unanalysed.items || []).filter(
-    (item) => item.labFlaggedAbnormal === true
+  /* EVERYTHING OUT OF RANGE THAT NOTHING ABOVE ALREADY ACCOUNTS FOR.
+     ==================================================================
+
+     This counted ONLY `unanalysed.items` -- the rows with no canonical
+     feature -- so on Test 3 it said:
+
+         "2 further results are outside the range printed on the report
+          — ESR, C-REACTIVE PROTEIN(CRP)"
+
+     while the findings list four inches below it named SEVEN, including
+     NEUTROPHILS 82 % and LYMPHOCYTES 14 %, both outside their printed
+     intervals and neither mentioned in the sentence counting them.
+
+     THE SAME ARCHITECTURE LEAK AS THE CLINICIAN PAGE'S TWO OUT-OF-RANGE
+     LISTS, which was fixed earlier today: the dividing line was whether this
+     platform holds a canonical feature, and a reader neither knows nor cares
+     that such a line exists. It became visible when the blood count made
+     neutrophils and lymphocytes features, moving them out of the only list
+     that was being counted.
+
+     WHAT "FURTHER" MEANS, AND IT IS THE POINT OF THE WORD. Further than the
+     conditions already named above. A raised HbA1c is not a further result
+     -- it is the evidence for the Diabetes card the reader just read, and
+     repeating it here would pad the summary with things it has already said.
+     So a row is counted when it is out of range AND its feature contributed
+     to NO condition on this page. Neutrophils and lymphocytes qualify
+     because no rule here reads them; haemoglobin does not, because Anemia
+     is named above and cites it.
+
+     THE VERDICTS ARE THE PAGE'S OWN, passed in rather than recomputed, for
+     the reason given where they arrive: a second derivation here would be a
+     second implementation free to disagree with the table. */
+  const coveredByACondition = new Set(
+    (dashboard.conditions || []).flatMap((item) => item.evidenceFeatures || [])
   );
+  const furtherRows = (dashboard.laboratory || [])
+    .filter((row) => {
+      // A profile answer is not a laboratory result -- same exclusion, and
+      // the same reason, as the findings list above.
+      if (row.source === 'patient_profile') return false;
+      if (coveredByACondition.has(row.feature)) return false;
+      const verdict = verdicts?.get(row.feature);
+      return Boolean(verdict?.direction && verdict.direction !== 'normal');
+    })
+    .map((row) => ({
+      testName:
+        row.originalTestName || PATIENT_LABEL[row.feature] || row.displayName,
+    }))
+    .filter((row) => Boolean(row.testName));
+
+  const labFlagged = [
+    ...furtherRows,
+    ...(unanalysed.items || []).filter((item) => item.labFlaggedAbnormal === true),
+  ];
   // The skipped results the laboratory did NOT mark. Counted off the same
   // items list rather than from `unanalysed.count` alone, so the two
   // paragraphs about skipped tests can never overlap or double-count.
