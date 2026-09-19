@@ -86,10 +86,48 @@ POLARITY_HIGHER_IS_WORSE = "higher_is_worse"
 POLARITY_HIGHER_IS_BETTER = "higher_is_better"
 POLARITY_BEST_WITHIN_RANGE = "best_within_range"
 
-_EFLM = (
-    "EFLM Biological Variation Database (biologicalvariation.eu); cross-check "
-    "against Ricos et al., Scand J Clin Lab Invest 1999;59:491-500 and updates"
-)
+#: The date the figures below were read off the EFLM database.
+_READ_ON = "2026-09-19"
+
+
+def _eflm(analyte: str, page: int, median: float, low: float, high: float) -> str:
+    """The citation for one row's CVi: the page, the figure, and its interval.
+
+    ==========================================================================
+    THE CITATION NAMES THE NUMBER, AND A TEST HOLDS THEM TOGETHER
+    ==========================================================================
+
+    The rows used to carry one shared `_EFLM` string -- a database name and a
+    paper, with no page, no figure and no date. That is a bibliography, not a
+    citation: a reviewer still had to go and find the analyte, and nothing
+    stopped the stored figure drifting away from whatever the source said.
+
+    Each row now names ITS OWN meta-analysis page and repeats the median it
+    took from it, and `test_every_row_cites_the_figure_it_stores` parses that
+    median back out and compares it to `within_subject_cv_pct`. Change one
+    without the other and the suite fails.
+
+    ==========================================================================
+    THIS IS STILL NOT VERIFICATION
+    ==========================================================================
+
+    These figures were read off those pages BY A MODEL on the date above, and
+    the module docstring's rule is unchanged: `verified=True` may only be set
+    by a human who has opened the page and compared it. What has changed is
+    that opening the page is now one click from the row instead of a search.
+
+    CVa IS NOT COVERED BY ANY OF THIS. The EFLM database publishes CVI and not
+    analytical CV, because analytical variation is a property of the ANALYSER
+    -- which is what this module's docstring already said. Every `CVa` in this
+    table remains an unsourced placeholder.
+    """
+    return (
+        f"EFLM Biological Variation Database, meta-analysis for {analyte}: "
+        f"CVi median {median} % (CI {low}-{high} %). "
+        f"biologicalvariation.eu/meta_by_analyte/{page}, read {_READ_ON} and "
+        f"NOT YET CONFIRMED against that page by a human. "
+        f"CVa IS NOT FROM THIS SOURCE -- EFLM publishes no analytical CV."
+    )
 
 _WORD = re.compile(r"[a-z0-9]+")
 
@@ -128,8 +166,9 @@ TABLE: Tuple[LabVariation, ...] = (
         test="c_reactive_protein",
         polarity=POLARITY_HIGHER_IS_WORSE,
         analytical_cv_pct=5.0,
-        within_subject_cv_pct=42.2,
-        source=_EFLM,
+        # WAS 42.2, inside the published interval but above the median.
+        within_subject_cv_pct=34.7,
+        source=_eflm("C-reactive protein (CRP)", 1635, 34.7, 29.4, 74.4),
         aliases=("CRP", "C-REACTIVE PROTEIN", "C-REACTIVE PROTEIN(CRP)", "CRP (C-REACTIVE PROTEIN)"),
     ),
     LabVariation(
@@ -137,21 +176,49 @@ TABLE: Tuple[LabVariation, ...] = (
         polarity=POLARITY_HIGHER_IS_WORSE,
         analytical_cv_pct=10.0,
         within_subject_cv_pct=20.2,
-        # ESR IS THE WEAKEST ROW IN THIS TABLE and the one a reviewer should
-        # take first. It is a sedimentation observation rather than a measured
-        # analyte, published biological-variation figures for it are sparse,
-        # and the resulting threshold is wide enough to call almost any ESR
-        # movement stable -- which is exactly the objection raised about
-        # `ESR 35 -> 45 stable` on the real page.
-        source=_EFLM + " -- SPARSE FOR ESR; treat this row as provisional",
+        # ==================================================================
+        # THE SOURCE THIS ROW NAMED DOES NOT CONTAIN IT
+        # ==================================================================
+        #
+        # Every other row here cites its own EFLM meta-analysis page. ESR has
+        # none: searching that database for `ESR` and for `sedimentation`
+        # returns NOTHING (checked 2026-09-19 through its own search API).
+        # The row previously pointed a reviewer at EFLM anyway, which is a
+        # citation to a page that does not exist -- worse than no citation,
+        # because it reads as checkable.
+        #
+        # AND ESR MAY NOT HAVE A SINGLE CV AT ALL. The long-term study that
+        # does exist (Scand J Clin Lab Invest 1996;56:191-8) reports
+        # SEX-SPECIFIC WITHIN-SUBJECT VARIANCES rather than one coefficient,
+        # and the analytical CV is CONCENTRATION-DEPENDENT -- about 13 % near
+        # 4 mm/h against about 4 % near 16 mm/h. A single fixed percentage
+        # threshold for ESR is therefore questionable in PRINCIPLE, not only
+        # unverified.
+        #
+        # THE ROW STAYS ANYWAY, and deliberately. Deleting it sends ESR back
+        # to the model for its figures, which is the unreproducible behaviour
+        # 6aw replaced -- the reader saw a threshold move between page loads.
+        # A stable questionable number that says it is questionable beats a
+        # different questionable number every time the page is opened.
+        source=(
+            "NO SOURCE. The EFLM Biological Variation Database has NO ENTRY "
+            "for ESR -- searched 2026-09-19 for both `ESR` and "
+            "`sedimentation`, no result. The figures here are "
+            "literature-typical and cite nothing. Published work reports "
+            "sex-specific variances (Scand J Clin Lab Invest 1996;56:191-8), "
+            "not one CV, and the analytical CV varies with the value itself, "
+            "so a single percentage threshold for ESR is questionable in "
+            "principle. THIS IS THE ROW TO SETTLE FIRST."
+        ),
         aliases=("ESR", "ERYTHROCYTE SEDIMENTATION RATE"),
     ),
     LabVariation(
         test="haemoglobin_a_note",
         polarity=POLARITY_BEST_WITHIN_RANGE,
         analytical_cv_pct=1.5,
+        # Unchanged: 2.8 is the published median exactly.
         within_subject_cv_pct=2.8,
-        source=_EFLM,
+        source=_eflm("Haematocrit (Hct)", 1524, 2.8, 2.2, 3.1),
         # NOT `haemoglobin`. That feature is assessed and its polarity is
         # REFUSED ON PURPOSE in `trend_polarity.py`, because the range shifts
         # with sex, age and pregnancy and this service records none of them.
@@ -162,99 +229,120 @@ TABLE: Tuple[LabVariation, ...] = (
         test="mcv",
         polarity=POLARITY_BEST_WITHIN_RANGE,
         analytical_cv_pct=1.0,
-        within_subject_cv_pct=1.4,
-        source=_EFLM,
+        # WAS 1.4, which is OUTSIDE the published interval 0.7-1.1. This is
+        # also the one row whose change of figure moves a verdict on the
+        # reader's own page: MCV 85.1 -> 88.6 is 4.1 %, under the old 4.8 %
+        # threshold and over the new 3.5 % one.
+        within_subject_cv_pct=0.8,
+        source=_eflm("Mean corpuscular volume (MCV)", 1527, 0.8, 0.7, 1.1),
         aliases=("MCV", "MEAN CORPUSCULAR VOLUME", "MEAN CELL VOLUME"),
     ),
     LabVariation(
         test="mch",
         polarity=POLARITY_BEST_WITHIN_RANGE,
         analytical_cv_pct=1.0,
-        within_subject_cv_pct=1.4,
-        source=_EFLM,
+        # WAS 1.4, inside the wide published interval but above the median.
+        within_subject_cv_pct=0.8,
+        source=_eflm("Mean corpuscular haemoglobin (MCH)", 1525, 0.8, 0.3, 1.7),
         aliases=("MCH", "MEAN CORPUSCULAR HAEMOGLOBIN", "MEAN CORPUSCULAR HEMOGLOBIN"),
     ),
     LabVariation(
         test="mchc",
         polarity=POLARITY_BEST_WITHIN_RANGE,
         analytical_cv_pct=1.0,
-        within_subject_cv_pct=1.7,
-        source=_EFLM,
+        # WAS 1.7, OUTSIDE the published interval 0.8-1.0.
+        within_subject_cv_pct=1.0,
+        source=_eflm(
+            "Mean corpuscular haemoglobin concentration (MCHC)", 1526, 1.0, 0.8, 1.0
+        ),
         aliases=("MCHC", "MEAN CORPUSCULAR HAEMOGLOBIN CONCENTRATION"),
     ),
     LabVariation(
         test="platelet_count",
         polarity=POLARITY_BEST_WITHIN_RANGE,
         analytical_cv_pct=4.0,
-        within_subject_cv_pct=9.1,
-        source=_EFLM,
+        # WAS 9.1, inside the published interval but above the median.
+        within_subject_cv_pct=7.3,
+        source=_eflm("Thrombocytes", 1538, 7.3, 6.6, 10.2),
         aliases=("PLATELET COUNT", "PLATELETS", "PLT"),
     ),
     LabVariation(
         test="rbc_count",
         polarity=POLARITY_BEST_WITHIN_RANGE,
         analytical_cv_pct=1.5,
-        within_subject_cv_pct=3.2,
-        source=_EFLM,
+        # WAS 3.2, inside the interval, above the median.
+        within_subject_cv_pct=2.6,
+        source=_eflm("Erythrocytes", 1523, 2.6, 1.4, 4.0),
         aliases=("RBC COUNT", "T.RBC", "TOTAL RBC COUNT", "RBC", "ERYTHROCYTE COUNT"),
     ),
     LabVariation(
         test="wbc_count",
         polarity=POLARITY_BEST_WITHIN_RANGE,
         analytical_cv_pct=3.0,
-        within_subject_cv_pct=11.4,
-        source=_EFLM,
+        # WAS 11.4, barely above the median and well inside the interval.
+        within_subject_cv_pct=11.1,
+        source=_eflm("Leukocytes", 1532, 11.1, 8.1, 12.8),
         aliases=("WBC COUNT", "TOTAL WBC COUNT", "WBC", "TLC", "LEUCOCYTE COUNT"),
     ),
     LabVariation(
         test="neutrophils",
         polarity=POLARITY_BEST_WITHIN_RANGE,
         analytical_cv_pct=4.0,
-        within_subject_cv_pct=16.0,
-        source=_EFLM,
+        # WAS 16.0, inside a very wide interval, above the median.
+        within_subject_cv_pct=12.5,
+        source=_eflm("Neutrophils", 1533, 12.5, 6.3, 26.9),
         aliases=("NEUTROPHILS", "POLYMORPHS", "POLYMORPHONUCLEAR CELLS"),
     ),
     LabVariation(
         test="lymphocytes",
         polarity=POLARITY_BEST_WITHIN_RANGE,
+        # WAS 10.3 -- THE ONLY ROW THAT WAS BELOW its published median, and
+        # so the only one whose threshold WIDENS here rather than narrowing.
+        within_subject_cv_pct=10.5,
         analytical_cv_pct=3.0,
-        within_subject_cv_pct=10.3,
-        source=_EFLM,
+        source=_eflm("Lymphocytes", 1534, 10.5, 9.8, 14.7),
         aliases=("LYMPHOCYTES", "LYMPHS"),
     ),
     LabVariation(
         test="monocytes",
         polarity=POLARITY_BEST_WITHIN_RANGE,
         analytical_cv_pct=5.0,
-        within_subject_cv_pct=17.8,
-        source=_EFLM,
+        # WAS 17.8, inside the interval, above the median.
+        within_subject_cv_pct=14.0,
+        source=_eflm("Monocytes", 1535, 14.0, 11.1, 19.3),
         aliases=("MONOCYTES",),
     ),
     LabVariation(
         test="eosinophils",
         polarity=POLARITY_BEST_WITHIN_RANGE,
         analytical_cv_pct=5.0,
-        within_subject_cv_pct=21.0,
-        # EOSINOPHILS VARY WIDELY WITHIN ONE PERSON and published figures
-        # differ a great deal. This is the row whose instability the reader
-        # first noticed, so it is the second a reviewer should take.
-        source=_EFLM + " -- FIGURES VARY WIDELY FOR EOSINOPHILS; provisional",
+        # WAS 21.0. THIS ROW EXPLAINS THE FLICKER THE READER FIRST REPORTED:
+        # the old figure gave a 59.8 % threshold against a 60.0 % change on
+        # their own reports -- a margin of two tenths of a percentage point,
+        # which is why EOSINOPHILS 5 -> 2 read `stable` on one request and
+        # was refused on the next. The published median moves the threshold
+        # to 44.1 % and the verdict off the knife edge.
+        within_subject_cv_pct=15.1,
+        source=_eflm("Eosinophils", 1536, 15.1, 10.1, 26.9),
         aliases=("EOSINOPHILS", "EOS"),
     ),
     LabVariation(
         test="basophils",
         polarity=POLARITY_BEST_WITHIN_RANGE,
         analytical_cv_pct=10.0,
-        within_subject_cv_pct=28.0,
-        source=_EFLM + " -- provisional; basophil counts are small and noisy",
+        # WAS 28.0 -- MORE THAN DOUBLE the published median, the largest
+        # discrepancy in the table, though still inside a very wide interval.
+        within_subject_cv_pct=12.6,
+        source=_eflm("Basophils", 1537, 12.6, 11.4, 32.0),
         aliases=("BASOPHILS", "BASO"),
     ),
     LabVariation(
         test="tsh",
         polarity=POLARITY_BEST_WITHIN_RANGE,
         analytical_cv_pct=5.0,
-        within_subject_cv_pct=19.3,
-        source=_EFLM,
+        # WAS 19.3, inside the interval, above the median.
+        within_subject_cv_pct=17.8,
+        source=_eflm("Thyroid stimulating hormone (TSH)", 1065, 17.8, 12.0, 29.3),
         aliases=(
             "TSH",
             "TSH (THYROID STIMULATING HORMONE)",
@@ -266,8 +354,13 @@ TABLE: Tuple[LabVariation, ...] = (
         test="alanine_aminotransferase",
         polarity=POLARITY_HIGHER_IS_WORSE,
         analytical_cv_pct=5.0,
-        within_subject_cv_pct=19.4,
-        source=_EFLM,
+        # WAS 19.4, OUTSIDE the published interval 9.3-17.3. 6aw called SGPT
+        # "the row to verify first" because `SGPT 101.9 -> 13 improving` rests
+        # on the U/L == IU/L declaration; its variation figure was out of range
+        # too. The verdict survives either way -- an 87 % fall clears both
+        # thresholds -- but the figure behind it was not supported.
+        within_subject_cv_pct=12.6,
+        source=_eflm("Alanine transaminase (ALT)", 1495, 12.6, 9.3, 17.3),
         aliases=("SGPT", "ALT", "SGPT (ALT)", "ALANINE AMINOTRANSFERASE"),
     ),
 )

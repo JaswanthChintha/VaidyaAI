@@ -41,9 +41,9 @@ about any of them. That is the fifth time on this project.
 | | Tests |
 |---|---|
 | `backend/` (Node/Express) | **765** passing + 3 skipped (15 suites, 0 failed) |
-| `ai-service/` (Python/FastAPI) | **4,102** passing + 7 skipped (4,109 collected, 0 failures, 0 errors) |
+| `ai-service/` (Python/FastAPI) | **4,107** passing + 7 skipped (4,114 collected, 0 failures, 0 errors) |
 | `frontend/` (React/Vitest) | **398** passing, 0 suites failed |
-| **Total** | **5,265** -- ALL THREE green 2026-09-19 |
+| **Total** | **5,270** -- ALL THREE green 2026-09-19 |
 
 > **⚠ THE 4,852 IN EVERY EARLIER SECTION WAS 7 TOO HIGH.** §6as recorded
 > ai-service's COLLECTED total (3,865) as its PASSED count; that day's real
@@ -119,14 +119,21 @@ about any of them. That is the fifth time on this project.
 >
 > The four below are named in §6aw's KNOWN AND OPEN with the evidence.
 >
-> 1. **VERIFY THE VARIATION TABLE.** `ai-service/app/data/lab_variation.py`,
->    16 rows, **every one `verified: false`** — literature-typical CVa/CVi
->    recorded with the source to check them against, never read off it. Every
->    `stable` on the timeline rests on these. `test_no_row_claims_to_be_verified`
->    fails loudly if a row is flipped without someone doing the comparison.
->    Take **ESR** (the 62 % threshold that makes `ESR 35 -> 45` read `stable`),
->    then **EOSINOPHILS**, then **BASOPHILS** — each says so in its own
->    `source` field.
+> 1. **VERIFY THE VARIATION TABLE — NOW A 15-MINUTE JOB, SEE §6bb.**
+>    `ai-service/app/data/lab_variation.py`, **16 rows, still 0 verified, and
+>    only a human may set one.** The CVi figures are now the EFLM published
+>    medians and **each row cites its own meta-analysis page, the median and
+>    the interval**, so checking a row is: open the page, compare, flip.
+>    `test_no_row_claims_to_be_verified` fails loudly if one is flipped
+>    without that.
+>
+>    **THE TWO THINGS A NUMBER WILL NOT SETTLE:**
+>    * **ESR has NO EFLM ENTRY AT ALL**, and published work gives sex-specific
+>      variances rather than a CV, with a concentration-dependent analytical
+>      CV. **A single fixed threshold for ESR is questionable in principle** —
+>      that needs a decision, not a figure.
+>    * **EVERY `CVa` IS UNSOURCED** and cannot be fixed from EFLM, which
+>      publishes CVI only. The right source is the analyser's own QC data.
 > 2. **VERIFY THE TWO UNIT EQUIVALENCES.** `U/L == IU/L` globally, and
 >    `g/dL == %` for MCHC only, in
 >    `backend/src/services/unitEquivalence.js`. Both `verified: false`.
@@ -10697,6 +10704,133 @@ reports row back to bare `chronoDate` (1); the backend sending `chronoDate` as
 
 **Backend 765** (+3), **frontend 398** (+4), ai-service 4,102.
 **Total 5,265.**
+
+---
+
+## 6bb. THE VARIATION TABLE, CHECKED AGAINST EFLM · 2026-09-19
+
+**§0's open item 1, worked but NOT closed.** Every row now cites its own
+meta-analysis page and the figure it took from it. **No flag was flipped and
+none may be** — see below.
+
+### ⚠ THE THING THAT CANNOT BE DELEGATED
+
+`verified=True` may only be set by a human who has compared the row to its
+`source`. **A model cannot do it**, and
+`test_no_row_claims_to_be_verified` still passes: **16 rows, 0 verified.**
+What changed is that checking a row is now one click instead of a search.
+
+### ⚠ ESR'S SOURCE NAMED A PAGE THAT DOES NOT EXIST
+
+**The EFLM Biological Variation Database has NO ENTRY for ESR.** Searched
+through its own API for `ESR` and for `sedimentation`: both empty. The row
+cited EFLM anyway — **a citation to a page that is not there, which is worse
+than no citation because it reads as checkable.**
+
+> **AND ESR MAY NOT HAVE A SINGLE CV AT ALL.** The long-term study that does
+> exist (Scand J Clin Lab Invest 1996;56:191-8) reports **sex-specific
+> within-subject variances**, not one coefficient, and the analytical CV is
+> **concentration-dependent** — roughly 13 % near 4 mm/h against 4 % near
+> 16 mm/h. **A single fixed percentage threshold for ESR is questionable in
+> PRINCIPLE**, not merely unverified. That is a stronger statement than the
+> old "figures are sparse".
+
+**THE ROW STAYS**, deliberately: deleting it sends ESR back to the model,
+which is the unreproducible behaviour §6aw replaced. Its `source` now says
+`NO SOURCE` and `THIS IS THE ROW TO SETTLE FIRST`.
+
+### ▶ THE COMPARISON, ALL 16 ROWS
+
+| row | was | EFLM median | CI | verdict |
+|---|---|---|---|---|
+| c_reactive_protein | 42.2 | **34.7** | 29.4–74.4 | inside |
+| esr | 20.2 | — | — | **NOT IN EFLM** |
+| haemoglobin_a_note | 2.8 | **2.8** | 2.2–3.1 | exact |
+| mcv | 1.4 | **0.8** | 0.7–1.1 | **outside** |
+| mch | 1.4 | **0.8** | 0.3–1.7 | inside |
+| mchc | 1.7 | **1.0** | 0.8–1.0 | **outside** |
+| platelet_count | 9.1 | **7.3** | 6.6–10.2 | inside |
+| rbc_count | 3.2 | **2.6** | 1.4–4.0 | inside |
+| wbc_count | 11.4 | **11.1** | 8.1–12.8 | inside |
+| neutrophils | 16.0 | **12.5** | 6.3–26.9 | inside |
+| lymphocytes | 10.3 | **10.5** | 9.8–14.7 | inside (below median) |
+| monocytes | 17.8 | **14.0** | 11.1–19.3 | inside |
+| eosinophils | 21.0 | **15.1** | 10.1–26.9 | inside |
+| basophils | 28.0 | **12.6** | 11.4–32.0 | inside, **>2x median** |
+| tsh | 19.3 | **17.8** | 12.0–29.3 | inside |
+| alanine_aminotransferase | 19.4 | **12.6** | 9.3–17.3 | **outside** |
+
+> **⚠ THE TABLE ERRED CONSISTENTLY IN THE REASSURING DIRECTION.** **13 of 15
+> stored figures were ABOVE the published median**, one equal, one below. A
+> higher CVi is a wider threshold is more changes called `stable`. That is not
+> noise — it is a systematic lean toward telling a reader nothing moved, in a
+> table nobody had checked.
+
+**Three were outside the published interval entirely:** MCV, MCHC and ALT.
+ALT is the one §6aw called "the row to verify first" because
+`SGPT 101.9 → 13 improving` rests on it; its variation figure was out of range
+as well. **The verdict survives** — an 87 % fall clears either threshold.
+
+### ✅ ONE VERDICT MOVED ON THE READER'S OWN PAGE, AND IT WAS PREDICTED FIRST
+
+`MCV 85.1 → 88.6 fl` is a **4.1 %** change: under the old **4.8 %** threshold
+(`stable`), over the new **3.5 %** one. Live after the change it reads
+**`rose`**, and the tally went `13 stable · 5 undirected` →
+**`12 stable · 6 undirected`**. Nothing else moved — the impact was computed
+before the edit and matched exactly.
+
+> **▶ AND EOSINOPHILS EXPLAINS THE FLICKER THE READER FIRST REPORTED.** The
+> old figure gave a **59.8 %** threshold against a **60.0 %** change on their
+> own two reports — **a margin of two tenths of a percentage point.** That is
+> why `EOSINOPHILS 5 → 2` read `stable` on one request and was refused on the
+> next. Not a bug; a coin balanced on its edge. The published median moves the
+> threshold to 44.1 % and takes it off the knife edge.
+
+### ▶ EFLM PUBLISHES CVI AND NOT CVA, SO HALF OF EVERY ROW IS STILL UNSOURCED
+
+The database has no analytical CV, because **analytical variation is a
+property of the ANALYSER** — exactly what this module's docstring already
+said. **Every `CVa` in the table remains an unsourced placeholder**, and each
+row now says so in its own `source`: `CVa IS NOT FROM THIS SOURCE`.
+
+### ▶ THE CITATION AND THE FIGURE ARE HELD TOGETHER BY A TEST
+
+Rows used to share one `_EFLM` string — a database name and a paper, with no
+page, no figure and no date. **A bibliography, not a citation.** Now
+`_eflm(analyte, page, median, low, high)` builds the string, and
+`test_every_row_cites_the_figure_it_stores` **parses the median back out and
+compares it to `within_subject_cv_pct`**. Change one without the other and the
+suite fails.
+
+**`test_the_provisional_rows_say_so_in_their_source` CHANGED SHAPE, NOT
+INTENT.** It asserted the word "provisional" — an adjective the file applied
+to itself. It now asserts the published INTERVAL is on the row, so a reviewer
+SEES the spread (eosinophils 10.1–26.9, basophils 11.4–32.0) instead of being
+told about it.
+
+**`test_a_table_threshold_is_NOT_reported_as_verified` MOVED OFF ESR**, and
+that is the point: it asserted `biologicalvariation.eu` appears in the basis
+and used the one row where that URL must NOT appear. It now uses CRP — a
+cited row with a monotone polarity, since `best_within_range` with no printed
+interval returns a refusal sentence rather than the arithmetic — and ESR has
+its own test asserting the basis says `NO SOURCE`.
+
+**ai-service 4,107** (+5). Backend 765, frontend 398. **Total 5,270.**
+
+### KNOWN AND OPEN
+
+* **STILL NOT VERIFIED. 16 rows, 0 flags set, and only a human may set one.**
+  The work left is: open the cited page, compare the median, flip the flag.
+  ~15 minutes now rather than an afternoon.
+* **ESR NEEDS A DECISION, NOT A NUMBER.** There is no EFLM entry, published
+  work reports sex-specific variances rather than a CV, and the analytical CV
+  moves with the value. Options: keep the fixed threshold and say it is
+  unsourced (today), make it concentration-dependent, or refuse to classify
+  ESR at all.
+* **EVERY `CVa` IS UNSOURCED** and cannot be fixed from EFLM. The right source
+  is the analyser's own QC data, which this platform does not receive.
+* The figures above were **read off those pages by a model on 2026-09-19**.
+  That is why each row carries the page id and the date.
 
 ---
 

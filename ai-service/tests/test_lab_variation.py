@@ -204,12 +204,90 @@ def test_the_recorded_arithmetic_reproduces_from_the_row():
     assert round(reference_change_value(row.analytical_cv_pct, row.within_subject_cv_pct)) == 62
 
 
-def test_the_provisional_rows_say_so_in_their_source():
-    # ESR, eosinophils and basophils are the three weakest rows and each one
-    # says so where a reviewer will read it, rather than in a comment.
-    for name in ("ESR", "EOSINOPHILS", "BASOPHILS"):
+# --------------------------------------------------------------------------
+# A CITATION THAT NAMES ITS NUMBER
+# --------------------------------------------------------------------------
+#
+# The rows used to share one `_EFLM` string: a database name and a paper, with
+# no page, no figure and no date. That is a bibliography, not a citation -- a
+# reviewer still had to go and find the analyte, and nothing held the stored
+# figure to whatever the source said.
+#
+# Each row now cites its own meta-analysis page AND repeats the median it took
+# from it. These tests hold the two together, so a figure cannot be edited
+# without its citation following.
+
+
+def test_every_row_cites_the_figure_it_stores():
+    import re
+
+    for row in TABLE:
+        if row.test == "esr":
+            continue  # cites no figure; see the row and the test below
+        match = re.search(r"CVi median ([0-9.]+) %", row.source)
+        assert match, f"{row.test}: source names no CVi median"
+        assert float(match.group(1)) == row.within_subject_cv_pct, row.test
+
+
+def test_every_row_cites_a_page_a_reviewer_can_open():
+    for row in TABLE:
+        if row.test == "esr":
+            continue
+        assert "biologicalvariation.eu/meta_by_analyte/" in row.source, row.test
+        # The date it was read matters as much as the page: the database is
+        # maintained, so a figure without a date cannot be re-checked.
+        assert "read 2026-" in row.source, row.test
+
+
+def test_every_row_says_its_CVa_IS_NOT_from_that_source():
+    """EFLM publishes CVI and not analytical CV.
+
+    CVa is a property of the ANALYSER, which this module's docstring already
+    said. Citing a page beside a row could otherwise read as covering both
+    halves, when it covers one.
+    """
+    for row in TABLE:
+        if row.test == "esr":
+            continue
+        assert "CVa IS NOT FROM THIS SOURCE" in row.source, row.test
+
+
+def test_ESR_says_its_named_source_does_not_contain_it():
+    """THE ROW WHOSE CITATION POINTED AT A PAGE THAT DOES NOT EXIST.
+
+    Searching the EFLM database for `ESR` and for `sedimentation` returns
+    nothing, yet the row named EFLM as the place to check it -- worse than no
+    citation, because it reads as checkable.
+    """
+    row = variation_for("ESR")
+    assert "NO SOURCE" in row.source
+    assert "NO ENTRY" in row.source
+    assert "biologicalvariation.eu/meta_by_analyte/" not in row.source
+
+
+def test_the_weakest_rows_show_their_weakness_rather_than_asserting_it():
+    """ESR, eosinophils and basophils are still the three to take first.
+
+    THE TEST CHANGED SHAPE ON 2026-09-19 AND THE INTENT DID NOT. It asserted
+    the word "provisional" or "vary widely" in the source -- an adjective this
+    file applied to itself. Now each row carries the published interval it was
+    taken from, so a reviewer can SEE the spread instead of being told about
+    it: eosinophils 10.1-26.9, basophils 11.4-32.0. ESR carries no interval
+    because it has no entry at all, and says that instead.
+    """
+    for name in ("EOSINOPHILS", "BASOPHILS"):
         row = variation_for(name)
-        assert "provisional" in row.source.lower() or "vary widely" in row.source.lower()
+        assert "(CI " in row.source, name
+        # A wide interval is what makes these two weak, and the width is on
+        # the row rather than in a comment about it.
+        import re
+
+        lo, hi = re.search(r"\(CI ([0-9.]+)-([0-9.]+) %\)", row.source).groups()
+        assert float(hi) - float(lo) > 10.0, f"{name}: interval no longer wide"
+
+    esr = variation_for("ESR")
+    assert "NO SOURCE" in esr.source
+    assert "THIS IS THE ROW TO SETTLE FIRST" in esr.source
 
 
 def test_no_row_carries_a_reference_range():

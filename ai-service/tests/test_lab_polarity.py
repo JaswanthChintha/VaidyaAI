@@ -315,7 +315,10 @@ def test_a_listed_test_uses_the_table_and_never_calls_the_model():
     assert client.prompts == []
     verdict = out.verdicts[0]
     assert verdict.variation_source == "table"
-    assert verdict.significant_change_pct == 118
+    # 118 until 2026-09-19, when the row's CVi moved from 42.2 to the EFLM
+    # published median of 34.7. The verdict is unchanged -- a 221 % rise
+    # clears either threshold -- but the number behind it is now cited.
+    assert verdict.significant_change_pct == 97
     assert verdict.trend == "worsening"
 
 
@@ -324,6 +327,42 @@ def test_a_table_threshold_is_NOT_reported_as_verified():
 
     Every row is `verified=False`, so the sentence a reader gets must say the
     figure has not been checked -- and must name the source so it can be.
+
+    THE EXAMPLE MOVED OFF ESR ON 2026-09-19, and that is the point of the
+    change. This asserted that `biologicalvariation.eu` appears in the basis
+    and used ESR to do it -- but the EFLM database has NO ENTRY for ESR, so
+    that row is now the one where the URL must NOT appear. A cited row makes
+    the assertion honestly; ESR gets its own test below.
+    """
+    client = RecordingClient(answer())
+    out = classify_lab_series(
+        [
+            # A CITED ROW WITH A MONOTONE POLARITY. `best_within_range` needs a
+            # printed interval to say anything, and without one the basis is
+            # the refusal sentence rather than the arithmetic -- which is why
+            # TSH does not work here and CRP does.
+            LabSeriesInput(
+                test_name="C-REACTIVE PROTEIN(CRP)",
+                first_value=12.1,
+                last_value=38.9,
+                unit="mg/L",
+            )
+        ],
+        client,
+    )
+
+    verdict = out.verdicts[0]
+    assert verdict.variation_verified is False
+    assert "NOT YET CHECKED" in verdict.basis
+    assert "biologicalvariation.eu" in verdict.basis
+
+
+def test_the_ESR_basis_names_NO_source_rather_than_a_wrong_one():
+    """THE ROW WHOSE CITATION POINTED AT A PAGE THAT DOES NOT EXIST.
+
+    Searching the EFLM database for `ESR` and for `sedimentation` returns
+    nothing, so naming it read as checkable when it was not. The reader is
+    now told there is no source rather than sent to one.
     """
     client = RecordingClient(answer())
     out = classify_lab_series(
@@ -332,9 +371,10 @@ def test_a_table_threshold_is_NOT_reported_as_verified():
     )
 
     verdict = out.verdicts[0]
+    assert verdict.variation_source == "table"
     assert verdict.variation_verified is False
-    assert "NOT YET CHECKED" in verdict.basis
-    assert "biologicalvariation.eu" in verdict.basis
+    assert "NO SOURCE" in verdict.basis
+    assert "biologicalvariation.eu/meta_by_analyte" not in verdict.basis
 
 
 def test_an_unlisted_test_still_asks_the_model_and_says_so():
