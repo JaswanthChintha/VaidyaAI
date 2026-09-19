@@ -544,13 +544,18 @@ def test_a_parameter_out_of_the_laboratorys_own_interval_is_carried(
     assert any("above the printed reference interval" in e for e in facts.out_of_range)
 
 
-def test_the_prompt_states_only_findings_reasons_and_out_of_range(offline_settings):
+def test_the_prompt_states_only_findings_and_their_reasons(offline_settings):
     llm = FakeLLM(_faithful())
     write_clinician_summary(_summary(), llm=llm, settings=offline_settings)
     prompt = llm.prompts[0]
 
     assert "FLAGGED -- Diabetes:" in prompt
-    assert "OUT OF RANGE:" in prompt
+    # `OUT OF RANGE:` IS ASSERTED ABSENT NOW, NOT PRESENT. The page composes
+    # that list from the same rows and prints it below the note, so both were
+    # printing it -- in two different and incomplete sets, because this
+    # function only sees rows with a canonical feature.
+    assert "OUT OF RANGE:" not in prompt
+    assert "Do NOT list the parameters" in prompt
     # None of the coverage vocabulary reaches the model at all.
     for banned in (
         "NOT SUPPLIED",
@@ -758,3 +763,33 @@ def test_an_all_indicated_summary_reports_no_status_gap():
 
     facts = collect_facts(_summary())
     assert not [g for g in _missing(_faithful(), facts) if g.startswith("status:")]
+
+
+def test_an_out_of_range_value_is_neither_required_nor_permitted(offline_settings):
+    """THE REGRESSION GUARD ON A THREE-PART CHANGE THAT WAS FIRST MADE IN TWO.
+
+    Cutting the out-of-range list from the prompt while leaving its values in
+    `required_values` made every generation worse, not better. `_missing`
+    checks required values against the finished body and the retry prompt
+    names whatever is absent BACK to the model -- so the model was never shown
+    the neutrophil percentage, was told it had dropped it, and wrote a
+    sentence around a number it could not explain. Observed three times on the
+    real page, ending in "Record 82 is noted for this 20-year-old male" -- a
+    fabricated identifier on a clinical handover note.
+
+    It passed the grounding gate because `_numbers_in(facts.required_values)`
+    vouched for it. So the prompt line, the requirement and the permission are
+    one change, and this test fails if any of the three comes back alone.
+    """
+    facts = collect_facts(_summary())
+
+    # 186 is the glucose, out of range on the laboratory's own interval and a
+    # rule trigger as well -- it stays required, via `trigger_values`.
+    assert any("186" in value for value in facts.required_values)
+
+    # The FIXTURE's out-of-range row is that same glucose, so assert the
+    # structural property rather than a number: nothing reaches
+    # `required_values` that did not come from a triggering value.
+    triggering = [v for values in facts.triggering.values() for v in values]
+    for required in facts.required_values:
+        assert any(required in trigger for trigger in triggering), required

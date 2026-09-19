@@ -711,7 +711,30 @@ def collect_facts(summary: Any) -> _Facts:
         triggering=triggering,
         qualified=_qualified(summary),
         out_of_range=out_of_range,
-        required_values=trigger_values + range_values,
+        # ⚠ `range_values` IS DELIBERATELY ABSENT, AND LEAVING IT IN WAS THE
+        # DEFECT THAT REVERTED THE FIRST ATTEMPT AT THIS CHANGE.
+        #
+        # `required_values` is checked against the finished body by `_missing`,
+        # and a value that is absent is named BACK TO THE MODEL in the retry
+        # prompt. So with the list cut from the prompt but its values still
+        # required, every generation went: model is never shown 82 -> fact
+        # check reports `value:82` missing -> retry prompt names 82 -> the
+        # model writes a sentence around a number it has no context for.
+        # Three regenerations, three different fabrications:
+        #
+        #     "The value 82 was noted in the record."
+        #     "This 20-year-old male has record identifier 82."
+        #     "Record 82 is noted for this 20-year-old male."
+        #
+        # 82 is the neutrophil percentage. The third is a FABRICATED
+        # IDENTIFIER on a clinical handover note, and it passed because
+        # `_numbers_in(facts.required_values)` vouched for it below.
+        #
+        # THE REQUIREMENT IS NOT LOST, IT MOVED. It exists so a reader learns
+        # which values sit outside their printed interval. The page now
+        # guarantees that from the rows, completely and without a model, which
+        # is a stronger guarantee than requiring a sentence from one.
+        required_values=trigger_values,
         unmapped_count=_unmapped_count(summary),
     )
 
@@ -787,8 +810,11 @@ _INSTRUCTIONS = """You are writing a short handover note for a clinician who has
 been handed a patient's phone. Use the facts below and NOTHING else.
 
 WHAT THIS NOTE CONTAINS, AND IT CONTAINS NOTHING ELSE:
-  1. what was flagged, and the measured value and threshold behind each one;
-  2. the parameters that are out of range.
+  1. what was flagged, and the measured value and threshold behind each one.
+
+Do NOT list the parameters that are outside their printed reference interval.
+The page composes that list itself, from the rows, and prints it directly
+below this note.
 
 Say nothing about what was assessed, what was not assessed, what could not be
 assessed, or what was not supplied. Do not mention this tool's coverage, its
@@ -897,8 +923,15 @@ def _facts_block(facts: _Facts) -> str:
                 )
             )
 
-    if facts.out_of_range:
-        lines.append("OUT OF RANGE: " + "; ".join(facts.out_of_range))
+    # ⚠ `facts.out_of_range` IS NOT IN THE PROMPT, AND `range_values` IS NOT
+    # IN `required_values`. THOSE TWO MUST MOVE TOGETHER -- see `collect_facts`.
+    #
+    # The page composes the out-of-range list deterministically from the same
+    # rows and prints it under this note, so asking the model for it produced
+    # the SAME FACT TWICE, four paragraphs apart, in two DIFFERENT and
+    # incomplete sets: this function only sees rows with a canonical feature,
+    # while the page also has the unassessed ones. On Test 3 that put glucose,
+    # neutrophils and lymphocytes here and ESR and CRP in the block.
 
     return "\n".join(lines)
 
@@ -988,7 +1021,10 @@ def write_clinician_summary(
     permitted = (
         _numbers_in(facts.values)
         + _numbers_in(tuple(facts.model_notes) + (facts.subject,))
-        + _numbers_in(facts.out_of_range)
+        # `facts.out_of_range` is not permitted: the prompt no longer supplies
+        # it, and the header above says only what the prompt supplies may be
+        # stated. With it permitted, a hallucinated out-of-range figure would
+        # pass the grounding gate silently.
         + _numbers_in(
             tuple(value for values in facts.triggering.values() for value in values)
         )
