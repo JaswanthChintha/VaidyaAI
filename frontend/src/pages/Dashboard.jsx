@@ -593,6 +593,12 @@ function valueVerdicts(evidenceConditions) {
         byFeature.set(line.feature, {
           direction: above ? 'high' : 'low',
           label: above ? 'High' : 'Low',
+          // KEPT SO THE ROW CAN NAME THIS REFERENCE when it disagrees with
+          // the one the laboratory printed. `crossing` already renders it as
+          // "below 13 g/dl", which is the phrase a reader needs; recomposing
+          // it at the point of use would be a second implementation of the
+          // same sentence.
+          crossedText: crossed,
         });
         continue;
       }
@@ -858,7 +864,9 @@ function InShort({
   dashboard,
   flaggedCards,
   clearCards,
-  unassessedCards,
+  // NO `unassessedCards`. This panel stopped naming them at `251c971` and
+  // must not be handed them again: the only thing it could do with the list
+  // is send it to the rewrite, which is the defect described at `names`.
   reportId,
   // PASSED, NOT RECOMPUTED. These are the engine's own threshold crossings as
   // the page read them; deriving them a second time here would be a second
@@ -991,8 +999,36 @@ function InShort({
     if (!sentences.length) return undefined;
     // Every name that must survive the rewrite. The caller knows which tokens
     // are names; the service must not guess at them.
+    //
+    // ⚠ A NAME MAY ONLY BE REQUIRED TO SURVIVE IF IT IS IN THE SENTENCES.
+    // `unassessedCards` USED TO BE HERE AND WAS NEVER IN THE BODY.
+    //
+    // `251c971` removed the paragraph that named the conditions this tool
+    // could not check -- on the reader's own instruction, and rightly -- but
+    // left those names in this list. From then on the rewrite was required to
+    // reproduce names the model had never been shown, which no rewrite can do.
+    // `_missing` in summary_prose.py refuses on exactly that, and the refusal
+    // discards the whole rewrite: both real laboratory reports on this account
+    // ended with NO prose, permanently, through the two different routes that
+    // impossibility produces --
+    //
+    //   Test 3.pdf   outcome facts_missing    dropped: the 4 unassessed names
+    //   Test 2.pdf   outcome facts_invented   the retry fed the model the
+    //                names it had "dropped", the model duly wrote about
+    //                conditions that were never described, and it tripped
+    //                `_invented` instead. THAT IS THE WORSE FAILURE: an
+    //                impossible must-survive list does not just refuse, it
+    //                pressures the model into inventing the missing content.
+    //
+    // Measured across all four reports: 0 unassessed -> `generated` (2 of 2),
+    // 4 unassessed -> no text at all (2 of 2). The two remaining sources are
+    // safe and must stay -- `listOfNames` writes the flagged and clear cards
+    // into the body below, and `nameList` writes the laboratory-flagged rows.
+    // The test asserts the INVARIANT (every name sent appears in the sentences
+    // sent) rather than this one absence, because the defect is re-introduced
+    // by adding any name whose paragraph is later removed.
     const names = [
-      ...[...flaggedCards, ...clearCards, ...unassessedCards].map(
+      ...[...flaggedCards, ...clearCards].map(
         (card) => card.condition
       ),
       ...(dashboard.unanalysed?.items || [])
@@ -1387,6 +1423,34 @@ function crossing(line) {
   return `${above ? 'above' : 'below'} ${threshold}${suffix}`;
 }
 
+/**
+ * Where a value sits against the interval printed beside it.
+ *
+ * ⚠ THE COMPARISON THAT `labFlagVerdict` DOES NOT MAKE. That function returns
+ * "In range" whenever an interval was printed at all, reasoning that a
+ * laboratory which printed one has compared it. That was safe only while the
+ * rows it served carried `labFlaggedAbnormal` from the PRODUCER, which does
+ * compare the two numbers (dashboardService.js, and 6bg finding 4 -- CRP 38.9
+ * against a printed limit of 5, shown to a patient as "In range").
+ *
+ * The assessed rows never had bounds to compare, because the only intervals
+ * they were missing were the sex-specific ones. The moment those parse, PCV
+ * 37.9 against a printed 40-50 would have rendered as "In range" on exactly
+ * the reasoning that defect was made of. So the arithmetic arrives with the
+ * ranges, in the same change.
+ *
+ * `null` means there was nothing to compare against -- never "normal".
+ */
+function printedPosition(value, low, high) {
+  if (!isPresent(value)) return null;
+  const hasLow = isPresent(low);
+  const hasHigh = isPresent(high);
+  if (!hasLow && !hasHigh) return null;
+  if (hasHigh && value > high) return 'high';
+  if (hasLow && value < low) return 'low';
+  return 'normal';
+}
+
 /** The range printed on the report, when the lab printed one. */
 function printedRange(line) {
   const { referenceLow: low, referenceHigh: high, unit } = line;
@@ -1767,15 +1831,62 @@ function LabRow({ row, showVerdict, verdict, fromProfile }) {
       {showVerdict ? (
         <td>
           {verdict ? (
-            <span
-              className={`verdict verdict--${verdict.direction || 'normal'}`}
-            >
-              {verdict.label}
-            </span>
+            <>
+              <span
+                className={`verdict verdict--${
+                  verdict.mixed ? 'mixed' : verdict.direction || 'normal'
+                }`}
+              >
+                {verdict.label}
+              </span>
+              {/* BOTH REFERENCES, WHEN THEY DISAGREE. The printed interval
+                  the laboratory compared against, then the threshold this
+                  tool applies. Neither is dropped and neither is presented
+                  as the whole answer. */}
+              {verdict.detail ? (
+                <span className="verdict__detail">{verdict.detail}</span>
+              ) : null}
+              {verdict.secondary ? (
+                <span className="verdict__secondary">{verdict.secondary}</span>
+              ) : null}
+            </>
           ) : (
             // No rule checked this value. Saying "in range" here would be a
             // finding nobody made.
-            <span className="absent">not checked</span>
+            <>
+              <span className="absent">not checked</span>
+              {/* WHAT THE REPORT DID PRINT, WHEN IT IS NOT A RANGE.
+                  ====================================================
+
+                  `AVERAGE BLOOD GLUCOSE 154 mg/dL` carries
+                  `"151 - 180 - Average Control"` -- one row of a glycaemic
+                  CONTROL band table, not an interval of normality. The
+                  extraction prompt names that exact string as text which is
+                  not a range, and `printed_range_is_only_a_range` refuses it,
+                  so the row has no bounds and nothing compared it.
+
+                  ⚠ AND IT MUST NEVER BE PARSED AS ONE. 154 sits inside
+                  151-180, so reading that band as a reference range would
+                  print "In range" for an average glucose matching the HbA1c
+                  of 7 % flagged HIGH two rows above -- 6bg finding 4 exactly,
+                  a finding rendering as a reassurance. "Average Control"
+                  means average control FOR SOMEONE WITH DIABETES.
+
+                  SO THE TEXT IS QUOTED, ATTRIBUTED, AND DENIED. Verbatim and
+                  in quotation marks because it is the report's wording and
+                  the reader can find it on their own paper; attributed to the
+                  report because this tool did not say it; and followed by
+                  what it is not, because "Average" reads as reassurance to a
+                  patient and the one thing this row may not do is imply a
+                  normal result. "not checked" stays above it -- the absence
+                  is still the verdict. */}
+              {isPresent(row.referenceRangeRaw) ? (
+                <span className="verdict__secondary">
+                  The report prints “{row.referenceRangeRaw}” beside this
+                  value — a band label, not a normal range.
+                </span>
+              ) : null}
+            </>
           )}
         </td>
       ) : null}
@@ -1937,6 +2048,9 @@ export default function Dashboard() {
     unit: item.unit,
     state: 'measured',
     usable: true,
+    // The printed text, for the rows nothing compared. See the band-label
+    // note in `LabRow` -- it is quoted and denied, never parsed.
+    referenceRangeRaw: item.labReferenceRangeRaw,
   }));
   // The laboratory's own abnormal markings lead: they are the reason these
   // rows are on the page at all.
@@ -2028,17 +2142,68 @@ export default function Dashboard() {
      absent and nothing has compared them. Haemoglobin still shows Low from
      the Anemia rule; PCV shows "not checked" because that is the truth.
      ⚠ PARSING A SEX-SPECIFIC PRINTED RANGE IS A SEPARATE, UNDONE JOB. */
+  /* WHAT THE REPORT ITSELF SAYS ABOUT THIS ROW.
+     ======================================================================
+
+     ABNORMAL WHEN THE VALUE IS OUTSIDE THE PRINTED INTERVAL **OR** THE
+     LABORATORY MARKED IT SO -- 6bg finding 4's rule, arriving on the second
+     of the two code paths. The comparison leads because it is CHECKABLE from
+     two numbers on the page, and the flag is kept as an OR so it is never
+     discarded when the arithmetic disagrees. Fail-safe toward flagging. */
+  const reportedVerdict = (row) => {
+    const flag = isPresent(row.flag) ? String(row.flag).toLowerCase() : null;
+    if (flag && flag !== 'normal') {
+      return { label: titleCase(row.flag), direction: flag };
+    }
+    const position = printedPosition(row.value, row.referenceLow, row.referenceHigh);
+    if (position === 'high') return { label: 'High', direction: 'high' };
+    if (position === 'low') return { label: 'Low', direction: 'low' };
+    if (position === 'normal' || flag === 'normal') {
+      return { label: 'In range', direction: 'normal' };
+    }
+    return undefined;
+  };
+
+  /* TWO REFERENCES, AND THE ROW MAY NOT COLLAPSE THEM INTO ONE WORD.
+     ======================================================================
+
+     Haemoglobin 12.5 g/dl on `Test 3.pdf` is INSIDE the interval the report
+     prints for a male reader (12-16) and BELOW the 13 g/dl this tool applies
+     for anaemia. Both statements are true, they are about different
+     references, and until the sex-specific interval parsed the row could only
+     ever have shown one of them -- it showed "Low", the rule's, with nothing
+     saying the laboratory's own range disagreed.
+
+     WHEN THEY AGREE, NOTHING CHANGES and one word is right. When they
+     disagree the row says both, and the owner chose that the laboratory's
+     comparison leads: it is the one a clinician reads off the paper.
+
+     ⚠ AND IT IS NOT STYLED AS CLEAR. `verdict--mixed` exists so that a row
+     whose two references disagree cannot render in the reassuring green of a
+     settled "In range" -- which is the shape of the worst defect this page
+     has had. The disagreement is the finding. */
   reportedLabs.forEach((row) => {
-    if (verdicts.has(row.feature)) return;
-    const verdict = labFlagVerdict({
-      labFlag: row.flag,
-      labFlaggedAbnormal:
-        isPresent(row.flag)
-        && String(row.flag).toLowerCase() !== 'normal',
-      labReferenceLow: row.referenceLow,
-      labReferenceHigh: row.referenceHigh,
+    const printed = reportedVerdict(row);
+    const rule = verdicts.get(row.feature);
+
+    if (!rule) {
+      if (printed) verdicts.set(row.feature, printed);
+      return;
+    }
+    if (!printed) return;
+
+    const ruleDirection = rule.direction || 'normal';
+    const printedDirection = printed.direction || 'normal';
+    if (ruleDirection === printedDirection) return;
+
+    verdicts.set(row.feature, {
+      ...printed,
+      mixed: true,
+      detail: printedRange(row),
+      secondary: rule.crossedText
+        ? `${rule.crossedText}, the threshold this tool applies`
+        : `this tool recorded it as ${String(rule.label).toLowerCase()}`,
     });
-    if (verdict) verdicts.set(row.feature, verdict);
   });
 
   // ---- chart data -------------------------------------------------------
@@ -2161,16 +2326,16 @@ export default function Dashboard() {
           <RiskGauge
             risk={dashboard.overall?.risk}
             assessed={dashboard.overall?.anyAssessed === true}
-            caption="The needle reflects the highest risk level any single topic reached — it is not an average."
+            caption="The needle reflects the highest risk level any single condition reached — it is not an average."
           />
         </section>
 
         {radarTopics.length ? (
           <section className="card">
-            <h2>Coverage of the topics checked</h2>
+            <h2>Coverage of the conditions checked</h2>
             <CoverageRadar
               topics={radarTopics}
-              absenceCaption="A dotted point sits at zero because nothing was measured for that topic — it is not a low score."
+              absenceCaption="A dotted point sits at zero because nothing was measured for that condition — it is not a low score."
             />
           </section>
         ) : null}
@@ -2207,10 +2372,18 @@ export default function Dashboard() {
           <h2>Everything else that was checked</h2>
           {clearCards.length ? (
             <div className="roundup">
+              {/* "CONDITIONS", NOT "TOPICS". `topic` is this project's
+                  INTERNAL word for an entry in the fixed catalogue the rule
+                  engine walks, and it leaked onto the reader's screen in four
+                  places while the same page called them conditions in two
+                  others -- "This tool checked 8 conditions" in the closing
+                  summary, "No conditions were assessed" in the empty state.
+                  A reader has no idea the two words mean the same thing, and
+                  "topic" says nothing about what is being checked. */}
               <p className="roundup__lead">
                 <strong>Nothing in these results pointed to</strong> these{' '}
                 {clearCards.length}{' '}
-                {clearCards.length === 1 ? 'topic' : 'topics'}.
+                {clearCards.length === 1 ? 'condition' : 'conditions'}.
               </p>
               <ul className="chips">
                 {clearCards.map((card) => (
@@ -2411,7 +2584,6 @@ export default function Dashboard() {
         dashboard={dashboard}
         flaggedCards={flaggedCards}
         clearCards={clearCards}
-        unassessedCards={unassessedCards}
         reportId={id}
         verdicts={verdicts}
       />

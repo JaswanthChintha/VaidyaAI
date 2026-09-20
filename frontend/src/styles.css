@@ -1173,6 +1173,22 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
 .verdict--high { color: var(--high); }
 .verdict--low { color: var(--medium); }
 .verdict--normal { color: var(--low); }
+/* TWO REFERENCES THAT DISAGREE, AND DELIBERATELY NOT THE CLEAR GREEN.
+   A row inside the laboratory's printed interval but outside the threshold
+   this tool applies is not a settled "In range", and rendering it in the same
+   colour as one would be the shape of 6bg finding 4 -- a finding reading as a
+   reassurance. It takes the same attention colour as `.verdict--low`. */
+.verdict--mixed { color: var(--medium); }
+/* The two supporting lines: full contrast, because they carry the clinical
+   content. Section 6aj's lesson -- an absence is carried by the SHAPE so the
+   text never has to be dimmed to signal it. */
+.verdict__detail,
+.verdict__secondary {
+  display: block;
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--body);
+}
 
 /* Results the platform read but does not assess. Deliberately prominent: a
    reader who does not see this concludes the whole report was checked. */

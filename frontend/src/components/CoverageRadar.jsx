@@ -100,7 +100,10 @@ export default function CoverageRadar({ topics = [], absenceCaption }) {
     ? ` Not assessed: ${missing.join(', ')} — nothing was measured for ${missing.length === 1 ? 'it' : 'them'}, which is not a low score.`
     : '';
   const title = `${coverageSentence}${absenceSentence}`.trim()
-    || `Coverage of ${points.length} topics.`;
+    // "conditions", matching the heading this chart sits under and the rest
+    // of the reader-facing copy. `topics` stays as the PROP name, which is
+    // this codebase's own vocabulary and is not read by anyone.
+    || `Coverage of ${points.length} conditions.`;
 
   return (
     <figure className="radar">

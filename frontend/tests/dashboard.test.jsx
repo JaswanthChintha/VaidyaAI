@@ -1902,10 +1902,15 @@ describe('the round-up of everything else', () => {
 
     await screen.findByText(/Everything else that was checked/);
     expect(document.querySelectorAll('.chip--clear')).toHaveLength(3);
-    expect(document.querySelector('.roundup__lead').textContent).toMatch(/these 3 topics/);
+    // "conditions" since 2026-09-20. `topic` was this project's internal word
+    // for a catalogue entry and the reader was never told it meant the same
+    // as the "conditions" the rest of the page counts. The contract these two
+    // tests exist for -- the printed count agrees with the chips beside it,
+    // and the noun agrees with the count -- is unchanged.
+    expect(document.querySelector('.roundup__lead').textContent).toMatch(/these 3 conditions/);
   });
 
-  it('says "topic", singular, when there is one of them', async () => {
+  it('says "condition", singular, when there is one of them', async () => {
     withDashboard({
       overall: { statusLabel: 'Attention Needed', anyAssessed: true, risk: 'High' },
       conditions: [clear('Anemia')],
@@ -1913,7 +1918,7 @@ describe('the round-up of everything else', () => {
     renderDashboard();
 
     await screen.findByText(/Everything else that was checked/);
-    expect(document.querySelector('.roundup__lead').textContent).toMatch(/these 1 topic\./);
+    expect(document.querySelector('.roundup__lead').textContent).toMatch(/these 1 condition\./);
   });
 
   it('draws no unchecked group when nothing was unchecked', async () => {
@@ -2712,5 +2717,264 @@ describe('the count of further out-of-range results', () => {
     expect(caveat).not.toMatch(/HEMOGLOBIN/);
     // And an in-range result is never counted at all.
     expect(caveat).not.toMatch(/MCV/);
+  });
+});
+
+/**
+ * A SEX-SPECIFIC PRINTED INTERVAL, AND THE TWO REFERENCES IT CREATES.
+ *
+ * `Test 3.pdf` prints `F:11 - 15 M:12 - 16` for haemoglobin and
+ * `F: 36 - 46 M: 40 - 50` for PCV. Until 2026-09-20 neither parsed, so both
+ * rows reached this page with no bounds: PCV read "not checked" while sitting
+ * BELOW the male interval printed on the same line, and haemoglobin read
+ * "Low" from the anaemia rule with nothing saying the laboratory's own range
+ * disagreed.
+ *
+ * ⚠ THE VALUES AND INTERVALS BELOW ARE THAT REPORT'S, for a male reader.
+ */
+describe('a row whose printed interval and rule threshold disagree', () => {
+  const withRows = (rows, evidence) => ({
+    overall: { statusLabel: 'Needs Medical Attention', anyAssessed: true, risk: 'High' },
+    laboratory: rows,
+    unanalysed: { count: 0, items: [] },
+    ...(evidence ? { evidence: { conditions: evidence } } : {}),
+  });
+
+  const verdictFor = (name) => {
+    const row = [...document.querySelectorAll('.lab-table tr')].find((tr) =>
+      tr.querySelector('th')?.textContent.includes(name)
+    );
+    return row ? row.children[2].textContent.replace(/\s+/g, ' ').trim() : null;
+  };
+
+  const classesFor = (name) => {
+    const row = [...document.querySelectorAll('.lab-table tr')].find((tr) =>
+      tr.querySelector('th')?.textContent.includes(name)
+    );
+    return row ? row.children[2].querySelector('.verdict')?.className || '' : '';
+  };
+
+  const PCV = {
+    feature: 'hematocrit',
+    displayName: 'Haematocrit',
+    value: 37.9,
+    unit: '%',
+    state: 'measured',
+    usable: true,
+    flag: null,
+    referenceLow: 40,
+    referenceHigh: 50,
+  };
+
+  const HAEMOGLOBIN = {
+    feature: 'hemoglobin',
+    displayName: 'Haemoglobin',
+    value: 12.5,
+    unit: 'g/dl',
+    state: 'measured',
+    usable: true,
+    flag: null,
+    referenceLow: 12,
+    referenceHigh: 16,
+  };
+
+  //: The anaemia rule's evidence line, as the engine emits it.
+  const ANAEMIA_EVIDENCE = [
+    {
+      condition: 'Anemia',
+      lines: [
+        {
+          feature: 'hemoglobin',
+          value: 12.5,
+          unit: 'g/dl',
+          comparator: '<',
+          threshold: 13,
+        },
+      ],
+    },
+  ];
+
+  it('⚠ does NOT call a value below its printed interval "In range"', async () => {
+    /* THE DEFECT THIS CHANGE COULD HAVE CREATED, AND THE REASON THE
+       ARITHMETIC SHIPPED WITH THE RANGES. `labFlagVerdict` returns "In range"
+       whenever an interval was printed AT ALL -- it never compares the two
+       numbers. That was safe only while these rows had no bounds. The moment
+       the sex-specific interval parsed, PCV 37.9 against a printed 40-50
+       would have rendered as "In range" on exactly the reasoning that
+       produced 6bg finding 4: CRP 38.9 against a printed limit of 5, shown
+       to a patient as "In range". */
+    withDashboard(withRows([PCV]));
+    renderDashboard();
+
+    await screen.findAllByText('Haematocrit');
+    expect(verdictFor('Haematocrit')).toMatch(/low/i);
+    expect(verdictFor('Haematocrit')).not.toMatch(/in range/i);
+    expect(verdictFor('Haematocrit')).not.toMatch(/not checked/i);
+  });
+
+  it('says both references when they disagree, and names each', async () => {
+    // 12.5 is INSIDE the interval printed for a male reader (12-16) and BELOW
+    // the 13 g/dl this tool applies. Both are true and neither may be the
+    // whole answer.
+    withDashboard(withRows([HAEMOGLOBIN], ANAEMIA_EVIDENCE));
+    renderDashboard();
+
+    await screen.findAllByText('Haemoglobin');
+    const cell = verdictFor('Haemoglobin');
+    expect(cell).toMatch(/in range/i);
+    expect(cell).toMatch(/12.*16/);
+    expect(cell).toMatch(/below 13 g\/dl/i);
+    expect(cell).toMatch(/the threshold this tool applies/i);
+  });
+
+  it('⚠ does not style a disagreement as a settled "In range"', async () => {
+    /* The row is inside one reference and outside the other. Rendering it in
+       the clear green of a settled result is the shape of the worst defect
+       this page has had -- a finding reading as a reassurance. */
+    withDashboard(withRows([HAEMOGLOBIN], ANAEMIA_EVIDENCE));
+    renderDashboard();
+
+    await screen.findAllByText('Haemoglobin');
+    expect(classesFor('Haemoglobin')).toMatch(/verdict--mixed/);
+    expect(classesFor('Haemoglobin')).not.toMatch(/verdict--normal/);
+  });
+
+  it('says it once when the two references AGREE', async () => {
+    // Nothing is gained by naming two references that say the same thing, and
+    // a second line on every row would bury the ones that differ.
+    const low = { ...HAEMOGLOBIN, value: 10.5 };
+    withDashboard(
+      withRows([low], [
+        {
+          condition: 'Anemia',
+          lines: [
+            { feature: 'hemoglobin', value: 10.5, unit: 'g/dl', comparator: '<', threshold: 13 },
+          ],
+        },
+      ])
+    );
+    renderDashboard();
+
+    await screen.findAllByText('Haemoglobin');
+    expect(verdictFor('Haemoglobin')).toMatch(/low/i);
+    expect(verdictFor('Haemoglobin')).not.toMatch(/the threshold this tool applies/i);
+  });
+
+  it('still says "not checked" when there is no interval and no rule', async () => {
+    // THE ABSENCE MUST SURVIVE. Nothing compared this row, and a blank or an
+    // "In range" in a column headed "Compared with usual limits" would invent
+    // a comparison nobody made.
+    withDashboard(withRows([{ ...PCV, referenceLow: null, referenceHigh: null }]));
+    renderDashboard();
+
+    await screen.findAllByText('Haematocrit');
+    expect(verdictFor('Haematocrit')).toMatch(/not checked/i);
+  });
+
+  it('keeps an abnormal laboratory flag even when the arithmetic disagrees', async () => {
+    // 6bg's fail-safe: outside the interval OR marked abnormal. The flag is
+    // never discarded because the two numbers happen to agree with each other.
+    withDashboard(withRows([{ ...PCV, value: 45, flag: 'low' }]));
+    renderDashboard();
+
+    await screen.findAllByText('Haematocrit');
+    expect(verdictFor('Haematocrit')).toMatch(/low/i);
+  });
+});
+
+/**
+ * A ROW WHOSE PRINTED TEXT IS A BAND LABEL, NOT A RANGE.
+ *
+ * `Test 3.pdf` prints `"151 - 180 - Average Control"` beside AVERAGE BLOOD
+ * GLUCOSE 154 mg/dL -- one row of a glycaemic CONTROL table. It is refused by
+ * `printed_range_is_only_a_range`, so the row has no bounds and nothing
+ * compares it. "not checked" is the correct verdict and stays.
+ *
+ * ⚠ THE DANGEROUS READING IS THE OBVIOUS ONE. 154 sits inside 151-180, so
+ * parsing that band as a reference interval would print "In range" for an
+ * average glucose matching the HbA1c of 7 % flagged HIGH on the same report.
+ * "Average Control" means average control FOR SOMEONE WITH DIABETES.
+ */
+describe('a printed band label, which is not a reference range', () => {
+  const withRows = (rows) => ({
+    overall: { statusLabel: 'Needs Medical Attention', anyAssessed: true, risk: 'High' },
+    laboratory: rows,
+    unanalysed: { count: 0, items: [] },
+  });
+
+  const cellFor = (name) => {
+    const tr = [...document.querySelectorAll('.lab-table tr')].find((r) =>
+      r.querySelector('th')?.textContent.includes(name)
+    );
+    return tr ? tr.children[2].textContent.replace(/\s+/g, ' ').trim() : null;
+  };
+
+  const EAG = {
+    feature: 'estimated_average_glucose',
+    displayName: 'Average blood glucose',
+    value: 154,
+    unit: 'mg/dL',
+    state: 'measured',
+    usable: true,
+    flag: null,
+    referenceLow: null,
+    referenceHigh: null,
+    referenceRangeRaw: '151 - 180 - Average Control',
+  };
+
+  it('still says "not checked" -- the absence is the verdict', async () => {
+    withDashboard(withRows([EAG]));
+    renderDashboard();
+
+    await screen.findAllByText('Average blood glucose');
+    expect(cellFor('Average blood glucose')).toMatch(/not checked/i);
+  });
+
+  it('⚠ never renders the band as a result of "In range"', async () => {
+    // The whole reason the band is refused upstream. 154 is inside 151-180.
+    withDashboard(withRows([EAG]));
+    renderDashboard();
+
+    await screen.findAllByText('Average blood glucose');
+    expect(cellFor('Average blood glucose')).not.toMatch(/in range/i);
+    expect(cellFor('Average blood glucose')).not.toMatch(/\bnormal\b(?!\s+range)/i);
+  });
+
+  it('quotes what the report printed, and says what it is not', async () => {
+    withDashboard(withRows([EAG]));
+    renderDashboard();
+
+    await screen.findAllByText('Average blood glucose');
+    const cell = cellFor('Average blood glucose');
+    // VERBATIM, so the reader can find it on their own paper.
+    expect(cell).toMatch(/151 - 180 - Average Control/);
+    // ATTRIBUTED -- this tool did not say it.
+    expect(cell).toMatch(/The report prints/i);
+    // AND DENIED, because "Average" reads as reassurance to a patient.
+    expect(cell).toMatch(/not a normal range/i);
+  });
+
+  it('adds nothing when the report printed no text at all', async () => {
+    // An absence of printed text is not a band label, and a row with nothing
+    // beside it must not acquire a sentence about what it does not have.
+    withDashboard(withRows([{ ...EAG, referenceRangeRaw: null }]));
+    renderDashboard();
+
+    await screen.findAllByText('Average blood glucose');
+    expect(cellFor('Average blood glucose')).toMatch(/not checked/i);
+    expect(cellFor('Average blood glucose')).not.toMatch(/The report prints/i);
+  });
+
+  it('adds nothing to a row that WAS compared', async () => {
+    // The band line belongs only where nothing compared the value. A row with
+    // a real interval already has its answer, and quoting the printed text
+    // beside it would be noise on every row of the table.
+    withDashboard(
+      withRows([{ ...EAG, referenceLow: 70, referenceHigh: 140, referenceRangeRaw: '70 - 140' }])
+    );
+    renderDashboard();
+
+    await screen.findAllByText('Average blood glucose');
+    expect(cellFor('Average blood glucose')).not.toMatch(/The report prints/i);
   });
 });
