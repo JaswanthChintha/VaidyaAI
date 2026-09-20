@@ -273,6 +273,72 @@ describe('what is sent is what is rendered', () => {
     expect(names).toEqual(expect.arrayContaining(['Anemia', 'Diabetes', 'Potassium']));
   });
 
+  /* ======================================================================
+     A NAME MAY ONLY BE REQUIRED TO SURVIVE IF IT IS IN THE SENTENCES.
+     ======================================================================
+
+     `251c971` removed the paragraph naming the conditions this tool could
+     not check, and left those names in the must-survive list. The rewrite
+     was then required to reproduce names the model had never been shown.
+
+     THE REAL COST, MEASURED ON THE STORED RECORDS OF ALL FOUR REPORTS:
+     0 unassessed conditions -> outcome `generated` (2 of 2); 4 unassessed
+     -> no prose at all (2 of 2), by two different routes. Test 3 refused
+     with `facts_missing`; Test 2's retry fed the model the names it had
+     "dropped" and the model wrote about conditions that were never
+     described, tripping `facts_invented`. An impossible must-survive list
+     does not merely refuse -- it pressures the model into inventing.
+
+     THE INVARIANT IS THE ASSERTION, NOT THE ONE ABSENCE. Testing only that
+     `Vitamin D Deficiency` is missing would pass again the moment some
+     other name's paragraph is removed, which is precisely how this arrived.
+     So the check is the contract `_missing` actually applies: every name
+     sent must appear in the text sent, compared the way `summary_prose.py`
+     compares it -- case-insensitive substring. */
+  const WITH_UNASSESSED = {
+    ...DASHBOARD,
+    conditions: [
+      ...DASHBOARD.conditions,
+      {
+        condition: 'Vitamin D Deficiency',
+        status: 'Insufficient Data',
+        risk: null,
+        flagged: false,
+        assessed: false,
+      },
+    ],
+  };
+
+  it('never requires a name the sentences do not contain', async () => {
+    withDashboard(WITH_UNASSESSED);
+    const spy = withProse('rewritten');
+    renderDashboard();
+
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+    const [, sentences, names] = spy.mock.calls[0];
+
+    // A count of zero out of zero is not a pass: this asserts nothing at all
+    // unless names were actually sent.
+    expect(names.length).toBeGreaterThan(0);
+
+    const sent = sentences.join(' ').toLowerCase();
+    const impossible = names.filter((n) => !sent.includes(String(n).toLowerCase()));
+    expect(impossible).toEqual([]);
+  });
+
+  it('does not send a condition it could not check as a must-survive name', async () => {
+    withDashboard(WITH_UNASSESSED);
+    const spy = withProse('rewritten');
+    renderDashboard();
+
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+    const names = spy.mock.calls[0][2];
+    // The unassessed one is absent; the assessed ones are untouched, so this
+    // fails on a fix that simply stopped sending names.
+    expect(names).not.toContain('Vitamin D Deficiency');
+    expect(names).toEqual(expect.arrayContaining(['Anemia', 'Diabetes', 'Potassium']));
+  });
+
   it('never sends the closing line to the model', async () => {
     withDashboard();
     const spy = withProse('rewritten');
