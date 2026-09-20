@@ -917,10 +917,55 @@ function InShort({
     (async () => {
       try {
         const res = await api.describeFindings(reportId, findings);
+        /* A WITHHELD DESCRIPTION IS NOT A FINDING THAT DOES NOT EXIST.
+           ==============================================================
+
+           This filtered on `available === true` and dropped the rest, so a
+           finding whose sentence was refused vanished from the page
+           completely. On `03-renal-anaemia-deficiency.pdf` the payload
+           carried FOUR findings and the reader was shown THREE:
+
+               Serum Creatinine       raised    available=true
+               Haemoglobin            lowered   available=true
+               Vitamin D, 25-Hydroxy  lowered   available=FALSE  <-- gone
+               Vitamin B12            lowered   available=true
+
+           Vitamin D was correctly identified as out of range -- the rule
+           engine recorded `vitamin_d 12 < 20`, and "Vitamin D Deficiency" is
+           named four lines above as one of the five needing a closer look.
+           Only its SENTENCE was missing, and the page turned that into the
+           finding itself being absent.
+
+           `refused_by: "number"` is why: Module 24 refused the generated text
+           because a number appeared in it, which the finding-context policy
+           forbids. That refusal is correct and is not the defect. Rendering
+           nothing is.
+
+           THE STANDING FAILURE MODE, ON THE SCREEN MOST PEOPLE SEE: "we
+           could not describe it" rendered as "it is not a finding". The
+           glossary beside it already solves this for unassessed tests -- it
+           keeps the row and prints a notice -- and this now does the same.
+
+           A NAME AND A DIRECTION ARE KEPT even with no text, because both
+           are facts this tool derived and neither came from the model: the
+           request carries only the test name and the word raised/lowered. */
         const entries = (res?.context?.entries || []).filter(
-          (e) => e && e.available === true && typeof e.text === 'string' && e.text.trim()
+          (e) => e && typeof e.test_name === 'string' && e.test_name.trim()
         );
-        if (!cancelled && entries.length) setContext(entries);
+        /* ⚠ IF NOTHING WAS DESCRIBED, STILL RENDER NOTHING. That is a
+           SEPARATE and already-settled decision, and it survives this change
+           unweakened: a box containing only notices gives the reader nothing
+           they did not have, and "an absence is not created by withholding
+           one" -- the wording of the test that pins it.
+
+           The defect fixed above is the PARTIAL list, where three findings
+           are described, a fourth is silently dropped, and the shorter list
+           reads as the complete one. So the box appears only when it has
+           something to say, and when it does it names EVERY finding. */
+        const described = entries.some(
+          (e) => e.available === true && typeof e.text === 'string' && e.text.trim()
+        );
+        if (!cancelled && described) setContext(entries);
       } catch {
         // Nothing to report. The page is complete without this.
       }
@@ -1243,15 +1288,34 @@ function InShort({
           attribute. */}
       {context.length ? (
         <div className="in-short__context">
-          {context.map((entry, index) => (
-            <p key={`${entry.test_name}-${index}`}>
-              <strong>
-                {entry.test_name}
-                {entry.direction === 'raised' ? ' (raised)' : ' (lowered)'}
-              </strong>{' '}
-              {entry.text}
-            </p>
-          ))}
+          {context.map((entry, index) => {
+            const described =
+              entry.available === true
+              && typeof entry.text === 'string'
+              && entry.text.trim();
+            return (
+              <p key={`${entry.test_name}-${index}`}>
+                <strong>
+                  {entry.test_name}
+                  {entry.direction === 'raised' ? ' (raised)' : ' (lowered)'}
+                </strong>{' '}
+                {described ? (
+                  entry.text
+                ) : (
+                  /* THE FINDING SURVIVES ITS MISSING SENTENCE. Same shape as
+                     the glossary's notice for a test with no description, and
+                     the same reason: the reader is told what is absent rather
+                     than shown a shorter list. The VALUE is unaffected and is
+                     in the table above, which is the reassurance that
+                     actually matters here. */
+                  <span className="absent">
+                    No general description could be prepared for this result.
+                    The value itself is in the table above and is unaffected.
+                  </span>
+                )}
+              </p>
+            );
+          })}
         </div>
       ) : null}
 

@@ -345,6 +345,51 @@ describe('Module 34 -- general context in the summary', () => {
     expect(closing()).toBeVisible();
   });
 
+  it('names a finding whose description was refused, instead of dropping it', async () => {
+    // THE DEFECT, FROM A REAL REPORT. `03-renal-anaemia-deficiency.pdf`
+    // produced FOUR findings and the page showed THREE:
+    //
+    //     Serum Creatinine       raised    available=true
+    //     Haemoglobin            lowered   available=true
+    //     Vitamin D, 25-Hydroxy  lowered   available=FALSE  <-- gone
+    //     Vitamin B12            lowered   available=true
+    //
+    // Vitamin D was correctly identified as out of range -- the rule engine
+    // recorded `vitamin_d 12 < 20`, and "Vitamin D Deficiency" is named in
+    // the sentence above as one of five needing a closer look. Only its
+    // SENTENCE was missing (`refused_by: "number"`, a correct Module 24
+    // refusal), and the page turned that into the finding being absent.
+    //
+    // A shorter list reads as the complete one. The name and the direction
+    // are facts this tool derived, not the model's, so both survive.
+    withDashboard();
+    vi.spyOn(api, 'rewriteSummary').mockResolvedValue({ prose: null });
+    withContext([
+      GOOD,
+      {
+        test_name: 'Vitamin D, 25-Hydroxy',
+        direction: 'lowered',
+        text: null,
+        available: false,
+        refused_by: 'number',
+      },
+    ]);
+    renderDashboard();
+
+    await screen.findByText(/In short/);
+    await waitFor(() => expect(api.describeFindings).toHaveBeenCalled());
+
+    const box = ctx();
+    expect(box).not.toBeNull();
+    // The finding is NAMED, with its direction.
+    expect(box.textContent).toMatch(/Vitamin D, 25-Hydroxy/);
+    expect(box.textContent).toMatch(/\(lowered\)/);
+    // And the reader is told what is missing rather than shown a short list.
+    expect(box.textContent).toMatch(/No general description could be prepared/i);
+    // The described entry is untouched.
+    expect(box.textContent).toMatch(/commonly associated with inflammation/);
+  });
+
   it('renders NOTHING when every entry was refused', async () => {
     // No notice and no placeholder: the reader loses a paragraph they never
     // saw, and an absence is not created by withholding one.
