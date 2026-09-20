@@ -39,6 +39,12 @@
 **State:** **ALL 32 SPEC MODULES BUILT, PLUS A REACT FRONTEND (§6q), UNDER GIT.** Modules 1–26
 are wired end to end and the full spec §16 pipeline has been verified live against real Gemini.
 
+**The canonical catalogue is 26 features (20 laboratory), and Module 31 ships
+19 population distribution tables** — both grew on 2026-09-19 when the
+complete blood count was added from NHANES microdata already on disk (§6be).
+`Test 3.pdf` now maps **16 of its 21 printed tests**, 15 of them with
+population context.
+
 **On 2026-09-06 the whole application was started and driven through a browser for the first
 time** — see §6t. Three defects only reachable by running it were found and fixed, including
 one that made **report upload impossible for every file**. A green suite had said nothing
@@ -46,10 +52,16 @@ about any of them. That is the fifth time on this project.
 
 | | Tests |
 |---|---|
-| `backend/` (Node/Express) | **767** passing + 3 skipped (15 suites, 0 failed) |
-| `ai-service/` (Python/FastAPI) | **4,163** passing + 7 skipped (4,170 collected, 0 failures, 0 errors) |
-| `frontend/` (React/Vitest) | **398** passing, 0 suites failed |
-| **Total** | **5,328** -- ai-service re-counted 2026-09-19 after §6bd (+56) |
+| `backend/` (Node/Express) | **772** passing + 3 skipped (15 suites, 0 failed) |
+| `ai-service/` (Python/FastAPI) | **5,090** passing + 7 skipped (5,097 collected, 0 failures, 0 errors) |
+| `frontend/` (React/Vitest) | **404** passing (80 suites, 0 failed, no file reporting zero assertions) |
+| **Total** | **6,266** -- measured at `eccda71`, 2026-09-20 |
+
+> **⚠ THE ai-SERVICE JUMP FROM 4,163 TO 5,087 IS MOSTLY PARAMETRISATION, NOT
+> NEW TESTS.** §6be took population coverage from 7 features to 19, and the
+> Module 31 suites are parametrised over `COVERED_FEATURES`, so several files
+> expanded 19/7-fold on their own. Do not read the total as a measure of new
+> coverage.
 
 > **⚠ THE 4,852 IN EVERY EARLIER SECTION WAS 7 TOO HIGH.** §6as recorded
 > ai-service's COLLECTED total (3,865) as its PASSED count; that day's real
@@ -61,10 +73,30 @@ about any of them. That is the fifth time on this project.
 > `origin/main` is the only remote branch. **The 14-path uncommitted warning
 > that stood here for two sessions is history.**
 >
-> **THE LAST SUBSTANTIVE COMMIT IS `70fc92c`** (the two unit equivalences
-> checked, §6bc). The 2026-09-19 run, newest first, is `70fc92c` (§6bc),
-> `f4699c9` (§6bb), `a8f2238` (the report-date display), `9684b24` (§6ba),
-> `39c59cb` / `2e30a7a` / `550fd51` / `f958ff0` (§6az's five fixes).
+> **THE 2026-09-19 RUN CONTINUED FOR TWELVE MORE COMMITS**, newest first —
+> and this block is, as ever, a fact about the past. Run `git status -sb`.
+>
+> ```
+> eccda71  the gate refused the model for naming the test it was asked about
+> f9aa7d4  a finding whose sentence was refused stopped being a finding
+> a725fef  the sentence counted two of the seven results printed beneath it
+> 3465bd8  CRP 38.9 against a printed limit of 5, shown as "In range"
+> 0e6333b  "the rbc_count result", and six results the ceiling dropped
+> 640cbcf  the laboratory had compared eleven of them -- "not checked"
+> fcdf943  the retry was telling the model a number nobody told it about
+> bab23f8  one out-of-range list, not this platform's architecture
+> b233275  five sentences, none of them for the doctor reading it
+> 53327a9  a lakh is a hundred thousand
+> 4a115d5  the blood count was already in the file haemoglobin came from
+> 6c9bec0  docs: D1 narrowed, and section 0 was wrong in both directions
+> a5e2b15  stop enumerating diseases
+> 96090a7  a carrier that was meant to work, and half a pattern
+> ```
+>
+> **⚠ THE LAST TWO ARE 2026-09-20 AND ALL FOURTEEN WERE UNPUSHED.**
+> Earlier that day: `70fc92c` (§6bc), `f4699c9` (§6bb), `a8f2238` (the
+> report-date display), `9684b24` (§6ba), `39c59cb` / `2e30a7a` / `550fd51` /
+> `f958ff0` (§6az's five fixes).
 >
 > > **THIS BLOCK HAS NOW BEEN WRONG ABOUT THE TREE THREE TIMES IN ONE DAY, IN
 > > THREE DIFFERENT FIELDS.** It named `351b693` and was two commits stale
@@ -188,14 +220,33 @@ about any of them. That is the fifth time on this project.
 >    repaired one class of unprovenanced flag by inference; **this is the fix
 >    that would let the clinician page name WHO decided a value was out of
 >    range** instead of saying "this tool does not record which" (§6az).
-> 6. **RE-READ THE PATIENT DASHBOARD ALOUD.** The clinician page was read on
->    2026-09-18 and gave five findings. **The patient dashboard has not been
->    read since the Module 35/36 work landed**, and it is the screen most
->    people actually see. On this project that has never once come back empty.
+> 6. ~~**Re-read the patient dashboard aloud.**~~ **DONE, BY THE OWNER, AND
+>    IT FOUND FOUR THINGS — SEE §6bg.** Tenth time screen-reading found what
+>    no suite did, and the worst of the four was **CRP 38.9 against a printed
+>    limit of 5, shown to a patient as "In range"**.
 > 7. **FIX `conftest.py` SO THE ai-service SUITE RUNS WITH `.env` PRESENT.**
 >    Carried for many sessions. A suite whose meaning depends on a gitignored
 >    file being absent will mislead somebody, and moving `.env` aside by hand
 >    every run is how it eventually gets left moved.
+> 8. **PARSE SEX-SPECIFIC PRINTED REFERENCE RANGES.** These reports print
+>    them routinely — `F:11 - 15 M:12 - 16` for haemoglobin, `F: 36 - 46
+>    M: 40 - 50` for PCV — and they yield `reference_low/high: null`, so PCV
+>    reads "not checked" on the dashboard and neither row can be compared
+>    against its printed interval. The patient's sex IS on the profile. This
+>    is the largest remaining gap the reports themselves create (§6be).
+> 9. **DECIDE THE SERVER-SIDE MODEL CAVEAT.** `clinician_narrative.py`
+>    composes `ROC-AUC 0.999, precision 0.97 / recall 0.98` into the
+>    narrative. The owner objected to exactly that vocabulary on the page this
+>    session; the file says it was written that way *on a previous objection*
+>    and carries a non-negotiable constraint (§6w). **Only the owner can
+>    settle it** — see §6bf, which also proposes the natural-frequency wording.
+> 10. **LOOK AT `summary_prose: facts_missing, dropped: 4`.** It logs on
+>    every Test 3 render and nobody has asked which four facts are being
+>    dropped from the patient summary (§6bg).
+> 11. **PHASE 2 POPULATION TABLES: SGPT, TSH, CRP.** Data confirmed
+>    reachable; `BIOPRO_J.xpt` is already on disk. ⚠ **Read §6bg's pattern
+>    block first** — this moves the canonical-feature boundary again, and
+>    that is what produced four reader-facing defects last time.
 
 > ### ▶ RUN AND TEST, IN ONE PLACE
 >
@@ -246,7 +297,14 @@ about any of them. That is the fifth time on this project.
 > reliable one.
 
 
-> ### ▶ NEW CHAT? §0, THEN §6bd → §6bc → §6bb → §6ba → §6az. THEN §6aw, §6av.
+> ### ▶ NEW CHAT? §0, THEN §6bg → §6bf → §6be → §6bd → §6bc → §6bb. THEN §6ba, §6az.
+>
+> **⚠ IF YOU READ ONLY ONE, READ §6bg's TWO PATTERN BLOCKS.** Twelve new
+> canonical features broke FIVE separate reader-facing things, none of them
+> in the feature code, and a 5,272-test suite noticed none of it. SGPT, TSH
+> and CRP are queued to move that same boundary again. The second pattern is
+> **a refusal that renders as nothing**, which is unmeasurable precisely
+> because it renders as nothing.
 >
 > **Read each section's opening list and its KNOWN AND OPEN block first; the
 > rest is evidence for those.** The six sections from 2026-09-18/19 are short.
@@ -11158,6 +11216,423 @@ verdict was believed.
 * The whitespace fix was found by probing the `_GAP` docstring's own claims
   against the pattern beside it. **Worth doing to the other rules**; nobody
   has.
+
+---
+
+## 6be. THE COMPLETE BLOOD COUNT · 2026-09-19 · 7 → 19 POPULATION TABLES
+
+**The owner asked why population context covered only 7 parameters, and
+whether NHANES had surveyed the rest.** It had. Two commits: `4a115d5` (the
+tables and the catalogue) and `53327a9` (the units the reports actually
+print).
+
+### ▶ WHAT WAS ADDED, AND WHAT IT COST
+
+**Twelve tables, no new download.** `CBC_J.xpt` was already on disk — it is
+the file `hemoglobin` has always come from — and it carries the whole count.
+Same NHANES file, cycle, demographic file, weight variable and analytic
+sample. Population coverage **7 → 19**; the canonical catalogue **14 → 26**.
+
+| | |
+|---|---|
+| from `CBC_J.xpt` | hematocrit, rbc_count, mcv, mch, mchc, wbc_count, neutrophils, lymphocytes, monocytes, eosinophils, basophils, platelet_count |
+| still not covered | ESR (NHANES does not measure it), eAG (a formula over HbA1c), random glucose (fasting status unrecorded), SGPT/TSH/CRP (Phase 2, data available) |
+
+> **⚠ A FEATURE IS NOT A JSON FILE HERE. THE TABLES WERE THE EASY PART.**
+> The catalogue is read by **25 modules**, and each new name needs a
+> validation rule, a declared trend polarity, a stability band, a Module 30
+> weight, a patient-facing knowledge document and synonym rows. The
+> import-time guards named every missing piece one at a time and refused to
+> start until it existed — which is the system working, and is why this took
+> a session rather than an afternoon.
+
+### ✅ ALL TWELVE ARE `POLARITY_UNDECLARED`, AND THAT IS CLINICAL
+
+Each is harmful at **both** extremes — the same reason `hemoglobin` has been
+undeclared since it was added — and the five differentials are **proportions
+of the white cell count** besides, so a percentage can move because its own
+cell line changed or because another one did. They are trendable (direction
+and magnitude are reported); better/worse is not.
+
+**EXISTING PROGRESS SCORES DID NOT MOVE, WHICH WAS THE REQUIREMENT.**
+Undeclared polarity means Module 29 excludes them on the category axis.
+Verified: the set of CBC features that can reach a score is empty. Weight is
+**1.0 and not 0.0** deliberately — 0.0 in that file means "not a trend at
+all", which is what `gender` is and what a platelet count is not.
+
+**THE CVi FIGURES ARE NOT NEW.** Every one is the EFLM published median
+already in `lab_variation.py` from §6bb, so the repository holds one number
+per analyte rather than two that can drift. **Haematocrit has no row there**
+and explicitly borrows haemoglobin's band as a *reasoned proxy*, flagged as
+the first thing to replace. Every `CVa` remains an unsourced placeholder,
+exactly as `lab_variation.py` says of itself.
+
+### ⚠ A LAKH IS A HUNDRED THOUSAND, AND THE REPORTS PRINT THEM
+
+Three of the twelve got **no population context at all** on the first real
+report, because the conversion table did not recognise what the laboratory
+prints:
+
+```
+RBC COUNT        4.2   Millions/Cumm
+TOTAL WBC COUNT  9300  Cells/cumm
+PLATELET COUNT   3.03  Lakhs/cumm
+```
+
+`cumm` is a cubic millimetre, which is exactly one microlitre. A **lakh** is
+one hundred thousand — an Indian convention an alias list written from NHANES
+spellings will never contain.
+
+> **WHAT I ACTUALLY DID WRONG, AND IT IS THE TRANSFERABLE PART.** Before
+> shipping I checked the test NAMES against the real stored reports —
+> `Polymorphs`, `T.RBC`, `PCV` all resolve — and reported that as "the
+> mapping is verified". **I never checked the UNITS against the same
+> reports.** Half the payload, claimed for all of it.
+
+> **⚠ THE PLATELET CONVERSION IS THE DANGEROUS ONE AND HAS ITS OWN TEST.**
+> A mis-scaled WHITE CELL count is caught: 9300 read as 10^3/uL is outside
+> the possible band and is rejected. A mis-scaled PLATELET count is **not**.
+> 3.03 Lakhs/cumm is 303,000/uL, an ordinary healthy count; read as
+> 3.03 x10^3/uL it becomes 3,030/uL — **not impossible, but severe
+> thrombocytopenia with a spontaneous bleeding risk.** The failure mode is
+> not an error or a refusal: it is a healthy person placed in the lowest
+> percentile with a number that reads as a haematological emergency.
+> `test_a_lakh_is_a_hundred_thousand_and_getting_it_wrong_is_invisible`
+> asserts the arithmetic AND asserts that the possible band does not save us,
+> so the premise is re-checked rather than assumed.
+
+**AND I REVERSED MY OWN REASONING IN THAT FILE, WHICH THE COMMENT RECORDS.**
+The conversion table had deliberately EXCLUDED bare per-microlitre counts,
+arguing nothing distinguishes `7000` from a mis-scaled `7000 x10^3`. That was
+reasoning about a report nobody had read. Refusing `9300 Cells/cumm`
+protected no one; it dropped a value the laboratory measured and printed.
+The scaling worry was checkable, and checking it showed the guard already
+existed.
+
+### ▶ VERIFIED
+
+* Eyeballed against haematology expectation, male/female 40–49 medians:
+  haematocrit 44.3/40.1, RBC 5.00/4.47, MCV 89.3/89.6, MCHC 34.0/33.5,
+  WBC 6.6/7.4, neutrophils 58.6/58.9, platelets 229/263. Every one lands
+  where a reference would put it, **including the sex differences**.
+* **All 19 tables rebuild BYTE-IDENTICAL** from the committed `.xpt` files
+  (`diff -r`, no differences). The original seven reproduced their numbers
+  exactly 15 days later; only `built_on` changed.
+* Live, through the real service, on the real stored values and units:
+  **16 of 16 features available, 0 unavailable.** Platelets read 75th–90th
+  percentile — healthy, which is the point.
+
+### KNOWN AND OPEN
+
+* **SEX-SPECIFIC PRINTED RANGES DO NOT PARSE.** `F:11 - 15 M:12 - 16`
+  (haemoglobin) and `F: 36 - 46 M: 40 - 50` (PCV) yield
+  `reference_low/high: null`, so PCV shows "not checked" on the dashboard and
+  neither gets a printed-interval comparison. **These reports print them
+  routinely.** Named in the code as a separate, undone job.
+* **`MERIDIAN DIAGNOSTICS` REFUSES** under Module 24 — a lab name matching
+  `diagnos\w*`. Harmless today because that field is not validated; a live
+  landmine if metadata is ever routed through the safety layer.
+* SGPT, TSH and CRP are Phase 2. `BIOPRO_J.xpt` (already on disk) carries
+  ALT; `HSCRP_J.xpt` and `THYROD_G.xpt` were confirmed reachable.
+* ALT was deliberately held back: its honest polarity is **monotone**, which
+  makes it scorable, which would move existing progress scores. That is a
+  decision, not an oversight.
+
+---
+
+## 6bf. THE CLINICIAN PAGE, READ BY ITS OWNER · 2026-09-19
+
+Three commits — `b233275`, `bab23f8`, `fcdf943` — all from the owner reading
+the real page and objecting. **Every one of them was right, and twice the
+objection was already written down in this repository.**
+
+### ⚠ FIVE SENTENCES OF PATIENT PROSE ON A DOCTOR'S DOCUMENT
+
+The page printed `ml.limitations.author_note` — the model artifact's own
+`honest_read`, written in **patient register** — to a clinician. Its first
+clause repeated the fixed sentence above it almost word for word.
+
+**I THEN GOT IT WRONG IN THE OTHER DIRECTION.** I replaced it with the
+model's figures — `Random Forest, p 0.85, AUC 0.97, precision 0.92, recall
+0.70` — reasoning that §6az wanted the clinician "given something to weigh it
+with". **Two tests in this repository already banned exactly that**: one
+lists `ROC-AUC`, `recall`, `precision` as vocabulary that must not reach a
+clinician; the other bans the string `Random Forest` by name. The objection
+was recorded before either of us said it.
+
+What is left is one sentence: *"An estimate from patterns in past records,
+not a measurement of this patient."* §6az's finding is **not reversed** — its
+defect was that every model qualification vanished once Gemini generated
+reliably; that is still guarded and still tested in both branches. Only the
+length changed.
+
+> **⚠ THE SAME JARGON EXISTS SERVER-SIDE AND IS UNTOUCHED.**
+> `clinician_narrative.py` composes `"ROC-AUC 0.999, precision 0.97 / recall
+> 0.98"` and appends it to the narrative. It did not fire on Test 3 but will
+> on other reports. The file says it was written that way *"on the reader's
+> objection"* — the **opposite** of what the owner said this session — and it
+> carries a constraint marked non-negotiable (a model flag may never appear
+> without its limitation, §6w, recurred three times). **This is the owner's
+> call and was deliberately not touched.** If it is to change, natural
+> frequencies are the way: *"about 9 in 10 it flagged did have it; it misses
+> about 2 in 10"* — jargon-free, and it keeps the miss rate, which §6w says
+> matters most.
+
+### ⚠ TWO OUT-OF-RANGE LISTS, FOUR PARAGRAPHS APART, WITH DISJOINT SETS
+
+```
+narrative   RANDOM BLOOD GLUCOSE 168, NEUTROPHILS 82, LYMPHOCYTES 14
+block       ESR 45; C-REACTIVE PROTEIN(CRP) 38.9
+```
+
+Each looked complete and neither was. **The divider was whether this platform
+holds a canonical feature** — assessed rows reached the narrative, unassessed
+rows reached the composed block. The comment directly above that code already
+said *"a clinician wants the out-of-range results, not a statement about our
+coverage"*, while the page did the opposite two inches lower.
+
+**§6be MADE IT VISIBLE.** Neutrophils and lymphocytes had no feature before;
+making them features moved two of the four across the boundary.
+
+### ⚠⚠ THE THREE-PART CHANGE I FIRST MADE IN TWO — READ THIS ONE
+
+Removing the list from the prompt requires **three** edits:
+
+1. the prompt no longer asks for the list;
+2. `facts.out_of_range` leaves the permitted numbers;
+3. **`range_values` leaves `required_values`.**  ← MISSED
+
+`required_values` is checked against the finished body by `_missing`, and
+**whatever is absent is NAMED BACK TO THE MODEL in the retry prompt.** So
+with (1) and (2) alone, every generation ran: the model is never shown the
+neutrophil percentage → the fact check reports `value:82` missing → the retry
+hands it "82" with no context → it writes a sentence around it.
+
+```
+"The value 82 was noted in the record."
+"This 20-year-old male has record identifier 82."
+"Record 82 is noted for this 20-year-old male."
+```
+
+**The third is a fabricated identifier on a clinical handover note.** One run
+also corrupted parameter names — "GLYCATED HAEMOGLOGIN", "HEMOGLOGIN". All of
+it passed the grounding gate, because `_numbers_in(required_values)` vouched
+for the number the retry had just supplied.
+
+**I REVERTED RATHER THAN SHIP IT**, and said so. The re-examination that
+found part 3 started from the owner asking a question I had already answered
+wrongly — whether re-analysing would help. It would not have.
+
+> **THE MECHANISM CONFIRMED ITSELF:** `attempts` went **2 → 1** and
+> `llm_calls_made` **2 → 1**. There is no longer a fact-check gap to retry,
+> so each narrative now costs **half** the quota it did.
+
+**A regression test asserts all three parts together**, so none can come back
+alone.
+
+---
+
+## 6bg. THE PATIENT DASHBOARD · 2026-09-19/20 · SEVEN DEFECTS, ONE BOUNDARY
+
+**Seven findings, every one from the owner reading the real screen.** Six
+commits: `640cbcf`, `0e6333b`, `3465bd8`, `a725fef` (findings 1–5, all from
+§6be), then `f9aa7d4` and `eccda71` (findings 6–7, which are **independent of
+the blood count** and were found the next morning on a different report).
+
+### ▶ THE PATTERN, WHICH IS THE POINT OF THIS SECTION
+
+> **ADDING TWELVE CANONICAL FEATURES BROKE FIVE SEPARATE READER-FACING
+> THINGS, AND NOT ONE OF THEM WAS IN THE FEATURE CODE.** Each screen had a
+> rule of the form *"if it has a canonical feature, treat it one way; if not,
+> the other"*, and twelve rows changed sides at once. The suites stayed green
+> throughout — 5,272 tests did not notice — because every one of these is a
+> statement the page makes, not a value it computes.
+>
+> **BEFORE MOVING THAT BOUNDARY AGAIN** (SGPT, TSH and CRP are next), grep
+> for `labFlaggedAbnormal`, `unanalysed`, `unassessed` and `PATIENT_LABEL`
+> and read every consumer. There were six.
+
+> **▶ AND THE SECOND PATTERN, WHICH FINDINGS 6 AND 7 ARE:** a refusal that
+> renders as nothing. Neither came from the boundary; both came from the
+> owner asking *"why is this not mentioned"* about a result the page had
+> correctly identified. **Every refusal path on this platform renders nothing
+> by design** — that is stated in §0 about model quota — and the corollary
+> nobody had drawn is that a refusal the reader cannot see is a refusal
+> nobody will ever measure. Finding 7 exists only because finding 6 made it
+> visible.
+
+### ⚠ 1. ELEVEN ROWS SAID "not checked" AND THE LABORATORY HAD COMPARED THEM
+
+`valueVerdicts` reads **clinical rule evidence only**, and this platform
+holds rules for CONDITIONS (Diabetes, Anemia), not for parameters. No rule
+reads a blood-count row, so all thirteen showed "not checked" — beside eleven
+that carried the laboratory's own interval and flag, unread on the payload.
+It also **contradicted the clinician summary on the same report**, which
+named NEUTROPHILS 82 % (40–70, high) while this table called it unchecked.
+
+The justification was already ten lines up: `labFlagVerdict` reasons that a
+laboratory which printed an interval the value sits inside HAS compared it.
+Equally true of a row that happens to have a feature.
+
+### ⚠ 2. `the rbc_count result` — INTERNAL KEYS ON A PATIENT SCREEN
+
+`PATIENT_LABEL` has no row for a new feature, so the heading fell back to
+`f"the {feature} result"` built from the CANONICAL name. Twelve labels added,
+**no parenthesised abbreviations** — the string is the table's sub-line and
+the printed name is the heading above it.
+
+### ⚠ 3. SIX RESULTS HAD NO EXPLANATION, AND THE 2026-09-11 NOTE PREDICTED IT
+
+`DEFAULT_MAX_EXPLANATIONS` was 10, set when the catalogue held 8 laboratory
+features, with a note ending *"headroom for two more before anyone has to
+think about this again."* §6be took `LAB_FEATURES` to 20. Test 3 maps
+sixteen, so **six lost — the entire white cell differential, because they sit
+last in row order.** Raised to 24 = `LAB_FEATURES` + 4.
+
+> **⚠ THE BINDING CONSTANT IS THE BACKEND'S.**
+> `backend/src/config/env.js` pins `maxExplanations` with `Math.min(10, ...)`
+> and sends it EXPLICITLY, so the ai-service default is never consulted.
+> **Raising the Python side alone changes nothing, silently, while both files
+> claim 24.** I had already restarted the service and was about to report it
+> fixed. A test now asserts the RELATIONSHIP
+> (`DEFAULT_MAX_EXPLANATIONS >= len(LAB_FEATURES)`), which should have
+> existed the first time — the cap has now fallen behind the catalogue twice.
+
+**⚠ COST:** up to 24 model calls per ANALYSIS (stored, not per view). On the
+free tiers here, one re-analysis of a large report is most of a day's budget.
+
+### ⚠⚠ 4. CRP 38.9 AGAINST A PRINTED LIMIT OF 5, SHOWN AS "In range"
+
+**The worst thing found on this project in some time.** `labFlaggedAbnormal`
+was the extracted `flag` alone. `Test 3.pdf` analysed twice:
+
+```
+first run    CRP flag "high"    SGPT "normal"   TSH "normal"
+second run   CRP flag null      SGPT null       TSH null
+```
+
+Same values, same printed intervals, different flags. **Extraction is a model
+call and is not deterministic** — §6ba records this for test NAMES; this is
+the first time in FLAGS.
+
+With the flag gone, `labFlagVerdict` fell to *"an interval was printed,
+therefore the laboratory compared it, therefore In range"*. **It never
+compares the two numbers.** A dropped flag turned a finding into a
+reassurance, on the results table a patient reads.
+
+Fixed at the producer (one producer, six consumers): abnormal when the value
+sits outside the printed interval **OR** an abnormal flag was extracted. The
+comparison leads because it is **checkable** — both numbers are on the report
+— and the flag is kept as an OR so it is never discarded when the arithmetic
+disagrees. Fail-safe toward flagging.
+
+**THE WORDING CHANGED WITH IT, WHICH IS §6az ON A SECOND SCREEN.** A row can
+now be abnormal with no laboratory marking, so *"Your laboratory marked N
+further results outside its own range"* became *"N further results are
+outside the range printed on the report"*.
+
+> **⚠ AND THE FIRST VERSION OF THAT FIX READ `source.value`, WHICH DOES NOT
+> EXIST.** An extracted parameter carries `value_raw` and `value_numeric`.
+> The comparison was a silent no-op, the page still showed "In range" after a
+> restart — **and the five new unit tests PASSED, because I wrote the fixture
+> from the same assumption as the code.** A fixture invented alongside its
+> consumer cannot catch that consumer's assumption. The fixture is now copied
+> from a real stored record.
+
+### ⚠ 5. THE SENTENCE COUNTED TWO OF THE SEVEN RESULTS PRINTED BENEATH IT
+
+*"2 further results are outside the range printed on the report — ESR,
+CRP"*, while the findings list four inches below named **seven**. The caveat
+counted only `unanalysed.items`; the findings list is built from the page's
+verdicts. Same leak, third screen.
+
+**WHAT "further" MEANS:** further than the conditions already named above. A
+raised HbA1c is the evidence for the Diabetes card the reader just read. So a
+row counts when it is out of range AND its feature contributed to **no**
+condition on the page. Now reads **4** — neutrophils, lymphocytes, ESR, CRP.
+
+### ⚠ 6. A FINDING WHOSE SENTENCE WAS REFUSED STOPPED BEING A FINDING
+
+**Found 2026-09-20 by the owner, on `03-renal-anaemia-deficiency.pdf`.** The
+payload carried FOUR findings and the page rendered THREE:
+
+```
+Serum Creatinine       raised    available=true
+Haemoglobin            lowered   available=true
+Vitamin D, 25-Hydroxy  lowered   available=FALSE   <-- dropped
+Vitamin B12            lowered   available=true
+```
+
+**Nothing was wrong with the detection.** The rule engine recorded
+`vitamin_d 12 < 20`, and *"Vitamin D Deficiency"* is named four lines above
+as one of five needing a closer look. Only the SENTENCE was missing —
+`refused_by: "number"`, Module 24 refusing generated text because a number
+appeared in it, which the finding-context policy forbids. **That refusal is
+correct and is not the defect. Rendering nothing is.**
+
+The filter was `available === true`, so a refused entry was dropped whole and
+the shorter list read as the complete one. **The standing failure mode, on
+the screen most people see:** *"we could not describe it"* rendering as
+*"it is not a finding"*. The glossary directly beside it already keeps the
+row and prints a notice; this now does the same. The NAME and the DIRECTION
+survive because both are facts this tool derived — the request to the model
+carries only a test name and the word raised/lowered.
+
+> **THE ALL-REFUSED RULE SURVIVES UNWEAKENED, and it is a different
+> decision.** With NO entry described the box still renders nothing: a box of
+> notices gives the reader nothing they did not have, and *"an absence is not
+> created by withholding one"*. The defect was the PARTIAL list.
+
+### ⚠⚠ 7. AND THEN THE CAUSE: THE GATE REFUSED THE MODEL FOR NAMING THE TEST
+
+**The owner saw the notice and asked why there was no description.** There
+should have been one. `refused_by: "number"` — and **the number was ours**.
+
+```
+Test name in the prompt:  Vitamin D, 25-Hydroxy
+
+"A lowered 25-hydroxy vitamin D level is commonly associated with
+ insufficient sunlight exposure or low dietary intake."      ->  REFUSED
+```
+
+`_MEASUREMENT_DIGIT` refuses a digit not preceded by a letter. That lookbehind
+has always protected `B12` and `T3`, where the digit **trails** a letter.
+**`25-Hydroxy` LEADS with its digits**, so nothing protected it, and the model
+was refused for repeating the name it was handed.
+
+**The asymmetry is what made it look like a model failure:** the identical
+sentence about vitamin B12 passed, and so did the vitamin D sentence with the
+echo removed. All three measured before anything was changed.
+
+`_check` now takes the test name and strips **its digit-bearing tokens** before
+the number gate. The only strings removed are ones this service put in the
+prompt.
+
+> **⚠ BY WHOLE TOKEN, WHICH IS WHAT KEEPS IT SAFE.** A bare `25` is not the
+> token `25-hydroxy`, so `"below 25 ng/mL"` and `"25-hydroxy … below 30"` are
+> **still refused**, and with no test name the gate is exactly as strict as
+> before. Two of the three tests are those negative controls; the third
+> asserts the second-person and certainty gates are untouched, because
+> removing characters from a string is how a neighbouring gate opens by
+> accident.
+
+**Verified live after a cache clear: four findings, four descriptions.**
+
+### KNOWN AND OPEN
+
+* **RE-ANALYSIS IS REQUIRED** for the six missing explanations. Labels,
+  verdicts and counts are render-time and took effect on reload.
+* **HOW OFTEN DOES `refused_by` FIRE, AND ON WHICH GATE?** Nobody has counted
+  it across the four reports. Until finding 6 above, a refused finding
+  rendered as nothing at all, so the rate was **unobservable** — and finding
+  7 shows at least one class of refusal was the gate's fault, not the
+  model's. Worth a single pass over all four reports now that the notice
+  makes it visible.
+* **`summary_prose` LOGS `outcome: facts_missing, dropped: 4`** on Test 3,
+  repeatedly, and nobody has looked at what those four facts are.
+* Narratives are **cached** per `analysisVersion`, so a prompt change does
+  not reach existing reports until re-analysis. The cache was cleared by hand
+  four times this session to verify changes; each clear costs a model call.
 
 ---
 
