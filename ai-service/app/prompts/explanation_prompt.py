@@ -19,7 +19,7 @@ evidence that the system cannot produce unsafe text. It can. `app/safety/`
 is why it does not reach a patient.
 
 ==========================================================================
-THE SIX PROHIBITIONS
+THE SEVEN PROHIBITIONS
 ==========================================================================
 
 `PROHIBITIONS` below is the reviewable list, and it is interpolated into the
@@ -29,6 +29,14 @@ Spec section 14 names each of these as something the safety layer must catch:
     no diagnosis, no medication, no dosage, no claim of certainty,
     always defer to a qualified healthcare professional,
     use only the values and knowledge supplied.
+
+The seventh, MANDATORY HEDGING, was added on 2026-09-20 and is not from spec
+section 14 -- it comes from the safety layer. `positive.required_hedging`
+refuses an interpretive verb beside a clinical subject when no hedge appears
+in the sentence, and the certainty rule above does not cover that: a sentence
+can avoid every forbidden word and still be refused. It cost a real reader
+the whole lymphocytes explanation on `Test 3.pdf`. See the comment on the
+rule itself for why naming the validator's own word lists is the fix.
 
 ==========================================================================
 WHY THE SUPPLIED-VALUES RULE IS STATED SO INSISTENTLY
@@ -65,6 +73,39 @@ PROHIBITIONS: Tuple[str, ...] = (
     "NEVER CLAIM CERTAINTY. Do not write 'definitely', 'confirms', 'proves', "
     "'clearly shows' or 'this means you have'. A single laboratory value "
     "settles nothing on its own, and saying so is part of the explanation.",
+    # ⚠ ADDED 2026-09-20, AND IT NAMES THE WORDS THE VALIDATOR MEASURES.
+    #
+    # The rule above forbids certainty VOCABULARY. The safety layer's
+    # `positive.required_hedging` measures something else: an INTERPRETIVE
+    # VERB plus a CLINICAL SUBJECT with NO HEDGE anywhere in the sentence.
+    # So a sentence containing none of the forbidden words is still refused:
+    #
+    #     "A low lymphocyte count indicates your immune system is strained."
+    #
+    # No 'definitely', no 'confirms', no 'this means you have' -- and it cost
+    # the reader the whole lymphocytes explanation on `Test 3.pdf`, twice,
+    # with the violation quoted back to the model on the retry.
+    #
+    # THE FIX IS THE ONE §6at ALREADY FOUND ON THIS PLATFORM. Module 24's
+    # treatment rule is a VOCABULARY rule, and telling the model "do not
+    # advise" did not stop it being refused four times in six; naming the
+    # words did. The same move here: name the verbs that need a hedge, and
+    # name the hedges, because those two lists are what the validator
+    # actually holds (`INTERPRETIVE_VERBS` and `HEDGE_MARKERS` in
+    # app/safety/policy.py). A prompt that forbade a property the validator
+    # does not measure, while leaving the one it does unnamed, is how the
+    # model gets refused for obeying its instructions.
+    "HEDGE EVERY INTERPRETATION. If a sentence says what a result means for "
+    "the reader's body or health, it MUST also carry one of: may, might, "
+    "can, could, often, usually, typically, generally, commonly, sometimes. "
+    "This applies to every form of 'mean', 'indicate', 'show', 'prove', "
+    "'demonstrate', 'reveal', 'signal', 'signify', 'imply', 'reflect' and "
+    "'point to'. Write 'a lowered result MAY be associated with ...' or "
+    "'this CAN be a sign of ...', never 'this indicates ...' or 'this shows "
+    "your ... is'. 'Suggests' and 'is associated with' already carry the "
+    "hedge and need no other. An unhedged interpretation is discarded in "
+    "full, so the reader loses the entire explanation rather than one "
+    "sentence.",
     "ALWAYS DEFER TO A QUALIFIED HEALTHCARE PROFESSIONAL. Every explanation "
     "must say, in its own words, that a qualified healthcare professional is "
     "the person to discuss this with. This system does not replace one.",
