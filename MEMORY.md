@@ -57,7 +57,7 @@ about any of them. That is the fifth time on this project.
 | `frontend/` (React/Vitest) | **404** passing (80 suites, 0 failed, no file reporting zero assertions) |
 | **Total** | **6,266** -- measured at `eccda71`, 2026-09-20 |
 
-> **⚠ THE ai-SERVICE JUMP FROM 4,163 TO 5,087 IS MOSTLY PARAMETRISATION, NOT
+> **⚠ THE ai-SERVICE JUMP FROM 4,163 TO 5,090 IS MOSTLY PARAMETRISATION, NOT
 > NEW TESTS.** §6be took population coverage from 7 features to 19, and the
 > Module 31 suites are parametrised over `COVERED_FEATURES`, so several files
 > expanded 19/7-fold on their own. Do not read the total as a measure of new
@@ -320,8 +320,27 @@ about any of them. That is the fifth time on this project.
 > clean extraction under every current gate — bare test names (`ESR`, not
 > `ESR WESTGARD`), eAG with `flag: null` and no bounds **out of the pipeline
 > rather than hand-repaired**, and `reportDate` 2026-09-13 matching what the
-> document prints. Four reports on the account; the timeline reads
-> **26 parameters · 6 improving · 2 worsening · 12 stable · 6 undirected**.
+> document prints. **Four reports on the account:**
+>
+> ```
+> 6aae0df5b0b3c22147df56f0  Test 3.pdf                        13 Sep
+> 6aa52de550e2624b90d4534b  Test 2.pdf                        12 Sep
+> 6aa42b76300654d487321021  01-all-normal.pdf                 11 Sep
+> 6aa42dc8300654d487321070  03-renal-anaemia-deficiency.pdf    9 Sep
+> ```
+>
+> > **⚠ THE TIMELINE TALLY BELOW IS PRE-§6be AND IS NOW WRONG.** It read
+> > *26 parameters · 6 improving · 2 worsening · 12 stable · 6 undirected*
+> > when only 8 laboratory features were mapped. Twelve more are mapped now,
+> > all of them `POLARITY_UNDECLARED`, so the counts have moved and
+> > `undirected` in particular must have grown. **Nobody has re-measured it.**
+> > Do not quote those figures; open the timeline.
+>
+> > **⚠ TEST 3 HAS BEEN RE-ANALYSED SINCE, AND THE EXTRACTION CHANGED.** The
+> > second run returned `flag: null` for CRP, SGPT and TSH where the first had
+> > `"high"`, `"normal"`, `"normal"` — same values, same printed intervals.
+> > See §6bg finding 4, which is the defect that exposed. Extraction is a
+> > model call; §6ba records the same non-determinism in test NAMES.
 >
 > Between them these sections have the run commands, the state of the
 > repository, what `Test 2.pdf` and `Test 3.pdf` are and why they matter, and
