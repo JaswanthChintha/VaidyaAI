@@ -349,8 +349,58 @@ def _refuse(test_name: str, direction: str, gate: str) -> FindingContext:
     )
 
 
-def _check(text: str) -> Optional[str]:
+#: Digit-bearing tokens inside a test name, e.g. `25-Hydroxy`, `B12`, `T3`.
+#: Matched as WHOLE TOKENS so that stripping one cannot also strip a bare
+#: value the model invented.
+_NAMED_TOKEN = re.compile(r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
+
+
+def _without_test_name_digits(text: str, test_name: str) -> str:
+    """`text` with the digit-bearing tokens OF THE TEST NAME removed.
+
+    ⚠ THE GATE WAS REFUSING THE MODEL FOR NAMING THE TEST IT WAS ASKED ABOUT.
+
+    `_MEASUREMENT_DIGIT` refuses any digit not preceded by a letter. That
+    lookbehind protects `B12` and `T3`, where the digit trails a letter -- but
+    `Vitamin D, 25-Hydroxy` LEADS with its digits, so nothing protected it,
+    and a perfectly good sentence was refused:
+
+        "A lowered 25-hydroxy vitamin D level is commonly associated with
+         insufficient sunlight exposure or low dietary intake."   -> "number"
+
+    Measured on `03-renal-anaemia-deficiency.pdf`: vitamin D was the ONLY one
+    of four findings refused, and this is why. The same sentence without the
+    echo passes, as does the identical sentence about vitamin B12.
+
+    THE STRIP IS BY WHOLE TOKEN, WHICH IS WHAT KEEPS IT SAFE. Only tokens
+    that appear in the test name are removed, matched as units, so:
+
+        "25-hydroxy vitamin D"  -> the token goes, the sentence passes
+        "below 25 ng/mL"        -> `25` is not the token `25-hydroxy`,
+                                   it stays, and the gate still refuses
+
+    A number the model invented is never removed, because the only strings
+    removed are ones WE supplied in the prompt.
+    """
+    tokens = [
+        token
+        for token in _NAMED_TOKEN.findall(test_name or "")
+        if any(character.isdigit() for character in token)
+    ]
+    for token in tokens:
+        text = re.sub(
+            r"(?<![A-Za-z0-9])" + re.escape(token) + r"(?![A-Za-z0-9])",
+            " ",
+            text,
+            flags=re.IGNORECASE,
+        )
+    return text
+
+
+def _check(text: str, test_name: str = "") -> Optional[str]:
     """Which local gate refuses this text, or None."""
+    # The test name is OUR string, echoed back. See the note above.
+    text = _without_test_name_digits(text, test_name)
     if _MEASUREMENT_DIGIT.search(text) or _SPELLED_NUMBER.search(text):
         return "number"
     if _SECOND_PERSON.search(text):
@@ -391,7 +441,7 @@ def _one(test_name: str, direction: str, client: Any) -> FindingContext:
         return _refuse(test_name, direction, "safety")
 
     cleaned = " ".join(text.split())
-    gate = _check(cleaned)
+    gate = _check(cleaned, test_name)
     if gate is not None:
         return _refuse(test_name, direction, gate)
 

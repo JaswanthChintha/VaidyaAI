@@ -747,3 +747,57 @@ def test_the_system_instruction_bans_a_passing_mention_too():
     lowered = SYSTEM_INSTRUCTION.lower()
     assert "not even in passing" in lowered
     assert "mention treatment" in lowered
+
+# --------------------------------------------------------------------------
+# THE NUMBER GATE AND THE TEST NAME WE SUPPLIED OURSELVES
+#
+# Found 2026-09-20 on `03-renal-anaemia-deficiency.pdf`: of four findings,
+# vitamin D was the ONLY one refused, and the whole finding then vanished
+# from the patient's summary. The cause was not the model inventing a
+# number -- it was the model NAMING THE TEST IT WAS ASKED ABOUT.
+# --------------------------------------------------------------------------
+
+
+def test_echoing_a_test_name_that_contains_digits_is_not_a_number():
+    """`Vitamin D, 25-Hydroxy` leads with digits, and nothing protected it.
+
+    `_MEASUREMENT_DIGIT` excludes a digit that follows a letter, which is why
+    `B12` and `T3` were always safe. `25-Hydroxy` puts its digits FIRST, so a
+    correct, careful sentence was refused for repeating the name supplied in
+    the prompt.
+    """
+    from app.services.finding_context import _check
+
+    sentence = (
+        "A lowered 25-hydroxy vitamin D level is commonly associated with "
+        "insufficient sunlight exposure or low dietary intake."
+    )
+    assert _check(sentence, "Vitamin D, 25-Hydroxy") is None
+    # The same sentence without the echo always passed -- that asymmetry is
+    # what made this look like a model failure rather than a gate failure.
+    assert _check(sentence.replace("25-hydroxy ", ""), "Vitamin D, 25-Hydroxy") is None
+
+
+def test_a_number_the_model_invented_is_still_refused():
+    """⚠ THE HALF THAT MUST NOT COLLAPSE.
+
+    Only WHOLE TOKENS of the test name are removed. A bare `25` is not the
+    token `25-hydroxy`, so a threshold the model produced is still caught even
+    when its digits happen to appear in the name.
+    """
+    from app.services.finding_context import _check
+
+    name = "Vitamin D, 25-Hydroxy"
+    assert _check("A lowered result below 25 ng/mL is commonly associated with low intake.", name) == "number"
+    assert _check("A lowered 25-hydroxy vitamin D level below 30 is commonly associated with low intake.", name) == "number"
+    # And with no test name at all the gate is exactly as strict as before.
+    assert _check("A raised level above 1.3 mg/dL is commonly associated with kidney disease.") == "number"
+
+
+def test_the_other_gates_are_untouched_by_the_name_strip():
+    """Stripping digits must not open the second-person or certainty gates."""
+    from app.services.finding_context import _check
+
+    name = "Vitamin D, 25-Hydroxy"
+    assert _check("Your 25-hydroxy vitamin D level is low.", name) == "second_person"
+    assert _check("A lowered 25-hydroxy vitamin D level indicates deficiency.", name) == "certainty"
