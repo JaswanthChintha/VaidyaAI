@@ -53,9 +53,17 @@ about any of them. That is the fifth time on this project.
 | | Tests |
 |---|---|
 | `backend/` (Node/Express) | **772** passing + 3 skipped (15 suites, 0 failed) |
-| `ai-service/` (Python/FastAPI) | **5,090** passing + 7 skipped (5,097 collected, 0 failures, 0 errors) |
-| `frontend/` (React/Vitest) | **404** passing (80 suites, 0 failed, no file reporting zero assertions) |
-| **Total** | **6,266** -- measured at `eccda71`, 2026-09-20 |
+| `ai-service/` (Python/FastAPI) | **5,128** passing + 7 skipped (5,135 collected, 0 failures, 0 errors) |
+| `frontend/` (React/Vitest) | **432** passing (80 suites, 0 failed, no file reporting zero assertions) |
+| **Total** | **6,332** -- measured end of the 2026-09-20 session (§6bh) |
+
+> **⚠⚠ ONE CHANGE FROM 2026-09-20 IS NOT UNDER GIT AND CANNOT BE.**
+> `ai-service/.env` is gitignored and `GEMINI_TIMEOUT_SECONDS` was raised
+> **45 → 120** there. At 45 a page of `Test 3.pdf` was lost to
+> `MODEL_TIMEOUT` and **seven parameters with it** — the HbA1c and glucose
+> behind the Diabetes flag among them. A fresh clone, another machine, or an
+> `.env` restored from `.env.example` gets 45 back and the loss returns.
+> See §6bh's block at the top for the measurement.
 
 > **⚠ THE ai-SERVICE JUMP FROM 4,163 TO 5,090 IS MOSTLY PARAMETRISATION, NOT
 > NEW TESTS.** §6be took population coverage from 7 features to 19, and the
@@ -228,21 +236,29 @@ about any of them. That is the fifth time on this project.
 >    Carried for many sessions. A suite whose meaning depends on a gitignored
 >    file being absent will mislead somebody, and moving `.env` aside by hand
 >    every run is how it eventually gets left moved.
-> 8. **PARSE SEX-SPECIFIC PRINTED REFERENCE RANGES.** These reports print
->    them routinely — `F:11 - 15 M:12 - 16` for haemoglobin, `F: 36 - 46
->    M: 40 - 50` for PCV — and they yield `reference_low/high: null`, so PCV
->    reads "not checked" on the dashboard and neither row can be compared
->    against its printed interval. The patient's sex IS on the profile. This
->    is the largest remaining gap the reports themselves create (§6be).
-> 9. **DECIDE THE SERVER-SIDE MODEL CAVEAT.** `clinician_narrative.py`
->    composes `ROC-AUC 0.999, precision 0.97 / recall 0.98` into the
->    narrative. The owner objected to exactly that vocabulary on the page this
->    session; the file says it was written that way *on a previous objection*
->    and carries a non-negotiable constraint (§6w). **Only the owner can
->    settle it** — see §6bf, which also proposes the natural-frequency wording.
-> 10. **LOOK AT `summary_prose: facts_missing, dropped: 4`.** It logs on
->    every Test 3 render and nobody has asked which four facts are being
->    dropped from the patient summary (§6bg).
+> 8. ~~**PARSE SEX-SPECIFIC PRINTED REFERENCE RANGES.**~~ **DONE — §6bh.**
+>    `app/services/sex_specific_range.py`, wired into `feature_engineer`
+>    where the profile's sex is in scope, so the chosen interval is carried
+>    through the unit conversion like any other. **PCV 37.9 % was BELOW its
+>    printed male interval (40-50) the whole time while the page said "not
+>    checked".** ⚠ It forced `printedPosition` into the dashboard in the same
+>    change: `labFlagVerdict` returns "In range" whenever an interval was
+>    printed AT ALL, so the moment these bounds parsed PCV would have read
+>    "In range" — §6bg finding 4 on the other code path.
+> 9. ~~**DECIDE THE SERVER-SIDE MODEL CAVEAT.**~~ **SETTLED BY THE OWNER —
+>    THE WHOLE PARAGRAPH IS GONE (§6bh item 3), WHICH REVERSES §6w.**
+>    ⚠ And the premise was wrong: `_model_notes` **no longer reaches a
+>    reader** (`clinician_narrative.py:1114`), so rewriting it would have
+>    been invisible. The ai-service comment claiming the metrics "render on
+>    the page itself" is false — the page deleted that rendering. **The
+>    function is now dead text; decide whether it or the comment goes.**
+> 10. ~~**LOOK AT `summary_prose: facts_missing, dropped: 4`.**~~ **DONE —
+>    §6bh item 2.** The four were already on disk in
+>    `summaryProse.missing_facts`: the four UNASSESSED condition names, sent
+>    as must-survive facts and never written into the sentences. Introduced
+>    by `251c971` on 2026-09-13. ⚠ **Test 2 refused the other way,
+>    `facts_invented`** — the retry pressures the model into writing about
+>    conditions that were never described.
 > 11. **PHASE 2 POPULATION TABLES: SGPT, TSH, CRP.** Data confirmed
 >    reachable; `BIOPRO_J.xpt` is already on disk. ⚠ **Read §6bg's pattern
 >    block first** — this moves the canonical-feature boundary again, and
@@ -297,7 +313,15 @@ about any of them. That is the fifth time on this project.
 > reliable one.
 
 
-> ### ▶ NEW CHAT? §0, THEN §6bg → §6bf → §6be → §6bd → §6bc → §6bb. THEN §6ba, §6az.
+> ### ▶ NEW CHAT? §0, THEN §6bh → §6bg → §6bf → §6be → §6bd → §6bc → §6bb.
+>
+> **⚠ §6bh IS THE NEWEST (2026-09-20) AND TWO OF ITS ITEMS REVERSE STANDING
+> CONSTRAINTS** — §6w's "a model-derived flag may never appear without its
+> limitation", and this page's own KEPT item 3. Both were the owner's
+> explicit instruction, both are recorded rather than done quietly, and
+> **neither should be "restored" by a later reader who finds the old rule and
+> not the reversal.** Its KNOWN AND OPEN block also records a missing report
+> and a config change that is not in git.
 >
 > **⚠ IF YOU READ ONLY ONE, READ §6bg's TWO PATTERN BLOCKS.** Twelve new
 > canonical features broke FIVE separate reader-facing things, none of them
@@ -324,10 +348,19 @@ about any of them. That is the fifth time on this project.
 >
 > ```
 > 6aae0df5b0b3c22147df56f0  Test 3.pdf                        13 Sep
-> 6aa52de550e2624b90d4534b  Test 2.pdf                        12 Sep
+> 6aa52de550e2624b90d4534b  Test 2.pdf                        12 Sep   <-- GONE
 > 6aa42b76300654d487321021  01-all-normal.pdf                 11 Sep
 > 6aa42dc8300654d487321070  03-renal-anaemia-deficiency.pdf    9 Sep
 > ```
+>
+> > **⚠ `Test 2.pdf` WAS NOT ON THE DATABASE AT THE END OF 2026-09-20.** Nine
+> > reports are stored and that id is not among them. It existed that
+> > morning — its narrative and summary prose were both read and regenerated.
+> > **Nothing in that session deleted a report**; the only write was one
+> > `$unset` of `doctorNarrative` on 03-renal. Cause unknown, and it is the
+> > only fixture that prints NO assay method lines (§6ba), so that negative
+> > control is gone with it. **Re-upload it before relying on any section
+> > that names it.**
 >
 > > **⚠ THE TIMELINE TALLY BELOW IS PRE-§6be AND IS NOW WRONG.** It read
 > > *26 parameters · 6 improving · 2 worsening · 12 stable · 6 undirected*
@@ -11652,6 +11685,391 @@ prompt.
 * Narratives are **cached** per `analysisVersion`, so a prompt change does
   not reach existing reports until re-analysis. The cache was cleared by hand
   four times this session to verify changes; each clear costs a model call.
+
+---
+
+## 6bh. THE 2026-09-20 SESSION — TWO DIAGNOSTICS, ONE CONSTRAINT REVERSED
+
+**Read this section's KNOWN AND OPEN block before anything else in it.**
+
+Nine changes, all from the owner reading real screens, plus the two
+measurements §6bg left open. **Two standing constraints were reversed on the
+owner's explicit instruction and both are recorded here rather than done
+quietly** — §6w's model-limitation rule and this page's own "KEPT" item 3.
+
+### ▶ WHAT THIS SESSION DID
+
+1. **COUNTED `refused_by` ACROSS THE ACCOUNT** (§6bg's first open item).
+2. **NAMED THE FOUR FACTS `summary_prose` DROPPED** — and fixed the cause.
+3. **REMOVED THE MODEL CAVEAT FROM THE CLINICIAN PAGE.** Reverses §6w.
+4. **PUT THE REPORTED VALUES IN BOTH BRANCHES** — they had rendered only when
+   the narrative failed.
+5. **REMOVED "Not assessed."** — and fixed the false claim it was masking.
+6. **"conditions", NOT "topics"**, on four reader-facing strings.
+7. **PARSED SEX-SPECIFIC PRINTED RANGES** (§0's item 8 / the largest gap).
+8. **A BAND LABEL IS QUOTED, NOT PARSED** — `AVERAGE BLOOD GLUCOSE`.
+9. **THE EXPLANATION PROMPT NOW NAMES WHAT THE VALIDATOR MEASURES.**
+
+| | Tests |
+|---|---|
+| `backend/` | **772** + 3 skipped (unchanged) |
+| `ai-service/` | **5,128** + 7 skipped (5,135 collected, 0 failures, 0 errors) |
+| `frontend/` | **432** (80 suites, 0 failed, no file reporting zero assertions) |
+| **Total** | **6,332** |
+
+### ⚠⚠ THE ONE THING THAT IS NOT IN GIT
+
+> **`ai-service/.env` IS GITIGNORED, AND `GEMINI_TIMEOUT_SECONDS` WAS CHANGED
+> IN IT: 45 → 120.** That change exists on this machine only. A fresh clone,
+> another machine, or a restored `.env` from `.env.example` gets 45 back and
+> the page-loss below returns.
+>
+> **WHY 45 WAS TOO TIGHT, measured from the log:** `gemini-3.6-flash` was
+> returning `ServerError`, the chain fell back to `gemini-3.5-flash`, and
+> page 1 still took **22.0 s** on the attempt that succeeded. One page's
+> budget must cover its retries, so 45 s left almost nothing. Page 2 of
+> `Test 3.pdf` hit `MODEL_TIMEOUT` and **seven parameters vanished** —
+> HbA1c 7.0, glucose 168, creatinine 0.75, CRP 38.9, eAG 154, SGPT, TSH,
+> which is the evidence behind the Diabetes and Kidney flags.
+>
+> **IT WAS NOT QUOTA.** Zero `429`, zero `RESOURCE_EXHAUSTED`, no
+> `text_provider_fallback` in the whole log. `ServerError` is Google's side
+> being unwell, which looks identical to a spent pool from the page.
+
+### ▶ 1. `refused_by` FIRES ZERO TIMES OUT OF 23 — AND THAT IS A WEAK ZERO
+
+`findingContext` and `summaryProse` are cached on the report (`select: false`),
+so both of §6bg's open measurements were answerable from Mongo with **no model
+calls at all**. The gate names are `safety`, `number`, `second_person`,
+`certainty`, `not_recognised` (`_check` in `finding_context.py`).
+
+```
+Test 3      7 entries   7 available   0 refused
+Test 2     12 entries  12 available   0 refused
+03-renal    4 entries   4 available   0 refused
+01-normal   NO CACHED BLOB -- not measured, and not a gap: the report has
+            no out-of-range rows, so the page never asks. Denominator zero
+            BY CONSTRUCTION.
+```
+
+**THREE REASONS THAT 0 IS WEAKER THAN IT LOOKS, and all three matter:**
+
+* **The blobs are POST-FIX.** 03-renal's cache was regenerated after
+  `eccda71`, so the `number` refusal §6bg finding 7 found is *gone from the
+  record*. The pre-fix rate is not recoverable. This measures the gate as it
+  stands, not as it was.
+* **Stored blobs hold the FINAL verdict only.** `guarded_generation` retries
+  Module 24 internally (`attempts=2`), so a safety refusal recovered on the
+  second attempt leaves no trace. The four local gates *are* terminal and
+  would show.
+* **THERE ARE NO LOG FILES ON DISK.** Both services log to the stdout of
+  whoever launched them. `finding_context_refused` lines are the only source
+  for attempt-level refusals and nothing retains them.
+
+**The adjacent surfaces were clean too** — Module 23 `{"generated": N}` on all
+four, `doctorNarrative.outcome: generated` on all four. That changed later in
+the session; see item 9.
+
+### ▶ 2. THE FOUR DROPPED FACTS WERE ALREADY ON DISK
+
+`summary_prose` logs `outcome: facts_missing, dropped: 4` and `safe_meta`
+redacts the rest — but **`SummaryProse.missing_facts` survives to Mongo**,
+because the endpoint returns the whole model and the controller stores
+`{...written}`. Nobody had opened the field.
+
+```
+["name:High Cholesterol", "name:High Triglycerides",
+ "name:Vitamin B12 Deficiency", "name:Vitamin D Deficiency"]
+```
+
+**All four are NAMES, and they are exactly Test 3's `unassessed_conditions`.**
+
+**THE CAUSE, FOUND BY `git log -S`:** `251c971` (2026-09-13, *"stop naming the
+conditions this tool could not check"*) deleted `listOfNames(unassessedCards)`
+from the summary body — on the owner's instruction, and rightly — **and left
+those names in the must-survive `names` list.** From that day the rewrite was
+required to reproduce names the model had never been shown. The defect is a
+week older than the symptom §6bg logged, and the orphaned
+`{/* ABSENCE #1 */}` comment with no JSX under it is the scar.
+
+**THE NATURAL EXPERIMENT ACROSS ALL FOUR REPORTS:**
+
+```
+0 unassessed -> outcome `generated`      (01-normal, 03-renal)
+4 unassessed -> NO PROSE AT ALL          (Test 3, Test 2)
+```
+
+> **⚠ THE RETRY MAKES IT WORSE, NOT BETTER, AND THAT IS THE PART TO REMEMBER.**
+> Test 3 refused with `facts_missing`. **Test 2 refused with
+> `facts_invented`** — round 2 feeds the model the names it "dropped", the
+> model duly writes about conditions that were never described, and it trips
+> `_invented` instead. `_invented` only checks numbers and verdict words, so
+> the fabricated condition names pass. **An impossible must-survive list does
+> not merely refuse; it pressures the model into inventing the content.**
+> Test 2's `facts_invented` was never in any handover.
+
+**FIXED AT THE LIST, NOT THE MODEL.** `unassessedCards` is out of `names`, and
+the dead prop is out of `InShort` entirely. **The test asserts the INVARIANT**
+— every name sent appears in the sentences sent, compared the way `_missing`
+compares it — not the single absence, because the defect is re-created by any
+name whose paragraph is later removed. Mutation-tested: restoring the spread
+kills both new tests.
+
+> **NO `$unset` WAS NEEDED.** `fingerprint(sentences, names)` hashes BOTH, so
+> a shorter list is a different key. Test 2 and Test 3 missed cache and
+> regenerated on the next view. **Both now `generated`, 0 missing, 0
+> invented, and `llm_calls_made` went 2 → 1** — the wasted second round was
+> the retry arguing about names that could never appear.
+
+### ▶ 3. THE MODEL CAVEAT IS GONE FROM THE CLINICIAN PAGE — §6w REVERSED
+
+The owner read the page and asked for it twice, with the spec for the whole
+document:
+
+> *"just show what parameters are there in report and what flagged and why
+> flagged, that's it ... i don't need words like model and output"*
+
+**§6w's constraint — "a model-derived flag may never appear without its
+limitation" — was marked non-negotiable after being found violated three
+times (6o D8, 6p, 6w), and §6az found it a fourth.** The objection was put to
+the owner in those terms and the instruction was repeated. **It is their
+document and their call; what is recorded here is that it was reversed, when,
+and on whose instruction.** The code comment and the replaced tests carry the
+same note.
+
+> **⚠ THE REWRITE I ALMOST SHIPPED FIRST WOULD HAVE CHANGED NOTHING.**
+> §6bf lists "decide the server-side model caveat" and points at
+> `_model_notes` composing `ROC-AUC 0.999, precision 0.97 / recall 0.98`.
+> **That function no longer reaches a reader.** `clinician_narrative.py:1114`
+> says so plainly: the notes are kept only as grounding and permitted
+> numbers, "not text for the page". The final text is `approved_text +
+> CLOSING_LINE`. Rewriting `_model_notes` into natural frequencies — which
+> was written, tested and then deleted — would have been invisible.
+>
+> **AND THE ai-SERVICE COMMENT JUSTIFYING THAT REMOVAL IS FALSE.** Line 1108
+> says §6w's requirement "is MOVED: the metrics render on the page itself ...
+> from `assessments[].bases[].ml.limitations`". `DoctorSummary.jsx:399` says
+> `modelNotes` "WAS HERE AND IS GONE". Each change was locally reasonable;
+> together they left the figures nowhere and §6w satisfied by one sentence
+> with no numbers in it. **A comment asserting what a NEIGHBOURING FILE does
+> is a claim nobody re-checks.**
+
+**WHAT SURVIVES, AND IT IS THE CONDITION ON REMOVING THE REST:** where a model
+alone flagged a topic and no measured value crossed a cut-off, both branches
+still say so. That is not a model caveat, it is the answer to "why flagged",
+and without it the page states a finding with no reason at all.
+
+> **NATURAL FREQUENCIES, FOR WHOEVER REVISITS THIS.** The owner first chose
+> them over the metrics, and the real figures were measured from
+> `ml/artifacts/*.json` before being discarded: kidney **97 in 100** right /
+> misses **2 in 100**; diabetes **9 in 10** / misses **3 in 10** (§6bf's
+> remembered "2 in 10" was wrong); heart v2 **3 in 10** / misses **7 in 10**.
+> **A FIXED "in 10" MAKES THE KIDNEY MODEL READ AS FLAWLESS** — 0.968 and
+> 0.984 round to "10 in 10" and "0 in 10", the one impression the caveat
+> exists to prevent, and the same trap `_model_notes` already documents for
+> the AUC at two decimal places. The denominator has to be chosen per number.
+
+### ▶ 4. THE REPORTED VALUES RENDERED ONLY WHEN THE NARRATIVE FAILED
+
+**THE THIRD SECTION ON THIS PAGE WITH EXACTLY THAT FAULT**, after §6az's model
+caveat and the out-of-range line. It sat inside the composed branch, so the
+day Gemini began generating reliably a clinician stopped seeing **every
+parameter that was measured and not flagged** — on 03-renal that is HbA1c 5.4,
+glucose 92, cholesterol 186 and triglycerides 132, which appeared nowhere.
+
+It was invisible because the narrative names a value when it explains a flag,
+so the page never looked empty. Found only because the owner asked for the
+parameters back.
+
+> **⚠ AND FIXING IT CREATED §6bf's OTHER DEFECT IMMEDIATELY: TWO VALUE LISTS.**
+> `_value_strings` and the page's `measured` filter read the same rows with
+> the same naming, so the two lists are **character-identical**. On a report
+> whose narrative also enumerates them, the same panel printed twice, four
+> paragraphs apart.
+>
+> **NEITHER SIDE COULD BE DELETED.** `required_values = trigger_values` —
+> only values that CROSSED a threshold are enforced by the fact check — so
+> the full panel is asked for in the prompt and never required. One report
+> gets a "The reported values are ..." sentence and the next does not, from
+> identical code. Dropping the page's list loses the values on the reports
+> where the model omits them; dropping the narrative's means editing approved
+> model prose.
+>
+> **SO: the page prints its list only when the narrative has NOT already
+> listed EVERY value.** A partial match is not a list — a narrative naming
+> three values inside "flagged X because Y was Z" has explained a flag, not
+> published a panel. Mutation-tested in both directions; forcing always-render
+> and forcing always-suppress are killed by different tests.
+
+**THE CLOSING LINE NOW RENDERS LAST.** `CLOSING_LINE` is appended server-side,
+so it arrived as the narrative's final paragraph and the page printed two more
+caveats after it — the document ended, then kept talking. `narrativeBody`
+lifts it out and it is re-rendered after the provenance line. **Fail-safe, not
+fail-silent:** if the ai-service rewords it, the page will not recognise it,
+will leave it in the body where it has always been, and can never print it
+twice.
+
+### ▶ 5. "Not assessed." REMOVED — AND THE FALSE CLAIM IT WAS MASKING
+
+The owner removed the paragraph naming the conditions with no inputs and the
+parameters the report did not carry. **It is one of the four things this
+page's own header calls KEPT "because removing them would make the passage lie
+by omission".** Second reversal of the session, recorded the same way.
+
+> **⚠⚠ REMOVING IT EXPOSED A FALSE STATEMENT THAT HAD BEEN THERE ALL ALONG,
+> AND THIS IS 6bg's PATTERN A THIRD TIME: the defect was not in the code that
+> changed, it was in a NEIGHBOURING SENTENCE whose meaning depended on it.**
+>
+> `clear` was `assessments.filter(a => !flagged.includes(a))` — *everything
+> not flagged* — which swept up the conditions no rule could run on. On
+> Test 3 that is Vitamin D Deficiency, Vitamin B12 Deficiency, High
+> Cholesterol and High Triglycerides, printed under **"Each was compared
+> against this tool's cut-offs and none was crossed."** False of all four.
+>
+> Survivable only while "Not assessed." named them four lines below. The
+> moment that went, **the false sentence was the only thing the document said
+> about them.** `clear` now requires `assessed !== false` and
+> `status !== 'Insufficient Data'`; the unassessed appear in neither list,
+> which is what the owner asked for and is honest — saying nothing about a
+> condition is not saying it was checked.
+
+**WHAT DID NOT GO, AND WHY IT IS A DIFFERENT FACT:** the readability clause,
+now headed **"Not fully read."** It is not a statement about this tool's
+coverage — it is the reader's only signal that the parameter list may be
+incomplete, which is exactly what the page-2 timeout proved. `alsoMissing` is
+deleted; nothing consumed it.
+
+### ▶ 6. "conditions", NOT "topics"
+
+`topic` is this project's INTERNAL word for a catalogue entry and it had
+leaked onto the reader's screen in four places, while the same page called
+them **conditions** in two others ("This tool checked 8 conditions", "No
+conditions were assessed"). A reader has no way to know the two words mean the
+same thing. Changed on the round-up, the radar heading, the gauge caption, the
+radar absence caption and `CoverageRadar`'s accessible-title fallback. The
+`topics` PROP name stays — internal vocabulary nobody reads.
+
+**Left alone deliberately: "Topics you could read about"** above the glossary.
+Those are TESTS, not conditions.
+
+### ▶ 7. SEX-SPECIFIC PRINTED RANGES — §0's ITEM 8, CLOSED
+
+`Test 3.pdf` prints `F:11 - 15 M:12 - 16` for haemoglobin and
+`F: 36 - 46 M: 40 - 50` for PCV. `printed_range_is_only_a_range` refuses both
+— **correctly**, because two intervals side by side are the same shape as a
+band table — so the bounds arrived null.
+
+> **⚠ WHAT "not checked" WAS HIDING. The profile says male, the printed male
+> interval is 40-50, and PCV is 37.9 — BELOW IT.** The page reported an
+> absence honestly and an out-of-range result not at all.
+
+New `app/services/sex_specific_range.py`, wired into `feature_engineer` where
+the profile's sex and the printed text are both in scope — **so a selected
+interval is carried through the unit conversion like any other**, which is the
+whole argument of `_reference_bounds`. Everything errs toward `None`: both
+sexes must be present, exactly two intervals, whole-token labels (`\b` anchors
+keep the `m` of `mm/hr` out), `low <= high`, and **`other`/unknown selects
+NOTHING** — the report addresses neither, and choosing would invent a
+comparison the laboratory never made.
+
+> **⚠⚠ THE DEFECT THIS NEARLY SHIPPED, AND IT IS 6bg FINDING 4 EXACTLY.**
+> `labFlagVerdict` returns **"In range" whenever an interval was printed AT
+> ALL** — it never compares the two numbers. That was safe only while these
+> rows had no bounds. **The moment the interval parsed, PCV 37.9 against a
+> printed 40-50 would have rendered "In range"** on the same reasoning that
+> showed CRP 38.9 against a printed limit of 5 as "In range". So
+> `printedPosition` shipped in the same change. 6bg's fail-safe is preserved:
+> abnormal when outside the interval **OR** marked abnormal. Mutation-tested;
+> removing the comparison is killed by two tests.
+
+**TWO REFERENCES, AND THE ROW MAY NOT COLLAPSE THEM INTO ONE WORD.**
+Haemoglobin 12.5 is INSIDE the printed male interval (12-16) and BELOW the
+13 g/dl this tool applies for anaemia. Both true, different references. When
+they disagree the row says both, the laboratory's comparison leads, and
+**`verdict--mixed` exists so it cannot render in the clear green of a settled
+"In range"** — a judgement made here, not asked for, and easily reversed.
+
+### ▶ 8. A BAND LABEL IS QUOTED, ATTRIBUTED AND DENIED — NEVER PARSED
+
+`AVERAGE BLOOD GLUCOSE 154 mg/dL` carries `"151 - 180 - Average Control"`, one
+row of a glycaemic CONTROL table. **154 sits inside 151-180, so parsing it as
+a range would print "In range" for an average glucose matching the HbA1c of
+7 % flagged HIGH two rows above.** "Average Control" means average control FOR
+SOMEONE WITH DIABETES.
+
+The row keeps "not checked" and adds, quoted and attributed: *The report
+prints "151 - 180 - Average Control" beside this value — a band label, not a
+normal range.* Verbatim so the reader can find it on their own paper;
+attributed because this tool did not say it; **denied because "Average" reads
+as reassurance.**
+
+`labReferenceRangeRaw` had to be added to the producer: the unanalysed items
+carried `labReferenceLow/High` but not the printed text, so the label could
+never reach the page.
+
+### ▶ 9. THE EXPLANATION PROMPT NOW NAMES WHAT THE VALIDATOR MEASURES
+
+Test 3's lymphocytes explanation was lost:
+
+```
+outcome: withheld_by_safety   codes: ["UNHEDGED_INTERPRETIVE_CLAIM"]
+attempts: 2   (the violation was quoted back on the retry and it failed again)
+```
+
+**THE PROMPT FORBADE A VOCABULARY; THE GATE MEASURES A STRUCTURE.**
+Prohibition 4 bans "definitely", "confirms", "proves", "clearly shows", "this
+means you have". `positive.required_hedging` fires on an interpretive verb +
+a clinical subject + **no hedge in the sentence**. So this breaks no stated
+rule and is still refused:
+
+> *"A low lymphocyte count **indicates** your immune system is under strain."*
+
+**THE MODEL WAS OBEYING ITS INSTRUCTIONS AND BEING REFUSED ANYWAY** — §6at's
+lesson, which this platform already paid for when naming the treatment words
+fixed a 4-in-6 refusal rate. A seventh prohibition now names the validator's
+own lists (`INTERPRETIVE_VERBS`, `HEDGE_MARKERS`).
+
+> **⚠ THE TEST CAUGHT MY OWN ERROR: I TOLD THE MODEL TO HEDGE "suggest".**
+> `suggests` is a **HEDGE MARKER**, not an interpretive verb — the validator
+> accepts it AS the hedge. The instruction was backwards. The test that
+> caught it is the one that matters: **every hedge the prompt offers must be
+> one the validator accepts**, because a prompt recommending a rejected hedge
+> means the model obeys and is refused anyway. Two further tests run the real
+> validator over both shapes, so the rule cannot become unsatisfiable
+> unnoticed.
+
+### KNOWN AND OPEN
+
+* **⚠ `Test 2.pdf` IS GONE FROM THE DATABASE.** `6aa52de550e2624b90d4534b` is
+  not among the nine reports stored. It existed this morning — its narrative
+  and summary prose were both read and regenerated. **Nothing in this session
+  deleted a report**; the only write was one `$unset` of `doctorNarrative` on
+  03-renal. Cause unknown. **Test 2 was the only fixture that prints no assay
+  method lines** (§6ba), so that negative control is gone with it.
+* **⚠ `GEMINI_TIMEOUT_SECONDS=120` IS NOT IN GIT.** See the block at the top.
+* **THE LYMPHOCYTES EXPLANATION IS STILL MISSING** on the stored Test 3. The
+  prompt fix only reaches a report when that report is re-analysed.
+* **THE `_model_notes` FUNCTION IS NOW DEAD TEXT.** It still composes
+  ROC-AUC/precision/recall into `facts.model_notes`, which is used only as
+  grounding and permitted numbers. Nobody renders it. Either that is fine and
+  the comment at line 1108 should stop claiming the page shows the metrics,
+  or the function should go.
+* **`summary_prose` ASKS FOR A VALUES LIST THE FACT CHECK NEVER ENFORCES**, so
+  the document's shape depends on model whim. The page absorbs it now; the
+  cleaner fix is for the prompt to stop asking and let the page own the list.
+* **THE RE-ANALYSIS THAT LOST PAGE 2 WAS SPENT FOR NOTHING** because the
+  ai-service had not been restarted after the Python change. §0 says to
+  restart in bold and it was not done. **The live-process probe that would
+  have caught it costs no model call** — `POST /api/v1/features/engineer` with
+  a two-row payload, or `GET /api/v1/explain/policy` for the prompt. Both are
+  now the habit; neither was used first.
+* **A SNAPSHOT TAKEN MID-RUN IS NOT A SNAPSHOT.** The before/after extraction
+  diff promised for that re-analysis does not exist: it was captured while
+  `status: processing`, so it compared the in-flight state with itself. Poll
+  `status === 'processed'` BEFORE reading, not only before believing.
+* **THE READABILITY NOTICE IS BELOW THE RESULTS TABLE.** The owner found the
+  seven missing parameters by scanning the table, not by reading *"Part of
+  this document could not be read (page 2)"*. Worth moving above it.
 
 ---
 
