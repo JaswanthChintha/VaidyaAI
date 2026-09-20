@@ -64,6 +64,7 @@ from app.data.feature_catalog import (
 )
 from app.data.unit_conversions import conversion_for, is_known_unit, normalize_unit
 from app.schemas.extraction import ExtractedParameter, coerce_numeric
+from app.services.sex_specific_range import bounds_for_sex
 from app.schemas.features import (
     ConversionDetail,
     ConversionRecord,
@@ -193,6 +194,7 @@ def _reference_bounds(
     *,
     conversion: Optional[Any],
     value_unit: Optional[str],
+    sex: Optional[str],
     notes: List[str],
     warnings: List[str],
 ) -> Tuple[Optional[float], Optional[float], bool, Optional[str]]:
@@ -230,6 +232,39 @@ def _reference_bounds(
     """
     low = param.reference_low
     high = param.reference_high
+
+    # AN INTERVAL PRINTED ONCE PER SEX, CHOSEN RATHER THAN GUESSED.
+    # ======================================================================
+    #
+    # `F:11 - 15 M:12 - 16` is refused upstream by
+    # `printed_range_is_only_a_range`, which is CORRECT -- two intervals side
+    # by side are exactly the shape that gate exists to keep out, because a
+    # band table has the same shape and must never be read as one range. So
+    # the bounds arrive here as None while the printed text survives.
+    #
+    # ⚠ WHAT THAT COST A READER. On `Test 3.pdf`, PCV 37.9 % rendered as "not
+    # checked" while sitting BELOW the male interval printed on the same line.
+    # The absence was reported honestly and the out-of-range result was not.
+    #
+    # DONE HERE, AND NOT IN THE SCHEMA, FOR TWO REASONS. The patient's sex is
+    # not in scope at extraction -- it is on the profile -- and bounds
+    # resolved at this layer are carried through the unit conversion below
+    # like any other, which is the whole argument of this function. A pair
+    # resolved downstream would be in the printed unit while the value is in
+    # the canonical one.
+    #
+    # ONLY WHEN THERE IS NOTHING TO OVERWRITE. If the model did supply bounds
+    # they are the model's reading of this row and are left alone.
+    if low is None and high is None and sex:
+        chosen = bounds_for_sex(param.reference_range_raw, sex)
+        if chosen is not None:
+            low, high = chosen
+            notes.append(
+                f"The report printed a reference interval for each sex "
+                f"({param.reference_range_raw!r}); the {sex} interval "
+                f"{low}-{high} was used, matching the sex on the profile."
+            )
+
     if low is None and high is None:
         return None, None, False, None
 
@@ -276,8 +311,15 @@ def _reference_bounds(
 
 
 def _build_lab_candidate(
-    index: int, param: ExtractedParameter
+    index: int, param: ExtractedParameter, sex: Optional[str] = None
 ) -> Tuple[Optional[_Candidate], Optional[UnmappedItem], List[str]]:
+    """`sex` is the profile's normalised gender, or None when it is unknown.
+
+    It is used for ONE thing: choosing between the two intervals a report
+    prints when it gives a reference range per sex. Defaulted so that every
+    existing caller -- and this module's own tests -- behave exactly as
+    before when no profile was supplied.
+    """
     warnings: List[str] = []
 
     match, reason = lookup_test_name(param.test_name)
@@ -400,6 +442,7 @@ def _build_lab_candidate(
         param,
         conversion=conversion,
         value_unit=out_unit,
+        sex=sex,
         notes=notes,
         warnings=warnings,
     )
@@ -721,8 +764,19 @@ def engineer_features(
     unmapped: List[UnmappedItem] = []
     by_feature: Dict[str, List[_Candidate]] = {}
 
+    # THE SEX, FOR CHOOSING BETWEEN TWO PRINTED INTERVALS AND NOTHING ELSE.
+    # Normalised through the SAME `normalize_gender` the profile feature uses,
+    # so a value this service would refuse to record as a feature cannot come
+    # in here by a side door. `other`, an unrecognised value, and no profile
+    # at all all yield None, and None selects no interval.
+    sex = (
+        normalize_gender(profile_ctx.gender)
+        if profile_ctx is not None and profile_ctx.gender is not None
+        else None
+    )
+
     for index, param in enumerate(params):
-        candidate, unmapped_item, row_warnings = _build_lab_candidate(index, param)
+        candidate, unmapped_item, row_warnings = _build_lab_candidate(index, param, sex)
         warnings.extend(row_warnings)
         if unmapped_item is not None:
             unmapped.append(unmapped_item)

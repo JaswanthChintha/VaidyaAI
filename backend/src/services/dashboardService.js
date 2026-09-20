@@ -971,6 +971,23 @@ function buildUnanalysedSection(engineeredFeatures, extraction, parameterGlossar
         outsidePrintedInterval || (Boolean(flag) && flag.toLowerCase() !== "normal"),
       labReferenceLow: numberOrUndefined(source.reference_low),
       labReferenceHigh: numberOrUndefined(source.reference_high),
+      // WHAT THE REPORT PRINTED, EVEN WHEN IT IS NOT A RANGE.
+      //
+      // The two bounds above are null whenever the printed text is not a bare
+      // interval -- a band table, or an interval per sex. The TEXT still says
+      // something, and on `Test 3.pdf` it is the only thing anyone knows
+      // about AVERAGE BLOOD GLUCOSE 154 mg/dL: the report prints
+      // "151 - 180 - Average Control" beside it, one row of a glycaemic
+      // CONTROL table. Without this field the page can only say "not
+      // checked", which is true and tells the reader less than the report
+      // itself did.
+      //
+      // ⚠ CARRIED AS TEXT, NEVER AS BOUNDS. 154 sits inside 151-180, so
+      // anything that parsed this into an interval would print "In range"
+      // for an average glucose matching an HbA1c of 7 % flagged HIGH. It is
+      // rendered quoted and attributed, and consumers must not compare
+      // against it.
+      labReferenceRangeRaw: stringOrNull(source.reference_range_raw),
     };
   });
 
