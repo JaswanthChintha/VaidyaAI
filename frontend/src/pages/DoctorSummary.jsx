@@ -122,6 +122,85 @@ function flaggingKinds(assessment) {
   return kinds;
 }
 
+/**
+ * The sentence the written narrative closes on.
+ *
+ * ⚠ THIS IS A COPY OF `CLOSING_LINE` IN
+ * ai-service/app/services/clinician_narrative.py, WHICH IS THE OWNER OF THE
+ * WORDING. It is appended there after approval and is never written by the
+ * model. Duplicated here only so this page can tell that paragraph apart from
+ * the model's own prose; a mismatch degrades to leaving it in place, never to
+ * dropping it. Pinned by a test so the copy cannot drift unnoticed.
+ */
+const NARRATIVE_CLOSING_LINE =
+  'Not a diagnosis and not a clinical conclusion. The original laboratory '
+  + 'report remains the primary record.';
+
+/**
+ * The narrative split into paragraphs.
+ *
+ * A DOUBLE SPACE AFTER A FULL STOP IS A PARAGRAPH BREAK TOO. The model groups
+ * its sentences that way and not with blank lines, however the prompt asks --
+ * so the whole note arrived as one ten-line block. This reflows already
+ * approved text and changes not one character of it; the alternative was
+ * another round of prompt-tuning at a model call each.
+ */
+function narrativeParagraphs(text) {
+  return String(text || '')
+    .replace(/\.\s{2,}/g, '.\n\n')
+    .split(/\n\s*\n/)
+    .map((para) => para.trim())
+    .filter(Boolean);
+}
+
+/** The narrative WITHOUT its closing line, which the page re-renders last. */
+function narrativeBody(text) {
+  const paragraphs = narrativeParagraphs(text);
+  const last = paragraphs[paragraphs.length - 1];
+  return last === NARRATIVE_CLOSING_LINE ? paragraphs.slice(0, -1) : paragraphs;
+}
+
+/** The closing line, only when it was recognised and lifted out. */
+function narrativeClosing(text) {
+  const paragraphs = narrativeParagraphs(text);
+  const last = paragraphs[paragraphs.length - 1];
+  return last === NARRATIVE_CLOSING_LINE ? last : null;
+}
+
+/**
+ * Has the written narrative already listed EVERY reported value?
+ *
+ * ⚠ TWO IDENTICAL VALUE LISTS, FOUR PARAGRAPHS APART. This is 6bf's
+ * out-of-range defect in a second place, and this page produced it the day
+ * the reported values were made to render in both branches.
+ *
+ * THE NARRATIVE LISTS THEM ONLY SOMETIMES, WHICH IS WHY NEITHER SIDE COULD
+ * SIMPLY BE DELETED. `required_values` is `trigger_values` -- the values that
+ * crossed a threshold -- so the full panel is asked for in the prompt but
+ * never enforced by the fact check. One report gets a "The reported values
+ * are ..." sentence and the next does not, from identical code. Dropping this
+ * page's list loses the values on the reports where the model omits them,
+ * which is the defect it was added to fix; dropping the narrative's would
+ * mean editing approved model prose.
+ *
+ * SO: EVERY value, or the page prints its own. The comparison is exact and
+ * needs no heuristic -- `_value_strings` in clinician_narrative.py builds each
+ * entry from the same printed name, value and unit that `parameterName` and
+ * the row do here, so the two render the same characters.
+ *
+ * A PARTIAL MATCH IS NOT A LIST. Where a narrative names three values inside
+ * "flagged X because Y was Z" sentences, those are explanations, not a panel,
+ * and the complete list still belongs on the page. Hence every, not some.
+ */
+function narrativeListsAllValues(text, rows) {
+  if (!rows.length) return false;
+  const body = String(text || '');
+  return rows.every((row) => {
+    const value = `${row.value}${isPresent(row.unit) ? ` ${row.unit}` : ''}`;
+    return body.includes(`${parameterName(row)} ${value}`);
+  });
+}
+
 /* -------------------------------------------------------------------- page */
 
 /**
@@ -375,6 +454,50 @@ export default function DoctorSummary() {
   );
   const labFlagged = measured.filter((row) => isPresent(row.printed_flag));
 
+  /* THE PARAMETERS AND THEIR VALUES, IN BOTH BRANCHES.
+     ========================================================================
+
+     ⚠ THIS BLOCK RENDERED ONLY WHEN THE NARRATIVE FAILED, AND THAT IS THE
+     THIRD SECTION ON THIS PAGE TO HAVE HAD EXACTLY THAT FAULT. It sat inside
+     the composed branch, so the day Gemini began generating reliably the
+     reported values left the clinician page altogether -- the same shape as
+     6az's model caveat and the out-of-range line, both fixed for the same
+     reason and recorded at the foot of this file.
+
+     It was invisible because the narrative NAMES a value when it explains a
+     flag ("Serum Creatinine was 2.4 mg/dl"), so the page did not look empty.
+     What went missing was every parameter that was MEASURED AND NOT FLAGGED
+     -- on 03-renal that is HbA1c 5.4, glucose 92, cholesterol 186 and
+     triglycerides 132, none of which appeared anywhere on the document.
+
+     The owner asked for them back on 2026-09-20: "i also want what parameters
+     are there and values in these summary". A handover note whose values
+     depend on whether a language model happened to succeed is not a handover
+     note. Built once here and rendered in both branches. */
+  const reportedValuesLine = measured.length ? (
+    <p>
+      <strong>Reported values.</strong>{' '}
+      {measured
+        .map((row) => {
+          const value = `${row.value}${isPresent(row.unit) ? ` ${row.unit}` : ''}`;
+          const flag = isPresent(row.printed_flag)
+            ? ` (${row.printed_flag}, per the reporting laboratory)`
+            : '';
+          return `${parameterName(row)} ${value}${flag}`;
+        })
+        .join('; ')}
+      .
+      {/* AN ABSENT INTERVAL IS NOT AN UNREMARKABLE ONE, and this is the
+          one sentence that stops eight bare numbers reading as in range. */}
+      {!anyInterval
+        ? ' The source report printed no reference intervals, so no value here is placed relative to a range.'
+        : ''}
+      {anyInterval && !labFlagged.length
+        ? ' The reporting laboratory marked none of these outside its own intervals.'
+        : ''}
+    </p>
+  ) : null;
+
   // ---- findings, split by WHAT flagged them -------------------------------
   const abnormal = new Set(summary.abnormal_findings || []);
   const flagged = assessments.filter(
@@ -394,7 +517,31 @@ export default function DoctorSummary() {
     else if (kinds.has('model')) byModel.push(entry);
     else byRule.push(entry);
   }
-  const clear = assessments.filter((a) => !flagged.includes(a));
+  /* ⚠ "ASSESSED, NOT FLAGGED" MUST MEAN ASSESSED.
+     ======================================================================
+
+     This was `assessments.filter((a) => !flagged.includes(a))` -- everything
+     that is not flagged -- which swept up the conditions that were never
+     assessed at all. On `Test 3.pdf` that is Vitamin D Deficiency, Vitamin
+     B12 Deficiency, High Cholesterol and High Triglycerides: no vitamin D,
+     B12, cholesterol or triglyceride value was on the report, so no rule ran.
+     They were printed under a sentence reading "Each was compared against
+     this tool's cut-offs and none was crossed", which is false of all four.
+
+     IT WAS SURVIVABLE ONLY WHILE THE "Not assessed." PARAGRAPH NAMED THEM
+     four lines below, and that paragraph was removed on the owner's
+     instruction on 2026-09-20 -- so the false claim became the ONLY thing
+     the document said about them. Exactly 6bg's pattern: the defect was not
+     in the code that changed, it was in a neighbouring statement whose
+     meaning depended on it.
+
+     The unassessed are now in neither list. That is what the owner asked
+     for -- the page does not discuss what it could not check -- and it is
+     honest, because saying nothing about a condition is not the same as
+     saying it was checked and clear. */
+  const assessedNotFlagged = (a) =>
+    !flagged.includes(a) && a.assessed !== false && a.status !== 'Insufficient Data';
+  const clear = assessments.filter(assessedNotFlagged);
 
   /* `modelNotes` WAS HERE AND IS GONE. It collected
      `basis.ml.limitations.author_note.text` -- the artifact's `honest_read`,
@@ -410,87 +557,38 @@ export default function DoctorSummary() {
      DISAGREED with. Anything reintroduced here must skip a non-flagging
      basis, or it will caption a finding its model did not make. */
 
-  /* WHAT A MODEL ESTIMATE IS, AND WHAT ITS AUTHORS SAY ABOUT IT.
+  /* THE MODEL PARAGRAPH IS GONE, ON THE OWNER'S INSTRUCTION -- 2026-09-20.
+     ========================================================================
 
-     BUILT ONCE AND RENDERED IN BOTH BRANCHES, for exactly the reason the
-     comment at the foot of this file gives about the two sections below it --
-     and this is the THIRD section to have had that fault. It lived inside the
-     composed branch, so it rendered only when the written narrative FAILED.
-     While the narrative was usually refused that went unnoticed; the moment
-     Gemini started generating reliably, every model caveat left the page.
+     A paragraph stood here headed "On the model output." It said what a model
+     estimate is and, in its last version, how often the model that flagged was
+     right and how often it missed. The owner read it on the real page and
+     asked for it to go, with the spec for this whole document:
 
-     WHAT THAT COST, MEASURED ON A REAL REPORT (Test 3, 2026-09-18): the page
-     said "Kidney Disease was flagged by the statistical model alone" and
-     showed nothing else about it, while the payload carried probability
-     0.885, risk band `high`, ROC-AUC 0.999 from a 399-row dataset at 62.7%
-     prevalence with 19 of the CKD dataset's 24 attributes unavailable -- and
-     a 348-character note written for this exact moment, ending "It is a
-     reason to consider further assessment, never a finding in itself."
-     A clinician was told a model flagged kidney disease in a 20-year-old
-     whose creatinine is normal, and given nothing to weigh it with.
+         "just show what parameters are there in report and what flagged and
+          why flagged, that's it ... i don't need words like model and output"
 
-     THE THIRD RECURRENCE OF 6w's DEFECT: model output shown with no ROC-AUC,
-     no recall and no caveat. The first two were wrong FIELD PATHS; this one
-     is a wrong PLACE IN THE TREE, which no fixture can catch -- the data was
-     always there and always correct.
+     THIS REVERSES §6w's STANDING CONSTRAINT AND THAT IS RECORDED, NOT HIDDEN.
+     "A model-derived flag may never appear without its limitation" was found
+     violated three times (6o D8, 6p, 6w) and 6az found it a fourth. The
+     objection was put to the owner in those terms before this was removed and
+     the instruction was repeated. It is the owner's document and their call;
+     what is not acceptable is for it to be reversed quietly, so this comment
+     and the replaced tests are the record.
 
-     DECLARED HERE, BELOW `modelNotes` AND THE TWO LISTS IT READS. Declaring
-     it beside the other shared constant higher up threw a temporal dead zone
-     error and took the whole page down -- caught by 26 failing tests, which
-     is the one thing a `const` gets right that a hoisted function would not. */
-  /* ONE SENTENCE, IN A REGISTER A CLINICIAN READS. TWO WRONG ONES PRECEDED IT.
+     ⚠ WHAT IS NOT AFFECTED, AND MUST NOT BE. The WHY of a flag stays -- it is
+     the thing the owner asked for. Where a model alone flagged a topic and no
+     measured value crossed a cut-off, the narrative and the composed passage
+     both still say so in the sentence that names the flag, because otherwise
+     the page states a finding with no reason at all. That is not a model
+     caveat, it is the answer to "why flagged". */
 
-     FIRST WRONG REGISTER: `ml.limitations.author_note` -- the artifact's
-     `honest_read`, written for a PATIENT -- printed to a doctor. Five
-     sentences on Test 3, opening "This came from a pattern model, not from a
-     measurement", which repeated the fixed sentence above it almost word for
-     word, then "the two groups separated unusually cleanly, so its accuracy
-     there flatters it". The owner read it on the real page and called it
-     padding. It is good text and it is still carried in the payload and still
-     right for the patient-facing screens; it was addressed to the wrong
-     reader here.
-
-     SECOND WRONG REGISTER, AND MINE: it was replaced with the model's own
-     figures -- `Random Forest, p 0.85, high band. AUC 0.97, precision 0.92,
-     recall 0.70`. Defensible on paper and still wrong in the same way. A
-     clinician reading a handover note on a patient's phone does not work in
-     ROC-AUC, and a model's architecture is not a clinical fact about this
-     person. Swapping lay padding for machine-learning padding is not a fix.
-
-     SO: ONE SENTENCE, SAYING THE ONLY THING THAT CHANGES WHAT A CLINICIAN
-     DOES -- that the flag is an estimate from past records rather than a
-     measurement of this patient. Which check flagged what is already said
-     above, per KEPT item 1 at the top of this file, and that is the part with
-     clinical consequence.
-
-     WHAT 6az ASKED FOR IS STILL HERE, NARROWED. Its finding was that the page
-     showed a model flag with NO qualification at all once Gemini started
-     generating reliably. That is still guarded: this line renders in both
-     branches and is not conditional on the narrative. What changed is its
-     length, not its presence.
-
-     ⚠ IF THIS EVER NEEDS MORE, `ml.band_meaning` IS THE CANDIDATE and the
-     metrics are not. It already reads in plain clinical English -- "on the
-     held-out test split 91.1% of patients in this band were positive" -- and
-     a hit rate is something a clinician can act on. It is deliberately not
-     rendered today because the owner asked for less, not more. */
-  const modelOutputLine =
-    byBoth.length + byModel.length > 0 ? (
-      <p>
-        <strong>On the model output.</strong> An estimate from patterns in past
-        records, not a measurement of this patient.
-      </p>
-    ) : null;
-
-  // THE SAME THREE FIELDS WERE BEING NAMED TWICE -- once as "not supplied"
-  // and again as "not present in this report". For hypertension, heart
-  // disease and smoking history those are the same three names, so a reader
-  // saw the list, read a paragraph, and saw it again. They are different
-  // facts and only one of them needs saying: a field the patient never
-  // supplied cannot also be a parameter the report failed to carry.
-  const alsoMissing = (laboratory.features_not_present || []).filter(
-    (key) => !notSupplied.includes(key)
-  );
+  // `alsoMissing` STOOD HERE and is gone with the paragraph that read it --
+  // `features_not_present`, minus the three profile fields already reported
+  // as "not supplied" so that one gap was never named twice. The owner
+  // removed the parameters-not-present sentence on 2026-09-20; nothing else
+  // consumed this, and a derived value with no consumer is a future reader's
+  // wrong turn. `features_not_present` is untouched on the payload.
 
   const unreadable = quality.pages_unreadable || [];
   const reportDate = readableDate(summary.attribution?.report_date);
@@ -517,36 +615,49 @@ export default function DoctorSummary() {
           render an empty article. */}
       {isPresent(narrative?.text) ? (
         <article className="passage">
-          {narrative.text
-            /* A DOUBLE SPACE AFTER A FULL STOP IS A PARAGRAPH BREAK TOO.
-               The model groups its sentences that way and not with blank
-               lines, however the prompt asks -- so the whole note arrived as
-               one ten-line block. This reflows already-approved text and
-               changes not one character of it; the alternative was another
-               round of prompt-tuning at a model call each. */
-            .replace(/\.\s{2,}/g, '.\n\n')
-            .split(/\n\s*\n/)
-            .map((para) => para.trim())
-            .filter(Boolean)
-            .map((para, index) => (
-              <p key={index}>{para}</p>
-            ))}
-          {/* THE MODEL CAVEAT BELONGS HERE MOST OF ALL. The narrative names a
-              model flag in one clause -- "flagged by the statistical model
-              alone" -- and a clause is not a qualification. Whatever the
-              narrative says about a model estimate, the model's own authors
-              get the last word on what it is worth. */}
-          {modelOutputLine}
+          {/* VALUES FIRST, THEN WHAT WAS FLAGGED AND WHY -- the order the
+              owner asked for, and the order the composed branch already
+              used. The narrative supplies the flags and their reasons; it
+              does not reliably list the parameters that were measured and
+              not flagged, so without this the document can omit them
+              entirely.
+
+              UNLESS THE NARRATIVE ALREADY LISTED THEM ALL, in which case
+              this would be the same panel printed twice -- see
+              `narrativeListsAllValues`. */}
+          {narrativeListsAllValues(narrative.text, measured) ? null : reportedValuesLine}
+          {narrativeBody(narrative.text).map((para, index) => (
+            <p key={index}>{para}</p>
+          ))}
           {/* SAID, NOT IMPLIED. The reader is entitled to know a model wrote
               the prose -- the findings in it were not decided by one, and the
               distinction is the whole reason the composed version existed. */}
           {outOfRangeLine}
 
+          {/* THE DOCUMENT CLOSES LAST. `CLOSING_LINE` is appended to the text
+              server-side, so it arrived as the narrative's final paragraph and
+              the page then printed two more caveats AFTER it -- the document
+              ended, then kept talking. `narrativeBody` lifts it out and it is
+              re-rendered here.
+
+              ⚠ FAIL-SAFE, NOT FAIL-SILENT. If the server ever rewords the
+              line, `narrativeBody` will not recognise it, will leave it in the
+              body where it has always been, and this renders nothing. The line
+              is then in the old place rather than missing, and it can never be
+              printed twice. */}
           <p className="passage__close">
             The wording above was written by a language model from the findings
             of this analysis and checked before being shown. The findings
             themselves were not produced by a language model.
           </p>
+
+          {/* LAST, AND THAT IS THE POINT. The provenance line above is about
+              who wrote the prose; this is the document's closing statement,
+              and a document that closes and then adds two more paragraphs is
+              what the owner read on the real page. */}
+          {narrativeClosing(narrative.text) ? (
+            <p>{narrativeClosing(narrative.text)}</p>
+          ) : null}
 
         </article>
       ) : (
@@ -567,30 +678,7 @@ export default function DoctorSummary() {
             : ''}
         </p>
 
-        {/* The values, in the wording printed on the report they came from. */}
-        {measured.length ? (
-          <p>
-            <strong>Reported values.</strong>{' '}
-            {measured
-              .map((row) => {
-                const value = `${row.value}${isPresent(row.unit) ? ` ${row.unit}` : ''}`;
-                const flag = isPresent(row.printed_flag)
-                  ? ` (${row.printed_flag}, per the reporting laboratory)`
-                  : '';
-                return `${parameterName(row)} ${value}${flag}`;
-              })
-              .join('; ')}
-            .
-            {/* AN ABSENT INTERVAL IS NOT AN UNREMARKABLE ONE, and this is the
-                one sentence that stops eight bare numbers reading as in range. */}
-            {!anyInterval
-              ? ' The source report printed no reference intervals, so no value here is placed relative to a range.'
-              : ''}
-            {anyInterval && !labFlagged.length
-              ? ' The reporting laboratory marked none of these outside its own intervals.'
-              : ''}
-          </p>
-        ) : null}
+        {reportedValuesLine}
 
         {rejected.length ? (
           <p>
@@ -635,19 +723,6 @@ export default function DoctorSummary() {
           </p>
         )}
 
-        {/* ONE SENTENCE OF MODEL LIMITATION, in the model author's own words.
-            Found missing from this page three separate times.
-
-            THE LEAD-IN IS WRITTEN FOR THE READER THIS PAGE IS ADDRESSED TO.
-            "A likelihood derived from patterns in training data" is how the
-            people who build these things describe them; a clinician is not
-            obliged to know it, and this is the sentence that decides how much
-            weight they give everything after it. The notes that follow were
-            rewritten at source for the same reason (app/ml/heart.py,
-            app/ml/kidney.py) -- every fact kept, the vocabulary of model
-            development dropped. */}
-        {modelOutputLine}
-
         {/* Assessed and not flagged, named -- a clinician needs to know which
             topics were covered, and "not flagged" is not "ruled out". */}
         {clear.length ? (
@@ -658,24 +733,38 @@ export default function DoctorSummary() {
           </p>
         ) : null}
 
-        {/* ABSENCE, WHICH A COMPRESSED SUMMARY IS MOST LIKELY TO DROP. */}
-        {summary.unassessed_conditions?.length ||
-        alsoMissing.length ||
-        unreadable.length ||
+        {/* WHAT THIS TOOL DID NOT COVER IS GONE, ON THE OWNER'S INSTRUCTION
+            -- 2026-09-20.
+            ====================================================================
+
+            This paragraph opened "Not assessed." and named the conditions with
+            no inputs and the parameters the report did not carry. The owner
+            removed it with the spec they have given for this whole document:
+            show the parameters, what was flagged and why, and nothing else.
+
+            ⚠ IT WAS ONE OF THE FOUR THINGS THIS PAGE'S OWN HEADER CALLS KEPT
+            "because removing them would make the passage lie by omission",
+            and the codebase's standing rule is that an absence must never
+            read as a negative result. Recorded here rather than done quietly.
+            What a clinician loses: the page no longer says that Vitamin D
+            Deficiency, Vitamin B12 Deficiency, High Cholesterol and High
+            Triglycerides were never assessed, so "Assessed, not flagged"
+            above is now the only list of what was covered.
+
+            ⚠⚠ WHAT IS **NOT** REMOVED, AND WHY IT IS A DIFFERENT FACT.
+            The document-readability clause stays. "Part of the document could
+            not be read (page 2)" is not a statement about this tool's
+            coverage -- it is a statement about whether the PARAMETERS SHOWN
+            ARE ALL OF THEM, which is the owner's own first requirement. On
+            2026-09-20 an extraction timeout lost page 2 of `Test 3.pdf` and
+            seven parameters with it, including the HbA1c and glucose behind
+            the diabetes flag; this sentence is how a reader finds that out.
+            `sources_failed` stays with it for the same reason. */}
+        {unreadable.length ||
         quality.partial_document === true ||
         quality.sources_failed?.length ? (
           <p>
-            <strong>Not assessed.</strong>{' '}
-            {summary.unassessed_conditions?.length
-              ? `${nameList(
-                  summary.unassessed_conditions
-                )} could not be assessed; the required inputs were not available. `
-              : ''}
-            {alsoMissing.length
-              ? `${sentenceCase(nameList(alsoMissing.map(humanFeature)))} ${
-                  alsoMissing.length === 1 ? 'was' : 'were'
-                } not present in this report. `
-              : ''}
+            <strong>Not fully read.</strong>{' '}
             {unreadable.length || quality.partial_document === true
               ? `Part of the document could not be read${
                   unreadable.length

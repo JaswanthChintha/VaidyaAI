@@ -178,72 +178,65 @@ describe('Module 32 -- the clinician summary, as one passage', () => {
     expect(passage()).toMatch(/Diabetes .*crossed one of this tool's cut-offs/);
   });
 
-  it('qualifies a model flag in one sentence, and does not pad it', async () => {
-    // RENAMED AND NARROWED FROM 'carries one sentence of model limitation, in
-    // the author own words'. It asserted /screening population/ -- a phrase
-    // from `ml.limitations.author_note`, which is written in PATIENT register
-    // and is no longer printed on the clinician page. Keeping that assertion
-    // would mean the only way to pass is to put five sentences of lay prose
-    // back in front of a doctor, which is the thing the owner objected to on
-    // the real page.
-    //
-    // WHAT MUST NOT BE LOST is why this test existed at all: the
-    // qualification went MISSING from this page three separate times (6o D8,
-    // 6p, and the `basis.ml.limitations` path bug), and 6az found it gone
-    // again. So its presence is still asserted -- only its length changed.
+  /* ======================================================================
+     THE MODEL PARAGRAPH WAS REMOVED ON THE OWNER'S INSTRUCTION -- 2026-09-20
+     ======================================================================
+
+     TWO TESTS STOOD HERE and both asserted the paragraph's PRESENCE:
+     'qualifies a model flag in one sentence, and does not pad it' and
+     'does not put model-development vocabulary in front of a clinician'.
+     They encoded §6w -- a model-derived flag may never appear without its
+     limitation -- which had been violated three times.
+
+     THEY ARE REPLACED, NOT DELETED AND NOT WEAKENED. The owner read the
+     paragraph on the real page and asked for it to go, twice, with the spec
+     for the whole document: "just show what parameters are there in report
+     and what flagged and why flagged, that's it ... i don't need words like
+     model and output". A test asserting the paragraph is present can only be
+     satisfied now by putting it back, so keeping it would mean the suite
+     demanded a state the owner rejected.
+
+     WHAT REPLACES THEM IS THE STRONGER HALF OF WHAT THEY GUARDED: the
+     vocabulary ban, now absolute rather than partial, plus the requirement
+     that the WHY of every flag survives -- which is what the owner asked to
+     keep and is the only reason the old paragraph could be spared. */
+
+  it('shows no model-output paragraph at all', async () => {
     await mountSummary(REPORT);
     await screen.findByText(/Flagged/);
-    const text = passage();
-    expect(text).toMatch(/not a measurement/);
-    // One sentence, not a paragraph. The author note ran to five, and the
-    // phrases below are the ones it and the metrics version brought with them.
-    for (const padding of [
-      'screening population',
-      'flatters',
-      'never a finding in itself',
-      'Random Forest',
-      'AUC',
-    ]) {
-      expect(text).not.toContain(padding);
-    }
+    expect(passage()).not.toMatch(/On the model output/i);
+    expect(passage()).not.toMatch(/an estimate from patterns/i);
+    expect(passage()).not.toMatch(/not a measurement of this patient/i);
   });
 
-  it('does not put model-development vocabulary in front of a clinician', async () => {
-    // THE READER IS A CLINICIAN, NOT A MODEL REVIEWER. "ROC-AUC", "recall",
-    // "precision", "training rows", "UCI cohort" are how the people who build
-    // these things describe them; a clinician handed a patient's phone reads
-    // past them, and the model's limits are the part they most need. The notes
-    // were rewritten at source (app/ml/heart.py, app/ml/kidney.py) with every
-    // fact kept.
+  it('puts no model performance figure in front of a clinician', async () => {
+    /* THE BAN IS NOW ABSOLUTE. It used to permit a qualification sentence and
+       forbid only the development vocabulary; nothing about a model's
+       performance may reach this page now. `N in N` is included because the
+       natural-frequency version of these figures lived here for one day. */
     await mountSummary(REPORT);
     await screen.findByText(/Flagged/);
     const text = passage();
-    // 'training data' is in the list because of THIS PAGE'S OWN lead-in
-    // sentence, not the model's note: "a likelihood derived from patterns in
-    // training data" is the same register, written here rather than upstream,
-    // and a list that only policed the upstream note let it straight through.
     for (const jargon of [
-      'ROC-AUC', 'ROC AUC', 'PR-AUC', 'UCI', 'held-out', 'training data',
-      // How this system names its own parts. A clinician reads a handover
-      // note, not a description of the software that produced it.
-      'Threshold comparison', 'configured threshold', 'configured cut-off',
-      "platform's configured",
+      'AUC', 'precision 0.', 'recall 0.', 'Random Forest',
+      'operating threshold', 'held-out', 'flatters', 'screening population',
     ]) {
       expect(text).not.toContain(jargon);
     }
-    // AND THE SAME LIST NOW COVERS WHAT REPLACED THE NOTE, BRIEFLY. When the
-    // author note was cut, it was first swapped for the model's own figures
-    // -- 'Random Forest, p 0.85, high band. AUC 0.97, precision 0.92, recall
-    // 0.70'. That is a different wrong register, not a fix, and this test
-    // caught it along with the sibling test below that bans 'Random Forest'
-    // by name. The vocabulary list is the guard; it is extended, not relaxed.
-    for (const jargon of ['AUC', 'precision 0.', 'recall 0.', 'Random Forest']) {
-      expect(text).not.toContain(jargon);
-    }
-    // The substance that survives is the one clinical fact: an estimate is
-    // not a measurement. The former assertion here was /screening population/,
-    // a phrase of the patient-register note that no longer prints.
-    expect(text).toMatch(/not a measurement/);
+    expect(text).not.toMatch(/\d+ in \d+ of the patients/);
+    expect(text).not.toMatch(/missed about/);
+  });
+
+  it('still says WHY each topic was flagged', async () => {
+    /* THE OWNER'S ACTUAL SPEC, AND THE REASON THE PARAGRAPH COULD GO. What
+       was flagged and why is the whole document. A model-only flag keeps its
+       reason too -- "no measured value crossed a cut-off" -- because without
+       it the page states a finding with no reason at all, which is a worse
+       failure than the one removing the paragraph fixed. */
+    await mountSummary(REPORT);
+    await screen.findByText(/Flagged/);
+    expect(passage()).toMatch(/Diabetes .*crossed one of this tool's cut-offs/);
+    expect(passage()).toMatch(/no measured value crossed a cut-off/);
   });
 
   it('omits the model paragraph entirely when no model flagged anything', async () => {
@@ -264,40 +257,169 @@ describe('Module 32 -- the clinician summary, as one passage', () => {
     expect(passage()).toMatch(/none was crossed/);
   });
 
-  it('NEVER DROPS AN ABSENCE UNDER COMPRESSION', async () => {
-    // The rule the whole codebase is built on, and the one a summary is most
-    // likely to lose. Three separate absences, all in the payload.
+  /* ======================================================================
+     "Not assessed." WAS REMOVED ON THE OWNER'S INSTRUCTION -- 2026-09-20
+     ======================================================================
+
+     TWO TESTS STOOD HERE and both asserted the paragraph's PRESENCE:
+     'NEVER DROPS AN ABSENCE UNDER COMPRESSION' and 'names a parameter the
+     report lacked that the patient DID supply'. They encoded this page's own
+     KEPT item 3 -- "WHAT WAS NOT AVAILABLE ... absence is not a negative
+     result", the rule the codebase is built on.
+
+     The owner removed it with the standing spec for this document: the
+     parameters, what was flagged and why, nothing else. A test asserting the
+     paragraph is present can only be satisfied now by putting it back, so
+     these are REPLACED rather than weakened, and the reversal is recorded.
+
+     ⚠ WHAT SURVIVES IS ASSERTED BELOW, AND IT IS NOT NOTHING. The document
+     readability clause stays, because it is a different kind of fact: not
+     what this tool failed to cover, but whether the PARAMETERS SHOWN ARE ALL
+     OF THEM. An extraction timeout lost page 2 of `Test 3.pdf` on 2026-09-20
+     and seven parameters with it. So is the profile line in the subject
+     paragraph, which was never part of the removed block. */
+
+  it('no longer names the conditions it could not assess', async () => {
     await mountSummary({
       ...REPORT,
       unassessed_conditions: ['Vitamin D Deficiency'],
-      data_quality: { page_count: 3, pages_unreadable: [2], partial_document: true, sources_failed: [] },
+      data_quality: { page_count: 3, pages_unreadable: [], partial_document: false, sources_failed: [] },
     });
-    await screen.findByText(/Not assessed/);
-    // Profile fields that were never supplied. Said once, in sentence case.
-    expect(passage()).toMatch(/Hypertension, heart disease, smoking history were not supplied/);
-    // A condition with no inputs.
-    expect(passage()).toMatch(/Vitamin D Deficiency could not be assessed/);
-    // NOT repeated as "not present in this report": for these three the two
-    // lists hold the same names, and a field the patient never supplied
-    // cannot also be a parameter the report failed to carry.
-    expect(passage()).not.toMatch(/not present in this report/);
-    // A page that could not be read.
-    expect(passage()).toMatch(/Part of the document could not be read \(page 2\)/);
-    expect(passage()).toMatch(/None of this is a negative finding/);
+    await screen.findByText(/Flagged/);
+    expect(passage()).not.toMatch(/Not assessed\./);
+    expect(passage()).not.toMatch(/could not be assessed/);
+    expect(passage()).not.toMatch(/Vitamin D Deficiency/);
   });
 
-  it('names a parameter the report lacked that the patient DID supply', async () => {
-    // The other half of the pair above: `features_not_present` that is not
-    // simply a restatement of the unsupplied profile fields must still be
-    // named, or a real gap in the report goes unmentioned.
+  it('no longer names a parameter the report did not carry', async () => {
     await mountSummary({
       ...REPORT,
       patient: { ...REPORT.patient, hypertension: false, heart_disease: false, smoking_history: 'never' },
       laboratory: { ...REPORT.laboratory, features_not_present: ['vitamin_b12'] },
+      data_quality: { page_count: 1, pages_unreadable: [], partial_document: false, sources_failed: [] },
     });
-    await screen.findByText(/Not assessed/);
-    expect(passage()).toMatch(/Vitamin b12 was not present in this report/);
-    expect(passage()).not.toMatch(/were not supplied/);
+    await screen.findByText(/Flagged/);
+    expect(passage()).not.toMatch(/not present in this report/);
+    expect(passage()).not.toMatch(/Vitamin b12/i);
+  });
+
+  it('⚠ STILL says when part of the document could not be read', async () => {
+    /* THE CLAUSE THAT DID NOT GO, AND THE REASON IT DID NOT. This is not a
+       statement about this tool's coverage -- it is the reader's only signal
+       that the parameter list above may be incomplete. On 2026-09-20 page 2
+       of `Test 3.pdf` timed out and seven parameters vanished from the
+       table, including the HbA1c and glucose behind the diabetes flag. */
+    await mountSummary({
+      ...REPORT,
+      data_quality: { page_count: 3, pages_unreadable: [2], partial_document: true, sources_failed: [] },
+    });
+    await screen.findByText(/Not fully read/);
+    expect(passage()).toMatch(/Part of the document could not be read \(page 2\)/);
+    expect(passage()).toMatch(/may be missing from the reading rather than from the report/);
+    expect(passage()).toMatch(/None of this is a negative finding/);
+  });
+
+  it('still reports an analysis source that did not complete', async () => {
+    await mountSummary({
+      ...REPORT,
+      data_quality: { page_count: 1, pages_unreadable: [], partial_document: false, sources_failed: ['Random Forest'] },
+    });
+    await screen.findByText(/Not fully read/);
+    expect(passage()).toMatch(/did not complete/);
+  });
+
+  it('renders no readability paragraph when the document was read whole', async () => {
+    // The paragraph must not appear to say nothing. A clean document gets no
+    // sentence about what did not happen to it.
+    await mountSummary({
+      ...REPORT,
+      data_quality: { page_count: 1, pages_unreadable: [], partial_document: false, sources_failed: [] },
+    });
+    await screen.findByText(/Flagged/);
+    expect(passage()).not.toMatch(/Not fully read/);
+  });
+
+  it('⚠ never lists an UNASSESSED condition as "Assessed, not flagged"', async () => {
+    /* THE DEFECT REMOVING "Not assessed." EXPOSED, AND 6bg's PATTERN AGAIN:
+       the fault was not in the code that changed but in a neighbouring
+       sentence whose meaning depended on it.
+
+       `clear` was "everything not flagged", which swept up the conditions no
+       rule could run on. On `Test 3.pdf` that is the four below -- the report
+       carries no vitamin D, B12, cholesterol or triglyceride value -- and
+       they were printed under "Each was compared against this tool's cut-offs
+       and none was crossed". False of all four, and once the "Not assessed."
+       paragraph went it was the ONLY thing the document said about them.
+
+       SAYING NOTHING ABOUT A CONDITION IS NOT SAYING IT WAS CHECKED. */
+    await mountSummary({
+      ...REPORT,
+      abnormal_findings: ['Diabetes'],
+      unassessed_conditions: ['Vitamin D Deficiency'],
+      assessments: [
+        {
+          condition: 'Diabetes',
+          status: 'Indicated',
+          assessed: true,
+          bases: [{ source_kind: 'clinical_rule', status: 'Indicated' }],
+        },
+        {
+          condition: 'Heart Disease',
+          status: 'Not Indicated',
+          assessed: true,
+          bases: [{ source_kind: 'clinical_rule', status: 'Not Indicated' }],
+        },
+        // NEVER ASSESSED -- no input was available. Must appear in NEITHER
+        // list, not merely out of the flagged one.
+        {
+          condition: 'Vitamin D Deficiency',
+          status: 'Insufficient Data',
+          assessed: false,
+          bases: [],
+        },
+      ],
+      data_quality: { page_count: 1, pages_unreadable: [], partial_document: false, sources_failed: [] },
+    });
+
+    await screen.findByText(/Assessed, not flagged/);
+    const text = passage();
+    // The genuinely assessed one is still named.
+    expect(text).toMatch(/Assessed, not flagged\..*Heart Disease/);
+    // The unassessed one appears nowhere at all.
+    expect(text).not.toMatch(/Vitamin D Deficiency/);
+  });
+
+  it('drops the "Assessed, not flagged" line when nothing was assessed and clear', async () => {
+    // A heading with an empty list, or worse one listing the unassessed, is
+    // how the defect above reads to a clinician.
+    await mountSummary({
+      ...REPORT,
+      abnormal_findings: ['Diabetes'],
+      assessments: [
+        {
+          condition: 'Diabetes',
+          status: 'Indicated',
+          assessed: true,
+          bases: [{ source_kind: 'clinical_rule', status: 'Indicated' }],
+        },
+        { condition: 'Vitamin D Deficiency', status: 'Insufficient Data', assessed: false, bases: [] },
+      ],
+      data_quality: { page_count: 1, pages_unreadable: [], partial_document: false, sources_failed: [] },
+    });
+
+    await screen.findByText(/Flagged/);
+    expect(passage()).not.toMatch(/Assessed, not flagged/);
+  });
+
+  it('still says which profile fields were not supplied', async () => {
+    // NEVER PART OF THE REMOVED BLOCK -- it lives in the subject paragraph,
+    // and a clinician needs to know the analysis was run without them.
+    await mountSummary({
+      ...REPORT,
+      data_quality: { page_count: 1, pages_unreadable: [], partial_document: false, sources_failed: [] },
+    });
+    await screen.findByText(/Flagged/);
+    expect(passage()).toMatch(/were not supplied and (were )?unavailable to the analysis/);
   });
 
   describe('the written version', () => {
@@ -320,19 +442,37 @@ describe('Module 32 -- the clinician summary, as one passage', () => {
         text: 'First group ends here.  Second group starts here.',
       });
       await screen.findByText(/First group ends here/);
-      const paras = [...document.querySelectorAll('.passage p')];
-      expect(paras.length).toBeGreaterThanOrEqual(2);
-      expect(paras[0].textContent).toBe('First group ends here.');
-      expect(paras[1].textContent).toBe('Second group starts here.');
+      /* INDEXED OFF THE PROSE, NOT OFF THE PASSAGE. This read `paras[0]` and
+         `paras[1]`, which was only ever true while the narrative branch
+         rendered nothing but the narrative. The reported values now open both
+         branches, so a positional assertion here was testing the layout of
+         the page rather than the reflow it is about. */
+      const paras = [...document.querySelectorAll('.passage p')].map(
+        (p) => p.textContent
+      );
+      const first = paras.indexOf('First group ends here.');
+      expect(first).toBeGreaterThanOrEqual(0);
+      expect(paras[first + 1]).toBe('Second group starts here.');
     });
 
     it('renders the written prose when one was approved', async () => {
       await mountSummary(REPORT, undefined, WRITTEN);
       expect(await screen.findByText(/First written paragraph/)).toBeInTheDocument();
       expect(screen.getByText(/Second written paragraph/)).toBeInTheDocument();
-      // The composed passage is NOT also on the page -- two summaries of the
-      // same report, differing in wording, is worse than either alone.
-      expect(screen.queryByText(/Reported values/)).not.toBeInTheDocument();
+      /* ⚠ THIS ASSERTED `Reported values` WAS ABSENT, AND THAT IS NOW WRONG.
+         The intent was right -- two differently worded summaries of one
+         report is worse than either alone -- but the reported values are not
+         a second summary. They are the parameters and their readings, and
+         they rendered ONLY when the narrative failed, so the day Gemini began
+         generating reliably a clinician stopped being shown any parameter
+         that was measured and not flagged. The owner asked for them back on
+         2026-09-20. This now asserts the opposite, and the thing the original
+         was guarding is asserted below it. */
+      expect(screen.getByText(/Reported values/)).toBeInTheDocument();
+      // What must still NOT appear: the composed branch's OWN prose about
+      // what was flagged, which would be a second summary beside the written
+      // one. `Flagged.` is that paragraph's lead-in.
+      expect(screen.queryByText(/^Flagged\.$/)).not.toBeInTheDocument();
     });
 
     it('says a model wrote the wording, and that it did not decide anything', async () => {
@@ -1017,34 +1157,52 @@ describe('Module 32 - the out-of-range line survives a generated narrative', () 
   });
 });
 
-describe('Module 32 - the model caveat survives a generated narrative', () => {
-  /* THE THIRD TIME MODEL LIMITATIONS HAVE GONE MISSING FROM THIS PAGE, and
-     the first two were wrong FIELD PATHS (6w, 6o D8). This one was a wrong
-     PLACE IN THE TREE: the paragraph sat inside the composed branch, so it
-     rendered only when the written narrative FAILED. No fixture could catch
-     it -- the data was always present and always correct.
+describe('Module 32 - no model caveat, and the WHY survives', () => {
+  /* ======================================================================
+     THIS WHOLE BLOCK ONCE ASSERTED THE MODEL CAVEAT WAS PRESENT
+     ======================================================================
 
-     MEASURED ON A REAL REPORT (Test 3, 2026-09-18). The page said "Kidney
-     Disease was flagged by the statistical model alone" and nothing more,
-     while the payload carried probability 0.885, risk band `high`, ROC-AUC
-     0.999 off 399 rows at 62.7% prevalence, and the note asserted below --
-     for a 20-year-old whose creatinine is normal. */
+     It was written for 6az's defect: every model qualification vanished from
+     this page the moment Gemini began generating reliably, because the block
+     lived inside the composed branch. Its tests therefore asserted the caveat
+     rendered in BOTH branches, and a later set asserted the hit and miss
+     rates it carried.
 
-  const NOTE =
-    'This came from a pattern model, not from a measurement. It is a reason ' +
-    'to consider further assessment, never a finding in itself.';
+     THE OWNER REMOVED THE PARAGRAPH ON 2026-09-20, having read it on the real
+     page twice: "just show what parameters are there in report and what
+     flagged and why flagged, that's it ... i don't need words like model and
+     output". Every test that asserted its presence can now be satisfied only
+     by reintroducing it, so they are REPLACED here rather than weakened, and
+     the reason is written down because this reverses a constraint 6w marks
+     non-negotiable.
+
+     WHAT IS ASSERTED INSTEAD is the half of 6az that still holds and that the
+     owner explicitly wants: the WHY of a flag must survive in BOTH branches.
+     That was the real lesson -- a fact that renders in only one branch
+     disappears the day the other branch starts working. */
 
   const WITH_MODEL = {
     overall: { status_label: 'Needs Medical Attention', clean_bill_of_health: false },
     attribution: { report_date: '2026-09-07T04:00:14.776000Z' },
     patient: { age: 20, gender: 'male' },
     data_quality: { page_count: 2, pages_unreadable: [], partial_document: false },
-    laboratory: { total: 0, rows: [] },
+    laboratory: {
+      total: 1,
+      rows: [
+        {
+          feature: 'creatinine',
+          display_name: 'Serum creatinine',
+          value: 0.75,
+          unit: 'mg/dl',
+          usable: true,
+          provenance: {
+            source: 'lab_report',
+            original_test_name: { text: 'Serum Creatinine', state: 'CLEAN' },
+          },
+        },
+      ],
+    },
     abnormal_findings: ['Kidney Disease'],
-    // TWO BASES, AS THE PRODUCER ACTUALLY RETURNS. Read off the live payload
-    // rather than imagined: the rule basis says Not Indicated (creatinine
-    // 0.75 is normal) and the MODEL basis is the one that flagged. A
-    // single-basis fixture would not exercise the skip in `modelNotes`.
     assessments: [
       {
         condition: 'Kidney Disease',
@@ -1056,95 +1214,238 @@ describe('Module 32 - the model caveat survives a generated narrative', () => {
             status: 'Indicated',
             assessed: true,
             source_kind: 'machine_learning',
-            ml: { limitations: { author_note: { text: NOTE } } },
+            //: The real artifact values. Nothing derived from them may reach
+            //: the page any more, and that is what these tests check.
+            ml: {
+              limitations: {
+                metrics_available: true,
+                roc_auc: 0.9987129987129988,
+                precision_at_operating_threshold: 0.968421052631579,
+                recall_at_operating_threshold: 0.983957219251337,
+              },
+            },
           },
         ],
       },
     ],
   };
 
+  /* THE PRODUCER ALWAYS APPENDS THE CLOSING LINE.
+     `write_clinician_summary` ends with `parts = [approved_text, CLOSING_LINE]`
+     and joins them, so every generated narrative carries it as the final
+     paragraph -- all four stored on this account do. A fixture without it
+     describes a state the ai-service cannot produce. */
   const NARRATIVE = {
     outcome: 'generated',
-    text: 'Kidney Disease was flagged by the statistical model alone.',
+    text:
+      'Kidney Disease was flagged by the statistical model alone, and no '
+      + 'measured value crossed a cut-off for it.\n\n'
+      + 'Not a diagnosis and not a clinical conclusion. The original '
+      + 'laboratory report remains the primary record.',
   };
 
-  const modelLine = async () => {
+  const passageText = async () => {
     await waitFor(() => expect(document.querySelector('.passage')).toBeTruthy());
-    const match = [...document.querySelectorAll('.passage p')].find((p) =>
-      /On the model output/i.test(p.textContent)
-    );
-    return match ? match.textContent : null;
+    return document.querySelector('.passage').textContent;
   };
 
   beforeEach(() => {
     vi.restoreAllMocks();
   });
 
-  /* THESE THREE ASSERTED THE AUTHOR NOTE'S OWN WORDS AND NOW ASSERT THE
-     GUARANTEE THAT MATTERS. 6az's finding was NOT that a particular sentence
-     appeared -- it was that EVERY model qualification vanished from the page
-     the moment Gemini started generating reliably, because the block lived
-     inside the composed branch. That is what is tested here, and it is
-     untouched: the line must render whether or not a narrative was produced.
-
-     What changed is the text. `never a finding in itself` is from
-     `ml.limitations.author_note`, patient register, cut from this page after
-     the owner read five sentences of it on a real report. Asserting it here
-     would mean the only way to pass is to put the padding back. */
-
-  it('qualifies the model flag WHEN A NARRATIVE WAS GENERATED', async () => {
-    // THE DEFECT, DIRECTLY. This is the state the live page was in.
+  it('shows no model-output paragraph WHEN A NARRATIVE WAS GENERATED', async () => {
     mountSummary(WITH_MODEL, {}, NARRATIVE, null);
-    await screen.findByText(/flagged by the statistical model alone/);
-    const line = await modelLine();
-    expect(line).toBeTruthy();
-    expect(line).toMatch(/not a measurement of this patient/i);
+    const text = await passageText();
+    expect(text).not.toMatch(/On the model output/i);
+    expect(text).not.toMatch(/an estimate from patterns/i);
   });
 
-  it('still qualifies it when there is NO narrative', async () => {
+  it('shows no model-output paragraph WHEN THERE IS NO NARRATIVE', async () => {
+    // BOTH BRANCHES, which is 6az's lesson kept pointing the other way: a
+    // difference between the branches is what went unnoticed for weeks.
     mountSummary(WITH_MODEL, {}, null, null);
-    const line = await modelLine();
-    expect(line).toMatch(/not a measurement of this patient/i);
+    const text = await passageText();
+    expect(text).not.toMatch(/On the model output/i);
+    expect(text).not.toMatch(/an estimate from patterns/i);
   });
 
-  it('says it in one sentence and imports nothing from the model artifact', async () => {
-    // The qualification must not depend on a model having supplied a note --
-    // that dependency is how it went missing before -- and it must not grow
-    // back into a paragraph. Both halves are asserted, because the page has
-    // now failed in both directions: silence when Gemini worked, then padding
-    // when the note was wired in.
+  it('leaks no model performance figure into the narrative branch', async () => {
     mountSummary(WITH_MODEL, {}, NARRATIVE, null);
-    const line = await modelLine();
-    expect(line).toMatch(/not a measurement of this patient/i);
-    expect(line.length).toBeLessThan(200);
-    for (const imported of [
-      'never a finding in itself',
-      'screening population',
-      'flatters',
-      'Random Forest',
-      'AUC',
-    ]) {
-      expect(line).not.toContain(imported);
+    const text = await passageText();
+    for (const jargon of ['AUC', '0.99', '0.97', '0.98', 'Random Forest']) {
+      expect(text).not.toContain(jargon);
     }
+    expect(text).not.toMatch(/\d+ in \d+ of the patients/);
+    expect(text).not.toMatch(/missed about/);
   });
 
-  it('omits the paragraph entirely when no model flagged anything', async () => {
-    // A model that returned Not Indicated produced no output this passage
-    // reports, so its caveat would sit under findings it did not make.
-    const ruleOnly = {
-      ...WITH_MODEL,
-      abnormal_findings: ['Anemia'],
-      assessments: [
+  it('leaks no model performance figure into the composed branch', async () => {
+    mountSummary(WITH_MODEL, {}, null, null);
+    const text = await passageText();
+    for (const jargon of ['AUC', '0.99', '0.97', '0.98', 'Random Forest']) {
+      expect(text).not.toContain(jargon);
+    }
+    expect(text).not.toMatch(/\d+ in \d+ of the patients/);
+    expect(text).not.toMatch(/missed about/);
+  });
+
+  it('still says WHY in the narrative branch', async () => {
+    /* THE OWNER'S SPEC AND THE CONDITION ON REMOVING THE PARAGRAPH. A flag
+       with no reason is a worse document than one with a caveat too many. */
+    mountSummary(WITH_MODEL, {}, NARRATIVE, null);
+    expect(await passageText()).toMatch(/no measured value crossed a cut-off/);
+  });
+
+  it('still says WHY in the composed branch', async () => {
+    mountSummary(WITH_MODEL, {}, null, null);
+    expect(await passageText()).toMatch(/no measured value crossed a cut-off/);
+  });
+
+  it('still gives the parameter and its value', async () => {
+    // ASKED FOR EXPLICITLY on 2026-09-20, alongside the removal: the summary
+    // must carry what parameters are in the report and what they read.
+    mountSummary(WITH_MODEL, {}, NARRATIVE, null);
+    expect(await passageText()).toMatch(/Serum Creatinine 0\.75 mg\/dl/);
+  });
+
+  it('closes the document last, exactly once', async () => {
+    /* `CLOSING_LINE` is appended server-side and so arrived as the last
+       paragraph of the narrative, leaving the page to print its own caveats
+       AFTER it: the document ended, then kept talking. */
+    mountSummary(WITH_MODEL, {}, NARRATIVE, null);
+    await waitFor(() => expect(document.querySelector('.passage')).toBeTruthy());
+    const paras = [...document.querySelectorAll('.passage p')].map((p) => p.textContent);
+    const closing = paras.filter((t) => /remains the primary record/.test(t));
+    expect(closing).toHaveLength(1);
+    const closingAt = paras.findIndex((t) => /remains the primary record/.test(t));
+    expect(closingAt).toBe(paras.length - 1);
+  });
+
+  /* ====================================================================
+     ONE VALUE LIST, NEVER TWO AND NEVER NONE
+     ====================================================================
+
+     The reported values were made to render in both branches so a clinician
+     stops losing every parameter that was measured and not flagged. On a
+     report whose narrative ALSO enumerates them that printed the same panel
+     twice, four paragraphs apart -- 6bf's out-of-range defect in a second
+     place, found by the owner on the real page the same day.
+
+     ⚠ THE NARRATIVE ENUMERATES THEM ONLY SOMETIMES, from identical code:
+     `required_values` is `trigger_values`, so the full panel is asked for in
+     the prompt and never enforced by the fact check. Both fixtures below are
+     therefore states the producer really reaches, and both are asserted --
+     deleting either side of this would reintroduce the other's bug. */
+
+  const VALUES_REPORT = {
+    overall: { status_label: 'Needs Medical Attention', clean_bill_of_health: false },
+    attribution: { report_date: '2026-09-07T04:00:14.776000Z' },
+    patient: { age: 20, gender: 'male' },
+    data_quality: { page_count: 1, pages_unreadable: [], partial_document: false },
+    laboratory: {
+      total: 2,
+      rows: [
         {
-          condition: 'Anemia',
-          status: 'Indicated',
-          assessed: true,
-          bases: [{ status: 'Indicated', assessed: true, source_kind: 'clinical_rule' }],
+          feature: 'hba1c',
+          display_name: 'Glycated haemoglobin',
+          value: 5.2,
+          unit: '%',
+          usable: true,
+          provenance: {
+            source: 'lab_report',
+            original_test_name: { text: 'Glycated Haemoglobin (HbA1c)', state: 'CLEAN' },
+          },
+        },
+        {
+          feature: 'cholesterol',
+          display_name: 'Total cholesterol',
+          value: 172,
+          unit: 'mg/dl',
+          usable: true,
+          provenance: {
+            source: 'lab_report',
+            original_test_name: { text: 'Cholesterol, Total', state: 'CLEAN' },
+          },
         },
       ],
+    },
+    abnormal_findings: [],
+    assessments: [],
+  };
+
+  const CLOSING =
+    'Not a diagnosis and not a clinical conclusion. The original laboratory '
+    + 'report remains the primary record.';
+
+  const countOf = (needle) =>
+    [...document.querySelectorAll('.passage p')].filter((p) =>
+      p.textContent.includes(needle)
+    ).length;
+
+  it('prints the values once when the narrative already listed them all', async () => {
+    /* THE DEFECT, VERBATIM. The narrative's own sentence is built by
+       `_value_strings`, which uses the same printed name, value and unit this
+       page does -- so the two lists were character-identical. */
+    const listing = {
+      outcome: 'generated',
+      text:
+        'The reported values are Glycated Haemoglobin (HbA1c) 5.2 %, and '
+        + 'Cholesterol, Total 172 mg/dl.\n\n'
+        + CLOSING,
     };
-    mountSummary(ruleOnly, {}, NARRATIVE, null);
+    mountSummary(VALUES_REPORT, {}, listing, null);
     await waitFor(() => expect(document.querySelector('.passage')).toBeTruthy());
-    expect(await modelLine()).toBeNull();
+    expect(countOf('Glycated Haemoglobin (HbA1c) 5.2 %')).toBe(1);
+    expect(countOf('Cholesterol, Total 172 mg/dl')).toBe(1);
+    // The page's own paragraph is the one that stood down.
+    expect(document.querySelector('.passage').textContent).not.toMatch(/Reported values\./);
+  });
+
+  it('prints the values itself when the narrative listed none of them', async () => {
+    // The regenerated 03-renal narrative is exactly this: it explains the
+    // flags and never enumerates the panel. Without the page's list a
+    // clinician sees no value for anything that was not flagged.
+    const silent = {
+      outcome: 'generated',
+      text: 'This tool flagged nothing on this report.\n\n' + CLOSING,
+    };
+    mountSummary(VALUES_REPORT, {}, silent, null);
+    await waitFor(() => expect(document.querySelector('.passage')).toBeTruthy());
+    expect(document.querySelector('.passage').textContent).toMatch(/Reported values\./);
+    expect(countOf('Glycated Haemoglobin (HbA1c) 5.2 %')).toBe(1);
+    expect(countOf('Cholesterol, Total 172 mg/dl')).toBe(1);
+  });
+
+  it('prints its own list when the narrative names only SOME of the values', async () => {
+    /* A PARTIAL MATCH IS NOT A LIST. A narrative that names one value inside
+       a "flagged X because Y was Z" sentence has explained a flag, not
+       published the panel, and the complete list still belongs on the page.
+       Suppressing on a partial match would drop every value the narrative
+       did not happen to mention -- the omission bug wearing the other hat. */
+    const partial = {
+      outcome: 'generated',
+      text:
+        'This tool flagged nothing, though Glycated Haemoglobin (HbA1c) 5.2 % '
+        + 'was noted.\n\n'
+        + CLOSING,
+    };
+    mountSummary(VALUES_REPORT, {}, partial, null);
+    await waitFor(() => expect(document.querySelector('.passage')).toBeTruthy());
+    expect(document.querySelector('.passage').textContent).toMatch(/Reported values\./);
+    // Cholesterol appears nowhere else, so it must come from the page's list.
+    expect(countOf('Cholesterol, Total 172 mg/dl')).toBe(1);
+  });
+
+  it('leaves an unrecognised closing line where it is, rather than losing it', async () => {
+    /* FAIL-SAFE, NOT FAIL-SILENT. If the ai-service rewords `CLOSING_LINE`,
+       the page must not drop the sentence and must not print it twice. */
+    const reworded = {
+      ...NARRATIVE,
+      text: 'A body paragraph.\n\nSome NEW closing wording entirely.',
+    };
+    mountSummary(WITH_MODEL, {}, reworded, null);
+    await waitFor(() => expect(document.querySelector('.passage')).toBeTruthy());
+    const paras = [...document.querySelectorAll('.passage p')].map((p) => p.textContent);
+    expect(paras.filter((t) => /Some NEW closing wording entirely/.test(t))).toHaveLength(1);
   });
 });
