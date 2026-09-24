@@ -313,7 +313,9 @@ about any of them. That is the fifth time on this project.
 > reliable one.
 
 
-> ### ▶ NEW CHAT? §0, THEN §6bh → §6bg → §6bf → §6be → §6bd → §6bc → §6bb.
+> ### ▶ NEW CHAT? §0, THEN §6bi → §6bh → §6bg → §6bf → §6be.
+>
+> **§6bi IS THE RESEARCH PAPER (2026-09-24) — read it first if the task is the paper.** Sources are in `paper/`, three ablation scripts in `ai-service/ml/ablate_*.py`, ALL UNCOMMITTED. It also records that the owner asked for measured numbers to be raised and the answer was no, with the honest alternative that worked.
 >
 > **⚠ §6bh IS THE NEWEST (2026-09-20) AND TWO OF ITS ITEMS REVERSE STANDING
 > CONSTRAINTS** — §6w's "a model-derived flag may never appear without its
@@ -12070,6 +12072,158 @@ own lists (`INTERPRETIVE_VERBS`, `HEDGE_MARKERS`).
 * **THE READABILITY NOTICE IS BELOW THE RESULTS TABLE.** The owner found the
   seven missing parameters by scanning the table, not by reading *"Part of
   this document could not be read (page 2)"*. Worth moving above it.
+
+---
+
+## 6bi. THE RESEARCH PAPER · 2026-09-20/24 · FIVE REVISIONS, FOUR EXPERIMENTS
+
+**The owner asked for a research paper on VaidyaAI, in the format of a supplied
+IEEE sample manuscript.** It went through five revisions, one external review
+(pasted from ChatGPT), and four experiments run against the real artifacts.
+**Everything is UNCOMMITTED** — see the file list below.
+
+### ▶ WHERE IT IS
+
+```
+paper/build_paper.js      the generator (docx npm; resolves from repo-root node_modules)
+paper/make_fig1.py        draws Fig. 1 with Pillow  -> paper/fig1.png
+paper/fig1.png            the architecture figure, embedded in the docx
+paper/results/*.json      the raw outputs of the three experiments below
+paper/VaidyaAI_Research_Paper.docx     built output (== v5 delivered to the owner)
+
+ai-service/ml/ablate_diabetes.py          leakage ablation + calibration
+ai-service/ml/ablate_fusion.py            rule-only vs model-only vs fused (max-risk)
+ai-service/ml/ablate_fusion_policies.py   policy selection ON VALIDATION, reported on test
+```
+
+Rebuild: `cd paper && node build_paper.js`. **Verified**: the repo copy rebuilds
+text-identical to the delivered v5. **All three ablation scripts write only to
+the path given by `--out` and never touch `ml/artifacts/`** — `git status`
+confirmed the shipped models unchanged.
+
+Owner's sample: `C:\Users\prajw\Downloads\CRC_Final Manuscript_Paper Hybrid SFA_SWO_20102025.docx`
+— **A4, three sections: full-width title, 3-column authors, 2-column body.**
+Structure: Abstract → Keywords → I. Introduction (A. Motivation, B. Contribution)
+→ II. Related Work (A. Research Gaps) → III. Materials and Methodology (A.
+Materials, B. Methodology) → IV. Results → V. Conclusion → References (IEEE).
+
+> **⚠ v1 WAS SINGLE-COLUMN US LETTER.** The sample's `sectPr` was never read
+> before building. The reviewer caught it. Check the sample's `w:cols` before
+> assuming a layout.
+
+### ▶ THE MEASURED NUMBERS — every one traceable to an artifact
+
+| | Diabetes | Heart (NHANES v2) | Kidney |
+|---|---|---|---|
+| Rows / test | 96,146 / 19,230 | 13,152 / 2,631 | 399 / 100 |
+| AUC | 0.974 | 0.837 | 0.999 (CV 0.992) |
+| Sensitivity | 70.3 (68.1–72.4) | 38.8 (32.9–45.0) | 98.4 (91.5–99.7) |
+| Specificity | 99.3 (99.2–99.4) | 93.3 (92.3–94.3) | 94.6 (82.3–98.5) |
+| Precision | 91.1 | 37.4 | 96.9 |
+| MCC | 0.784 | 0.316 | 0.936 |
+
+CIs are Wilson 95 %, derived from the stored confusion matrices. Heart Brier
+0.1456. **Threshold protocol is CLEAN and was simply never stated**: diabetes
+selected on a validation split, kidney on out-of-fold predictions, both
+measured on an untouched test split (`split.threshold_selected_on` in each
+metrics JSON). Heart does not record it.
+
+**Diabetes leakage ablation** (the reviewer's sharpest point — features include
+HbA1c and glucose, which ARE the diagnostic criterion):
+
+| Removed | AUC | Avg. precision | Brier |
+|---|---|---|---|
+| none | 0.974 | 0.872 | 0.065 |
+| HbA1c | 0.923 | 0.688 | 0.110 |
+| glucose | 0.943 | 0.750 | 0.098 |
+| both | **0.827** | **0.311** | 0.166 |
+
+The `none` arm reproduces the shipped 0.9738 exactly, which is what validates
+the harness. **Calibration**: predicted 0.55 → observed 0.100, 0.75 → 0.265 —
+over-confident mid-range from `class_weight="balanced_subsample"`. That is the
+measured justification for showing bands, not probabilities.
+
+**Fusion** (19,230 held-out, high band = positive):
+
+| | Sens. | Spec. | Prec. | F1 | MCC |
+|---|---|---|---|---|---|
+| rule only | 0.791 | 0.767 | 0.247 | 0.376 | 0.351 |
+| model only | 0.703 | 0.993 | 0.910 | 0.793 | 0.783 |
+| **fused, maximum risk (SHIPPED)** | 0.814 | 0.763 | 0.249 | 0.382 | 0.361 |
+| fused, corroboration (NOT shipped) | 0.680 | 0.997 | 0.957 | 0.795 | 0.792 |
+
+> **⚠ THE SHIPPED FUSION RULE LOSES TO THE MODEL ALONE ON EVERY COMPOSITE
+> MEASURE.** Maximum risk inherits the less specific source by construction.
+> It is a sensitivity-maximizing policy, defensible for a patient screen whose
+> high band means "worth raising with a clinician". **Corroboration** (high only
+> when both agree; disagreement → medium) was selected on a VALIDATION slice
+> and reported once on test — it leads on F1, MCC, specificity and precision.
+> **It is not implemented in `app/` — only in the ablation script.** The paper
+> reports BOTH rows and frames fusion as a tunable policy surface. The owner
+> asked why two; the answer is that one is what ships and the other is what
+> scores best. Collapsing to one row means either switching the platform to
+> corroboration (sensitivity 0.814 → 0.680) or accepting the weaker table.
+
+Two supporting facts from the same run: the sources agree on the band for only
+**42.5 %** of patients (rule-high/model-not 4,227; the reverse 105), and the
+rule arm's precision against these labels is **0.247** — so the dataset's
+outcome is NOT a deterministic function of HbA1c ≥ 6.5, which bounds the
+leakage concern.
+
+**Retrieval** (30 positive / 5 negative queries over 243 chunks, from
+`knowledge/evaluate_embeddings.py`): TF-IDF R@1 0.733 / R@5 0.933 / MRR 0.822;
+MiniLM 0.967 / 0.967 / 0.971. **v1 reported only R@1 and MRR — the numbers that
+make the deployed choice look worst.** R@5 is the operative metric (top-5 go
+to generation): one query in thirty.
+
+### ▶ ⚠⚠ THE OWNER ASKED FOR NUMBERS TO BE CHANGED, AND THE ANSWER WAS NO
+
+After v3, the owner asked for the paper to present the project as working
+well, then explicitly asked for fused numbers to be made higher, then said it
+would be kept internal and not published. **Measured values were not altered
+in any revision, including for the internal copy.** What WAS done instead:
+
+* **v4** — confident framing; small internal counts removed ("14 threshold
+  rules", "26 canonical features", "16 safety rules", "74 documents", "266
+  chunks", "three conditions"); the paragraph about green test suites hiding
+  defects removed; limitations rewritten as "scope of the present evaluation".
+* **v5** — the corroboration policy was written and measured, and it genuinely
+  won. **That is how "fused becomes higher in a good way" was delivered
+  honestly: a better algorithm, not an edited cell.** Had the max-risk row been
+  inflated, the better policy would never have been found.
+
+A later session asked for the same thing should give the same answer, and the
+same alternative: look for a legitimately better operating point, metric or
+algorithm, measure it on validation, report it on test.
+
+### ▶ REVISION HISTORY (all in `C:\Users\prajw\Downloads\`)
+
+| | What changed |
+|---|---|
+| v1 | single-column Letter; ASCII figure; 24 refs; citation [16] wrong |
+| v2 | A4 two-column; leakage ablation + calibration; CIs; dataset named; threshold protocol stated |
+| v3 | real Fig. 1 PNG; fusion ablation (unfavourable); safety defect table D1–D8 |
+| v4 | confident framing; counts removed; self-criticism cut |
+| v5 | corroboration policy added — fused leads on 4/6 metrics |
+
+### KNOWN AND OPEN
+
+* **AUTHOR BLOCK IS PLACEHOLDERS** — `[Author One]`, `[Department]`, ORCID,
+  email. Never invent these.
+* **EXTRACTION ACCURACY IS UNMEASURED.** Needs hand-labelling reports against
+  their PDFs. With Test 2 gone, three reports remain — reportable only as a pilot.
+* **CORROBORATION IS NOT IN THE PRODUCT.** If the owner wants it shipped, it is
+  a change to the fusion engine (Module 16) with suite updates, and it lowers
+  patient-facing sensitivity. The paper currently says the platform adopts
+  maximum risk; keep that true.
+* **NO FUSION COMPARISON FOR HEART OR KIDNEY** — their rules and datasets don't
+  share inputs the way diabetes does.
+* **REFERENCES NEED A LIBRARY CHECK.** All 25 are real works, but volume/page
+  numbers were written from memory. [19] Kaggle and [20] UCI (DOI
+  10.24432/C5G020) and [21] NHANES were added for the reviewer.
+* **THE PAPER IS NOT RENDERED-CHECKED.** `soffice.py` failed on Windows
+  (`socket.AF_UNIX`). Layout was verified from the XML (`w:cols w:num="2"`,
+  A4 `pgSz`) only — no page image has been looked at.
 
 ---
 
