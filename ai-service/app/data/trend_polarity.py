@@ -166,16 +166,70 @@ class TrendPolarity:
     timing_sensitive: bool = False
 
 
+def _number(value: float) -> str:
+    return f"{value:g}"
+
+
+def _reader_interval(polarity: "TrendPolarity") -> str:
+    unit = FEATURES[polarity.feature].canonical_unit if polarity.feature in FEATURES else None
+    suffix = f" {unit}" if unit else ""
+    low, high = polarity.optimal_low, polarity.optimal_high
+    if low is not None and high is not None:
+        return f"the range {_number(low)} to {_number(high)}{suffix}"
+    if low is not None:
+        return f"{_number(low)}{suffix} or above"
+    return f"{_number(high)}{suffix} or below"
+
+
 def reader_reason(polarity: "TrendPolarity") -> str:
-    """The refusal in words a patient can read, or a safe generic sentence.
+    """The polarity decision in words a patient can read.
 
     DELIBERATELY DOES NOT FALL BACK TO `basis`. A fallback is what put a
     source-file path and two module numbers on a patient's timeline, and it
     would do it again the moment someone adds a polarity entry and forgets the
     reader text. A generic sentence is worse writing and cannot leak.
+
+    ⚠ THE GENERIC SENTENCE WAS A REFUSAL, AND IT WAS GIVEN TO THE DECLARED
+    ENTRIES TOO. None of the seven declared polarities -- HbA1c, creatinine,
+    cholesterol, triglycerides, vitamin D, B12, BMI -- has a `reader_basis`, so
+    every one of them carried "This platform does not declare whether a change
+    in this measurement is an improvement" beside `kind: monotone,
+    direction_of_harm: increase` in the same payload. Seen 2026-09-24 in
+    Module 29's HbA1c row. The sentence is now DERIVED FROM THE DECLARATION,
+    so the two cannot disagree; the refusal is kept for what is refused.
     """
     if polarity.reader_basis:
         return polarity.reader_basis
+    if polarity.kind == POLARITY_MONOTONE and polarity.direction_of_harm in (
+        HARM_INCREASE,
+        HARM_DECREASE,
+    ):
+        worse, better = (
+            ("rise", "fall")
+            if polarity.direction_of_harm == HARM_INCREASE
+            else ("fall", "rise")
+        )
+        return (
+            f"This platform counts a {worse} in this measurement as "
+            f"unfavourable and a {better} as favourable, at any level. Only a "
+            "change larger than the test's own normal variation is judged at "
+            "all, and what a particular result means is a question for a "
+            "healthcare professional."
+        )
+    if polarity.kind == POLARITY_TOWARD_REFERENCE and (
+        polarity.optimal_low is not None or polarity.optimal_high is not None
+    ):
+        # The crossing clause only where there ARE two sides: the analyzer
+        # refuses a jump from below a two-sided range to above it (or back),
+        # and a one-sided range has no far side to jump to.
+        both = polarity.optimal_low is not None and polarity.optimal_high is not None
+        return (
+            "This platform counts a change as favourable when it moves closer "
+            f"to {_reader_interval(polarity)}, and unfavourable when it moves "
+            "further away. A change that stays within that range"
+            + (", or jumps from one side of it to the other," if both else "")
+            + " is not judged either way."
+        )
     return (
         "This platform does not declare whether a change in this measurement "
         "is an improvement, so the direction and size of the change are "

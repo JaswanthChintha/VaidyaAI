@@ -1028,6 +1028,83 @@ def test_the_fallback_is_generic_rather_than_the_maintainer_note(monkeypatch):
     assert "improvement" in text
 
 
+# ==========================================================================
+# A DECLARED POLARITY MUST NOT BE EXPLAINED AS A REFUSAL
+# ==========================================================================
+#
+# Seen 2026-09-24 in Module 29's HbA1c row: `kind: monotone,
+# direction_of_harm: increase` beside a `basis` reading "This platform does
+# not declare whether a change in this measurement is an improvement". Every
+# declared entry lacked a `reader_basis`, so every one got the refusal.
+
+_DECLARED = sorted(
+    name for name, entry in POLARITY.items() if entry.kind != POLARITY_UNDECLARED
+)
+
+
+def test_the_declared_entries_are_the_ones_this_section_is_about():
+    # If this list changes, the sentences below must be re-read for it.
+    assert _DECLARED == [
+        "bmi", "cholesterol", "creatinine", "hba1c",
+        "triglycerides", "vitamin_b12", "vitamin_d",
+    ]
+
+
+@pytest.mark.parametrize("feature", _DECLARED)
+def test_a_declared_polarity_is_never_explained_as_undeclared(feature):
+    from app.data.trend_polarity import reader_reason
+
+    text = reader_reason(POLARITY[feature])
+    assert "does not declare" not in text
+    assert "not reported" not in text
+    for token in _LEAKS:
+        assert token not in text, f"{feature}: {token!r}"
+
+
+@pytest.mark.parametrize("feature", ["hba1c", "creatinine", "cholesterol", "triglycerides"])
+def test_a_monotone_explanation_names_the_direction_declared(feature):
+    from app.data.trend_polarity import reader_reason
+
+    text = reader_reason(POLARITY[feature])
+    # All four declare harm on INCREASE.
+    assert "counts a rise in this measurement as unfavourable" in text
+    assert "a fall as favourable" in text
+
+
+def test_a_monotone_decrease_would_be_said_the_other_way_round():
+    from app.data.trend_polarity import HARM_DECREASE, TrendPolarity, reader_reason
+
+    text = reader_reason(
+        TrendPolarity("made_up", POLARITY_MONOTONE, basis="x", direction_of_harm=HARM_DECREASE)
+    )
+    assert "counts a fall in this measurement as unfavourable" in text
+
+
+@pytest.mark.parametrize(
+    "feature, interval, crossing",
+    [
+        ("vitamin_d", "the range 30 to 100 ng/ml", True),
+        ("bmi", "the range 18.5 to 24.9 kg/m2", True),
+        ("vitamin_b12", "200 pg/ml or above", False),
+    ],
+)
+def test_a_toward_reference_explanation_states_its_own_interval(feature, interval, crossing):
+    from app.data.trend_polarity import reader_reason
+
+    text = reader_reason(POLARITY[feature])
+    assert f"moves closer to {interval}" in text
+    # A one-sided range has no far side to jump to, so it must not say so.
+    assert ("one side of it to the other" in text) is crossing
+
+
+def test_the_hba1c_payload_basis_agrees_with_its_declaration():
+    """End to end: the field Module 29 puts beside `direction_of_harm`."""
+    trend = trend_of("hba1c", [5.4, 7.0], "%")
+    assert trend.polarity.kind == POLARITY_MONOTONE
+    assert trend.polarity.direction_of_harm == "increase"
+    assert "counts a rise in this measurement as unfavourable" in trend.polarity.basis
+
+
 def test_a_refused_glucose_series_explains_itself_without_jargon():
     """End to end: the sentence a reader actually gets on the timeline."""
     from app.data.trend_polarity import POLARITY, reader_reason
