@@ -6,6 +6,7 @@ import { isPresent } from '../lib/absence';
 import RiskGauge from '../components/RiskGauge';
 import CoverageRadar from '../components/CoverageRadar';
 import { PATIENT_LABEL } from '../lib/labels';
+import { ProfileIdentityNotice } from '../components/IdentityNotice';
 
 /**
  * Module 27 -- the health dashboard.
@@ -1967,6 +1968,9 @@ export default function Dashboard() {
   const { id } = useParams();
   const [dashboard, setDashboard] = useState(null);
   const [report, setReport] = useState(null);
+  // The report's printed sex and age against the profile the analysis used.
+  // See `components/IdentityNotice`.
+  const [identity, setIdentity] = useState(null);
   const [error, setError] = useState(null);
   const [notAnalysed, setNotAnalysed] = useState(false);
 
@@ -1978,6 +1982,7 @@ export default function Dashboard() {
         if (cancelled) return;
         setDashboard(data.dashboard);
         setReport(data.report);
+        setIdentity(data.identity || null);
       } catch (err) {
         if (cancelled) return;
         // 404 here means "not analysed yet", which the backend states rather
@@ -2329,6 +2334,10 @@ export default function Dashboard() {
           How your results compare
         </Link>
       </div>
+
+      {/* ABOVE THE VERDICT, because it qualifies it: a verdict judged with the
+          wrong sex's thresholds is only as good as the profile it used. */}
+      <ProfileIdentityNotice identity={identity} />
 
       <OverallCard overall={dashboard.overall} />
 

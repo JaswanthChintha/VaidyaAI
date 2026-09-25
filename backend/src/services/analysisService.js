@@ -1,7 +1,9 @@
 'use strict';
 
 const Report = require('../models/Report');
-const { REPORT_STATUS } = require('../models/Report');
+const { REPORT_STATUS, deriveChronoDate } = require('../models/Report');
+const { parsePrintedDate, printedDateText } = require('../utils/printedDate');
+const { readPrintedIdentity } = require('../utils/printedIdentity');
 const Profile = require('../models/Profile');
 const ApiError = require('../utils/ApiError');
 const config = require('../config/env');
@@ -1907,6 +1909,31 @@ async function runAnalysis({ user, report, requestId }) {
     for (const [key, value] of Object.entries(reportCounts)) {
       storeNullable(`analysis.${key}`, value);
     }
+
+    // THE DATE THE DOCUMENT PRINTS, read from THIS run's extraction. Extraction
+    // returned it on every report and nothing read it, so two reports printing
+    // 05-Sep-2026 sat on the timeline as 9 and 11 September -- the dates typed
+    // at upload -- with nothing saying the document disagreed. See
+    // `utils/printedDate` for what is refused rather than guessed.
+    //
+    // `chronoDate` IS RECOMPUTED HERE because `updateOne` skips the schema's
+    // pre-validate hook, by the same function that hook uses.
+    const printed = parsePrintedDate(printedDateText(extraction), {
+      notAfter: report.uploadedAt,
+    });
+    $set.printedDateStatus = printed.status;
+    store('printedDate', printed.date);
+    store('printedDateRaw', printed.raw);
+    $set.chronoDate = deriveChronoDate({
+      reportDate: report.reportDate,
+      printedDate: printed.date,
+      uploadedAt: report.uploadedAt,
+    });
+
+    // THE SEX AND AGE THE DOCUMENT PRINTS, from this run's extraction. Unset
+    // -- "nobody looked" -- when the extraction carries no such keys, which a
+    // re-run against an older ai-service would; never an empty "checked".
+    store('printedIdentity', readPrintedIdentity(extraction));
 
     if (stagesFailed.length === 0) {
       $unset.statusMessage = '';

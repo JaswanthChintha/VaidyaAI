@@ -325,6 +325,8 @@ def test_response_serialises_with_every_contract_key_present():
         "lab_name",
         "report_date",
         "patient_name_present",
+        "patient_sex",
+        "patient_age",
     }
     assert set(body["data"]["extracted_parameters"][0]) == {
         "test_name",

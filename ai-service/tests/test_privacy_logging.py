@@ -146,5 +146,10 @@ def test_patient_name_is_never_extracted_only_its_presence(
         files={"file": ("r.pdf", io.BytesIO(synthetic_pdf), "application/pdf")},
     ).json()["data"]["report_metadata"]
 
-    assert set(metadata) == {"lab_name", "report_date", "patient_name_present"}
+    # Printed sex and age were added 2026-09-24, deliberately and alone: the
+    # analysis depends on them and not on a name. No key may carry a name.
+    assert set(metadata) == {
+        "lab_name", "report_date", "patient_name_present", "patient_sex", "patient_age",
+    }
     assert metadata["patient_name_present"] is True
+    assert {key for key in metadata if "name" in key} == {"lab_name", "patient_name_present"}

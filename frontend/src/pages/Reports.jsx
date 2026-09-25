@@ -2,6 +2,44 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { Absent } from '../components/Absent';
+import { reportDateInfo, whyUploadDate } from '../lib/reportDates';
+
+/**
+ * The date line under a report's name. See `lib/reportDates` for which date
+ * wins and why a disagreement is shown rather than settled.
+ */
+function ReportDate({ report }) {
+  const info = reportDateInfo(report);
+  if (info.source === 'typed') {
+    return (
+      <>
+        {info.shown}
+        {info.printedDisagrees ? (
+          <span className="report__date-conflict">
+            {' '}
+            &middot; the report itself prints {info.printedDisagrees}
+          </span>
+        ) : null}
+      </>
+    );
+  }
+  if (info.source === 'printed') {
+    return (
+      <>
+        {info.shown} <span className="report__uploaded">(read from the report)</span>
+      </>
+    );
+  }
+  if (info.source === 'uploaded') {
+    return (
+      <>
+        <Absent reason={whyUploadDate(info)} label="No date on the report" />{' '}
+        <span className="report__uploaded">uploaded {info.shown}</span>
+      </>
+    );
+  }
+  return <Absent reason="No date was recorded for this report." label="No date" />;
+}
 
 /**
  * Module 3's report list, plus upload and analyse.
@@ -132,8 +170,9 @@ export default function Reports() {
           Date printed on the report (optional)
           <input type="date" name="reportDate" />
           <span className="hint">
-            Used to order your timeline. Leave blank and today&rsquo;s date is
-            used instead.
+            Used to order your timeline. Leave blank and the date printed on
+            the report is used, if it can be read; otherwise the day you
+            upload it.
           </span>
         </label>
         <button type="submit" disabled={uploading}>
@@ -185,23 +224,13 @@ export default function Reports() {
                 `chronoDate` is `required: true` on the schema and always
                 falls back, so the honest state this component was written to
                 show was unreachable. It is reachable now, off `reportDate`,
-                which is null exactly when nobody gave one. */}
+                which is null exactly when nobody gave one.
+
+                2026-09-24: AND THE DOCUMENT'S OWN DATE NOW COUNTS. It is used
+                when nothing was typed, and shown beside a typed date that
+                disagrees with it -- see `ReportDate` above. */}
             <p className="report__meta">
-              {report.reportDate ? (
-                new Date(report.reportDate).toLocaleDateString()
-              ) : report.chronoDate ? (
-                <>
-                  <Absent
-                    reason="No date was given for this report, so it is ordered by when it was uploaded."
-                    label="No date on the report"
-                  />{' '}
-                  <span className="report__uploaded">
-                    uploaded {new Date(report.chronoDate).toLocaleDateString()}
-                  </span>
-                </>
-              ) : (
-                <Absent reason="No date was recorded for this report." label="No date" />
-              )}
+              <ReportDate report={report} />
             </p>
             {report.statusMessage ? (
               <p className="report__note">{report.statusMessage}</p>

@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { Absent, Value, WarningList } from '../components/Absent';
 import TrendChart from '../components/TrendChart';
 import { PATIENT_LABEL } from '../lib/labels';
 import { isPresent } from '../lib/absence';
+import { reportDateInfo } from '../lib/reportDates';
+import { PairIdentityNotice } from '../components/IdentityNotice';
 
 /**
  * Modules 28, 29 and 30 -- trends, comparison and the progress score.
@@ -801,17 +803,25 @@ function Trends({ data, history, labSeries }) {
  * OWN HISTORY, and "the day I sent it in" is not one of them unless it is
  * labelled as such. The ordering is unchanged -- `chronoDate` is still the
  * sort key, and still the right one.
+ *
+ * AND A TYPED DATE THE DOCUMENT CONTRADICTS IS LABELLED AS SUCH (2026-09-24):
+ * `9/9/2026 (report prints 9/5/2026) — 03-renal...pdf`. Two reports printing
+ * the same day had been typed two days apart, and this picker offered them as
+ * two moments with nothing to say otherwise. `lib/reportDates` decides, for
+ * this label and the reports list alike.
  */
 function reportLabel(entry, namesById) {
-  const printed = entry.reportDate ? new Date(entry.reportDate) : null;
-  const sortKey = entry.chronoDate ? new Date(entry.chronoDate) : null;
-  const usable = (d) => d && !Number.isNaN(d.getTime());
-
-  const when = usable(printed)
-    ? printed.toLocaleDateString()
-    : usable(sortKey)
-      ? `uploaded ${sortKey.toLocaleDateString()}`
-      : 'undated';
+  const info = reportDateInfo(entry);
+  const when =
+    info.source === 'typed'
+      ? info.printedDisagrees
+        ? `${info.shown} (report prints ${info.printedDisagrees})`
+        : info.shown
+      : info.source === 'printed'
+        ? info.shown
+        : info.source === 'uploaded'
+          ? `uploaded ${info.shown}`
+          : 'undated';
 
   const name = namesById.get(entry.reportId);
   return name ? `${when} — ${name}` : when;
@@ -1061,7 +1071,7 @@ function LabComparisonRow({ row }) {
 }
 
 /** The spec's Parameter / Previous / Current / Trend table. */
-function Comparison({ data, lab, reports, namesById, pair, onPairChange, busy }) {
+function Comparison({ data, lab, identity, reports, namesById, pair, onPairChange, busy }) {
   const rows = data?.table || [];
   const labRows = lab?.rows || [];
 
@@ -1090,6 +1100,11 @@ function Comparison({ data, lab, reports, namesById, pair, onPairChange, busy })
             : '.'}
         </p>
       ) : null}
+
+      {/* BEFORE THE TABLE, because it decides what the table means: two
+          people's reports compared as one history turn differences between
+          people into "changes". See `components/IdentityNotice`. */}
+      <PairIdentityNotice identity={identity} />
 
       {/* THE COUNT, OVER BOTH HALVES OF THE TABLE. The timeline's summary line
           was counting twelve assessed features over a card of twenty-six
@@ -1314,6 +1329,8 @@ export default function Timeline() {
   const [pair, setPair] = useState(null);
   const [busy, setBusy] = useState(false);
   const [names, setNames] = useState(new Map());
+  // Which pair choice is the latest. See `choosePair`.
+  const requestSeq = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -1364,6 +1381,14 @@ export default function Timeline() {
    * are the comparison the control now names, which they are not.
    */
   const choosePair = async (next) => {
+    // ONLY THE LATEST CHOICE MAY WRITE (2026-09-25). Two quick changes send
+    // two pairs of requests, and nothing orders their answers: if the FIRST
+    // choice's answer lands last, the table shows the pair the reader moved
+    // away from while the picker names the one they chose -- this page's own
+    // rule ("the selects show the comparison actually on screen") broken by
+    // timing. Every answer checks it still belongs to the latest choice.
+    requestSeq.current += 1;
+    const mine = requestSeq.current;
     setPair(next);
     setBusy(true);
     setState((current) => ({
@@ -1377,6 +1402,10 @@ export default function Timeline() {
       api.getComparison(next),
       api.getProgress(next),
     ]);
+    // A later choice has been made since this one was sent. Its own answer
+    // will write -- and it alone clears `busy`, so "Comparing…" stays up until
+    // the table matches the picker.
+    if (mine !== requestSeq.current) return;
     setBusy(false);
     setState((current) => ({
       ...current,
@@ -1421,6 +1450,8 @@ export default function Timeline() {
           // and these rows are this backend's. Merging them before they reach
           // the page would hide which service is answerable for a row.
           lab={state.comparison?.labComparison}
+          // This backend's same-person check for the pair on screen.
+          identity={state.comparison?.identity}
           reports={state.comparison?.history?.reports || state.trends?.history?.reports}
           namesById={names}
           /* THE PAIR ON SCREEN, not the one requested. With no explicit choice

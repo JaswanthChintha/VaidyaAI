@@ -52,7 +52,9 @@ into the name stops the two being recognised as one.
 "LDL Cholesterol, Direct", and "Free" or "Total" in a hormone name, select a \
 different measurement and must be kept.
 5. DO NOT EXTRACT THE PATIENT'S NAME. Only report whether a patient name \
-appears anywhere on the page, via the boolean `patient_name_present`.
+appears anywhere on the page, via the boolean `patient_name_present`. The \
+printed sex and age are the only patient details you copy, in `patient_sex` \
+and `patient_age`.
 
 ## Fields
 
@@ -109,6 +111,11 @@ own format. Do not reformat, do not resolve ambiguity between DD/MM and MM/DD. \
 Null if absent.
 - `patient_name_present`: true if a patient name appears on this page, else \
 false. Do not output the name itself.
+- `patient_sex`: the patient's sex exactly as printed in the patient details \
+(for example "Male", "F"), or null if not printed. Do not infer it from the \
+name, from the tests ordered, or from sex-specific reference ranges.
+- `patient_age`: the patient's age exactly as printed (for example "63 Years", \
+"34Y 2M"), or null if not printed. Do not compute it from a date of birth.
 - `page_confidence`: 0.0-1.0, overall confidence in this page's transcription.
 
 - `warnings`: short factual notes for the downstream pipeline. Add one when \

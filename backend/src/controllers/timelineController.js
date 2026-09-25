@@ -336,7 +336,16 @@ const getComparison = asyncHandler(async (req, res) => {
   const comparisonId = used ? used.comparison_report_id : null;
 
   let labComparison = { rows: [], count: 0 };
+  // WHETHER THESE TWO REPORTS COULD BE ONE PERSON'S -- `not_checked` when
+  // either was analysed before printed sex and age were read, which is never
+  // shown as "consistent". Null only when there is no pair at all.
+  let identity = null;
   if (baselineId && comparisonId) {
+    identity = await historyService.checkPairIdentity({
+      user: req.user,
+      baselineId,
+      comparisonId,
+    });
     const printed = await historyService.loadPrintedParameters({
       user: req.user,
       reportIds: [baselineId, comparisonId],
@@ -369,6 +378,8 @@ const getComparison = asyncHandler(async (req, res) => {
       : null,
     // Module 29's `ReportComparisonData`, VERBATIM.
     comparison,
+    // This backend's check, beside Module 29's payload rather than inside it.
+    identity,
   });
 });
 

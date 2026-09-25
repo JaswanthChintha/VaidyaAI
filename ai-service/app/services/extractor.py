@@ -58,6 +58,8 @@ class ExtractionService:
         lab_name: Optional[str] = None
         report_date: Optional[str] = None
         patient_name_present: Optional[bool] = None
+        patient_sex: Optional[str] = None
+        patient_age: Optional[str] = None
 
         failed_pages = 0
         total = len(document.pages)
@@ -148,6 +150,26 @@ class ExtractionService:
                 patient_name_present = True
             elif patient_name_present is None:
                 patient_name_present = page_result.patient_name_present
+            # Same rule for the printed sex and age. A later page printing a
+            # DIFFERENT one is a document that may hold two people's results,
+            # which is exactly what these fields exist to catch -- so it is
+            # warned about, never silently merged.
+            if page_result.patient_sex:
+                if patient_sex is None:
+                    patient_sex = page_result.patient_sex
+                elif page_result.patient_sex.lower() != patient_sex.lower():
+                    warnings.append(
+                        "Different patient sexes are printed on different pages; "
+                        "the first was used."
+                    )
+            if page_result.patient_age:
+                if patient_age is None:
+                    patient_age = page_result.patient_age
+                elif page_result.patient_age.lower() != patient_age.lower():
+                    warnings.append(
+                        "Different patient ages are printed on different pages; "
+                        "the first was used."
+                    )
 
         if total > 0 and failed_pages == total:
             raise ModelError(
@@ -186,6 +208,8 @@ class ExtractionService:
                 lab_name=lab_name,
                 report_date=report_date,
                 patient_name_present=patient_name_present,
+                patient_sex=patient_sex,
+                patient_age=patient_age,
             ),
             extraction_confidence=confidence,
             warnings=_dedupe(warnings),

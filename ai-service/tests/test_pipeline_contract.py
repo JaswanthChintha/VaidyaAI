@@ -165,7 +165,9 @@ def test_report_metadata_survives_the_boundary(client):
     assert metadata["report_date"] == "12/03/2024"
     # Presence only -- the name itself is never carried, exactly as Module 4.
     assert metadata["patient_name_present"] is True
-    assert set(metadata) == {"lab_name", "report_date", "patient_name_present"}
+    assert set(metadata) == {
+        "lab_name", "report_date", "patient_name_present", "patient_sex", "patient_age",
+    }
 
 
 def test_source_information_survives_the_boundary(client):

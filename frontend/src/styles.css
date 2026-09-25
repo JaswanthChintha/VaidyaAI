@@ -583,6 +583,16 @@ button + button.link { margin-left: 16px; }
 
 .report__head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
 .report__meta, .report__note { color: var(--muted); font-size: 14px; }
+/* A typed date the document itself contradicts. Amber TEXT token: --amber is
+   2.28:1 as text and fails AA (see the token block). */
+.report__date-conflict { color: var(--amber-text); }
+/* Two reports that may be different people, or a report that may not match
+   the profile it was analysed with. A left rule in the amber TEXT token, not
+   a fill: it has to be seen, and it is not a clinical finding. */
+.identity-warning { border-left: 4px solid var(--amber-text); padding: 10px 14px; margin: 0 0 16px; }
+.identity-warning h2 { margin-top: 0; }
+.identity-warning p { margin: 0 0 8px; }
+.identity-warning p:last-child { margin-bottom: 0; }
 .report-list { list-style: none; padding: 0; }
 .status { font-size: 13px; color: var(--muted); }
 .status--failed { color: var(--danger); }

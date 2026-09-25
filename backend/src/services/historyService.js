@@ -4,6 +4,7 @@ const Report = require('../models/Report');
 const config = require('../config/env');
 const ApiError = require('../utils/ApiError');
 const { ownerScopedFilter, assertCanAccess, OWNER_ONLY } = require('../utils/ownership');
+const { comparePair } = require('../utils/printedIdentity');
 
 /**
  * Modules 28-30 and 32 - the patient's REPORT HISTORY, assembled once.
@@ -173,8 +174,13 @@ const INCLUSION_FILTER = Object.freeze({
  * say which it is. Nothing about ordering changes; `chronoDate` remains the
  * sort key and `chrono_date` still goes to the ai-service unchanged.
  */
+//
+// `printedDate` TRAVELS WITH IT FOR THE SAME REASON (2026-09-24): the typed
+// date and the date the document prints can disagree -- two reports printing
+// 05-Sep-2026 were typed as the 9th and the 11th -- and a picker holding only
+// one of them cannot say so.
 const HISTORY_PROJECTION =
-  'user chronoDate reportDate status analysis.version +featureValidation';
+  'user chronoDate reportDate printedDate printedDateStatus status analysis.version +featureValidation';
 
 // ------------------------------------------------------------------ assembly --
 
@@ -191,7 +197,8 @@ const HISTORY_PROJECTION =
  * @returns {Promise<{
  *   snapshots: object[],  // TimelineReportInput[], OLDEST FIRST
  *   included: {reportId: string, chronoDate: Date,
- *              reportDate: Date|null, status: string}[],
+ *              reportDate: Date|null, printedDate: Date|null,
+ *              printedDateStatus: string|null, status: string}[],
  *   totalReports: number, examined: number, includedCount: number,
  *   cap: number, truncated: boolean,
  *   window: {from: Date, to: Date}|null
@@ -271,6 +278,10 @@ async function assembleHistory({ user }) {
       // HISTORY_PROJECTION. Explicitly null rather than absent: the two mean
       // the same here and one of them is easy to read as "not sent".
       reportDate: row.reportDate || null,
+      // The date the document prints, when it was READ. Null otherwise, and
+      // `printedDateStatus` says why -- null status meaning nobody looked.
+      printedDate: row.printedDate || null,
+      printedDateStatus: row.printedDateStatus || null,
       // Carried so a `failed` or `partial` report on the timeline is visible
       // as such - see the inclusion rule above.
       status: row.status,
@@ -474,6 +485,31 @@ async function loadPrintedParameters({ user, reportIds }) {
   return byReport;
 }
 
+/**
+ * COULD THESE TWO REPORTS BE ONE PERSON'S?
+ *
+ * The comparison card compares two reports as one person's history, and
+ * nothing checked that they were: 03-renal ("63 Years / Male") and
+ * 01-all-normal ("34 Years / Female") were compared as haemoglobin
+ * 9.2 -> 13.6 "in 2 days" (2026-09-24). Owner-scoped like every loader here,
+ * and it reads only the stored printed sex and age -- no payload.
+ *
+ * @returns {Promise<object>} `utils/printedIdentity.comparePair`'s answer.
+ */
+async function checkPairIdentity({ user, baselineId, comparisonId }) {
+  const rows = await Report.find(
+    ownerScopedFilter(user, { ...OWNER_ONLY, base: { _id: { $in: [baselineId, comparisonId] } } })
+  )
+    .select('user chronoDate printedIdentity')
+    .lean();
+  const byId = new Map();
+  for (const row of rows) {
+    assertCanAccess(user, row, { ...OWNER_ONLY });
+    byId.set(String(row._id), { identity: row.printedIdentity || null, date: row.chronoDate });
+  }
+  return comparePair(byId.get(String(baselineId)), byId.get(String(comparisonId)));
+}
+
 // ------------------------------------------------- explicitly named reports --
 
 /**
@@ -637,6 +673,7 @@ module.exports = {
   assembleHistory,
   describeExcluded,
   loadPrintedParameters,
+  checkPairIdentity,
   resolveNamedPair,
   summariseHistory,
 };

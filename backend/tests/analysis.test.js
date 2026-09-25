@@ -3030,6 +3030,123 @@ describe('Modules 4+5 - analysis orchestration', () => {
     });
   });
 
+  // ========================================================= printed date ===
+  describe('the date the report prints (2026-09-24)', () => {
+    // Extraction always returned `report_metadata.report_date` and nothing
+    // read it: two reports printing 05-Sep-2026 sat on the timeline as the
+    // 9th and the 11th, the dates typed at upload.
+    const printing = (reportDate) => () =>
+      okResponse({ ...extractionFixture(), report_metadata: { lab_name: 'X', report_date: reportDate } });
+
+    async function uploadTyped(token, typed) {
+      const res = await request(app)
+        .post(REPORTS)
+        .set(auth(token))
+        .field('reportDate', typed)
+        .attach('file', pdfBytes(), { filename: 'labs.pdf', contentType: 'application/pdf' });
+      expect(res.status).toBe(201);
+      return res.body.data.report;
+    }
+
+    it('orders by the printed date when none was typed', async () => {
+      const user = await makeUser('printed.only@example.com');
+      const report = await uploadReport(user.token);
+      wireAiService({ extract: printing('05-Sep-2026 17:40') });
+
+      const res = await analyze(user.token, report.id);
+      expect(res.status).toBe(200);
+
+      const stored = await Report.findById(report.id).lean();
+      expect(stored.printedDateStatus).toBe('read');
+      expect(stored.printedDate.toISOString()).toBe('2026-09-05T00:00:00.000Z');
+      // THE SORT KEY FOLLOWS IT, although `updateOne` skipped the save hook.
+      expect(stored.chronoDate.toISOString()).toBe('2026-09-05T00:00:00.000Z');
+      expect(stored.reportDate).toBeUndefined();
+    });
+
+    it('keeps a typed date first, and keeps the printed one beside it', async () => {
+      const user = await makeUser('printed.typed@example.com');
+      const report = await uploadTyped(user.token, '2026-09-09');
+      wireAiService({ extract: printing('05-Sep-2026 17:40') });
+      await analyze(user.token, report.id);
+
+      const stored = await Report.findById(report.id).lean();
+      expect(stored.chronoDate.toISOString()).toBe('2026-09-09T00:00:00.000Z');
+      expect(stored.printedDate.toISOString()).toBe('2026-09-05T00:00:00.000Z');
+
+      // Both reach the page, so it can say they disagree.
+      const listed = await request(app).get(REPORTS).set(auth(user.token));
+      const row = listed.body.data.reports.find((r) => r.id === report.id);
+      expect(row.reportDate).toBe('2026-09-09T00:00:00.000Z');
+      expect(row.printedDate).toBe('2026-09-05T00:00:00.000Z');
+    });
+
+    it('never guesses DD/MM against MM/DD, and falls back to the upload day', async () => {
+      const user = await makeUser('printed.ambiguous@example.com');
+      const report = await uploadReport(user.token);
+      wireAiService({ extract: printing('05/09/2026') });
+      await analyze(user.token, report.id);
+
+      const stored = await Report.findById(report.id).lean();
+      expect(stored.printedDateStatus).toBe('ambiguous');
+      expect(stored.printedDate).toBeUndefined();
+      expect(stored.chronoDate.getTime()).toBe(stored.uploadedAt.getTime());
+
+      // The unreadable text is sent so the page can quote it.
+      const listed = await request(app).get(REPORTS).set(auth(user.token));
+      expect(listed.body.data.reports[0].printedDateRaw).toBe('05/09/2026');
+    });
+
+    it('records that the report prints no date, which is not "nobody looked"', async () => {
+      const user = await makeUser('printed.absent@example.com');
+      const report = await uploadReport(user.token);
+      wireAiService({ extract: printing(null) });
+      await analyze(user.token, report.id);
+
+      const stored = await Report.findById(report.id).lean();
+      expect(stored.printedDateStatus).toBe('absent');
+      expect(stored.printedDate).toBeUndefined();
+      expect(stored.printedDateRaw).toBeUndefined();
+    });
+
+    it('stores the printed sex and age, and leaves them unset for an old-style extraction', async () => {
+      const user = await makeUser('printed.identity@example.com');
+      const report = await uploadReport(user.token);
+      wireAiService({
+        extract: () =>
+          okResponse({
+            ...extractionFixture(),
+            report_metadata: { lab_name: 'X', report_date: null, patient_sex: 'Female', patient_age: '34 Years' },
+          }),
+      });
+      await analyze(user.token, report.id);
+      let stored = await Report.findById(report.id).lean();
+      expect(stored.printedIdentity).toEqual({ sex: 'female', sexStatus: 'read', ageYears: 34, ageStatus: 'read' });
+
+      // A re-run whose extraction carries no such keys -- an older ai-service
+      // -- must UNSET it: "nobody looked", never a stale "checked".
+      wireAiService();
+      await analyze(user.token, report.id);
+      stored = await Report.findById(report.id).lean();
+      expect(stored.printedIdentity).toBeUndefined();
+    });
+
+    it('a re-run that no longer reads a date REMOVES the old one', async () => {
+      const user = await makeUser('printed.rerun@example.com');
+      const report = await uploadReport(user.token);
+      wireAiService({ extract: printing('05-Sep-2026') });
+      await analyze(user.token, report.id);
+      wireAiService({ extract: printing('02 Dec, 2X') });
+      await analyze(user.token, report.id);
+
+      const stored = await Report.findById(report.id).lean();
+      expect(stored.printedDateStatus).toBe('unreadable');
+      expect(stored.printedDate).toBeUndefined();
+      expect(stored.printedDateRaw).toBe('02 Dec, 2X');
+      expect(stored.chronoDate.getTime()).toBe(stored.uploadedAt.getTime());
+    });
+  });
+
   // ============================================================= retrieval ===
   describe('GET /reports/:id/analysis', () => {
     it('404s before the report has ever been analysed', async () => {

@@ -384,8 +384,23 @@ class ReportMetadata(BaseModel):
         description="Whether a patient name appears. The name itself is NOT "
         "extracted -- Module 4 does not lift identifiers off the report.",
     )
+    # THE PRINTED SEX AND AGE, AS PRINTED. Added 2026-09-24: every analysis
+    # used the ACCOUNT PROFILE's age and sex, never the report's, so a
+    # 34-year-old woman's report on a "20, male" account was judged with male
+    # thresholds and compared with a 63-year-old man's as one person's
+    # history. Not parsed here -- the backend reads them, as it reads
+    # `report_date` -- and still NO NAME: sex and age are what the analysis
+    # depends on, and a name is not.
+    patient_sex: Optional[str] = Field(
+        default=None,
+        description="Patient sex exactly as printed (e.g. 'Male', 'F'). Null if absent.",
+    )
+    patient_age: Optional[str] = Field(
+        default=None,
+        description="Patient age exactly as printed (e.g. '63 Years', '34Y 2M'). Null if absent.",
+    )
 
-    @field_validator("lab_name", "report_date", mode="before")
+    @field_validator("lab_name", "report_date", "patient_sex", "patient_age", mode="before")
     @classmethod
     def _blank_to_none(cls, v: object) -> object:
         if isinstance(v, str):
@@ -437,8 +452,24 @@ class PageExtraction(BaseModel):
     lab_name: Optional[str] = None
     report_date: Optional[str] = None
     patient_name_present: Optional[bool] = None
+    patient_sex: Optional[str] = None
+    patient_age: Optional[str] = None
     page_confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     warnings: List[str] = Field(default_factory=list)
+
+    @field_validator("patient_sex", "patient_age", mode="before")
+    @classmethod
+    def _identity_blank_to_none(cls, v: object) -> object:
+        if isinstance(v, str):
+            s = v.strip()
+            if s == "" or s.lower() in {"null", "none", "n/a", "na", "-"}:
+                return None
+            return s[:32]
+        # A bare number is an age printed without a unit ("63"); anything
+        # else that is not text is not something printed on a report.
+        if isinstance(v, (int, float)) and not isinstance(v, bool):
+            return str(v)
+        return None
 
     @field_validator("raw_text", mode="before")
     @classmethod
@@ -505,6 +536,8 @@ def gemini_response_schema() -> dict:
             "lab_name": {"type": "string", "nullable": True},
             "report_date": {"type": "string", "nullable": True},
             "patient_name_present": {"type": "boolean", "nullable": True},
+            "patient_sex": {"type": "string", "nullable": True},
+            "patient_age": {"type": "string", "nullable": True},
             "page_confidence": {"type": "number", "nullable": True},
             "warnings": {"type": "array", "items": {"type": "string"}},
         },

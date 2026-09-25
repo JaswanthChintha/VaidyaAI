@@ -7,6 +7,7 @@ const { sendSuccess } = require('../utils/apiResponse');
 const { ownerScopedFilter, assertCanAccess, OWNER_ONLY } = require('../utils/ownership');
 const analysisService = require('../services/analysisService');
 const dashboardService = require('../services/dashboardService');
+const { compareWithProfile } = require('../utils/printedIdentity');
 
 /**
  * Module 27 - Health Dashboard.
@@ -118,12 +119,26 @@ const getDashboard = asyncHandler(async (req, res) => {
       report.parameterGlossary === undefined ? null : report.parameterGlossary,
   });
 
+  // DOES THE REPORT AGREE WITH THE PROFILE THE ANALYSIS USED? Every analysis
+  // takes sex and age from the account profile, never the report -- so a
+  // report printing "34 Years / Female" on a "20, male" account was judged
+  // with male thresholds and nothing said so (2026-09-24). This says so. It
+  // changes no threshold; which values SHOULD be used is a separate decision.
+  // `not_checked` for a report analysed before printed sex and age were read.
+  const identity = compareWithProfile({
+    identity: report.printedIdentity || null,
+    features: report.features,
+    reportDate: report.chronoDate,
+    analysedAt: report.analysis && report.analysis.completedAt,
+  });
+
   return sendSuccess(res, 200, {
     // The file the dashboard describes, so a renderer can title the screen
     // without a second request. Metadata only - `toPublicJSON` carries no
     // medical values and no storage key.
     report: report.toPublicJSON(),
     dashboard,
+    identity,
   });
 });
 

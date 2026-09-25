@@ -126,15 +126,92 @@ const reportSchema = new mongoose.Schema(
       immutable: true,
     },
 
-    /** Date printed on the lab report, when the user supplies it. */
+    /**
+     * The date TYPED into the upload form. Named `reportDate` for history: the
+     * form asks for "the date printed on the report", but nothing checks that
+     * it is -- which is why `printedDate` below exists beside it.
+     */
     reportDate: {
       type: Date,
       default: undefined,
     },
 
     /**
-     * DERIVED: reportDate ?? uploadedAt. The single chronological sort key.
-     * Recomputed on every save so it can never drift from its inputs.
+     * The date the DOCUMENT prints, read from extraction's
+     * `report_metadata.report_date` by `utils/printedDate` -- UTC midnight of
+     * that calendar day. Set only when it was READ; an ambiguous or unreadable
+     * printed date is never turned into one. See `printedDateStatus`.
+     */
+    printedDate: {
+      type: Date,
+      default: undefined,
+    },
+
+    /**
+     * What happened when the printed date was read: `read`, `ambiguous`
+     * (`05/09/2026` -- day-first or month-first is not knowable), `unreadable`
+     * (`02 Dec, 2X`), or `absent` (the report prints none). Unset on a report
+     * not analysed since this field existed: nobody looked, which is not the
+     * same as `absent`.
+     */
+    printedDateStatus: {
+      type: String,
+      enum: ['read', 'ambiguous', 'unreadable', 'absent'],
+      default: undefined,
+    },
+
+    /**
+     * The printed text, kept only so a page can SHOW what could not be read
+     * ("the report prints '02 Dec, 2X'"). A date string, capped, never parsed
+     * for anything else.
+     */
+    printedDateRaw: {
+      type: String,
+      maxlength: 64,
+      default: undefined,
+    },
+
+    /**
+     * The patient SEX and AGE the document prints, read by
+     * `utils/printedIdentity` from extraction's `report_metadata`. NEVER a
+     * name -- Module 4 does not copy one.
+     *
+     * UNSET MEANS NOBODY LOOKED: the report was analysed before extraction
+     * returned these fields. Inside it each field is `read`, `absent` (not
+     * printed) or `unreadable`; the raw text is kept only when unreadable, so
+     * a page can quote it.
+     *
+     * Exists because every analysis used the ACCOUNT PROFILE's sex and age:
+     * a report printing "34 Years / Female" on a "20, male" account was judged
+     * with male thresholds and compared with a 63-year-old man's as one
+     * person's history (2026-09-24).
+     */
+    printedIdentity: {
+      type: new mongoose.Schema(
+        {
+          sex: { type: String, enum: ['male', 'female'] },
+          sexStatus: { type: String, enum: ['read', 'absent', 'unreadable'], required: true },
+          sexRaw: { type: String, maxlength: 32 },
+          ageYears: { type: Number, min: 0, max: 130 },
+          ageStatus: { type: String, enum: ['read', 'absent', 'unreadable'], required: true },
+          ageRaw: { type: String, maxlength: 32 },
+        },
+        { _id: false }
+      ),
+      default: undefined,
+    },
+
+    /**
+     * DERIVED: reportDate ?? printedDate ?? uploadedAt. The single
+     * chronological sort key. Recomputed on every save so it can never drift
+     * from its inputs -- and `deriveChronoDate` is exported for the writes that
+     * bypass save (`updateOne`), which must compute it the same way.
+     *
+     * THE TYPED DATE STILL COMES FIRST. A reader may deliberately date a report
+     * by when the sample was taken rather than when it was printed; overriding
+     * what they typed with what a parser read would be this tool deciding it
+     * knows their history better. A DISAGREEMENT between the two is shown on
+     * the page instead of being settled silently in either direction.
      */
     chronoDate: {
       type: Date,
@@ -607,10 +684,21 @@ const reportSchema = new mongoose.Schema(
  */
 reportSchema.index({ user: 1, chronoDate: -1, _id: -1 });
 
+/**
+ * THE ONE RULE FOR THE SORT KEY: typed, then printed, then uploaded.
+ *
+ * A function, not only a hook, because the analysis write is an `updateOne`
+ * and skips the hook -- MEMORY.md records a hand `$set` that left `chronoDate`
+ * disagreeing with its inputs for exactly that reason.
+ */
+function deriveChronoDate({ reportDate, printedDate, uploadedAt }) {
+  return reportDate || printedDate || uploadedAt;
+}
+
 /** Keep the materialised sort key honest. */
-reportSchema.pre('validate', function deriveChronoDate(next) {
+reportSchema.pre('validate', function keepChronoDate(next) {
   if (!this.uploadedAt) this.uploadedAt = new Date();
-  this.chronoDate = this.reportDate || this.uploadedAt;
+  this.chronoDate = deriveChronoDate(this);
   return next();
 });
 
@@ -626,6 +714,14 @@ reportSchema.methods.toPublicJSON = function toPublicJSON() {
     storageDriver: this.storageDriver,
     uploadedAt: this.uploadedAt,
     reportDate: this.reportDate,
+    printedDate: this.printedDate,
+    printedDateStatus: this.printedDateStatus,
+    // Only when it could NOT be read, so the page can quote it. A date that
+    // was read is already `printedDate`.
+    printedDateRaw:
+      this.printedDateStatus === 'ambiguous' || this.printedDateStatus === 'unreadable'
+        ? this.printedDateRaw
+        : undefined,
     chronoDate: this.chronoDate,
     status: this.status,
     statusMessage: this.statusMessage,
@@ -742,3 +838,4 @@ module.exports = Report;
 module.exports.REPORT_STATUS = REPORT_STATUS;
 module.exports.REPORT_STATUS_VALUES = REPORT_STATUS_VALUES;
 module.exports.SORT_FIELDS = SORT_FIELDS;
+module.exports.deriveChronoDate = deriveChronoDate;

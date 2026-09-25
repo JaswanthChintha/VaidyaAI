@@ -577,6 +577,33 @@ describe('choosing which two reports to compare', () => {
     );
   });
 
+  it('marks an option whose typed date the document contradicts', async () => {
+    // 2026-09-24: 03-renal and 01-all-normal both PRINT 05-Sep-2026 and were
+    // typed as the 9th and the 11th -- offered here as two moments two days
+    // apart, with nothing to say otherwise.
+    const conflicting = {
+      reports: [
+        { reportId: A, chronoDate: '2026-09-09T00:00:00Z', reportDate: '2026-09-09T00:00:00Z', printedDate: '2026-09-05T00:00:00Z', printedDateStatus: 'read', status: 'processed' },
+        { reportId: B, chronoDate: '2026-09-05T00:00:00Z', reportDate: null, printedDate: '2026-09-05T00:00:00Z', printedDateStatus: 'read', status: 'processed' },
+      ],
+    };
+    mount({ comparison: { ...comparisonFor(A, B), history: conflicting }, reports: REPORTS });
+    await screen.findByText('Comparing two reports');
+
+    const utcDay = (iso) => new Date(iso).toLocaleDateString(undefined, { timeZone: 'UTC' });
+    const optionFor = (name) =>
+      [...document.querySelectorAll('.pair-picker option')].find((o) => o.textContent.includes(name));
+
+    const typed = optionFor('06-lab-flagged.pdf').textContent;
+    expect(typed).toContain(utcDay('2026-09-09T00:00:00Z'));
+    expect(typed).toContain(`report prints ${utcDay('2026-09-05T00:00:00Z')}`);
+
+    // No date typed: the printed one is used, unlabelled as an upload.
+    const printed = optionFor('01-all-normal.pdf').textContent;
+    expect(printed).toContain(utcDay('2026-09-05T00:00:00Z'));
+    expect(printed).not.toMatch(/uploaded|report prints/i);
+  });
+
   it('shows the pair ACTUALLY on screen, not a guess', async () => {
     // With no explicit choice the service picks first-vs-latest. Seeding the
     // selects from its answer is what stops the control naming a comparison
@@ -645,6 +672,43 @@ describe('choosing which two reports to compare', () => {
       expect(screen.queryByText(/improved/)).not.toBeInTheDocument()
     );
     release(comparisonFor(A, C));
+  });
+
+  it('keeps the LATEST choice when an earlier answer arrives last', async () => {
+    // THE RACE (2026-09-25). Two quick choices send two pairs of requests and
+    // nothing orders their answers. The first choice's answer is held back
+    // here until after the second's: written as it lands, it would put the
+    // abandoned pair's numbers under a picker naming the other one.
+    const withRow = (baseline, comparison, current, category) => {
+      const response = comparisonFor(baseline, comparison);
+      response.comparison.table = [{ feature: 'hba1c', previous: 8.4, current, unit: '%', category }];
+      return response;
+    };
+    let releaseFirst;
+    // Trends carry the history too, as the real endpoint does: while a new
+    // comparison is pending the picker is fed from them, and without it the
+    // picker would vanish mid-test.
+    mount({ comparison: comparisonFor(A, B), trends: { trends: {}, history: HISTORY }, reports: REPORTS });
+    await screen.findByText('Comparing two reports');
+    api.getComparison.mockImplementation((pair) =>
+      pair.comparison === C
+        ? new Promise((resolve) => { releaseFirst = () => resolve(withRow(A, C, 1.1, 'improved')); })
+        : Promise.resolve(withRow(A, B, 7.7, 'worsened'))
+    );
+
+    const select = () => document.querySelectorAll('.pair-picker select')[1];
+    fireEvent.change(select(), { target: { value: C } }); // slow
+    await waitFor(() => expect(api.getComparison).toHaveBeenCalledWith({ baseline: A, comparison: C }));
+    fireEvent.change(select(), { target: { value: B } }); // fast, and the latest
+    await screen.findByText(/7\.7/);
+
+    releaseFirst(); // the abandoned choice answers last
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(select().value).toBe(B);
+    expect(screen.getByText(/7\.7/)).toBeInTheDocument();
+    expect(screen.queryByText(/1\.1/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Comparing…')).not.toBeInTheDocument();
   });
 
   it('swaps rather than doing nothing when the two sides would collide', async () => {

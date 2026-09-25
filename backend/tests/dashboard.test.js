@@ -1327,3 +1327,68 @@ describe('Module 27 - GET /reports/:id/dashboard', () => {
     });
   });
 });
+
+// =========================================================================
+// THE REPORT'S OWN SEX AND AGE AGAINST THE PROFILE THE ANALYSIS USED
+// =========================================================================
+//
+// 2026-09-24: every analysis takes sex and age from the account profile. A
+// report printing "34 Years / Female" on a "20, male" account was judged with
+// male thresholds and nothing on the page said so.
+describe('printed sex and age against the profile the analysis used', () => {
+  const profileFeatures = (age, gender) => ({
+    features: {
+      age: { name: 'age', value: age, source: 'patient_profile' },
+      gender: { name: 'gender', value: gender, source: 'patient_profile' },
+    },
+  });
+  const analysedOn = (iso) => ({ version: 1, runCount: 1, completedAt: new Date(iso) });
+
+  it('names a disagreement in sex and in age', async () => {
+    const alice = await makeUser('identity.conflict@example.com');
+    const id = await seedAnalysed(alice.id, {
+      printedIdentity: { sex: 'female', sexStatus: 'read', ageYears: 34, ageStatus: 'read' },
+      features: profileFeatures(20, 'male'),
+      reportDate: new Date('2026-09-05T00:00:00Z'),
+      analysis: analysedOn('2026-09-11T00:00:00Z'),
+    });
+    const res = await getDashboard(alice.token, id);
+    expect(res.status).toBe(200);
+    expect(res.body.data.identity.status).toBe('conflict');
+    expect(res.body.data.identity.conflicts).toEqual([
+      { field: 'sex', printed: 'female', used: 'male' },
+      { field: 'age', printed: 34, used: 20 },
+    ]);
+  });
+
+  it('says consistent only when both were read and both agree', async () => {
+    const alice = await makeUser('identity.ok@example.com');
+    const id = await seedAnalysed(alice.id, {
+      printedIdentity: { sex: 'male', sexStatus: 'read', ageYears: 20, ageStatus: 'read' },
+      features: profileFeatures(21, 'male'),
+      reportDate: new Date('2025-09-05T00:00:00Z'),
+      analysis: analysedOn('2026-09-11T00:00:00Z'),
+    });
+    const res = await getDashboard(alice.token, id);
+    expect(res.body.data.identity.status).toBe('consistent');
+  });
+
+  it('is NOT "consistent" when the report does not print an age', async () => {
+    const alice = await makeUser('identity.partial@example.com');
+    const id = await seedAnalysed(alice.id, {
+      printedIdentity: { sex: 'male', sexStatus: 'read', ageStatus: 'absent' },
+      features: profileFeatures(20, 'male'),
+      analysis: analysedOn('2026-09-11T00:00:00Z'),
+    });
+    const res = await getDashboard(alice.token, id);
+    expect(res.body.data.identity.status).toBe('incomplete');
+  });
+
+  it('is "not_checked" for a report analysed before these fields existed', async () => {
+    const alice = await makeUser('identity.old@example.com');
+    const id = await seedAnalysed(alice.id, { features: profileFeatures(20, 'male') });
+    const res = await getDashboard(alice.token, id);
+    expect(res.body.data.identity.status).toBe('not_checked');
+    expect(res.body.data.identity.conflicts).toEqual([]);
+  });
+});

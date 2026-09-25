@@ -149,4 +149,80 @@ describe('Module 3 -- the report list', () => {
     expect(row.textContent).toMatch(/uploaded/i);
     expect(row.textContent).toContain(new Date('2026-09-19T04:22:13Z').toLocaleDateString());
   });
+
+  // ========================== the date the DOCUMENT prints (2026-09-24) ==
+  //
+  // Two reports that both print 05-Sep-2026 were typed as the 9th and the
+  // 11th, and nothing on this page said the documents disagreed.
+  const utcDay = (iso) => new Date(iso).toLocaleDateString(undefined, { timeZone: 'UTC' });
+
+  it('SAYS SO when the typed date and the printed date disagree', async () => {
+    mount([
+      {
+        ...REPORT,
+        reportDate: '2026-09-09T00:00:00Z',
+        printedDate: '2026-09-05T00:00:00Z',
+        printedDateStatus: 'read',
+        chronoDate: '2026-09-09T00:00:00Z',
+      },
+    ]);
+    const row = (await screen.findByText('labs.pdf')).closest('li');
+    // The typed date still leads -- it is what the timeline is ordered by.
+    expect(row.textContent).toContain(utcDay('2026-09-09T00:00:00Z'));
+    expect(row.textContent).toMatch(/the report itself prints/i);
+    expect(row.textContent).toContain(utcDay('2026-09-05T00:00:00Z'));
+  });
+
+  it('says nothing extra when the two agree', async () => {
+    mount([
+      {
+        ...REPORT,
+        reportDate: '2026-09-05T00:00:00Z',
+        printedDate: '2026-09-05T00:00:00Z',
+        printedDateStatus: 'read',
+        chronoDate: '2026-09-05T00:00:00Z',
+      },
+    ]);
+    const row = (await screen.findByText('labs.pdf')).closest('li');
+    expect(row.textContent).not.toMatch(/prints/i);
+  });
+
+  it('uses the printed date when none was typed, and says where it came from', async () => {
+    mount([
+      {
+        ...REPORT,
+        reportDate: null,
+        printedDate: '2026-09-05T00:00:00Z',
+        printedDateStatus: 'read',
+        chronoDate: '2026-09-05T00:00:00Z',
+      },
+    ]);
+    const row = (await screen.findByText('labs.pdf')).closest('li');
+    expect(row.textContent).toContain(utcDay('2026-09-05T00:00:00Z'));
+    expect(row.textContent).toMatch(/read from the report/i);
+    expect(row.textContent).not.toMatch(/No date on the report/i);
+  });
+
+  it('quotes a printed date it could not read, and never uses it', async () => {
+    mount([
+      {
+        ...REPORT,
+        reportDate: null,
+        printedDateStatus: 'ambiguous',
+        printedDateRaw: '05/09/2026',
+        chronoDate: '2026-09-19T04:22:13Z',
+      },
+    ]);
+    const row = (await screen.findByText('labs.pdf')).closest('li');
+    expect(row.textContent).toMatch(/No date on the report/i);
+    expect(row.textContent).toMatch(/05\/09\/2026/);
+    expect(row.textContent).toMatch(/day-first or month-first/i);
+    expect(row.textContent).toMatch(/uploaded/i);
+  });
+
+  it('tells the uploader a blank date falls back to the printed one', async () => {
+    mount([]);
+    await screen.findByText(/Upload a report/i);
+    expect(screen.getByText(/date printed on the report is used, if it can be read/i)).toBeInTheDocument();
+  });
 });
