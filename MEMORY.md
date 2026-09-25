@@ -52,10 +52,10 @@ about any of them. That is the fifth time on this project.
 
 | | Tests |
 |---|---|
-| `backend/` (Node/Express) | **870** passing + 3 skipped (17 suites, 0 failed) |
-| `ai-service/` (Python/FastAPI) | **5,163** passing + 7 skipped (5,170 collected, 0 failures, 0 errors) |
-| `frontend/` (React/Vitest) | **453** passing (0 failed, no file reporting zero assertions) |
-| **Total** | **6,486** -- measured end of the 2026-09-24/25 session (§6bj). ⚠ **§6bj's work is UNCOMMITTED** -- run `git status` |
+| `backend/` (Node/Express) | **873** passing + 3 skipped (17 suites, 0 failed) |
+| `ai-service/` (Python/FastAPI) | **5,185** passing + 7 skipped (5,192 collected, 0 failures, 0 errors) |
+| `frontend/` (React/Vitest) | **460** passing (0 failed, no file reporting zero assertions) |
+| **Total** | **6,518** -- measured end of the 2026-09-25 session (§6bk). Run `git status`; this row does not know the tree. |
 
 > **⚠⚠ ONE CHANGE FROM 2026-09-20 IS NOT UNDER GIT AND CANNOT BE.**
 > `ai-service/.env` is gitignored and `GEMINI_TIMEOUT_SECONDS` was raised
@@ -263,19 +263,18 @@ about any of them. That is the fifth time on this project.
 >    reachable; `BIOPRO_J.xpt` is already on disk. ⚠ **Read §6bg's pattern
 >    block first** — this moves the canonical-feature boundary again, and
 >    that is what produced four reader-facing defects last time.
-> 12. **COMMIT §6bj.** Eight changes, all uncommitted at the end of
->    2026-09-25; the owner asks for commits explicitly. Commit messages go in
->    a file (`git commit -F`), no co-author trailer.
-> 13. **DECIDE WHICH SEX AND AGE AN ANALYSIS USES** (§6bj item 7). Every
->    analysis uses the PROFILE's, never the report's; the page now SAYS when
->    they disagree, and no threshold was changed. Test 3's anaemia card calls
->    haemoglobin 12.5 "below 13" (the WHO MALE threshold, from a "male"
->    profile) while the report prints **F: 11–15, M: 12–16** — inside both.
->    Only the owner can decide the rule.
-> 14. **RE-ANALYSE 03-renal AND 01-all-normal** to read their printed sex and
->    age (both print them; neither has been read). Costs model calls. Their
->    comparison card will then show the different-people warning it exists
->    for: "63 Years / Male" vs "34 Years / Female".
+> 12. ~~**COMMIT §6bj.**~~ **DONE** — five commits `9f9c1c9`…`6cf7dfa`,
+>    pushed 2026-09-25.
+> 13. ~~**DECIDE WHICH SEX AND AGE AN ANALYSIS USES.**~~ **DECIDED BY THE
+>    OWNER AND BUILT — §6bk: THE REPORT'S PRINTED SEX AND AGE ARE USED**, the
+>    profile's only when the report prints none (or nothing readable). ⚠
+>    Test 3 prints neither, so its anaemia card still applies the male "below
+>    13" threshold from the "male" profile while the report prints
+>    F: 11–15, M: 12–16 — that is now a PROFILE question, not a code one.
+> 14. ~~**RE-ANALYSE 03-renal AND 01-all-normal.**~~ **DONE 2026-09-25**, both
+>    after §6bk: 01-all-normal is analysed as female, 34 and 03-renal as
+>    male, 63, both `report_details`. Their comparison shows the
+>    different-people warning.
 
 > ### ▶ RUN AND TEST, IN ONE PLACE
 >
@@ -326,13 +325,17 @@ about any of them. That is the fifth time on this project.
 > reliable one.
 
 
-> ### ▶ NEW CHAT? §0, THEN §6bj → §6bi → §6bh → §6bg → §6bf → §6be.
+> ### ▶ NEW CHAT? §0, THEN §6bk → §6bj → §6bi → §6bh → §6bg → §6bf → §6be.
 >
-> **§6bj IS THE NEWEST (2026-09-24/25): eight fixes found by the owner reading
-> real screens, and ALL OF IT IS UNCOMMITTED.** Printed dates and printed
-> sex/age are now read from reports; a Gemini outage no longer masquerades as
-> a safety refusal; finding descriptions answer within a deadline. Its KNOWN
-> AND OPEN block holds two decisions only the owner can make.
+> **§6bk IS THE NEWEST (2026-09-25 afternoon): AN ANALYSIS NOW USES THE SEX
+> AND AGE THE REPORT PRINTS**, not the profile's — a new feature source,
+> `report_details`, that every "measured vs not" test must treat as NOT
+> measured. Plus the reports list no longer sticks on "Being analysed…".
+>
+> **§6bj (2026-09-24/25): eight fixes found by the owner reading real
+> screens**, committed and pushed. Printed dates and printed sex/age are read
+> from reports; a Gemini outage no longer masquerades as a safety refusal;
+> finding descriptions answer within a deadline.
 >
 > **§6bi IS THE RESEARCH PAPER (2026-09-24) — read it first if the task is the paper.** Sources are in `paper/`, three ablation scripts in `ai-service/ml/ablate_*.py` — **COMMITTED AND PUSHED by the owner on 2026-09-24 18:10** (`a12c784`, `1ad66cd`, `f07777b`). It also records that the owner asked for measured numbers to be raised and the answer was no, with the honest alternative that worked.
 >
@@ -12425,6 +12428,82 @@ none (read and confirmed).** Its identity check is therefore `incomplete`.
 * **A heredoc was used once to append tests** (`dashboard.test.js`), against
   the owner's Write/Edit rule. Content is correct; noted so it is not
   repeated.
+
+> **UPDATE, same day:** all of §6bj was committed and pushed (`9f9c1c9`,
+> `a09afad`, `5a90b4f`, `99aa16d`, `6cf7dfa`). The "WHICH SEX/AGE" decision
+> above was made — see §6bk.
+
+---
+
+## 6bk. THE REPORT'S OWN SEX AND AGE ARE USED · 2026-09-25 (afternoon)
+
+| | Tests |
+|---|---|
+| `backend/` | **873** + 3 skipped (+3) |
+| `ai-service/` | **5,185** + 7 skipped, 5,192 collected (+22) |
+| `frontend/` | **460** (+7), no file reporting zero assertions |
+| **Total** | **6,518** |
+
+### ▶ 1. THE OWNER'S DECISION: PRINTED SEX AND AGE WIN
+
+§6bj made the page SAY when a report's printed sex/age disagreed with the
+profile the analysis used. The owner then decided the analysis should USE
+the report's: the report describes the person whose blood it is; the profile
+describes whoever owns the account.
+
+* **Module 5** (`feature_engineer.py`, `printed_identity.py`): the printed
+  values are read (male/female only; age rounded DOWN to whole years;
+  unreadable → not used) and REPLACE the profile's `gender` / `age`, per
+  field. The printed sex also chooses between per-sex printed ranges
+  (`F:11 -15 M:12- 16` → the F interval for a woman's report). With nothing
+  printed, the profile is used exactly as before. Where they disagree the
+  provenance names both and a warning is recorded.
+* **A NEW FEATURE SOURCE: `report_details`** — a patient DETAIL printed on the
+  report, not a measurement. ⚠ **THIS IS THE PART TO REMEMBER.** About ten
+  consumers split features by `source === 'patient_profile'` alone; a third
+  value falls on the MEASURED side of every one of them and would show "age
+  34" as a laboratory result. Use `NOT_MEASURED_SOURCES` (ai-service
+  `feature_catalog.py`) / `isPatientDetail` (frontend `lib/sources.js`)
+  instead. Changed: dashboard (own section "From the report's patient
+  details"; the "details you entered" sentence), clinician page (2),
+  clinician narrative (2), doctor-summary note, summary counts. The
+  explanation module and the narrative's printed-name lookup already
+  accepted only `lab_report`.
+* **The dashboard notice** now compares the report with the profile AS IT
+  STANDS (the question is "is this yours") and says which values the analysis
+  USED, read off its own features: "used the sex and age printed on the
+  report…", or, for an analysis from before the change, "used your profile's
+  values… Analysing the report again uses the report's."
+
+**Live, after re-analysis:** 01-all-normal → female, 34; 03-renal → male, 63
+(both `report_details`, with the disagreement warning recorded). Test 3
+prints neither → profile, male ranges (Hb 12–16, PCV 40–50), as before.
+03-renal now indicates Kidney Disease (High), B12 Deficiency (High), Anaemia
+(Medium), Vitamin D Deficiency (Medium).
+
+### ▶ 2. "BEING ANALYSED…" STUCK ON THE REPORTS LIST
+
+01-all-normal read "Being analysed…" for 18 minutes after it was stored as
+processed. The list refreshed only when the page's OWN Analyse click
+returned; a list loaded mid-analysis never asked again. Now: while any row is
+`processing`, the list is re-fetched every `PROCESSING_POLL_MS` (10 s),
+stopping when none is or the page unmounts. The list endpoint carries no rate
+limiter. Mutation-checked both ways (never polls; never stops).
+
+> **A CLICK LANDED ON THE WRONG ROW.** The owner re-analysed "03-renal" and
+> the backend log showed Test 3's id — the first row. The log settled it in
+> one line; **check the analyze request's id before reporting what was
+> re-analysed.**
+
+### KNOWN AND OPEN
+
+* **Test 3's anaemia card** applies the male threshold because the report
+  prints no sex and the PROFILE says male. If Test 3's patient is not the
+  account owner, the profile — not the code — is what is wrong for it.
+* **The dashboard compares against the CURRENT profile**; an analysis records
+  which values it used, not what the profile said at the time.
+* **BMI still comes from the profile** — a report does not print height and
+  weight — so for someone else's report it is the account owner's BMI.
 
 ---
 
