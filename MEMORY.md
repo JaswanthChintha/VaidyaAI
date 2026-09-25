@@ -52,10 +52,10 @@ about any of them. That is the fifth time on this project.
 
 | | Tests |
 |---|---|
-| `backend/` (Node/Express) | **772** passing + 3 skipped (15 suites, 0 failed) |
-| `ai-service/` (Python/FastAPI) | **5,128** passing + 7 skipped (5,135 collected, 0 failures, 0 errors) |
-| `frontend/` (React/Vitest) | **432** passing (80 suites, 0 failed, no file reporting zero assertions) |
-| **Total** | **6,332** -- measured end of the 2026-09-20 session (§6bh) |
+| `backend/` (Node/Express) | **870** passing + 3 skipped (17 suites, 0 failed) |
+| `ai-service/` (Python/FastAPI) | **5,163** passing + 7 skipped (5,170 collected, 0 failures, 0 errors) |
+| `frontend/` (React/Vitest) | **453** passing (0 failed, no file reporting zero assertions) |
+| **Total** | **6,486** -- measured end of the 2026-09-24/25 session (§6bj). ⚠ **§6bj's work is UNCOMMITTED** -- run `git status` |
 
 > **⚠⚠ ONE CHANGE FROM 2026-09-20 IS NOT UNDER GIT AND CANNOT BE.**
 > `ai-service/.env` is gitignored and `GEMINI_TIMEOUT_SECONDS` was raised
@@ -263,6 +263,19 @@ about any of them. That is the fifth time on this project.
 >    reachable; `BIOPRO_J.xpt` is already on disk. ⚠ **Read §6bg's pattern
 >    block first** — this moves the canonical-feature boundary again, and
 >    that is what produced four reader-facing defects last time.
+> 12. **COMMIT §6bj.** Eight changes, all uncommitted at the end of
+>    2026-09-25; the owner asks for commits explicitly. Commit messages go in
+>    a file (`git commit -F`), no co-author trailer.
+> 13. **DECIDE WHICH SEX AND AGE AN ANALYSIS USES** (§6bj item 7). Every
+>    analysis uses the PROFILE's, never the report's; the page now SAYS when
+>    they disagree, and no threshold was changed. Test 3's anaemia card calls
+>    haemoglobin 12.5 "below 13" (the WHO MALE threshold, from a "male"
+>    profile) while the report prints **F: 11–15, M: 12–16** — inside both.
+>    Only the owner can decide the rule.
+> 14. **RE-ANALYSE 03-renal AND 01-all-normal** to read their printed sex and
+>    age (both print them; neither has been read). Costs model calls. Their
+>    comparison card will then show the different-people warning it exists
+>    for: "63 Years / Male" vs "34 Years / Female".
 
 > ### ▶ RUN AND TEST, IN ONE PLACE
 >
@@ -313,9 +326,15 @@ about any of them. That is the fifth time on this project.
 > reliable one.
 
 
-> ### ▶ NEW CHAT? §0, THEN §6bi → §6bh → §6bg → §6bf → §6be.
+> ### ▶ NEW CHAT? §0, THEN §6bj → §6bi → §6bh → §6bg → §6bf → §6be.
 >
-> **§6bi IS THE RESEARCH PAPER (2026-09-24) — read it first if the task is the paper.** Sources are in `paper/`, three ablation scripts in `ai-service/ml/ablate_*.py`, ALL UNCOMMITTED. It also records that the owner asked for measured numbers to be raised and the answer was no, with the honest alternative that worked.
+> **§6bj IS THE NEWEST (2026-09-24/25): eight fixes found by the owner reading
+> real screens, and ALL OF IT IS UNCOMMITTED.** Printed dates and printed
+> sex/age are now read from reports; a Gemini outage no longer masquerades as
+> a safety refusal; finding descriptions answer within a deadline. Its KNOWN
+> AND OPEN block holds two decisions only the owner can make.
+>
+> **§6bi IS THE RESEARCH PAPER (2026-09-24) — read it first if the task is the paper.** Sources are in `paper/`, three ablation scripts in `ai-service/ml/ablate_*.py` — **COMMITTED AND PUSHED by the owner on 2026-09-24 18:10** (`a12c784`, `1ad66cd`, `f07777b`). It also records that the owner asked for measured numbers to be raised and the answer was no, with the honest alternative that worked.
 >
 > **⚠ §6bh IS THE NEWEST (2026-09-20) AND TWO OF ITS ITEMS REVERSE STANDING
 > CONSTRAINTS** — §6w's "a model-derived flag may never appear without its
@@ -345,8 +364,12 @@ about any of them. That is the fifth time on this project.
 > **The replacement is strictly better and that is why it was kept:** it is a
 > clean extraction under every current gate — bare test names (`ESR`, not
 > `ESR WESTGARD`), eAG with `flag: null` and no bounds **out of the pipeline
-> rather than hand-repaired**, and `reportDate` 2026-09-13 matching what the
-> document prints. **Four reports on the account:**
+> rather than hand-repaired**, and `reportDate` 2026-09-13 ~~matching what the
+> document prints~~. **⚠ CORRECTED 2026-09-25 (§6bj): TEST 3 PRINTS NO DATE
+> AT ALL.** The stored PDF was read: both pages are cropped to the section
+> headings — no lab name, no date, no patient name, sex or age. The 13th is a
+> TYPED date only, and extraction's `report_date: null` was right. **Four
+> reports on the account:**
 >
 > ```
 > 6aae0df5b0b3c22147df56f0  Test 3.pdf                        13 Sep
@@ -12080,7 +12103,11 @@ own lists (`INTERPRETIVE_VERBS`, `HEDGE_MARKERS`).
 **The owner asked for a research paper on VaidyaAI, in the format of a supplied
 IEEE sample manuscript.** It went through five revisions, one external review
 (pasted from ChatGPT), and four experiments run against the real artifacts.
-**Everything is UNCOMMITTED** — see the file list below.
+~~**Everything is UNCOMMITTED**~~ **COMMITTED AND PUSHED by the owner,
+2026-09-24 18:10:** `a12c784` (ablation scripts), `1ad66cd` (the paper),
+`f07777b` (this section). A session that started before those commits saw
+the paths vanish from `git status` mid-session — they were committed, not
+lost; check `git log` before alarm.
 
 ### ▶ WHERE IT IS
 
@@ -12224,6 +12251,180 @@ algorithm, measure it on validation, report it on test.
 * **THE PAPER IS NOT RENDERED-CHECKED.** `soffice.py` failed on Windows
   (`socket.AF_UNIX`). Layout was verified from the XML (`w:cols w:num="2"`,
   A4 `pgSz`) only — no page image has been looked at.
+
+---
+
+## 6bj. THE 2026-09-24/25 SESSION — EIGHT FIXES, ALL FROM THE OWNER'S SCREENS
+
+**ALL UNCOMMITTED at the end of the session.** Every item below started with
+the owner pointing at a real screen, and every one was diagnosed from the
+STORED ARTEFACT and the LOG before any code was read.
+
+| | Tests |
+|---|---|
+| `backend/` | **870** + 3 skipped (was 772; +98) |
+| `ai-service/` | **5,163** + 7 skipped, 5,170 collected (was 5,128; +35) |
+| `frontend/` | **453** (was 432; +21), no file reporting zero assertions |
+| **Total** | **6,486** |
+
+Every new guard was **mutation-checked**: each was removed, its tests were
+seen to fail, and the original was restored and `cmp`-verified.
+
+### ▶ 1. A GEMINI OUTAGE WAS STORED AS A SAFETY REFUSAL
+
+Test 3 showed "No general description could be prepared" for NEUTROPHILS, ESR
+and CRP. The cached `findingContext` said `refused_by: "safety"`. **It could
+not be told apart from an outage:** `guarded_generation` treats a generator
+that RAISES as a failed attempt (rightly — it must never approve), so a
+`ServerError` on both attempts arrived exactly like two Module 24 rejections.
+A live probe reproduced it: every call `ServerError`, every verdict
+`UNANALYSABLE_INPUT`. And the backend CACHED partial results on the stated
+ground that their gaps "came from the gates" — pinning the outage to the
+report until re-analysis.
+
+* `finding_context._one` now records whether each attempt raised; **all
+  raised → `refused_by: "model_unavailable"`**; any text the validator judged
+  → still `"safety"`.
+* The backend never caches a result carrying `model_unavailable`.
+* Once Gemini recovered, all three were APPROVED by Module 24 with zero
+  violations. That strongly supports "outage" for the original three; it does
+  not prove it (the model's wording varies run to run, and the original log
+  is gone — **services log to stdout only; nothing retains a run's log**).
+
+> **⚠ A MISTAKE OF MINE, RECORDED SO IT IS NOT REPEATED:** I cleared Test 3's
+> `findingContext` DURING the outage, promising the four good sentences would
+> come back. They could not — Gemini was failing for every model — and the
+> page hides the whole box when nothing is described, so the owner saw
+> "everything gone". Restored from the backup taken before clearing. **Never
+> clear a cache while the model that refills it is failing. Back it up first,
+> always.**
+
+### ▶ 2. EVERY PAGE LOAD SENT THE MODEL-CALLING POSTS TWICE
+
+`<React.StrictMode>` (`frontend/src/main.jsx`) mounts the dashboard twice in
+DEV; the first mount's `cancelled` flag ignores its answer but does not
+un-send it. Both missed the cache, so every finding was generated twice. The
+backend now **coalesces identical in-flight requests** (`inFlight` map in
+`summaryProseController.js`, keyed report + analysis version + content hash)
+for BOTH finding-context and summary-prose. Ownership is still checked per
+request before the map. StrictMode was deliberately kept.
+
+### ▶ 3. "changed direction only" READ AS ITS OPPOSITE
+
+Haemoglobin 9.2 → 13.6 printed "↑ changed direction only". Module 29 meant
+the reverse: a REAL change (+47.8 %, far past the 9 % band) that it declines
+to call better or worse (polarity undeclared). Display word only
+(`COMPARISON_WORD` in `Timeline.jsx`): **"real change, not rated better or
+worse"**, the counterpart of "no real change".
+
+### ▶ 4. THE PRINTED DATE WAS EXTRACTED AND NEVER READ
+
+The comparison called 03-renal and 01-all-normal "2 days apart"
+(9 → 11 Sep). **Both PDFs print `05-Sep-2026 17:40`.** The 9th and 11th were
+TYPED at upload; `extraction.report_metadata.report_date` had been stored on
+every report all along and nothing read it.
+
+* `backend/src/utils/printedDate.js` reads it: month names and ISO are read;
+  digits-only only when one part exceeds 12; **`05/09/2026` is `ambiguous`,
+  never guessed** (the extraction prompt already forbids resolving DD/MM);
+  2-digit or garbled years (`02 Dec, 2X` — real, drlogy), impossible dates,
+  pre-1950 and post-upload dates are `unreadable`.
+* New fields `printedDate`, `printedDateStatus` (read / ambiguous /
+  unreadable / absent; UNSET = nobody looked), `printedDateRaw`.
+* **Sort key is now typed → printed → upload** (`deriveChronoDate`, exported
+  and used by BOTH the save hook and the analysis `updateOne`, which skips the
+  hook). **Typed still wins**; a disagreement is SHOWN ("· the report itself
+  prints 9/5/2026"), never settled silently.
+* `backend/scripts/backfillPrintedDates.js` (dry run unless `--apply`) was
+  APPLIED: 7 reports. On the owner's account nothing moved (typed dates win);
+  three reports on other accounts moved from upload day to 5 Sep.
+* Calendar days now render in UTC (`frontend/src/lib/reportDates.js`).
+
+### ▶ 5. SEVEN DECLARED POLARITIES EXPLAINED AS UNDECLARED
+
+HbA1c's Module 28/29 payload carried `kind: monotone, direction_of_harm:
+increase` beside `basis`: "This platform does not declare whether a change…
+is an improvement". `reader_reason()` gave that refusal to EVERY entry
+without a `reader_basis` — all seven declared ones (HbA1c, creatinine,
+cholesterol, triglycerides, vitamin D, B12, BMI). The sentence is now
+**derived from the declaration**, so the two cannot disagree. No page
+renders this field today; it was fixed before one does.
+
+### ▶ 6. TWO DIFFERENT PEOPLE COMPARED AS ONE HISTORY
+
+The PDFs behind that comparison are **two different synthetic patients**:
+"63 Years / Male" and "34 Years / Female". Nothing from a document said
+whose it was — and **every analysis used the PROFILE's sex and age ("20,
+male" on this account), never the report's.** Owner's choices: **sex + age
+only, never a name**; warn against the profile too.
+
+* ai-service: extraction copies `patient_sex` and `patient_age` AS PRINTED
+  (prompt forbids inferring sex from the name, the tests or sex-specific
+  ranges, and computing age from a DOB). Three tests pinning the metadata key
+  set were updated and still require NO name.
+* backend: `utils/printedIdentity.js` → `printedIdentity` on the report
+  (UNSET = extraction predates the fields = **not checked**). `comparePair`
+  (conflict = different sex, or ages impossible for one person given the two
+  dates, ±2 y) → `identity` on `/timeline/comparison`. `compareWithProfile`
+  against the values the analysis USED (`source: patient_profile` only) →
+  `identity` on `/dashboard`.
+* frontend: `components/IdentityNotice.jsx`. Conflict is a warning above the
+  table / verdict; **`not_checked` and `incomplete` each get their own quiet
+  line — never silence.** No threshold changed.
+* **Cannot tell apart two people of one sex and similar age.** Stated, not
+  hidden.
+
+### ▶ 7. THE 180 s TIMEOUT COULD NEVER BE ENOUGH
+
+Seven findings during an outage took ~5 minutes; the backend gave up at
+180 s and the page showed nothing, though every description was later
+written. A bigger number would not fix it: one finding alone can take
+minutes (2 attempts × 4 models × 3 retries × 120 s).
+
+* ai-service: each finding is a JOB (pool of `finding_context_concurrency`,
+  default **2**); the request waits at most
+  `finding_context_deadline_seconds` (**150**) and marks the rest
+  **`in_progress`**. Jobs keep running and cache their answer; **a finding
+  already in flight is joined, never written twice.**
+* backend: `in_progress` is never cached (same rule as `model_unavailable`).
+  `findingContextTimeoutMs` (180 s) **must stay above the 150 s deadline** —
+  commented at the setting.
+* frontend: "A description is still being prepared; it will appear when you
+  open this page again." **One settled rule was relaxed:** the box used to be
+  hidden when nothing was described; it now shows when something is still
+  coming (a total refusal is still hidden).
+
+### ▶ 8. THE PAIR PICKER RACE
+
+Two quick picker changes could leave the table showing the abandoned pair
+under a picker naming the chosen one. `choosePair` now numbers each choice
+and only the latest may write or clear "Comparing…".
+
+### ▶ TEST 3 WAS RE-ANALYSED (version 8, 2026-09-25)
+
+6 min 1 s, 200. Extraction alone took ~5 minutes of Gemini `ServerError`
+retries, **and lost no page — all 21 parameters.** At the old 45 s timeout
+page 2 would have gone again; the 120 s `.env` setting paid for itself.
+Extraction found no lab, date, name, sex or age — **correct: the PDF prints
+none (read and confirmed).** Its identity check is therefore `incomplete`.
+
+### KNOWN AND OPEN
+
+* **UNCOMMITTED** — all of the above.
+* **WHICH SEX/AGE SHOULD AN ANALYSIS USE?** Owner's decision (§0 item 13).
+  Test 3's anaemia card: 12.5 "below 13" (WHO male, from the profile); the
+  report prints F: 11–15, M: 12–16 — inside both.
+* **03-renal and 01-all-normal need re-analysis** to be identity-checked
+  (§0 item 14). Their typed dates (9th, 11th) disagree with what they print
+  (5th) and are shown as such; whether to correct the typed dates is the
+  owner's call.
+* **The picker vanishes while a comparison loads if `/timeline/trends`
+  failed** — it falls back to the trends' report list. Noticed, not changed.
+* **`finding_context`'s pool threads are non-daemon:** a graceful ai-service
+  shutdown waits for running jobs. `Stop-Process -Force` does not.
+* **A heredoc was used once to append tests** (`dashboard.test.js`), against
+  the owner's Write/Edit rule. Content is correct; noted so it is not
+  repeated.
 
 ---
 
