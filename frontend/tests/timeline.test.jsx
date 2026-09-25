@@ -900,6 +900,33 @@ describe('comparison -- the rest of the report', () => {
     expect(screen.queryByText(/unchanged/)).not.toBeInTheDocument();
   });
 
+  it('never prints "changed direction only", which reads as its opposite', async () => {
+    // SEEN ON SCREEN 2026-09-24:
+    //     Haemoglobin  9.2 g/dL  ->  13.6 g/dL   ↑ changed direction only
+    // Module 29 found a REAL change (+47.8 %, past the 9 % band) and declined
+    // only to call it better or worse. The words must say that.
+    mountPair([], [
+      { feature: 'hemoglobin', description: 'Haemoglobin concentration', unit: 'g/dl', previous: 9.2, current: 13.6, category: 'changed_direction_only', symbol: '↑' },
+    ]);
+
+    await screen.findByText('Haemoglobin concentration');
+    expect(screen.getByText(/real change, not rated better or worse/)).toBeInTheDocument();
+    expect(screen.queryByText(/direction only/)).not.toBeInTheDocument();
+    // Not mistaken for its counterpart, and the arrow -- the true half -- stays.
+    expect(screen.queryByText(/no real change/)).not.toBeInTheDocument();
+    expect(screen.getByText(/↑/)).toBeInTheDocument();
+  });
+
+  it('uses the same words for a laboratory row that moved with no polarity', async () => {
+    mountPair([
+      labRow({ name: 'ESR', previous: 35, current: 45, unit: 'mm/hr', previousUnit: 'mm/hr', currentUnit: 'mm/hr', category: 'changed_direction_only', symbol: '↑' }),
+    ]);
+
+    await screen.findByText('ESR');
+    expect(screen.getByText(/real change, not rated better or worse/)).toBeInTheDocument();
+    expect(screen.queryByText(/direction only/)).not.toBeInTheDocument();
+  });
+
   it('says nothing extra when there are no unassessed parameters', async () => {
     mountPair([], [
       { feature: 'hba1c', description: 'HbA1c', unit: '%', previous: 5.4, current: 7, category: 'worsened' },

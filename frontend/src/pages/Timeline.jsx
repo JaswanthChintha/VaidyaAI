@@ -938,9 +938,25 @@ function PairPicker({ reports, namesById, pair, onChange, busy }) {
  * THE CATEGORY ITSELF IS UNTOUCHED. `category--unchanged` still carries the
  * styling and the payload still says `unchanged`; this is the display word
  * only, so nothing downstream has to learn a new vocabulary.
+ *
+ * ==========================================================================
+ * `changed_direction_only` READ AS "ONLY THE DIRECTION CHANGED"
+ * ==========================================================================
+ *
+ * Printed by replacing its underscores, it reached the reader as:
+ *
+ *     Haemoglobin   9.2 g/dL  ->  13.6 g/dL   ↑ changed direction only
+ *
+ * which says nearly the opposite of what the category means. Module 29 found
+ * a REAL change -- +47.8 %, far past haemoglobin's 9 % stability band -- and
+ * declines only to call it better or worse, because haemoglobin's polarity is
+ * deliberately undeclared (harmful low and high; the range turns on sex, age
+ * and pregnancy). So it is said as the counterpart of "no real change": the
+ * change is real, and no verdict is given on it.
  */
 const COMPARISON_WORD = {
   unchanged: 'no real change',
+  changed_direction_only: 'real change, not rated better or worse',
 };
 
 function comparisonWord(category) {
