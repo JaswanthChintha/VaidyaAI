@@ -472,6 +472,44 @@ describe('Module 34 -- general context in the summary', () => {
     expect(document.body.textContent).not.toMatch(/could not be prepared/i);
   });
 
+  // ======================= a description STILL BEING WRITTEN (2026-09-24) ==
+  //
+  // The ai-service answers within a deadline and leaves slow descriptions
+  // running (`refused_by: "in_progress"`). "Could not be prepared" would be
+  // false for those, and during an outage the FIRST view is the one where
+  // nothing is finished yet.
+
+  it('says a description is still being prepared, not that it could not be', async () => {
+    withDashboard();
+    vi.spyOn(api, 'rewriteSummary').mockResolvedValue({ prose: null });
+    withContext([
+      GOOD,
+      { test_name: 'ESR', direction: 'raised', text: null, available: false, refused_by: 'in_progress' },
+    ]);
+    renderDashboard();
+
+    await screen.findByText(/In short/);
+    await waitFor(() => expect(api.describeFindings).toHaveBeenCalled());
+    const box = ctx();
+    expect(box.textContent).toMatch(/ESR/);
+    expect(box.textContent).toMatch(/still being prepared/i);
+    expect(box.textContent).toMatch(/open this page again/i);
+    expect(box.textContent).not.toMatch(/could not be prepared/i);
+  });
+
+  it('shows the box when NOTHING is finished yet but something is coming', async () => {
+    withDashboard();
+    vi.spyOn(api, 'rewriteSummary').mockResolvedValue({ prose: null });
+    withContext([
+      { test_name: 'CRP', direction: 'raised', text: null, available: false, refused_by: 'in_progress' },
+    ]);
+    renderDashboard();
+
+    await screen.findByText(/In short/);
+    await waitFor(() => expect(ctx()).not.toBeNull());
+    expect(ctx().textContent).toMatch(/still being prepared/i);
+  });
+
   it('renders nothing when the request fails', async () => {
     withDashboard();
     vi.spyOn(api, 'rewriteSummary').mockResolvedValue({ prose: null });

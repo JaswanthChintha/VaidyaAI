@@ -973,7 +973,13 @@ function InShort({
         const described = entries.some(
           (e) => e.available === true && typeof e.text === 'string' && e.text.trim()
         );
-        if (!cancelled && described) setContext(entries);
+        /* ONE EXCEPTION, and it is not a notice-only box (2026-09-24): a
+           description STILL BEING WRITTEN tells the reader something they did
+           not have -- that it is coming. During an outage the first view is
+           exactly the one where nothing is finished, and rendering nothing
+           there hid the fact that the work was under way. */
+        const coming = entries.some((e) => e.refused_by === 'in_progress');
+        if (!cancelled && (described || coming)) setContext(entries);
       } catch {
         // Nothing to report. The page is complete without this.
       }
@@ -1337,6 +1343,16 @@ function InShort({
                 </strong>{' '}
                 {described ? (
                   entry.text
+                ) : entry.refused_by === 'in_progress' ? (
+                  /* STILL BEING WRITTEN, which is not the same as "could not
+                     be prepared" (2026-09-24). The ai-service answers within a
+                     deadline and leaves slow descriptions running; the next
+                     view has them. Saying "could not" here would be false. */
+                  <span className="absent">
+                    A description is still being prepared; it will appear when
+                    you open this page again. The value itself is in the table
+                    above and is unaffected.
+                  </span>
                 ) : (
                   /* THE FINDING SURVIVES ITS MISSING SENTENCE. Same shape as
                      the glossary's notice for a test with no description, and

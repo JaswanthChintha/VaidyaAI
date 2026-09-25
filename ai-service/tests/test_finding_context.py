@@ -432,6 +432,70 @@ def test_a_safety_refusal_yields_no_text(monkeypatch):
     assert out.entries[0].refused_by == "safety"
 
 
+class RaisingLLM:
+    """A model that never answers -- Gemini's `ServerError`, as measured."""
+
+    def __init__(self, *replies: Any) -> None:
+        # Each reply is text to return, or an exception to raise.
+        self.replies = list(replies)
+        self.calls = 0
+
+    def generate_text(self, prompt: str, system_instruction: str = "") -> Any:
+        self.calls += 1
+        reply = self.replies.pop(0) if self.replies else RuntimeError("ServerError")
+        if isinstance(reply, BaseException):
+            raise reply
+        return reply
+
+
+def test_an_outage_is_not_recorded_as_a_safety_refusal():
+    """⚠ MEASURED 2026-09-24 on `Test 3.pdf`: NEUTROPHILS, ESR and CRP raised
+    `ServerError` on both attempts, and were stored as `refused_by: "safety"`
+    -- which the backend caches as a verdict. The REAL `guarded_generation`
+    is used here, because the conflation lived in it."""
+    llm = RaisingLLM(RuntimeError("ServerError"), RuntimeError("ServerError"))
+    out = fc.describe_findings(RAISED, llm=llm)
+    assert llm.calls == 2  # both attempts were made
+    entry = out.entries[0]
+    assert entry.available is False
+    assert entry.text is None
+    assert entry.refused_by == fc.REFUSED_MODEL_UNAVAILABLE == "model_unavailable"
+    assert out.withheld_count == 1
+
+
+def test_a_real_refusal_after_one_outage_is_still_a_safety_refusal():
+    """One attempt raised, the other produced text Module 24 refused. The
+    validator DID judge something, so this is not an outage."""
+    unsafe = "Raised levels are commonly associated with infection, which is often treated with medication."
+    llm = RaisingLLM(RuntimeError("ServerError"), unsafe)
+    out = fc.describe_findings(RAISED, llm=llm)
+    assert llm.calls == 2
+    assert out.entries[0].available is False
+    assert out.entries[0].refused_by == "safety"
+
+
+def test_a_real_refusal_on_both_attempts_is_a_safety_refusal():
+    unsafe = "Raised levels are commonly associated with infection, which is often treated with medication."
+    out = fc.describe_findings(RAISED, llm=RaisingLLM(unsafe, unsafe))
+    assert out.entries[0].refused_by == "safety"
+
+
+def test_an_outage_then_an_answer_is_approved():
+    llm = RaisingLLM(RuntimeError("ServerError"), GOOD)
+    out = fc.describe_findings(RAISED, llm=llm)
+    assert out.entries[0].available is True
+    assert out.entries[0].text == GOOD
+    assert out.entries[0].refused_by is None
+
+
+def test_an_outage_is_not_cached_so_the_next_request_asks_again():
+    first = fc.describe_findings(RAISED, llm=RaisingLLM())
+    assert first.entries[0].refused_by == "model_unavailable"
+    second = fc.describe_findings(RAISED, llm=RaisingLLM(GOOD))
+    assert second.entries[0].available is True
+    assert second.entries[0].cached is False
+
+
 # --------------------------------------------------------------------------
 # The direction is never guessed at, and the quota is capped
 # --------------------------------------------------------------------------
@@ -801,3 +865,138 @@ def test_the_other_gates_are_untouched_by_the_name_strip():
     name = "Vitamin D, 25-Hydroxy"
     assert _check("Your 25-hydroxy vitamin D level is low.", name) == "second_person"
     assert _check("A lowered 25-hydroxy vitamin D level indicates deficiency.", name) == "certainty"
+
+
+# --------------------------------------------------------------------------
+# THE DEADLINE, AND WORK THAT OUTLIVES THE REQUEST (2026-09-24)
+# --------------------------------------------------------------------------
+#
+# During a Gemini outage seven findings took ~5 minutes; the backend gave up
+# at 180 s and the page showed NOTHING, although every description was later
+# written. The request now waits at most `finding_context_deadline_seconds`,
+# returns what is finished, and leaves the rest running.
+
+
+class BlockingLLM:
+    """A model that answers only when the test lets it, and counts calls."""
+
+    def __init__(self, reply: str = GOOD) -> None:
+        import threading
+
+        self.reply = reply
+        self.release = threading.Event()
+        self.calls = 0
+        self.active = 0
+        self.peak = 0
+        self._lock = threading.Lock()
+
+    def generate_text(self, prompt: str, system_instruction: str = "") -> str:
+        with self._lock:
+            self.calls += 1
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+        try:
+            assert self.release.wait(timeout=10), "test never released the model"
+            return self.reply
+        finally:
+            with self._lock:
+                self.active -= 1
+
+
+def _settings(deadline: float = 0.2, concurrency: int = 2):
+    from app.config import Settings
+
+    return Settings(
+        _env_file=None,
+        finding_context_deadline_seconds=deadline,
+        finding_context_concurrency=concurrency,
+    )
+
+
+def _drain(timeout: float = 5.0) -> None:
+    import time
+
+    end = time.monotonic() + timeout
+    while fc._INFLIGHT and time.monotonic() < end:
+        time.sleep(0.01)
+    assert not fc._INFLIGHT, "a finding-context job never finished"
+
+
+def test_a_slow_finding_is_in_progress_not_refused_and_the_request_does_not_wait(guard):
+    import time
+
+    llm = BlockingLLM()
+    try:
+        started = time.monotonic()
+        out = fc.describe_findings(RAISED, llm=llm, settings=_settings(deadline=0.2))
+        assert time.monotonic() - started < 2.0
+        entry = out.entries[0]
+        assert entry.available is False
+        assert entry.text is None
+        assert entry.refused_by == fc.REFUSED_IN_PROGRESS == "in_progress"
+        assert out.in_progress_count == 1
+        assert out.withheld_count == 0  # not a refusal
+    finally:
+        llm.release.set()
+        _drain()
+
+
+def test_the_unfinished_job_keeps_running_and_the_next_request_gets_it_free(guard):
+    llm = BlockingLLM()
+    try:
+        first = fc.describe_findings(RAISED, llm=llm, settings=_settings(deadline=0.1))
+        assert first.entries[0].refused_by == "in_progress"
+    finally:
+        llm.release.set()
+        _drain()
+
+    second = fc.describe_findings(RAISED, llm=llm, settings=_settings())
+    assert second.entries[0].available is True
+    assert second.entries[0].text == GOOD
+    assert second.entries[0].cached is True
+    assert llm.calls == 1  # the answer was paid for once
+
+
+def test_a_finding_already_in_flight_is_joined_not_written_twice(guard):
+    llm = BlockingLLM()
+    try:
+        fc.describe_findings(RAISED, llm=llm, settings=_settings(deadline=0.1))
+        again = fc.describe_findings(RAISED, llm=llm, settings=_settings(deadline=0.1))
+        assert again.entries[0].refused_by == "in_progress"
+        assert llm.calls == 1
+    finally:
+        llm.release.set()
+        _drain()
+    assert llm.calls == 1
+
+
+def test_a_request_that_waits_long_enough_gets_the_joined_answer(guard):
+    import threading
+
+    llm = BlockingLLM()
+    try:
+        fc.describe_findings(RAISED, llm=llm, settings=_settings(deadline=0.1))
+        threading.Timer(0.2, llm.release.set).start()
+        joined = fc.describe_findings(RAISED, llm=llm, settings=_settings(deadline=5.0))
+    finally:
+        llm.release.set()
+        _drain()
+    assert joined.entries[0].available is True
+    # This request spent nothing: the job was started by the first one.
+    assert joined.entries[0].cached is True
+    assert joined.generated_count == 0 and joined.cached_count == 1
+    assert llm.calls == 1
+
+
+@pytest.mark.parametrize("concurrency, peak", [(1, 1), (2, 2)])
+def test_findings_are_described_at_most_n_at_a_time(guard, concurrency, peak):
+    llm = BlockingLLM()
+    many = [{"test_name": f"TEST {i}", "direction": "raised"} for i in range(4)]
+    try:
+        out = fc.describe_findings(many, llm=llm, settings=_settings(deadline=0.3, concurrency=concurrency))
+        assert out.in_progress_count == 4
+    finally:
+        llm.release.set()
+        _drain()
+    assert llm.peak == peak
+    assert llm.calls == 4

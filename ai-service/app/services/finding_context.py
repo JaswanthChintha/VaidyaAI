@@ -68,6 +68,9 @@ from __future__ import annotations
 
 import re
 import threading
+import time
+from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import wait as wait_for
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -94,6 +97,22 @@ DIRECTIONS = (DIRECTION_RAISED, DIRECTION_LOWERED)
 #: request that filled it, and it is what makes the ceiling below affordable.
 _CACHE: Dict[Tuple[str, str], "FindingContext"] = {}
 _CACHE_LOCK = threading.Lock()
+
+#: Descriptions being written RIGHT NOW, keyed like the cache. A second
+#: request for a finding already in flight waits on the same job instead of
+#: paying for it again -- which is what makes a reload during a slow run free.
+#: Guarded by `_CACHE_LOCK`, so "in the cache" and "in flight" are decided
+#: together and a finding can never be neither while it is being written.
+_INFLIGHT: Dict[Tuple[str, str], "Future[FindingContext]"] = {}
+
+#: One pool per concurrency setting, created on first use. The jobs OUTLIVE
+#: the request that started them -- that is the point, see `describe_findings`.
+_EXECUTORS: Dict[int, ThreadPoolExecutor] = {}
+
+#: A finding whose description was not finished by the deadline. NOT a gate
+#: and not an outage: the job is still running and its answer will be in the
+#: cache on the next view. The backend must not store it.
+REFUSED_IN_PROGRESS = "in_progress"
 
 #: Cap per report, COUNTED IN MODEL CALLS. A cache hit does not consume it.
 #:
@@ -263,6 +282,9 @@ class FindingContextData(BaseModel):
     generated_count: int = 0
     cached_count: int = 0
     withheld_count: int = 0
+    #: Findings still being described when the deadline passed. Not withheld:
+    #: their jobs are running and the next request will find them cached.
+    in_progress_count: int = 0
     #: Findings this report carried that the ceiling refused to spend a call
     #: on. NOT rendered to the reader -- there is no notice and no placeholder,
     #: as for any refusal here -- but LOGGED, and the log line is the only
@@ -412,12 +434,36 @@ def _check(text: str, test_name: str = "") -> Optional[str]:
     return None
 
 
+#: The model never answered: every attempt RAISED (timeout, `ServerError`,
+#: exhausted chain). NOT a gate, and the difference is what may be cached.
+REFUSED_MODEL_UNAVAILABLE = "model_unavailable"
+
+
 def _one(test_name: str, direction: str, client: Any) -> FindingContext:
+    # ⚠ AN OUTAGE WAS BEING RECORDED AS A SAFETY REFUSAL. `guarded_generation`
+    # treats a generator that raises as a failed attempt -- rightly, it must
+    # never approve -- so a Gemini `ServerError` on both attempts came back
+    # exactly like two Module 24 rejections and was stored as
+    # `refused_by: "safety"`. Measured 2026-09-24: NEUTROPHILS, ESR and CRP on
+    # `Test 3.pdf`, all `ServerError` on both models, all `UNANALYSABLE_INPUT`.
+    # The backend caches a partial result on the ground that its refusals
+    # "came from the gates", so an outage was pinned to the report as if the
+    # validator had judged it. Only when EVERY attempt raised is it named an
+    # outage: one attempt that produced text the validator refused is a real
+    # refusal, and keeps the name `safety`.
+    outcomes: List[bool] = []  # True = this attempt raised
+
     def generate(feedback: Any = None) -> str:
-        return client.generate_text(
-            _prompt(test_name, direction, feedback if isinstance(feedback, str) else None),
-            system_instruction=SYSTEM_INSTRUCTION,
-        )
+        try:
+            produced = client.generate_text(
+                _prompt(test_name, direction, feedback if isinstance(feedback, str) else None),
+                system_instruction=SYSTEM_INSTRUCTION,
+            )
+        except Exception:
+            outcomes.append(True)
+            raise
+        outcomes.append(False)
+        return produced
 
     result = guarded_generation(
         generate,
@@ -438,6 +484,8 @@ def _one(test_name: str, direction: str, client: Any) -> FindingContext:
 
     text = getattr(result, "approved_text", None)
     if not isinstance(text, str) or not text.strip():
+        if outcomes and all(outcomes):
+            return _refuse(test_name, direction, REFUSED_MODEL_UNAVAILABLE)
         return _refuse(test_name, direction, "safety")
 
     cleaned = " ".join(text.split())
@@ -479,18 +527,34 @@ def describe_findings(
     itself flagged. That matters only when the ceiling is reached, and then it
     matters entirely -- it is the difference between a rule deciding what is
     dropped and "whatever the laboratory printed last" deciding.
+
+    ⚠ A DEADLINE, AND WORK THAT OUTLIVES THE REQUEST (2026-09-24). This used to
+    describe the findings one by one inside the request. During a Gemini
+    outage seven took ~5 minutes; the backend gave up at 180 s and the page
+    showed NOTHING, although every description was later written. Now each
+    finding is a job; the request waits at most
+    `finding_context_deadline_seconds` and returns what is finished, marking
+    the rest `in_progress`. Those jobs keep running and cache their answers,
+    so the next view is complete and free. No finding is ever written twice at
+    once: a request for one already in flight waits on the same job.
     """
+    settings = settings or get_settings()
     client = _resolve_llm(llm, settings)
     if client is None:
         return FindingContextData()
 
-    entries: List[FindingContext] = []
-    generated = cached = withheld = 0
+    started = time.monotonic()
+    deadline = max(0.0, float(settings.finding_context_deadline_seconds))
+    executor = _executor(max(1, int(settings.finding_context_concurrency)))
+
+    # (name, key, cached entry | None, job | None, did THIS request start it)
+    plan: List[Tuple[str, Tuple[str, str], Optional[FindingContext], Optional[Future], bool]] = []
     seen = set()
     over_limit = 0
     # COUNTED IN CALLS, NOT IN ENTRIES. A cache hit spends nothing, so it must
     # not consume the budget -- that property is what the raised ceiling rests
-    # on, and it is the glossary's own arrangement (§6ar).
+    # on, and it is the glossary's own arrangement (§6ar). Joining a job
+    # another request started spends nothing either.
     calls_left = MAX_PER_REPORT
 
     for item in findings or []:
@@ -505,29 +569,58 @@ def describe_findings(
 
         with _CACHE_LOCK:
             hit = _CACHE.get(key)
+            running = _INFLIGHT.get(key) if hit is None else None
+            if hit is None and running is None and calls_left > 0:
+                calls_left -= 1
+                # Submitted and registered under ONE lock, so the job cannot
+                # finish and unregister before it is registered.
+                running = executor.submit(_job, key, name, direction, client)
+                _INFLIGHT[key] = running
+                plan.append((name, key, None, running, True))
+                continue
         if hit is not None:
-            entries.append(
-                hit.model_copy(update={"test_name": name, "cached": True})
-            )
+            plan.append((name, key, hit, None, False))
+        elif running is not None:
+            plan.append((name, key, None, running, False))
+        else:
+            over_limit += 1
+
+    jobs = [job for (_, _, _, job, _) in plan if job is not None]
+    if jobs:
+        wait_for(jobs, timeout=max(0.0, deadline - (time.monotonic() - started)))
+
+    entries: List[FindingContext] = []
+    generated = cached = withheld = in_progress = 0
+    for name, key, hit, job, mine in plan:
+        if hit is not None:
+            entries.append(hit.model_copy(update={"test_name": name, "cached": True}))
             cached += 1
             continue
-
-        if calls_left <= 0:
-            over_limit += 1
+        if job is None or not job.done():
+            entries.append(
+                FindingContext(
+                    test_name=name,
+                    direction=key[1],
+                    text=None,
+                    refused_by=REFUSED_IN_PROGRESS,
+                )
+            )
+            in_progress += 1
             continue
-        calls_left -= 1
-
-        entry = _one(name, direction, client)
-        with _CACHE_LOCK:
-            # Only a real answer is cached. A refusal is a moment, not a fact
-            # about the test name -- and a quota outage refuses everything.
-            if entry.available:
-                _CACHE[key] = entry
+        try:
+            entry = job.result()
+        except Exception:  # noqa: BLE001 -- `_job` should not raise; if it does, nothing is approved
+            entry = FindingContext(
+                test_name=name, direction=key[1], text=None, refused_by=REFUSED_MODEL_UNAVAILABLE
+            )
+        entry = entry.model_copy(update={"test_name": name, "cached": not mine})
         entries.append(entry)
-        if entry.available:
+        if not entry.available:
+            withheld += 1
+        elif mine:
             generated += 1
         else:
-            withheld += 1
+            cached += 1
 
     # THE ONE PLACE THE CEILING IS OBSERVABLE. The page renders nothing for a
     # skipped finding, by design, so without this line a truncation leaves no
@@ -539,6 +632,7 @@ def describe_findings(
             generated=generated,
             cached=cached,
             withheld=withheld,
+            in_progress=in_progress,
             skipped_over_limit=over_limit,
             ceiling=MAX_PER_REPORT,
         ),
@@ -548,11 +642,43 @@ def describe_findings(
         generated_count=generated,
         cached_count=cached,
         withheld_count=withheld,
+        in_progress_count=in_progress,
         skipped_over_limit=over_limit,
     )
+
+
+def _executor(workers: int) -> ThreadPoolExecutor:
+    with _CACHE_LOCK:
+        pool = _EXECUTORS.get(workers)
+        if pool is None:
+            pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="finding-context")
+            _EXECUTORS[workers] = pool
+        return pool
+
+
+def _job(key: Tuple[str, str], name: str, direction: str, client: Any) -> FindingContext:
+    """One finding, described -- and cached here, not by the request.
+
+    THE CACHE WRITE LIVES IN THE JOB because the job may finish after the
+    request that started it has already answered `in_progress`; the next
+    request must find the answer. Only a real answer is cached: a refusal is a
+    moment, not a fact about the test name, and an outage refuses everything.
+    The cache write comes BEFORE the job unregisters, so a request arriving in
+    between finds one or the other, never neither.
+    """
+    try:
+        entry = _one(name, direction, client)
+        if entry.available:
+            with _CACHE_LOCK:
+                _CACHE[key] = entry
+        return entry
+    finally:
+        with _CACHE_LOCK:
+            _INFLIGHT.pop(key, None)
 
 
 def reset_cache() -> None:
     """Test hook. Never called by the service."""
     with _CACHE_LOCK:
         _CACHE.clear()
+        _INFLIGHT.clear()

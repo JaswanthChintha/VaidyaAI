@@ -291,6 +291,13 @@ const config = {
     // per call, and several times that when the daily quota pushes the chain
     // onto a slower fallback: 120s has nothing spare and is the §6as defect
     // waiting to recur.
+    //
+    // ⚠ NO FIXED BUDGET WAS EVER ENOUGH, and 2026-09-24 proved it: seven
+    // findings during an outage took ~5 minutes and this timed out with the
+    // page empty. The ai-service now answers within its own
+    // `finding_context_deadline_seconds` (150 s) and leaves slow descriptions
+    // running. THIS MUST STAY ABOVE THAT DEADLINE, or the partial answer is
+    // lost in transit exactly as the full one was.
     findingContextTimeoutMs: toInt(
       process.env.AI_SERVICE_FINDING_CONTEXT_TIMEOUT_MS,
       180 * 1000

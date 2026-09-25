@@ -58,6 +58,19 @@ class Settings(BaseSettings):
     gemini_temperature: float = 0.0
     gemini_max_output_tokens: int = 32768
 
+    # --- Module 34: how long a page waits for finding descriptions ---
+    #
+    # MUST STAY BELOW the backend's `AI_SERVICE_FINDING_CONTEXT_TIMEOUT_MS`
+    # (180 s). Past this deadline the request returns what is finished and
+    # marks the rest `in_progress`; the unfinished work carries on and lands in
+    # the process cache for the next view. Before this existed, seven findings
+    # during a Gemini outage took ~5 minutes, the backend gave up at 180 s, and
+    # the page showed nothing although every description was later written.
+    finding_context_deadline_seconds: float = 150.0
+    # How many findings are described at once. 2 shortens a long list without
+    # piling onto the free tier's per-minute limit; 1 is strictly sequential.
+    finding_context_concurrency: int = 2
+
     # --- OpenRouter: the SECONDARY PROVIDER for prose, quota-only ---
     #
     # Reached ONLY when every Gemini model in the chain above has answered 429,
