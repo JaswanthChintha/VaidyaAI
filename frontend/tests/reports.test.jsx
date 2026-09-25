@@ -220,6 +220,81 @@ describe('Module 3 -- the report list', () => {
     expect(row.textContent).toMatch(/uploaded/i);
   });
 
+  // ================ "Being analysed…" must find out when it stops (2026-09-25)
+  //
+  // A list loaded while an analysis was running showed "Being analysed…" for
+  // 18 minutes after the report had been stored as processed: the page only
+  // refreshed when its OWN Analyse click returned.
+
+  it('re-checks a report being analysed, and shows it done without a click', async () => {
+    const { PROCESSING_POLL_MS } = await import('../src/pages/Reports');
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const list = vi
+        .spyOn(api, 'listReports')
+        .mockResolvedValueOnce({ reports: [{ ...REPORT, status: 'processing' }] })
+        .mockResolvedValue({ reports: [{ ...REPORT, status: 'processed' }] });
+      render(
+        <MemoryRouter>
+          <Reports />
+        </MemoryRouter>
+      );
+      await screen.findByText('Being analysed…');
+      expect(screen.getByText(/updates by itself when the analysis finishes/i)).toBeInTheDocument();
+
+      await vi.advanceTimersByTimeAsync(PROCESSING_POLL_MS);
+      await screen.findByText('Analysed');
+      expect(screen.queryByText('Being analysed…')).not.toBeInTheDocument();
+      expect(list).toHaveBeenCalledTimes(2);
+
+      // Nothing processing any more: the asking stops.
+      await vi.advanceTimersByTimeAsync(PROCESSING_POLL_MS * 3);
+      expect(list).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('never polls a list with nothing being analysed', async () => {
+    const { PROCESSING_POLL_MS } = await import('../src/pages/Reports');
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const list = vi.spyOn(api, 'listReports').mockResolvedValue({ reports: [REPORT] });
+      const { unmount } = render(
+        <MemoryRouter>
+          <Reports />
+        </MemoryRouter>
+      );
+      await screen.findByText('Analysed');
+      await vi.advanceTimersByTimeAsync(PROCESSING_POLL_MS * 3);
+      expect(list).toHaveBeenCalledTimes(1);
+      unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stops asking when the page is left', async () => {
+    const { PROCESSING_POLL_MS } = await import('../src/pages/Reports');
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const list = vi
+        .spyOn(api, 'listReports')
+        .mockResolvedValue({ reports: [{ ...REPORT, status: 'processing' }] });
+      const { unmount } = render(
+        <MemoryRouter>
+          <Reports />
+        </MemoryRouter>
+      );
+      await screen.findByText('Being analysed…');
+      unmount();
+      await vi.advanceTimersByTimeAsync(PROCESSING_POLL_MS * 3);
+      expect(list).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('tells the uploader a blank date falls back to the printed one', async () => {
     mount([]);
     await screen.findByText(/Upload a report/i);

@@ -55,6 +55,11 @@ function ReportDate({ report }) {
  * so the button says so rather than appearing broken.
  */
 
+/** How often a list with a report still being analysed is asked again. The
+ *  list endpoint carries no rate limiter (only upload, analysis and the
+ *  history routes do), and an analysis takes a minute or more. */
+export const PROCESSING_POLL_MS = 10000;
+
 const STATUS_COPY = {
   uploaded: 'Uploaded, not yet analysed',
   processing: 'Being analysed…',
@@ -87,6 +92,20 @@ export default function Reports() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // A ROW THAT SAYS "Being analysed…" MUST FIND OUT WHEN IT STOPS (2026-09-25).
+  // The list only refreshed when THIS page's own Analyse click returned. A
+  // list loaded while an analysis was already running -- leave the page and
+  // come back within the minute -- showed "Being analysed…" indefinitely:
+  // 01-all-normal read that for 18 minutes after it had been stored as
+  // processed. So while any row is processing, the list is asked again every
+  // PROCESSING_POLL_MS, and the asking stops when none is, or the page goes.
+  const anyProcessing = (reports || []).some((report) => report.status === 'processing');
+  useEffect(() => {
+    if (!anyProcessing) return undefined;
+    const timer = setInterval(load, PROCESSING_POLL_MS);
+    return () => clearInterval(timer);
+  }, [anyProcessing, load]);
 
   async function onUpload(event) {
     event.preventDefault();
@@ -211,6 +230,13 @@ export default function Reports() {
                 {STATUS_COPY[report.status] || report.status}
               </span>
             </div>
+            {report.status === 'processing' ? (
+              <p className="report__note">
+                This page updates by itself when the analysis finishes. It
+                usually takes a minute or two, longer when the model service is
+                slow.
+              </p>
+            ) : null}
             {/* THE DATE ON THE REPORT, OR THE DAY IT WAS UPLOADED -- SAID.
 
                 This printed `chronoDate` bare. `chronoDate` is
