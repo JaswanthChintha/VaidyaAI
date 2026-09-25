@@ -126,7 +126,7 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from app.core.logging import get_logger, safe_meta
 from app.data.conditions import CONDITIONS
-from app.data.feature_catalog import CANONICAL_FEATURES, FEATURES
+from app.data.feature_catalog import CANONICAL_FEATURES, FEATURES, SOURCE_REPORT_DETAILS
 from app.data.recommendation_catalog import assert_safe, scan_text
 from app.schemas.comparison import ReportComparisonRequest
 from app.schemas.doctor_summary import (
@@ -365,6 +365,12 @@ _TEMPLATES: Dict[str, str] = {
     "lab_from_profile": (
         "Supplied from the patient's own profile rather than read from a "
         "laboratory report."
+    ),
+    # 2026-09-25: the sex / age printed in the report's patient details, used
+    # in place of the profile's. A patient detail, not a measured result.
+    "lab_from_report_details": (
+        "Taken from the patient details printed on the report, in place of "
+        "the patient's profile. A patient detail, not a measured result."
     ),
     # ---- overall status ---------------------------------------------
     "overall_nothing_assessed": (
@@ -735,6 +741,8 @@ def _lab_note(value: LaboratoryValue, reference_basis: str) -> str:
 
     if value.source == "patient_profile":
         parts.append(_TEMPLATES["lab_from_profile"])
+    elif value.source == SOURCE_REPORT_DETAILS:
+        parts.append(_TEMPLATES["lab_from_report_details"])
     if value.derived:
         parts.append(_TEMPLATES["lab_derived"])
     if value.unit_assumed:

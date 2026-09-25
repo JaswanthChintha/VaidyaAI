@@ -213,7 +213,9 @@ class FeatureProvenance(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    source: str = Field(description=f"{SOURCE_LAB_REPORT} | {SOURCE_PATIENT_PROFILE}")
+    source: str = Field(
+        description=f"{SOURCE_LAB_REPORT} | {SOURCE_PATIENT_PROFILE} | report_details"
+    )
     original_test_name: Optional[str] = Field(
         default=None, description="Test name exactly as printed, or profile field."
     )
@@ -419,6 +421,9 @@ class FeatureEngineeringSummary(BaseModel):
     feature_count: int = 0
     lab_feature_count: int = 0
     profile_feature_count: int = 0
+    #: Sex / age taken from the patient details PRINTED on the report, in
+    #: place of the profile's. Neither lab nor profile -- counted apart.
+    report_details_feature_count: int = 0
     unmapped_count: int = 0
     conversion_count: int = 0
     duplicate_count: int = 0

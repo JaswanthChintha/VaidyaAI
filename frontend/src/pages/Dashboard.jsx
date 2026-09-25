@@ -7,6 +7,7 @@ import RiskGauge from '../components/RiskGauge';
 import CoverageRadar from '../components/CoverageRadar';
 import { PATIENT_LABEL } from '../lib/labels';
 import { ProfileIdentityNotice } from '../components/IdentityNotice';
+import { isPatientDetail } from '../lib/sources';
 
 /**
  * Module 27 -- the health dashboard.
@@ -823,7 +824,18 @@ const STATUS_IN_ENGLISH = {
 function isProfileDerived(evidence) {
   const lines = evidence?.lines || [];
   if (!lines.length) return false;
-  return lines.every((line) => line.sourceStage === 'patient_profile');
+  // A patient DETAIL either way: the profile's, or (2026-09-25) the age / sex
+  // printed on the report. Neither is anything this report measured.
+  return lines.every((line) => isPatientDetail(line.sourceStage));
+}
+
+/** Did any of these findings rest on the sex / age PRINTED on the report? */
+function usesReportDetails(cards, evidenceFor) {
+  return cards.some((card) =>
+    (evidenceFor.get(card.condition)?.lines || []).some(
+      (line) => line.sourceStage === 'report_details'
+    )
+  );
 }
 
 /**
@@ -909,7 +921,7 @@ function InShort({
       // associated with..." under a heading about this report's results is the
       // same category error §6t found in the summary: a finding computed from
       // what the reader typed, presented as something the laboratory measured.
-      if (!row || row.source === 'patient_profile') continue;
+      if (!row || isPatientDetail(row.source)) continue;
       // The laboratory's own printed name first, then this page's own label --
       // never the internal feature key, which is what §6an-i swept off every
       // reader-facing screen.
@@ -1116,7 +1128,7 @@ function InShort({
     .filter((row) => {
       // A profile answer is not a laboratory result -- same exclusion, and
       // the same reason, as the findings list above.
-      if (row.source === 'patient_profile') return false;
+      if (isPatientDetail(row.source)) return false;
       if (coveredByACondition.has(row.feature)) return false;
       const verdict = verdicts?.get(row.feature);
       return Boolean(verdict?.direction && verdict.direction !== 'normal');
@@ -1232,9 +1244,13 @@ function InShort({
       {fromProfile.length ? (
         <p className="hint">
           {nameList(fromProfile.map((card) => card.condition))}{' '}
-          {fromProfile.length === 1 ? 'comes' : 'come'} from the details you
-          entered — your height, weight, age and the answers you gave — not
-          from anything measured in this report.
+          {fromProfile.length === 1 ? 'comes' : 'come'} from{' '}
+          {/* "the details you entered" is false once the age or sex came off
+              the report itself (2026-09-25), so it is said when it is true. */}
+          {usesReportDetails(fromProfile, evidenceFor)
+            ? 'details about you — your profile, and the age and sex printed on the report —'
+            : 'the details you entered — your height, weight, age and the answers you gave —'}{' '}
+          not from anything measured in this report.
           {/* THE SECOND SENTENCE IS ONLY TRUE WHEN THE PROFILE FINDINGS ARE
               THE ONLY FINDINGS. On a report that also flagged Diabetes from a
               raised HbA1c, "while every laboratory result on the page is in
@@ -2023,7 +2039,9 @@ export default function Dashboard() {
   // where the reader already expects it and only a stated profile source is
   // moved.
   const profileLabs = labs.filter((row) => row.source === 'patient_profile');
-  const measuredLabs = labs.filter((row) => row.source !== 'patient_profile');
+  // The sex / age printed on the report (2026-09-25): a patient detail too.
+  const reportDetailLabs = labs.filter((row) => row.source === 'report_details');
+  const measuredLabs = labs.filter((row) => !isPatientDetail(row.source));
   // Rows the reader is shown: a value that is there, or one that was
   // taken and refused. `measuredLabs` itself is left whole -- it still
   // feeds `resultFeatures`, which stops a test being described twice.
@@ -2474,6 +2492,21 @@ export default function Dashboard() {
             rows={profileLabs}
             fromProfile
             caption="These came from the details you entered, not from this report. They are used to interpret your results — they are not results themselves."
+          />
+        </>
+      ) : null}
+
+      {/* THE REPORT'S OWN PATIENT DETAILS (2026-09-25). The sex and age the
+          report prints are used in place of the profile's; they are details
+          about the person, not measurements, and are shown as such -- never
+          in the results table, and never under "From your profile". */}
+      {reportDetailLabs.length ? (
+        <>
+          <h2>From the report&rsquo;s patient details</h2>
+          <LabTable
+            rows={reportDetailLabs}
+            fromProfile
+            caption="The sex and age printed on this report. They were used in place of your profile's to interpret your results — they are not results themselves."
           />
         </>
       ) : null}

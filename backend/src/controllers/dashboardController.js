@@ -1,6 +1,7 @@
 'use strict';
 
 const Report = require('../models/Report');
+const Profile = require('../models/Profile');
 const ApiError = require('../utils/ApiError');
 const asyncHandler = require('../utils/asyncHandler');
 const { sendSuccess } = require('../utils/apiResponse');
@@ -119,17 +120,19 @@ const getDashboard = asyncHandler(async (req, res) => {
       report.parameterGlossary === undefined ? null : report.parameterGlossary,
   });
 
-  // DOES THE REPORT AGREE WITH THE PROFILE THE ANALYSIS USED? Every analysis
-  // takes sex and age from the account profile, never the report -- so a
-  // report printing "34 Years / Female" on a "20, male" account was judged
-  // with male thresholds and nothing said so (2026-09-24). This says so. It
-  // changes no threshold; which values SHOULD be used is a separate decision.
-  // `not_checked` for a report analysed before printed sex and age were read.
+  // DOES THE REPORT AGREE WITH THE READER'S PROFILE, AND WHICH DID THE
+  // ANALYSIS USE? Since 2026-09-25 the sex and age the report prints are used
+  // in place of the profile's (Module 5, `report_details`); an analysis from
+  // before that used the profile. Either way a disagreement is said, because
+  // it can mean the report is someone else's. Compared with the profile AS IT
+  // STANDS -- the question is "is this yours". `not_checked` for a report
+  // analysed before printed sex and age were read.
+  const profile = await Profile.findOne(ownerScopedFilter(req.user, { ...OWNER_ONLY })).lean();
   const identity = compareWithProfile({
     identity: report.printedIdentity || null,
+    profile,
     features: report.features,
     reportDate: report.chronoDate,
-    analysedAt: report.analysis && report.analysis.completedAt,
   });
 
   return sendSuccess(res, 200, {

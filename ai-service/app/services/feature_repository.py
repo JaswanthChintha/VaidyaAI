@@ -82,6 +82,7 @@ from app.data.feature_catalog import (
     FEATURES,
     SOURCE_LAB_REPORT,
     SOURCE_PATIENT_PROFILE,
+    SOURCE_REPORT_DETAILS,
 )
 from app.schemas.features import (
     FeatureProvenance,
@@ -465,6 +466,9 @@ def build_snapshot(
         ),
         profile_feature_count=sum(
             1 for f in features.values() if f.source == SOURCE_PATIENT_PROFILE
+        ),
+        report_details_feature_count=sum(
+            1 for f in features.values() if f.source == SOURCE_REPORT_DETAILS
         ),
         questionable_count=sum(1 for f in features.values() if f.questionable),
         clinically_extreme_count=sum(

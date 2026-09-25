@@ -56,6 +56,7 @@ from app.data.feature_catalog import (
     PROFILE_FEATURES,
     SOURCE_LAB_REPORT,
     SOURCE_PATIENT_PROFILE,
+    SOURCE_REPORT_DETAILS,
     UnmappedReason,
     lookup_test_name,
     normalize_gender,
@@ -64,6 +65,7 @@ from app.data.feature_catalog import (
 )
 from app.data.unit_conversions import conversion_for, is_known_unit, normalize_unit
 from app.schemas.extraction import ExtractedParameter, coerce_numeric
+from app.services.printed_identity import read_age_years, read_sex
 from app.services.sex_specific_range import bounds_for_sex
 from app.schemas.features import (
     ConversionDetail,
@@ -197,6 +199,7 @@ def _reference_bounds(
     sex: Optional[str],
     notes: List[str],
     warnings: List[str],
+    sex_from: str = "the profile",
 ) -> Tuple[Optional[float], Optional[float], bool, Optional[str]]:
     """`(low, high, converted, unit)` for the interval printed beside a value.
 
@@ -262,7 +265,7 @@ def _reference_bounds(
             notes.append(
                 f"The report printed a reference interval for each sex "
                 f"({param.reference_range_raw!r}); the {sex} interval "
-                f"{low}-{high} was used, matching the sex on the profile."
+                f"{low}-{high} was used, matching the sex on {sex_from}."
             )
 
     if low is None and high is None:
@@ -311,9 +314,14 @@ def _reference_bounds(
 
 
 def _build_lab_candidate(
-    index: int, param: ExtractedParameter, sex: Optional[str] = None
+    index: int,
+    param: ExtractedParameter,
+    sex: Optional[str] = None,
+    sex_from: str = "the profile",
 ) -> Tuple[Optional[_Candidate], Optional[UnmappedItem], List[str]]:
-    """`sex` is the profile's normalised gender, or None when it is unknown.
+    """`sex` is the patient's normalised sex, or None when it is unknown --
+    the sex PRINTED on the report when it could be read, else the profile's.
+    `sex_from` names which, for the provenance note.
 
     It is used for ONE thing: choosing between the two intervals a report
     prints when it gives a reference range per sex. Defaulted so that every
@@ -445,6 +453,7 @@ def _build_lab_candidate(
         sex=sex,
         notes=notes,
         warnings=warnings,
+        sex_from=sex_from,
     )
 
     provenance = FeatureProvenance(
@@ -525,13 +534,96 @@ def _profile_feature(
     )
 
 
+def _printed_details(upstream: Optional[ExtractionInput]) -> Dict[str, Any]:
+    """The sex and age the report PRINTS, read -- or absent. See
+    `app/services/printed_identity.py` for what is read and what is refused."""
+    meta = upstream.report_metadata if upstream is not None else None
+    raw_sex = getattr(meta, "patient_sex", None)
+    raw_age = getattr(meta, "patient_age", None)
+    sex = read_sex(raw_sex)
+    return {
+        "gender": normalize_gender(sex) if sex else None,
+        "gender_raw": raw_sex,
+        "age": read_age_years(raw_age),
+        "age_raw": raw_age,
+    }
+
+
+def _merge_report_details(
+    printed: Dict[str, Any],
+    profile: Optional[PatientProfileContext],
+    features: Dict[str, EngineeredFeature],
+    warnings: List[str],
+) -> set:
+    """THE REPORT'S OWN SEX AND AGE, used in place of the profile's.
+
+    THE OWNER'S DECISION, 2026-09-25. Every analysis used the ACCOUNT
+    PROFILE's sex and age and never the report's: a report printing
+    "34 Years / Female" on a "20, male" account was scored as a 20-year-old
+    man, male thresholds and all. The report describes the person whose
+    blood it is; the profile describes whoever owns the account. So a value
+    the report prints, and this service could read, wins -- labelled
+    `report_details`, a patient DETAIL and never a measurement.
+
+    Where they disagree the provenance names both and a warning says so,
+    because a disagreement can also mean the report is someone else's.
+    Returns the feature names claimed, so the profile does not overwrite them.
+    """
+    claimed = set()
+    profile_values = {
+        "gender": normalize_gender(profile.gender) if profile and profile.gender is not None else None,
+        "age": int(profile.age) if profile and profile.age is not None else None,
+    }
+    labels = {"gender": "sex", "age": "age"}
+    for name in ("gender", "age"):
+        value = printed.get(name)
+        if value is None:
+            continue
+        raw = printed.get(f"{name}_raw")
+        from_profile = profile_values[name]
+        notes = [f"Printed on the report as {raw!r}; used in place of the profile."]
+        if from_profile is not None and from_profile != value:
+            notes.append(f"The profile gives {from_profile}.")
+            warnings.append(
+                f"The report prints the patient's {labels[name]} as {raw!r}; the "
+                f"profile gives {from_profile}. The report's value was used for "
+                f"this analysis."
+            )
+        definition = FEATURES[name]
+        features[name] = EngineeredFeature(
+            name=name,
+            value=value,
+            unit=definition.canonical_unit,
+            canonical_unit=True,
+            source=SOURCE_REPORT_DETAILS,
+            provenance=FeatureProvenance(
+                source=SOURCE_REPORT_DETAILS,
+                original_test_name=name,
+                original_value_raw=None if raw is None else str(raw),
+                original_value_numeric=float(value) if name == "age" else None,
+                original_unit=definition.canonical_unit,
+                normalized_unit=definition.canonical_unit,
+                notes=notes,
+            ),
+        )
+        claimed.add(name)
+    return claimed
+
+
 def _merge_profile(
     profile: PatientProfileContext,
     features: Dict[str, EngineeredFeature],
     unmapped: List[UnmappedItem],
     warnings: List[str],
+    skip: Iterable[str] = (),
 ) -> None:
+    skip = set(skip)
+
     def claim(name: str, feature: EngineeredFeature) -> None:
+        # Already taken from the report's own patient details, which win.
+        # Not a duplicate to discard and report: it is the decided order.
+        if name in skip:
+            return
         existing = features.get(name)
         if existing is not None:
             # Should not happen with the current catalog (no profile feature
@@ -769,14 +861,25 @@ def engineer_features(
     # so a value this service would refuse to record as a feature cannot come
     # in here by a side door. `other`, an unrecognised value, and no profile
     # at all all yield None, and None selects no interval.
-    sex = (
-        normalize_gender(profile_ctx.gender)
-        if profile_ctx is not None and profile_ctx.gender is not None
-        else None
-    )
+    #
+    # THE SEX THE REPORT PRINTS COMES FIRST (2026-09-25), for the reason in
+    # `_merge_report_details`: `F: 11-15 M: 12-16` on a woman's report must be
+    # read with the F interval whatever the account's profile says.
+    printed = _printed_details(upstream_input)
+    if printed["gender"] is not None:
+        sex, sex_from = printed["gender"], "the report"
+    else:
+        sex = (
+            normalize_gender(profile_ctx.gender)
+            if profile_ctx is not None and profile_ctx.gender is not None
+            else None
+        )
+        sex_from = "the profile"
 
     for index, param in enumerate(params):
-        candidate, unmapped_item, row_warnings = _build_lab_candidate(index, param, sex)
+        candidate, unmapped_item, row_warnings = _build_lab_candidate(
+            index, param, sex, sex_from
+        )
         warnings.extend(row_warnings)
         if unmapped_item is not None:
             unmapped.append(unmapped_item)
@@ -836,8 +939,9 @@ def engineer_features(
                     )
                 )
 
+    from_report = _merge_report_details(printed, profile_ctx, features, warnings)
     if profile_ctx is not None:
-        _merge_profile(profile_ctx, features, unmapped, warnings)
+        _merge_profile(profile_ctx, features, unmapped, warnings, skip=from_report)
 
     missing = [name for name in FEATURES if name not in features]
 
@@ -862,6 +966,9 @@ def engineer_features(
         ),
         profile_feature_count=sum(
             1 for f in features.values() if f.source == SOURCE_PATIENT_PROFILE
+        ),
+        report_details_feature_count=sum(
+            1 for f in features.values() if f.source == SOURCE_REPORT_DETAILS
         ),
         unmapped_count=len(unmapped),
         conversion_count=len(conversions),

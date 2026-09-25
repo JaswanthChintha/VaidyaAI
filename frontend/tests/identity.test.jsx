@@ -20,21 +20,36 @@ beforeEach(() => {
 });
 
 describe('ProfileIdentityNotice', () => {
-  it('names both sides of a disagreement, as a warning', () => {
-    render(
-      <ProfileIdentityNotice
-        identity={{
-          status: 'conflict',
-          conflicts: [{ field: 'sex' }, { field: 'age' }],
-          printed: { sex: 'female', ageYears: 34 },
-          used: { sex: 'male', ageYears: 20 },
-        }}
-      />
-    );
+  // 2026-09-25: the report's own sex and age are USED. The notice names both
+  // sides and says truthfully which one the analysis took.
+  const conflict = (sexSource, ageSource) => ({
+    status: 'conflict',
+    conflicts: [{ field: 'sex' }, { field: 'age' }],
+    printed: { sex: 'female', ageYears: 34 },
+    profile: { sex: 'male', ageYears: 20 },
+    used: { sexSource, ageSource },
+  });
+
+  it('names both sides, and says the REPORT\'s values were used', () => {
+    render(<ProfileIdentityNotice identity={conflict('report_details', 'report_details')} />);
     const note = screen.getByRole('note', { name: /may not match your profile/i });
     expect(note.textContent).toMatch(/prints: female, 34 years old/);
-    expect(note.textContent).toMatch(/used your profile: male, 20 years old/);
-    expect(note.textContent).toMatch(/judged with your profile.s values/);
+    expect(note.textContent).toMatch(/Your profile says: male, 20 years old/);
+    expect(note.textContent).toMatch(/used the sex and age printed on the report/);
+    expect(note.textContent).toMatch(/someone else.s, its results are theirs/);
+  });
+
+  it('an analysis from before the change says it used the PROFILE, and how to change that', () => {
+    render(<ProfileIdentityNotice identity={conflict('patient_profile', 'patient_profile')} />);
+    const note = screen.getByRole('note', { name: /may not match your profile/i });
+    expect(note.textContent).toMatch(/used your profile.s values, not the report.s/);
+    expect(note.textContent).toMatch(/Analysing the report again uses the report.s/);
+    expect(note.textContent).not.toMatch(/used the sex and age printed on the report/);
+  });
+
+  it('a mix is said as a mix, not as either', () => {
+    render(<ProfileIdentityNotice identity={conflict('report_details', 'patient_profile')} />);
+    expect(screen.getByRole('note').textContent).toMatch(/report.s values for some of these and your\s+profile.s for others/);
   });
 
   it('says "not checked" -- never nothing -- for a report that predates the check', () => {
@@ -84,6 +99,52 @@ describe('PairIdentityNotice', () => {
   });
 });
 
+describe('the report\'s own sex and age are details, never results (2026-09-25)', () => {
+  it('shows them under their own heading, not in the results table and not as "your profile"', async () => {
+    vi.spyOn(api, 'getDashboard').mockResolvedValue({
+      report: { originalName: '01-all-normal.pdf' },
+      dashboard: {
+        overall: { status: 'Healthy', statusLabel: 'Healthy', risk: 'Low', anyAssessed: true, complete: true },
+        laboratory: [
+          { feature: 'hemoglobin', displayName: 'Haemoglobin', value: 13.6, unit: 'g/dl', state: 'measured', usable: true, source: 'lab_report' },
+          { feature: 'age', displayName: 'Age', value: 34, unit: 'years', state: 'measured', usable: true, source: 'report_details' },
+          { feature: 'gender', displayName: 'Sex', value: 'female', state: 'measured', usable: true, source: 'report_details' },
+          { feature: 'bmi', displayName: 'BMI', value: 22.1, unit: 'kg/m2', state: 'measured', usable: true, source: 'patient_profile' },
+        ],
+      },
+    });
+    render(
+      <MemoryRouter initialEntries={['/reports/abc']}>
+        <Routes>
+          <Route path="/reports/:id" element={<Dashboard />} />
+        </Routes>
+      </MemoryRouter>
+    );
+    const heading = await screen.findByRole('heading', { name: /From the report.s patient details/i });
+    const detailsTable = heading.nextElementSibling;
+    expect(detailsTable.textContent).toMatch(/34/);
+    expect(detailsTable.textContent).toMatch(/female/i);
+    expect(detailsTable.textContent).not.toMatch(/BMI/);
+
+    const results = screen.getByRole('heading', { name: /^Your results$/ }).nextElementSibling;
+    expect(results.textContent).toMatch(/13\.6/);
+    expect(results.textContent).not.toMatch(/\b34\b/);
+    expect(results.textContent).not.toMatch(/female/i);
+
+    const profile = screen.getByRole('heading', { name: /From your profile/ }).nextElementSibling;
+    expect(profile.textContent).toMatch(/BMI/);
+    expect(profile.textContent).not.toMatch(/female/i);
+  });
+
+  it('isPatientDetail covers both kinds of detail and nothing measured', async () => {
+    const { isPatientDetail } = await import('../src/lib/sources');
+    expect(isPatientDetail('patient_profile')).toBe(true);
+    expect(isPatientDetail('report_details')).toBe(true);
+    expect(isPatientDetail('lab_report')).toBe(false);
+    expect(isPatientDetail(undefined)).toBe(false);
+  });
+});
+
 describe('on the pages', () => {
   it('the dashboard puts the profile warning above the verdict', async () => {
     vi.spyOn(api, 'getDashboard').mockResolvedValue({
@@ -93,7 +154,8 @@ describe('on the pages', () => {
         status: 'conflict',
         conflicts: [{ field: 'sex' }],
         printed: { sex: 'female', ageYears: 34 },
-        used: { sex: 'male', ageYears: 20 },
+        profile: { sex: 'male', ageYears: 20 },
+        used: { sex: 'female', sexSource: 'report_details', ageYears: 34, ageSource: 'report_details' },
       },
     });
     render(

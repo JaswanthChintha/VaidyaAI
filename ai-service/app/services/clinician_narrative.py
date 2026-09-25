@@ -101,6 +101,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.config import Settings, get_settings
 from app.core.logging import get_logger, safe_meta
+from app.data.feature_catalog import NOT_MEASURED_SOURCES
 from app.safety import (
     SafetyContext,
     guarded_generation,
@@ -213,7 +214,9 @@ def _value_strings(summary: Any) -> List[str]:
         # document. This is the same predicate the composed passage uses and
         # has been right on real data for three sessions.
         provenance = _field(row, "provenance")
-        if _field(provenance, "source") == "patient_profile":
+        # A PATIENT DETAIL IS NOT A VALUE -- the profile's, or (2026-09-25) the
+        # sex / age printed in the report's patient details.
+        if _field(provenance, "source") in NOT_MEASURED_SOURCES:
             continue
 
         # The laboratory's own printed name when there is one; otherwise the
@@ -406,7 +409,7 @@ def _out_of_range(summary: Any) -> Tuple[str, ...]:
     required: List[str] = []
     for row in _field(_field(summary, "laboratory"), "rows") or []:
         provenance = _field(row, "provenance")
-        if _field(provenance, "source") == "patient_profile":
+        if _field(provenance, "source") in NOT_MEASURED_SOURCES:
             continue
         if _field(row, "usable") is False:
             continue

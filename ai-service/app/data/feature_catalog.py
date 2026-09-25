@@ -32,6 +32,15 @@ from typing import Dict, List, Optional, Tuple
 
 SOURCE_LAB_REPORT = "lab_report"
 SOURCE_PATIENT_PROFILE = "patient_profile"
+#: The patient's SEX or AGE as PRINTED in the report's patient details
+#: (2026-09-25). On the owner's decision it REPLACES the profile's value when
+#: it could be read -- the report describes the person whose blood it is; the
+#: profile describes whoever owns the account. It is a patient DETAIL, not a
+#: measurement: every consumer that separates measured results from
+#: everything else must treat it like `patient_profile`, never like
+#: `lab_report`. Use `NOT_MEASURED_SOURCES` for that test.
+SOURCE_REPORT_DETAILS = "report_details"
+NOT_MEASURED_SOURCES = frozenset({SOURCE_PATIENT_PROFILE, SOURCE_REPORT_DETAILS})
 
 
 @dataclass(frozen=True)

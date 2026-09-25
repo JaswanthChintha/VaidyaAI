@@ -344,6 +344,8 @@ class SnapshotSummary(BaseModel):
     feature_count: int = 0
     lab_feature_count: int = 0
     profile_feature_count: int = 0
+    #: Sex / age taken from the report's printed patient details.
+    report_details_feature_count: int = 0
     questionable_count: int = 0
     clinically_extreme_count: int = 0
     rejected_count: int = 0

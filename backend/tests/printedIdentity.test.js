@@ -119,30 +119,59 @@ describe('comparePair -- could these be one person?', () => {
   });
 });
 
-describe('compareWithProfile', () => {
-  const features = (age, gender, source = 'patient_profile') => ({
+describe('compareWithProfile -- the report against the PROFILE, and what was used', () => {
+  // 2026-09-25: the printed sex and age are USED in place of the profile's,
+  // so the comparison is with the profile itself and `used` reports what the
+  // analysis took, and from where.
+  const features = (age, gender, source) => ({
     features: {
       age: { value: age, source },
       gender: { value: gender, source },
     },
   });
+  const female34 = { sex: 'female', sexStatus: 'read', ageYears: 34, ageStatus: 'read' };
 
-  it('carries the printed age forward to when the analysis ran', () => {
+  it('names the disagreement with the profile, and says the report\'s values were used', () => {
+    const result = compareWithProfile({
+      identity: female34,
+      profile: { gender: 'male', age: 20 },
+      features: features(34, 'female', 'report_details'),
+      reportDate: new Date(),
+    });
+    expect(result.status).toBe('conflict');
+    expect(result.conflicts).toEqual([
+      { field: 'sex', printed: 'female', profile: 'male' },
+      { field: 'age', printed: 34, profile: 20 },
+    ]);
+    expect(result.used).toEqual({ sex: 'female', sexSource: 'report_details', ageYears: 34, ageSource: 'report_details' });
+    expect(result.profile).toEqual({ sex: 'male', ageYears: 20 });
+  });
+
+  it('an analysis from before the change says it used the profile', () => {
+    const result = compareWithProfile({
+      identity: female34,
+      profile: { gender: 'male', age: 20 },
+      features: features(20, 'male', 'patient_profile'),
+      reportDate: new Date(),
+    });
+    expect(result.status).toBe('conflict');
+    expect(result.used.sexSource).toBe('patient_profile');
+  });
+
+  it('carries the printed age forward to the profile\'s now', () => {
     const result = compareWithProfile({
       identity: { sex: 'male', sexStatus: 'read', ageYears: 30, ageStatus: 'read' },
-      features: features(35, 'male'),
+      profile: { gender: 'male', age: 35 },
+      features: features(30, 'male', 'report_details'),
       reportDate: new Date('2021-01-01T00:00:00Z'),
-      analysedAt: new Date('2026-01-01T00:00:00Z'),
+      asOf: new Date('2026-01-01T00:00:00Z'),
     });
     expect(result.status).toBe('consistent');
   });
 
-  it('ignores a value that did not come from the profile', () => {
+  it('is "incomplete" with no profile to compare against', () => {
     const result = compareWithProfile({
-      identity: { sex: 'female', sexStatus: 'read', ageYears: 34, ageStatus: 'read' },
-      features: features(34, 'male', 'report'),
-      reportDate: new Date(),
-      analysedAt: new Date(),
+      identity: female34, profile: null, features: features(34, 'female', 'report_details'), reportDate: new Date(),
     });
     expect(result.conflicts).toEqual([]);
     expect(result.status).toBe('incomplete');
@@ -151,9 +180,9 @@ describe('compareWithProfile', () => {
   it('does not compare sex against "other" or "prefer not to say"', () => {
     const result = compareWithProfile({
       identity: { sex: 'female', sexStatus: 'read', ageStatus: 'absent' },
-      features: features(null, 'prefer_not_to_say'),
+      profile: { gender: 'prefer_not_to_say' },
+      features: features(null, 'female', 'report_details'),
       reportDate: new Date(),
-      analysedAt: new Date(),
     });
     expect(result.conflicts).toEqual([]);
   });

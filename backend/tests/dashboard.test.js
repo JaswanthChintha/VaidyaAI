@@ -1335,39 +1335,44 @@ describe('Module 27 - GET /reports/:id/dashboard', () => {
 // 2026-09-24: every analysis takes sex and age from the account profile. A
 // report printing "34 Years / Female" on a "20, male" account was judged with
 // male thresholds and nothing on the page said so.
-describe('printed sex and age against the profile the analysis used', () => {
-  const profileFeatures = (age, gender) => ({
+describe('printed sex and age against the profile, and which the analysis used', () => {
+  // 2026-09-25: the printed sex and age are USED in place of the profile's.
+  // The dashboard compares the report with the reader's profile as it stands
+  // and says which values the analysis took.
+  const Profile = require('../src/models/Profile');
+  const usedFeatures = (age, gender, source) => ({
     features: {
-      age: { name: 'age', value: age, source: 'patient_profile' },
-      gender: { name: 'gender', value: gender, source: 'patient_profile' },
+      age: { name: 'age', value: age, source },
+      gender: { name: 'gender', value: gender, source },
     },
   });
-  const analysedOn = (iso) => ({ version: 1, runCount: 1, completedAt: new Date(iso) });
+  const withProfile = (userId, age, gender) => Profile.create({ user: userId, age, gender });
 
-  it('names a disagreement in sex and in age', async () => {
+  it('names a disagreement with the profile, and that the report\'s values were used', async () => {
     const alice = await makeUser('identity.conflict@example.com');
+    await withProfile(alice.id, 20, 'male');
     const id = await seedAnalysed(alice.id, {
       printedIdentity: { sex: 'female', sexStatus: 'read', ageYears: 34, ageStatus: 'read' },
-      features: profileFeatures(20, 'male'),
-      reportDate: new Date('2026-09-05T00:00:00Z'),
-      analysis: analysedOn('2026-09-11T00:00:00Z'),
+      features: usedFeatures(34, 'female', 'report_details'),
+      reportDate: new Date(),
     });
     const res = await getDashboard(alice.token, id);
     expect(res.status).toBe(200);
     expect(res.body.data.identity.status).toBe('conflict');
     expect(res.body.data.identity.conflicts).toEqual([
-      { field: 'sex', printed: 'female', used: 'male' },
-      { field: 'age', printed: 34, used: 20 },
+      { field: 'sex', printed: 'female', profile: 'male' },
+      { field: 'age', printed: 34, profile: 20 },
     ]);
+    expect(res.body.data.identity.used).toMatchObject({ sexSource: 'report_details', ageSource: 'report_details' });
   });
 
   it('says consistent only when both were read and both agree', async () => {
     const alice = await makeUser('identity.ok@example.com');
+    await withProfile(alice.id, 21, 'male');
     const id = await seedAnalysed(alice.id, {
       printedIdentity: { sex: 'male', sexStatus: 'read', ageYears: 20, ageStatus: 'read' },
-      features: profileFeatures(21, 'male'),
-      reportDate: new Date('2025-09-05T00:00:00Z'),
-      analysis: analysedOn('2026-09-11T00:00:00Z'),
+      features: usedFeatures(20, 'male', 'report_details'),
+      reportDate: new Date(Date.now() - 365.25 * 24 * 3600 * 1000),
     });
     const res = await getDashboard(alice.token, id);
     expect(res.body.data.identity.status).toBe('consistent');
@@ -1375,18 +1380,33 @@ describe('printed sex and age against the profile the analysis used', () => {
 
   it('is NOT "consistent" when the report does not print an age', async () => {
     const alice = await makeUser('identity.partial@example.com');
+    await withProfile(alice.id, 20, 'male');
     const id = await seedAnalysed(alice.id, {
       printedIdentity: { sex: 'male', sexStatus: 'read', ageStatus: 'absent' },
-      features: profileFeatures(20, 'male'),
-      analysis: analysedOn('2026-09-11T00:00:00Z'),
+      features: usedFeatures(20, 'male', 'patient_profile'),
     });
     const res = await getDashboard(alice.token, id);
     expect(res.body.data.identity.status).toBe('incomplete');
   });
 
+  it('reads another patient\'s profile never -- only the caller\'s', async () => {
+    const alice = await makeUser('identity.mine@example.com');
+    const bob = await makeUser('identity.theirs@example.com');
+    await withProfile(bob.id, 34, 'female'); // would AGREE with the report
+    const id = await seedAnalysed(alice.id, {
+      printedIdentity: { sex: 'female', sexStatus: 'read', ageYears: 34, ageStatus: 'read' },
+      features: usedFeatures(34, 'female', 'report_details'),
+      reportDate: new Date(),
+    });
+    const res = await getDashboard(alice.token, id);
+    // Alice has no profile, so nothing to compare: incomplete, not consistent.
+    expect(res.body.data.identity.status).toBe('incomplete');
+    expect(res.body.data.identity.profile).toEqual({ sex: null, ageYears: null });
+  });
+
   it('is "not_checked" for a report analysed before these fields existed', async () => {
     const alice = await makeUser('identity.old@example.com');
-    const id = await seedAnalysed(alice.id, { features: profileFeatures(20, 'male') });
+    const id = await seedAnalysed(alice.id, { features: usedFeatures(20, 'male', 'patient_profile') });
     const res = await getDashboard(alice.token, id);
     expect(res.body.data.identity.status).toBe('not_checked');
     expect(res.body.data.identity.conflicts).toEqual([]);

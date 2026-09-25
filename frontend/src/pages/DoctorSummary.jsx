@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { isPresent } from '../lib/absence';
+import { isPatientDetail } from '../lib/sources';
 
 /**
  * Module 32 -- the summary a patient hands to a clinician, as ONE PASSAGE.
@@ -319,7 +320,9 @@ export default function DoctorSummary() {
   const ROW_ABNORMAL_POSITIONS = ['below_reference_interval', 'above_reference_interval'];
   const assessedOutOfRange = (summary.laboratory?.rows || [])
     .filter((row) => {
-      if (row.provenance?.source === 'patient_profile') return false;
+      // A patient detail -- the profile's, or the sex / age printed on the
+      // report (2026-09-25) -- is never an out-of-range RESULT.
+      if (isPatientDetail(row.provenance?.source)) return false;
       if (row.usable === false || row.value === null || row.value === undefined) return false;
       const flag = String(row.printed_flag ?? '').trim().toLowerCase();
       const flagged = flag !== '' && flag !== 'none' && flag !== 'null' && flag !== 'normal';
@@ -446,7 +449,7 @@ export default function DoctorSummary() {
 
   // ---- values -------------------------------------------------------------
   const measured = rows.filter(
-    (row) => row.provenance?.source !== 'patient_profile' && row.usable !== false
+    (row) => !isPatientDetail(row.provenance?.source) && row.usable !== false
   );
   const rejected = rows.filter((row) => row.usable === false);
   const anyInterval = measured.some(

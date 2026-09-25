@@ -173,37 +173,51 @@ function comparePair(baseline, comparison) {
 }
 
 /**
- * Does the report agree with the profile values the ANALYSIS USED?
+ * Does the report agree with the reader's PROFILE -- and which did the
+ * analysis use?
  *
- * `used` is read from the analysis's own engineered features, and only the
- * fields whose `source` is `patient_profile` -- a value that came from the
- * report cannot disagree with the report.
+ * TWO QUESTIONS SINCE 2026-09-25. The owner decided that the sex and age the
+ * report prints are USED in place of the profile's (Module 5,
+ * `report_details`). A disagreement still matters -- it can mean the report is
+ * someone else's -- so the comparison is now printed-vs-PROFILE, taken from
+ * the profile as it stands, while `used` says what the analysis actually took
+ * and from where, read off its own engineered features. An analysis run
+ * before the change used the profile; `used` says so, and the page words it
+ * accordingly.
  *
+ * @param {object} args
+ * @param {object|null} args.identity  The report's `printedIdentity`.
+ * @param {object|null} args.profile   The reader's profile document, or null.
+ * @param {object} args.features       The analysis's engineered features.
+ * @param {Date} args.reportDate       When the report was taken.
+ * @param {Date} [args.asOf]           When the profile's age holds (now).
  * @returns {{status: 'not_checked'|'conflict'|'consistent'|'incomplete',
- *            conflicts: object[], printed: object|null, used: object}}
+ *            conflicts: object[], printed: object|null, profile: object,
+ *            used: object}}
  */
-function compareWithProfile({ identity, features, reportDate, analysedAt }) {
-  const used = profileValuesUsed(features);
-  if (!identity) return { status: 'not_checked', conflicts: [], printed: null, used };
+function compareWithProfile({ identity, profile, features, reportDate, asOf = new Date() }) {
+  const used = valuesUsed(features);
+  const mine = profileValues(profile);
+  if (!identity) return { status: 'not_checked', conflicts: [], printed: null, profile: mine, used };
 
   const conflicts = [];
   let sexCompared = false;
   let ageCompared = false;
-  if (isRead(identity, 'sex') && (used.sex === 'male' || used.sex === 'female')) {
+  if (isRead(identity, 'sex') && mine.sex) {
     sexCompared = true;
-    if (identity.sex !== used.sex) {
-      conflicts.push({ field: 'sex', printed: identity.sex, used: used.sex });
+    if (identity.sex !== mine.sex) {
+      conflicts.push({ field: 'sex', printed: identity.sex, profile: mine.sex });
     }
   }
-  if (isRead(identity, 'age') && typeof used.ageYears === 'number') {
+  if (isRead(identity, 'age') && typeof mine.ageYears === 'number') {
     // The profile's age is the reader's age NOW; the report's is their age
     // THEN. Carry the printed one forward before comparing.
-    const since = (time(analysedAt) - time(reportDate)) / YEAR_MS;
+    const since = (time(asOf) - time(reportDate)) / YEAR_MS;
     if (Number.isFinite(since)) {
       ageCompared = true;
       const expected = identity.ageYears + Math.max(0, since);
-      if (Math.abs(used.ageYears - expected) > AGE_TOLERANCE_YEARS) {
-        conflicts.push({ field: 'age', printed: identity.ageYears, used: used.ageYears });
+      if (Math.abs(mine.ageYears - expected) > AGE_TOLERANCE_YEARS) {
+        conflicts.push({ field: 'age', printed: identity.ageYears, profile: mine.ageYears });
       }
     }
   }
@@ -213,29 +227,40 @@ function compareWithProfile({ identity, features, reportDate, analysedAt }) {
     ageYears: identity.ageYears === undefined ? null : identity.ageYears,
     ageStatus: identity.ageStatus,
   };
-  if (conflicts.length) return { status: 'conflict', conflicts, printed, used };
+  const result = { conflicts, printed, profile: mine, used };
+  if (conflicts.length) return { status: 'conflict', ...result };
+  return { status: sexCompared && ageCompared ? 'consistent' : 'incomplete', ...result };
+}
+
+/** The reader's profile sex (male/female only) and age, or null for each. */
+function profileValues(profile) {
+  const sex = profile && typeof profile.gender === 'string' ? profile.gender.toLowerCase() : null;
+  const age = profile ? profile.age : null;
   return {
-    status: sexCompared && ageCompared ? 'consistent' : 'incomplete',
-    conflicts,
-    printed,
-    used,
+    // `other` and `prefer_not_to_say` are real answers, and not comparable
+    // with a printed male/female.
+    sex: sex === 'male' || sex === 'female' ? sex : null,
+    ageYears: typeof age === 'number' && Number.isFinite(age) ? age : null,
   };
 }
 
-/** The sex and age the analysis took from the PROFILE, or null for each. */
-function profileValuesUsed(features) {
+/**
+ * The sex and age the ANALYSIS used, and where each came from:
+ * `report_details` (printed on the report) or `patient_profile`.
+ */
+function valuesUsed(features) {
   const map = features && features.features;
   const pick = (key) => {
     const entry = map && map[key];
-    return entry && typeof entry === 'object' && entry.source === 'patient_profile'
-      ? entry.value
-      : null;
+    return entry && typeof entry === 'object' ? entry : null;
   };
   const age = pick('age');
   const sex = pick('gender');
   return {
-    sex: typeof sex === 'string' ? sex.toLowerCase() : null,
-    ageYears: typeof age === 'number' && Number.isFinite(age) ? age : null,
+    sex: sex && typeof sex.value === 'string' ? sex.value.toLowerCase() : null,
+    sexSource: sex ? sex.source || null : null,
+    ageYears: age && typeof age.value === 'number' && Number.isFinite(age.value) ? age.value : null,
+    ageSource: age ? age.source || null : null,
   };
 }
 
@@ -247,5 +272,6 @@ module.exports = {
   readPrintedIdentity,
   comparePair,
   compareWithProfile,
-  profileValuesUsed,
+  profileValues,
+  valuesUsed,
 };

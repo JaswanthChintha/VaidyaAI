@@ -56,20 +56,45 @@ export function ProfileIdentityNotice({ identity }) {
   }
 
   const printed = identity.printed || {};
+  const profile = identity.profile || {};
   const used = identity.used || {};
+  // WHICH VALUES THE ANALYSIS TOOK, for the fields that disagree. Since
+  // 2026-09-25 the report's own are used; an analysis from before that used
+  // the profile's, and the page must not claim otherwise.
+  const conflicting = (identity.conflicts || []).map((c) => c.field);
+  const sourceOf = (field) => used[field === 'sex' ? 'sexSource' : 'ageSource'];
+  const usedReport = conflicting.length > 0
+    && conflicting.every((field) => sourceOf(field) === 'report_details');
+  const usedProfile = conflicting.length > 0
+    && conflicting.every((field) => sourceOf(field) === 'patient_profile');
   return (
     <section className="card identity-warning" role="note" aria-label="This report may not match your profile">
       <h2>This report may not match your profile</h2>
       <p>
         The report prints: <strong>{describe(printed.sex, printed.ageYears)}</strong>.
-        This analysis used your profile: <strong>{describe(used.sex, used.ageYears)}</strong>.
+        Your profile says: <strong>{describe(profile.sex, profile.ageYears)}</strong>.
       </p>
-      <p>
-        Anything that depends on sex or age &mdash; some of the thresholds on this
-        page among them &mdash; was judged with your profile&rsquo;s values, not the
-        report&rsquo;s. Check that this report is yours and that your profile is
-        right.
-      </p>
+      {usedReport ? (
+        <p>
+          This analysis used the sex and age printed on the report, so anything
+          that depends on them was judged for the person the report describes.
+          If this report is someone else&rsquo;s, its results are theirs, not yours.
+          Check that this report is yours and that your profile is right.
+        </p>
+      ) : usedProfile ? (
+        <p>
+          This analysis used your profile&rsquo;s values, not the report&rsquo;s
+          &mdash; it was run before reports&rsquo; own sex and age were used.
+          Analysing the report again uses the report&rsquo;s. Check that this
+          report is yours and that your profile is right.
+        </p>
+      ) : (
+        <p>
+          This analysis used the report&rsquo;s values for some of these and your
+          profile&rsquo;s for others. Check that this report is yours and that
+          your profile is right.
+        </p>
+      )}
     </section>
   );
 }
