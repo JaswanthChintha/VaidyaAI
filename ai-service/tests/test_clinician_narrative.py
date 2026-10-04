@@ -8,11 +8,18 @@ unqualified narrative can never reach a reader.
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 import pytest
 
 from app.services.clinician_narrative import (
+    _code_fingerprint,
+    _facts_block,
     _model_notes,
     CLOSING_LINE,
+    NARRATIVE_CODE_FINGERPRINT,
+    NARRATIVE_VERSION,
     OUTCOME_FACTS_MISSING,
     OUTCOME_GENERATED,
     OUTCOME_NO_MODEL,
@@ -192,9 +199,13 @@ def _faithful() -> str:
     told not to write them and they are appended after approval, so it cannot
     paraphrase or drop them.
     """
+    # NO AGE OR SEX (2026-10-03). The prompt no longer supplies the subject --
+    # the page prints its own "Analysed as." line -- so "This 58-year-old
+    # male" is now an ungrounded number and is refused, as it should be. See
+    # `test_an_age_the_model_was_not_given_is_refused` below.
     return (
-        "This 58-year-old male had an HbA1c of 8.4 % and a glucose of "
-        "186 mg/dl. Diabetes was flagged because HbA1c 8.4 % is at or above "
+        "An HbA1c of 8.4 % and a glucose of "
+        "186 mg/dl were reported. Diabetes was flagged because HbA1c 8.4 % is at or above "
         "the ADA diabetes-range threshold of 6.5 % and glucose 186 mg/dl is "
         "at or above the impaired-glucose-tolerance boundary of 140 mg/dl. "
         "Kidney Disease was flagged by the statistical model alone, and no "
@@ -793,3 +804,182 @@ def test_an_out_of_range_value_is_neither_required_nor_permitted(offline_setting
     triggering = [v for values in facts.triggering.values() for v in values]
     for required in facts.required_values:
         assert any(required in trigger for trigger in triggering), required
+
+
+# --------------------------------------------------------------------------
+# 2026-10-03: what the note may give as a REASON
+#
+# Found by the owner on `02-diabetes-and-lipids-redacted.pdf`: "recorded
+# Heart Disease as borderline because ... Body mass index was 25.25 kg/m2
+# (>= 30 ...) and Age in whole years was 20 years (>= 45 ...)". The rule was
+# right -- two of four factors counted -- but every factor it EVALUATED reached
+# the note as a reason, and the rule's one conclusion was repeated after each.
+# --------------------------------------------------------------------------
+
+_COUNTED = "two major cardiovascular risk factors were counted"
+
+
+def _heart_summary() -> dict:
+    """A borderline Heart Disease as an ALREADY-STORED report carries it: all
+    four evaluated factors in `triggering_values`, each with the band label."""
+
+    def line(feature, name, value, unit, threshold):
+        return {
+            "feature": feature,
+            "display_name": name,
+            "value": value,
+            "unit": unit,
+            "comparator": ">=",
+            "threshold": threshold,
+            "classification": _COUNTED,
+        }
+
+    return {
+        "patient": {"age": 20, "gender": "male"},
+        "laboratory": {"rows": []},
+        "abnormal_findings": ["Heart Disease", "Diabetes"],
+        "assessments": [
+            {
+                "condition": "Heart Disease",
+                "status": "Borderline",
+                "bases": [{"rule": {"triggering_values": [
+                    line("cholesterol", "Total Cholesterol", 268, "mg/dl", 240),
+                    line("hba1c", "HbA1c", 8.4, "%", 6.5),
+                    line("bmi", "Body mass index", 25.25, "kg/m2", 30),
+                    line("age", "Age in whole years", 20, "years", 45),
+                ]}}],
+            },
+            {
+                "condition": "Diabetes",
+                "bases": [{"rule": {"triggering_values": [
+                    {"feature": "hba1c", "display_name": "HbA1c", "value": 8.4, "unit": "%",
+                     "comparator": ">=", "threshold": 6.5, "classification": "ADA diabetes range"},
+                    {"feature": "blood_glucose", "display_name": "Glucose", "value": 186, "unit": "mg/dl",
+                     "comparator": ">=", "threshold": 126, "classification": "ADA fasting threshold"},
+                ]}}],
+            },
+        ],
+    }
+
+
+def test_a_criterion_that_was_not_met_is_not_given_as_a_reason():
+    reasons = collect_facts(_heart_summary()).triggering["Heart Disease"]
+    joined = " | ".join(reasons)
+    assert "268" in joined and "8.4" in joined
+    # BMI 25.25 is below 30 and age 20 below 45: evaluated, NOT counted.
+    assert "25.25" not in joined
+    assert "Age in whole years" not in joined
+
+
+def test_unmet_values_are_not_required_facts_either():
+    # Required facts must survive into the text, so an unmet value here would
+    # FORCE the model to name it.
+    facts = collect_facts(_heart_summary())
+    assert "25.25" not in facts.required_values
+    assert "20" not in facts.required_values
+
+
+def test_one_conclusion_is_said_once():
+    reasons = collect_facts(_heart_summary()).triggering["Heart Disease"]
+    assert sum(_COUNTED in r for r in reasons) == 1
+    assert reasons[-1] == f"together, {_COUNTED}"
+    assert reasons[0] == "Total Cholesterol 268 mg/dl (>= 240)"
+
+
+def test_values_with_different_labels_keep_their_own():
+    reasons = collect_facts(_heart_summary()).triggering["Diabetes"]
+    assert reasons == (
+        "HbA1c 8.4 % (>= 6.5, ADA diabetes range)",
+        "Glucose 186 mg/dl (>= 126, ADA fasting threshold)",
+    )
+
+
+def test_a_below_threshold_comparator_still_counts_as_crossed():
+    summary = {
+        "laboratory": {"rows": []},
+        "abnormal_findings": ["Anemia"],
+        "assessments": [{"condition": "Anemia", "bases": [{"rule": {"triggering_values": [
+            {"feature": "hemoglobin", "display_name": "Haemoglobin", "value": 12.5, "unit": "g/dl",
+             "comparator": "<", "threshold": 13, "classification": "mild anaemia band"},
+        ]}}]}],
+    }
+    assert collect_facts(summary).triggering["Anemia"] == (
+        "Haemoglobin 12.5 g/dl (< 13, mild anaemia band)",
+    )
+
+
+# --------------------------------------------------------------------------
+# 2026-10-03: the page states who the patient is; the model does not
+# --------------------------------------------------------------------------
+
+
+def test_the_subject_is_not_handed_to_the_model(offline_settings):
+    llm = FakeLLM(_faithful())
+    write_clinician_summary(_summary(), llm=llm, settings=offline_settings)
+    prompt = llm.prompts[0]
+    assert "SUBJECT:" not in prompt
+    assert "58-year-old" not in prompt
+    assert "Do not state the patient's age or sex" in prompt
+
+
+def test_an_age_the_model_was_not_given_is_refused(offline_settings):
+    llm = FakeLLM("This 58-year-old male. " + _faithful())
+    result = write_clinician_summary(_summary(), llm=llm, settings=offline_settings)
+    assert result.outcome == OUTCOME_WITHHELD_BY_SAFETY
+    assert result.text is None
+
+
+def test_nothing_flagged_is_stated_not_left_empty():
+    summary = {"patient": {"age": 34, "gender": "female"}, "laboratory": {"rows": []},
+               "abnormal_findings": [], "assessments": []}
+    block = _facts_block(collect_facts(summary))
+    assert block.strip()
+    assert "NOTHING FLAGGED" in block
+    assert "34" not in block
+
+
+# --------------------------------------------------------------------------
+# 2026-10-03: the fingerprint that expires a cached note when this code changes
+# --------------------------------------------------------------------------
+
+
+def test_the_fingerprint_is_short_hex_and_stable():
+    assert re.fullmatch(r"[0-9a-f]{16}", NARRATIVE_CODE_FINGERPRINT)
+    assert _code_fingerprint() == NARRATIVE_CODE_FINGERPRINT
+
+
+def test_the_fingerprint_changes_when_the_note_code_changes(monkeypatch):
+    real = Path.read_bytes
+
+    def edited(self):
+        data = real(self)
+        return data + b"\n# edited\n" if self.name == "clinician_narrative.py" else data
+
+    monkeypatch.setattr(Path, "read_bytes", edited)
+    assert _code_fingerprint() != NARRATIVE_CODE_FINGERPRINT
+
+
+def test_line_endings_alone_do_not_change_the_fingerprint(monkeypatch):
+    # The same text in each convention -- LF first, then CRLF -- whatever the
+    # checkout happens to hold. Both must hash to the running fingerprint.
+    real = Path.read_bytes
+    lf = lambda self: real(self).replace(b"\r\n", b"\n")  # noqa: E731
+    monkeypatch.setattr(Path, "read_bytes", lf)
+    as_lf = _code_fingerprint()
+    monkeypatch.setattr(Path, "read_bytes", lambda self: lf(self).replace(b"\n", b"\r\n"))
+    assert _code_fingerprint() == as_lf == NARRATIVE_CODE_FINGERPRINT
+
+
+def test_the_fingerprint_endpoint_answers_in_the_envelope(client):
+    response = client.get("/api/v1/explain/clinician-summary/fingerprint")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    assert body["data"] == {
+        "fingerprint": NARRATIVE_CODE_FINGERPRINT,
+        "narrative_version": NARRATIVE_VERSION,
+    }
+
+
+def test_the_fingerprint_endpoint_requires_the_service_key(authed_client):
+    assert authed_client.get("/api/v1/explain/clinician-summary/fingerprint").status_code == 401

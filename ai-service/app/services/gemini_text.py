@@ -116,13 +116,23 @@ class GeminiTextClient(GeminiClient):
             config = genai_types.GenerateContentConfig(**config_kwargs)
         contents = [genai_types.Part.from_text(text=prompt)]
 
-        # Same quota-only fallback as Module 4's extraction path, and for the
-        # same reason: the free tier meters per model per day, so a 429 here
-        # says this model is spent, not that the key is. Every other failure
-        # is left exactly as it was -- in particular a provider safety block
-        # is an ANSWER, and shopping it around models until one complies is
-        # precisely what a safety layer must never do.
+        # THE SAME TWO FALLBACKS AS MODULE 4's EXTRACTION PATH, for the same
+        # reasons (see `GeminiClient.extract_page`): a 429 says this model is
+        # spent, not the key; a 5xx says one endpoint is unhealthy right now,
+        # not that its siblings are.
+        #
+        # The 5xx case was missing here until 2026-10-02, and it cost a real
+        # reader a paragraph: 01-all-normal's blood-glucose explanation was
+        # lost to a `gemini-3.6-flash` ServerError on two separate analyses,
+        # while the extraction of the SAME report a minute earlier hit the
+        # same error, moved to `gemini-3.5-flash` and read every result.
+        #
+        # STILL NOT SHOPPED AROUND: a provider safety block, a truncation and
+        # any deterministic 4xx. A block is an ANSWER, and asking more models
+        # until one complies is precisely what a safety layer must never do.
+        # None of them carries MODEL_UNAVAILABLE, so none reaches that branch.
         rate_limit_error: Optional[ModelError] = None
+        unavailable_error: Optional[ModelError] = None
 
         chain = self._model_chain()
         for position, model in enumerate(chain):
@@ -139,8 +149,17 @@ class GeminiTextClient(GeminiClient):
                 self._mark_exhausted(model)
                 rate_limit_error = exc
                 continue
+            except ModelError as exc:
+                if exc.code != ErrorCode.MODEL_UNAVAILABLE:
+                    raise
+                logger.warning(
+                    "gemini_text_model_unavailable_falling_back %s",
+                    safe_meta(model=model, position=position, module=23),
+                )
+                unavailable_error = exc
+                continue
 
-        raise rate_limit_error or self._to_service_error(
+        raise rate_limit_error or unavailable_error or self._to_service_error(
             RuntimeError("no model available")
         )
 

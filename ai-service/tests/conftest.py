@@ -24,12 +24,25 @@ from __future__ import annotations
 
 import io
 import os
+import re
 from typing import Any, Dict, List, Optional
 
 # MUST run before any `app.*` import: `app.main` enforces the auth
 # configuration at import time and would otherwise refuse to load.
 os.environ.setdefault("ALLOW_UNAUTHENTICATED", "true")
 os.environ.pop("AI_SERVICE_API_KEY", None)
+
+# AND THE .env FILE IS NOT READ (2026-10-03). Popping the variables above kept a
+# real key out of the ENVIRONMENT, but `Settings` reads `ai-service/.env`
+# directly, so any test building settings the ordinary way picked the real
+# `AI_SERVICE_API_KEY` up from the file and got 401 instead of 200 -- about
+# thirty failures, and for weeks the suite was run with `.env` moved aside by
+# hand (MEMORY.md section 0, item 7). Turned off here, once, before any app
+# module can construct or cache a `Settings`.
+from app import config as _config  # noqa: E402
+
+_config.Settings.model_config["env_file"] = None
+_config.get_settings.cache_clear()
 
 import pymupdf
 import pytest
@@ -264,7 +277,20 @@ class FakeGeminiClient:
             }
         )
         if self._payloads is not None:
-            index = min(len(self.calls) - 1, len(self._payloads) - 1)
+            # BY PAGE NUMBER, NOT CALL ORDER (2026-10-03). Pages are now read
+            # concurrently, so page 2's call can arrive before page 1's;
+            # indexing by arrival would hand pages each other's payloads at
+            # random. The prompt states the page ("This is page 2 of 3"); a
+            # single-page prompt does not, and is page 1. A prompt that names
+            # no page at all falls back to arrival order, as before.
+            match = re.search(r"This is page (\d+) of", prompt)
+            if match:
+                position = int(match.group(1)) - 1
+            elif "This document has a single page" in prompt:
+                position = 0
+            else:
+                position = len(self.calls) - 1
+            index = min(position, len(self._payloads) - 1)
             item = self._payloads[index]
             if isinstance(item, Exception):
                 raise item

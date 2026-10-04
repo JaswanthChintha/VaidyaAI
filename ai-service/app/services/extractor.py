@@ -13,7 +13,9 @@ assembles only. Test-name normalisation is Module 5; validation is Module 6.
 
 from __future__ import annotations
 
-from typing import List, Optional
+import contextvars
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, List, Optional, Union
 
 from pydantic import ValidationError
 
@@ -37,6 +39,14 @@ logger = get_logger(__name__)
 # Guard against a model that ignores instructions and emits thousands of rows.
 MAX_PARAMETERS_PER_PAGE = 300
 
+# PAGES ARE READ AT THE SAME TIME, AT MOST THIS MANY AT ONCE (2026-10-03).
+# They were read one after another, so a two-page report waited for two full
+# model round trips (Test 3: ~17 s + ~19 s). The calls are independent; only
+# the ASSEMBLY below depends on page order, and it still runs in page order
+# over the collected results. Three keeps a long report from tripping the
+# free tier's per-minute limit in one burst.
+MAX_CONCURRENT_PAGES = 3
+
 
 def _mean(values: List[float]) -> Optional[float]:
     if not values:
@@ -48,6 +58,32 @@ class ExtractionService:
     def __init__(self, settings: Settings, client: GeminiClient) -> None:
         self._settings = settings
         self._client = client
+
+    def _read_pages(self, pages: List[Any], total: int) -> List[Union[dict, ModelError]]:
+        """Each page's payload or ModelError, IN PAGE ORDER.
+
+        A single page is called inline -- no thread for nothing. Each worker
+        runs in a copy of the caller's context, so the request id carried by
+        `contextvars` still reaches every log line a page writes. Any error
+        that is not a ModelError propagates exactly as it did from the loop.
+        """
+
+        def read(page: Any) -> Union[dict, ModelError]:
+            prompt = build_page_prompt(page.page_number, total)
+            try:
+                return self._client.extract_page(page.image_bytes, page.mime_type, prompt)
+            except ModelError as exc:
+                return exc
+
+        if len(pages) <= 1:
+            return [read(page) for page in pages]
+
+        workers = min(MAX_CONCURRENT_PAGES, len(pages))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [
+                pool.submit(contextvars.copy_context().run, read, page) for page in pages
+            ]
+            return [future.result() for future in futures]
 
     def extract(self, document: LoadedDocument) -> ExtractionData:
         warnings: List[str] = list(document.warnings)
@@ -64,12 +100,16 @@ class ExtractionService:
         failed_pages = 0
         total = len(document.pages)
 
-        for page in document.pages:
-            prompt = build_page_prompt(page.page_number, total)
+        # The model calls, concurrently. Each page's outcome is the payload or
+        # the ModelError it raised -- the same two outcomes the old loop
+        # branched on -- and nothing else is decided until every page is in.
+        outcomes = self._read_pages(document.pages, total)
+
+        for page, outcome in zip(document.pages, outcomes):
             try:
-                payload = self._client.extract_page(
-                    page.image_bytes, page.mime_type, prompt
-                )
+                if isinstance(outcome, ModelError):
+                    raise outcome
+                payload = outcome
             except ModelError as exc:
                 # A single failed page degrades the result rather than failing
                 # the whole request -- unless every page fails (checked below).

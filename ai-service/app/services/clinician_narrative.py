@@ -94,13 +94,16 @@ grounding -- is untouched and does block.
 
 from __future__ import annotations
 
+import hashlib
 import re
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.config import Settings, get_settings
 from app.core.logging import get_logger, safe_meta
+from app.data.clinical_rules import COMPARATORS
 from app.data.feature_catalog import NOT_MEASURED_SOURCES
 from app.safety import (
     SafetyContext,
@@ -111,6 +114,40 @@ from app.safety.policy import SAFETY_LAYER_VERSION
 logger = get_logger(__name__)
 
 NARRATIVE_VERSION = "1.0.0"
+
+
+def _code_fingerprint() -> str:
+    """A short hash of the code that decides what this note says (2026-10-03).
+
+    WHY: the backend caches a written note per analysis version, so a fix to
+    THIS code never reached a note already written -- on 2026-10-03 a corrected
+    "because" list sat unused while the cached note kept stating BMI 25.25 and
+    age 20 as reasons. `NARRATIVE_VERSION` is a hand-bumped string and nobody
+    bumped it. This changes by itself whenever the files below change, and the
+    backend re-writes a cached note whose fingerprint differs.
+
+    WHAT IS HASHED: this file (the facts, prompt and checks), the Module 32
+    builder that produces its input, and the safety layer that approves its
+    output. Line endings are normalised so a checkout's CRLF/LF difference is
+    not a change. A file that cannot be read contributes its name only, so
+    the fingerprint still exists and still differs from a full read.
+    """
+    services = Path(__file__).resolve().parent
+    files = [services / "clinician_narrative.py", services / "doctor_summary.py"]
+    files += sorted((services.parent / "safety").glob("*.py"))
+    digest = hashlib.sha256()
+    for path in files:
+        digest.update(path.name.encode("utf-8"))
+        try:
+            digest.update(path.read_bytes().replace(b"\r\n", b"\n"))
+        except OSError:
+            digest.update(b"<unreadable>")
+    return digest.hexdigest()[:16]
+
+
+#: Computed once at import -- the running process's code, which is the code
+#: that writes every note this process returns.
+NARRATIVE_CODE_FINGERPRINT = _code_fingerprint()
 
 OUTCOME_GENERATED = "generated"
 OUTCOME_NO_MODEL = "model_unavailable"
@@ -323,7 +360,8 @@ def _triggering(summary: Any) -> Dict[str, Tuple[str, ...]]:
         condition = _field(assessment, "condition")
         if condition not in flagged:
             continue
-        rows: List[str] = []
+        # (value text, cut-off text, classification), in order, de-duplicated.
+        entries: List[Tuple[str, Optional[str], Optional[str]]] = []
         for basis in _field(assessment, "bases") or []:
             rule = _field(basis, "rule")
             for line in _field(rule, "triggering_values") or []:
@@ -340,18 +378,66 @@ def _triggering(summary: Any) -> Dict[str, Tuple[str, ...]]:
                 if not name or value is None:
                     continue
                 unit = _field(line, "unit")
-                rendered = f"{name} {value} {unit}".strip() if unit else f"{name} {value}"
                 classification = _field(line, "classification")
                 comparator = _field(line, "comparator")
                 threshold = _field(line, "threshold")
-                if comparator is not None and threshold is not None:
-                    rendered += f" ({comparator} {threshold}"
-                    rendered += f", {classification})" if classification else ")"
-                elif classification:
-                    rendered += f" ({classification})"
-                if rendered not in rows:
-                    rows.append(rendered)
+                # ⚠ A CRITERION THAT WAS NOT MET IS NOT A REASON (2026-10-03).
+                #
+                # The heart-disease rule COUNTS risk factors, and every factor
+                # it evaluated reaches `triggering_values` -- met or not. On a
+                # real report this document then read "recorded Heart Disease
+                # as borderline because ... Body mass index was 25.25 kg/m2
+                # (>= 30 ...) and Age in whole years was 20 years (>= 45 ...)":
+                # two values stated as reasons for a finding they did NOT
+                # contribute to, in a note written for a doctor. Two factors
+                # (cholesterol 268, HbA1c 8.4) made the count.
+                #
+                # Decided by the rule engine's own comparator table, so "crossed"
+                # here cannot mean something different from "crossed" there --
+                # the same test the patient dashboard's `crossing()` already
+                # makes. A line that cannot be compared (no comparator, no
+                # threshold, a non-number) is kept as before.
+                compare = COMPARATORS.get(str(comparator)) if comparator is not None else None
+                if compare is not None and threshold is not None:
+                    try:
+                        if not compare(float(value), float(threshold)):
+                            continue
+                    except (TypeError, ValueError):
+                        pass
+                base = f"{name} {value} {unit}".strip() if unit else f"{name} {value}"
+                cut = (
+                    f"{comparator} {threshold}"
+                    if comparator is not None and threshold is not None
+                    else None
+                )
+                entry = (base, cut, classification or None)
+                if entry not in entries:
+                    entries.append(entry)
                     required.append(str(value))
+
+        # ONE CONCLUSION IS SAID ONCE (owner, 2026-10-03). The classification
+        # is the RULE's verdict, not each value's: the heart-disease count put
+        # "two major cardiovascular risk factors were counted" after BOTH
+        # cholesterol and HbA1c, and the model faithfully wrote it twice. When
+        # every value shares one classification it follows them once; where
+        # they differ (Diabetes: HbA1c in one band, glucose in another) each
+        # keeps its own.
+        def _render(base: str, cut: Optional[str], cls: Optional[str]) -> str:
+            if cut and cls:
+                return f"{base} ({cut}, {cls})"
+            if cut:
+                return f"{base} ({cut})"
+            if cls:
+                return f"{base} ({cls})"
+            return base
+
+        classes = {cls for _, _, cls in entries}
+        shared = next(iter(classes)) if len(entries) > 1 and len(classes) == 1 else None
+        if shared:
+            rows = [_render(base, cut, None) for base, cut, _ in entries]
+            rows.append(f"together, {shared}")
+        else:
+            rows = [_render(base, cut, cls) for base, cut, cls in entries]
         if rows:
             out[str(condition)] = tuple(rows)
     return {k: tuple(v) for k, v in out.items()}, tuple(dict.fromkeys(required))
@@ -856,6 +942,7 @@ Rules:
   with the topic's name in it: "<topic> was flagged by the statistical model
   alone, and no measured value crossed a cut-off for it."
 - Do not write any closing disclaimer. That sentence is added after you.
+- Do not state the patient's age or sex. The page states them above this note.
 - Topics that share a reason go in ONE sentence as a list. Do not repeat the
   same sentence with a different name in it; four copies of "this tool flagged
   X because a measured value crossed a cut-off" is the fault this document was
@@ -889,7 +976,13 @@ def _facts_block(facts: _Facts) -> str:
     the document no longer states so nobody later mistakes it for an oversight.
     The full assessed/unassessed picture is still on the PAGE around this note.
     """
-    lines: List[str] = [f"SUBJECT: {facts.subject}"]
+    # NO SUBJECT LINE (owner, 2026-10-03). The page now prints its own
+    # "Analysed as." line above this note -- sex, age and BMI, and where each
+    # came from -- so a model-written "Subject is a 34-year-old female." said
+    # it twice. Composed, that line is also the reliable one: the model wrote a
+    # subject on some reports and not others. `facts.subject` is still built;
+    # it is simply no longer handed to the model.
+    lines: List[str] = []
 
     # THE FINDINGS, EACH WITH THE VALUE THAT PRODUCED IT.
     for condition in facts.flagged:
@@ -925,6 +1018,13 @@ def _facts_block(facts: _Facts) -> str:
                     for c in other
                 )
             )
+
+    # NOTHING FLAGGED IS STILL A FACT. With the subject line gone (above), a
+    # report with no finding would hand the model an empty block -- and a model
+    # given nothing invents something. Said plainly instead: "flagged nothing"
+    # is what the tool did, and it claims no more than that.
+    if not lines:
+        lines.append("NOTHING FLAGGED: this tool flagged no topic on this report.")
 
     # ⚠ `facts.out_of_range` IS NOT IN THE PROMPT, AND `range_values` IS NOT
     # IN `required_values`. THOSE TWO MUST MOVE TOGETHER -- see `collect_facts`.
@@ -1023,7 +1123,9 @@ def write_clinician_summary(
     # starts supplying a figure, this line is the other half of the change.
     permitted = (
         _numbers_in(facts.values)
-        + _numbers_in(tuple(facts.model_notes) + (facts.subject,))
+        # `facts.subject` is no longer in the prompt (see `_facts_block`), so
+        # its age is no longer permitted either -- only what is supplied is.
+        + _numbers_in(tuple(facts.model_notes))
         # `facts.out_of_range` is not permitted: the prompt no longer supplies
         # it, and the header above says only what the prompt supplies may be
         # stated. With it permitted, a hallucinated out-of-range figure would

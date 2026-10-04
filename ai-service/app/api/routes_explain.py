@@ -69,6 +69,8 @@ from app.services.summary_prose import (
     rewrite_summary,
 )
 from app.services.clinician_narrative import (
+    NARRATIVE_CODE_FINGERPRINT,
+    NARRATIVE_VERSION,
     ClinicianNarrative,
     write_clinician_summary,
 )
@@ -633,6 +635,42 @@ def clinician_summary_endpoint(
     """
     return ClinicianSummaryResponse(
         data=write_clinician_summary(request.summary, llm=llm)
+    )
+
+
+class ClinicianFingerprintData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    fingerprint: str
+    narrative_version: str
+
+
+class ClinicianFingerprintResponse(BaseModel):
+    """Same `{success, data}` envelope as every route the backend reads."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    success: bool = True
+    data: ClinicianFingerprintData
+
+
+@router.get(
+    "/clinician-summary/fingerprint",
+    response_model=ClinicianFingerprintResponse,
+    summary="Fingerprint of the code that writes the clinician note",
+)
+def clinician_summary_fingerprint_endpoint() -> ClinicianFingerprintResponse:
+    """Which version of the note-writing code is running (2026-10-03).
+
+    No patient data in or out, and no model call. The backend compares this
+    with the fingerprint saved beside a cached note and re-writes the note
+    when they differ -- see `NARRATIVE_CODE_FINGERPRINT`.
+    """
+    return ClinicianFingerprintResponse(
+        data=ClinicianFingerprintData(
+            fingerprint=NARRATIVE_CODE_FINGERPRINT,
+            narrative_version=NARRATIVE_VERSION,
+        )
     )
 
 

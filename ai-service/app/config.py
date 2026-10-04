@@ -9,7 +9,7 @@ them in the health payload.
 """
 
 from functools import lru_cache
-from typing import List
+from typing import List, Optional
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -57,6 +57,12 @@ class Settings(BaseSettings):
     gemini_retry_base_delay_seconds: float = 1.0
     gemini_temperature: float = 0.0
     gemini_max_output_tokens: int = 32768
+    # A fixed sampling seed for EXTRACTION (2026-10-03). Temperature 0 alone
+    # did not make re-reading a report repeatable: a re-analysis of Test 3
+    # changed HbA1c's flag between runs. The provider treats a seed as best
+    # effort, so this narrows the variation rather than removing it. `None`
+    # sends no seed.
+    gemini_seed: Optional[int] = 20261003
 
     # --- Module 34: how long a page waits for finding descriptions ---
     #

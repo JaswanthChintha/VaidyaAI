@@ -315,13 +315,23 @@ class GeminiClient:
         """
         client = self._ensure_client()
 
-        config = genai_types.GenerateContentConfig(
+        config_kwargs = dict(
             system_instruction=SYSTEM_INSTRUCTION,
             temperature=self._settings.gemini_temperature,
             max_output_tokens=self._settings.gemini_max_output_tokens,
             response_mime_type="application/json",
             response_schema=gemini_response_schema(),
         )
+        # A fixed seed (see `Settings.gemini_seed`), sent only when set and
+        # only if this SDK accepts the field -- otherwise the request goes out
+        # exactly as it did before the seed existed.
+        if self._settings.gemini_seed is not None:
+            config_kwargs["seed"] = self._settings.gemini_seed
+        try:
+            config = genai_types.GenerateContentConfig(**config_kwargs)
+        except Exception:  # noqa: BLE001 -- SDK without `seed`
+            config_kwargs.pop("seed", None)
+            config = genai_types.GenerateContentConfig(**config_kwargs)
         contents = [
             genai_types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
             genai_types.Part.from_text(text=prompt),
