@@ -90,6 +90,28 @@ def test_fixed_values_on_both_branches(creatinine, age, sex, expected):
     assert ckd_epi_2021(creatinine, age, sex) == pytest.approx(expected, abs=0.01)
 
 
+#: INDEPENDENT REFERENCE: the National Kidney Foundation's own calculator
+#: (kidney.org/professionals/gfr_calculator, "CKD-EPI creatinine equation
+#: (2021)", mg/dL, standardised assay, no BSA adjustment), read 2026-10-04 for
+#: made-up inputs. Whole numbers, as NKF shows them. Covers both sexes, both
+#: sides of kappa, every KDIGO band, and the 59 that flags at the < 60 edge.
+NKF_CALCULATOR = [
+    (1.0, 50, "male", 92),
+    (1.2, 60, "female", 52),
+    (2.0, 65, "male", 36),
+    (4.0, 55, "female", 13),
+    (0.5, 25, "female", 133),
+    (1.0, 75, "female", 59),
+    (0.75, 20, "male", 132),
+    (0.45, 40, "male", 137),
+]
+
+
+@pytest.mark.parametrize("creatinine,age,sex,nkf", NKF_CALCULATOR)
+def test_matches_the_nkf_calculator(creatinine, age, sex, nkf):
+    assert reported_egfr(ckd_epi_2021(creatinine, age, sex)) == nkf
+
+
 def test_below_kappa_uses_alpha_and_above_uses_minus_1_2():
     male_low = ckd_epi_2021(0.45, 40, "male")
     assert male_low == pytest.approx(142 * (0.45 / 0.9) ** -0.302 * 0.9938**40)
