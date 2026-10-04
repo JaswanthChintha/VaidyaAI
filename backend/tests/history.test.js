@@ -116,6 +116,24 @@ describe('historyService - the shared timeline assembler', () => {
       expect(history.includedCount).toBe(1);
     });
 
+    it("EXCLUDES someone else's report as SOMEONE_ELSE (2026-10-03)", async () => {
+      // Another person's values on the owner's timeline read as changes in
+      // the owner. Fully analysed and validated -- excluded for whose it is.
+      const own = await seedReport(user.id, { chronoDate: day(1) });
+      const theirs = await seedReport(user.id, { chronoDate: day(2) });
+      await Report.updateOne({ _id: theirs }, { $set: { 'subject.owner': 'other' } });
+
+      const history = await historyService.assembleHistory({ user });
+      expect(history.snapshots.map((s) => s.report_id)).toEqual([own]);
+
+      const excluded = await historyService.describeExcluded({ user });
+      expect(excluded.count).toBe(1);
+      expect(excluded.reports[0]).toMatchObject({
+        reportId: theirs,
+        reasonCode: historyService.EXCLUSION_REASONS.SOMEONE_ELSE,
+      });
+    });
+
     it('EXCLUDES an unanalysed report as NOT_ANALYSED', async () => {
       await seedReport(user.id, { analysed: false, validated: false, status: 'uploaded' });
       const history = await historyService.assembleHistory({ user });
@@ -266,12 +284,14 @@ describe('historyService - the shared timeline assembler', () => {
       }
     });
 
-    it('the two exclusion codes are the only ones, and they are ours', () => {
+    it('the three exclusion codes are the only ones, and they are ours', () => {
       // Fixed machine codes from this table and nowhere else - never built from
-      // a service response and never from user input.
+      // a service response and never from user input. SOMEONE_ELSE added
+      // 2026-10-03: a report marked as another person's.
       expect(Object.values(historyService.EXCLUSION_REASONS)).toEqual([
         'NOT_ANALYSED',
         'NO_VALIDATED_FEATURES',
+        'SOMEONE_ELSE',
       ]);
     });
   });

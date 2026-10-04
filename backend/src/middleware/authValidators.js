@@ -7,7 +7,9 @@ const { ROLES } = require('../utils/roles');
 const PASSWORD_RULE =
   'Password must be at least 8 characters and include an uppercase letter, a lowercase letter, a number and a special character';
 
-const PASSWORD_BYTES_RULE = `Password must be at most ${config.maxPasswordBytes} bytes long`;
+// Shown to people: the limit is in BYTES (bcrypt), said in characters, with
+// the one case where the two differ named in plain words.
+const PASSWORD_BYTES_RULE = `Password is too long. Use at most ${config.maxPasswordBytes} characters (emoji and letters from some other alphabets count as more than one)`;
 
 /**
  * SECURITY: every chain below starts with `.isString().bail()`.
@@ -29,12 +31,15 @@ const stringField = (field, requiredMessage) =>
 
 const passwordChain = (field = 'password') =>
   stringField(field, 'Password must be a string')
-    .isLength({ min: 8, max: config.maxPasswordBytes })
+    .isLength({ min: 8 })
     .withMessage(PASSWORD_RULE)
     .bail()
     // bcrypt silently ignores everything past 72 BYTES, so a 100-byte password
     // would authenticate against any string sharing its first 72 bytes.
-    // Measure bytes, not characters: one emoji is 4 bytes.
+    // Measure bytes, not characters: one emoji is 4 bytes. This is also the
+    // only upper bound (bytes >= characters), so an over-long password is told
+    // it is too long -- it used to get the "at least 8 characters" rule, which
+    // says nothing about length from above.
     .custom((value) => Buffer.byteLength(value, 'utf8') <= config.maxPasswordBytes)
     .withMessage(PASSWORD_BYTES_RULE)
     .bail()
@@ -110,11 +115,35 @@ const refreshValidator = [
 
 const logoutValidator = refreshValidator;
 
+/**
+ * A password the user already has, re-typed to confirm a sensitive action.
+ * No complexity rules (it was set under whatever rules applied then), but the
+ * byte cap applies for the same reason as on login.
+ */
+const currentPasswordChain = (field) =>
+  stringField(field, 'Enter your current password')
+    .notEmpty()
+    .withMessage('Enter your current password')
+    .bail()
+    .custom((value) => Buffer.byteLength(value, 'utf8') <= config.maxPasswordBytes)
+    .withMessage(PASSWORD_BYTES_RULE);
+
+// POST /auth/change-password: the new password meets the registration rules.
+const changePasswordValidator = [
+  currentPasswordChain('currentPassword'),
+  passwordChain('newPassword'),
+];
+
+// DELETE /auth/me: the account's own password, and nothing else.
+const deleteAccountValidator = [currentPasswordChain('password')];
+
 module.exports = {
   registerValidator,
   loginValidator,
   refreshValidator,
   logoutValidator,
+  changePasswordValidator,
+  deleteAccountValidator,
   PASSWORD_RULE,
   PASSWORD_BYTES_RULE,
 };

@@ -2,6 +2,7 @@
 
 const mongoose = require('mongoose');
 const { ALLOWED_MIME_TYPES, MAX_DISPLAY_NAME_LENGTH } = require('../utils/fileSecurity');
+const Profile = require('./Profile');
 
 /**
  * Module 3 - Medical Report Upload and Management.
@@ -134,6 +135,28 @@ const reportSchema = new mongoose.Schema(
     reportDate: {
       type: Date,
       default: undefined,
+    },
+
+    /**
+     * WHOSE REPORT THIS IS (owner, 2026-10-03).
+     *
+     * Every analysis used the ACCOUNT's profile for anything the report did
+     * not print -- age, sex, and always BMI, smoking, blood pressure and heart
+     * history -- so a relative's report was judged partly as the account
+     * holder (02-diabetes-and-lipids: "Obesity, borderline" on the account
+     * holder's BMI). `owner: 'other'` means the account profile is NOT used
+     * for this report at all: age and sex come from what the report prints,
+     * else from `age` / `sex` typed here, else they are unknown. The report
+     * is also left out of the account holder's timeline.
+     *
+     * `updatedAt` lets a page say "re-analyse to apply" when this changed
+     * after the stored analysis ran.
+     */
+    subject: {
+      owner: { type: String, enum: ['self', 'other'], default: 'self' },
+      age: { type: Number, min: 0, max: 120, default: undefined },
+      sex: { type: String, enum: Profile.GENDER_VALUES, default: undefined },
+      updatedAt: { type: Date, default: undefined },
     },
 
     /**
@@ -725,6 +748,23 @@ reportSchema.methods.toPublicJSON = function toPublicJSON() {
     chronoDate: this.chronoDate,
     status: this.status,
     statusMessage: this.statusMessage,
+    // Whose report, and whether that changed since the stored analysis ran
+    // (the analysis then still reflects the old answer -- see `subject`).
+    subject: {
+      owner: this.subject?.owner === 'other' ? 'other' : 'self',
+      age: this.subject?.age,
+      sex: this.subject?.sex,
+    },
+    // Against the analysis START, not its end (2026-10-04): the run reads
+    // `subject` when it begins, so an answer changed WHILE it runs is not in
+    // it. Compared with `completedAt`, Test 3 marked "mine" 30 s into a run
+    // that had started as someone else's reported nothing to re-analyse.
+    // `completedAt` is the fallback for an analysis stored without a start.
+    subjectChangedSinceAnalysis: Boolean(
+      this.subject?.updatedAt &&
+        (this.analysis?.startedAt || this.analysis?.completedAt) &&
+        this.subject.updatedAt > (this.analysis.startedAt || this.analysis.completedAt)
+    ),
     createdAt: this.createdAt,
     updatedAt: this.updatedAt,
   };

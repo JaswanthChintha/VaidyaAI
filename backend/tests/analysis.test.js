@@ -1117,6 +1117,62 @@ describe('Modules 4+5 - analysis orchestration', () => {
     });
   });
 
+  // ================================================= someone else's report ===
+  //
+  // 2026-10-03: every analysis used the ACCOUNT profile for what a report did
+  // not print, and always for BMI, smoking, blood pressure and heart history
+  // -- so a relative's report was judged partly as the account holder.
+  describe("someone else's report -- the account profile is not sent", () => {
+    const fullProfile = {
+      age: 20,
+      gender: 'male',
+      heightCm: 178,
+      weightKg: 80,
+      hypertension: true,
+      heartDisease: false,
+      smokingHistory: 'current',
+    };
+    const markOther = (token, id, extra = {}) =>
+      request(app)
+        .patch(`${REPORTS}/${id}/subject`)
+        .set(auth(token))
+        .send({ subjectOwner: 'other', ...extra });
+
+    it('sends ONLY the age and sex typed for the report', async () => {
+      const user = await makeUser('other.typed@example.com');
+      expect((await request(app).post(PROFILE).set(auth(user.token)).send(fullProfile)).status).toBe(201);
+      const report = await uploadReport(user.token);
+      expect((await markOther(user.token, report.id, { subjectAge: 34, subjectSex: 'female' })).status).toBe(200);
+
+      await analyze(user.token, report.id);
+      const profile = callsTo(ENGINEER_PATH)[0].body.profile;
+      expect(profile).toEqual({ age: 34, gender: 'female' });
+      const wire = JSON.stringify(callsTo(ENGINEER_PATH)[0].body);
+      for (const field of ['heightCm', 'weightKg', 'bmi', 'hypertension', 'heartDisease', 'smokingHistory']) {
+        expect(wire).not.toContain(field);
+      }
+    });
+
+    it('sends NO profile at all when nothing was typed -- unknown stays unknown', async () => {
+      const user = await makeUser('other.blank@example.com');
+      expect((await request(app).post(PROFILE).set(auth(user.token)).send(fullProfile)).status).toBe(201);
+      const report = await uploadReport(user.token);
+      expect((await markOther(user.token, report.id)).status).toBe(200);
+
+      await analyze(user.token, report.id);
+      expect(callsTo(ENGINEER_PATH)[0].body.profile).toBeUndefined();
+    });
+
+    it("still sends the owner's profile for the owner's own report", async () => {
+      const user = await makeUser('other.self@example.com');
+      expect((await request(app).post(PROFILE).set(auth(user.token)).send(fullProfile)).status).toBe(201);
+      const report = await uploadReport(user.token);
+
+      await analyze(user.token, report.id);
+      expect(callsTo(ENGINEER_PATH)[0].body.profile).toMatchObject({ age: 20, gender: 'male', smokingHistory: 'current' });
+    });
+  });
+
   // ====================================================== tri-state profile ===
   describe('tri-state profile fields (hypertension / heartDisease)', () => {
     /**

@@ -920,4 +920,133 @@ describe('Module 3 - Medical Report Upload and Management', () => {
       expect((await Report.findById(doc._id)).user.toString()).toBe(alice.id);
     });
   });
+
+  // ============================================ whose report (2026-10-03) ===
+  describe("whose report -- someone else's, on upload and after", () => {
+    const uploadAs = (token, fields) => {
+      const req = request(app).post(REPORTS).set(auth(token));
+      for (const [k, v] of Object.entries(fields)) req.field(k, String(v));
+      return req.attach('file', pdfBytes(), { filename: 'labs.pdf', contentType: 'application/pdf' });
+    };
+    const patchSubject = (token, id, body) =>
+      request(app).patch(`${REPORTS}/${id}/subject`).set(auth(token)).send(body);
+
+    it("a report is the owner's own unless said otherwise", async () => {
+      const alice = await makeUser('subject.default@example.com');
+      const res = await uploadFile(alice.token, pdfBytes(), 'labs.pdf');
+      expect(res.status).toBe(201);
+      expect(res.body.data.report.subject).toEqual({ owner: 'self' });
+      expect(res.body.data.report.subjectChangedSinceAnalysis).toBe(false);
+    });
+
+    it("stores someone else's age and sex given on upload", async () => {
+      const alice = await makeUser('subject.upload@example.com');
+      const res = await uploadAs(alice.token, { subjectOwner: 'other', subjectAge: '34', subjectSex: 'female' });
+      expect(res.status).toBe(201);
+      expect(res.body.data.report.subject).toEqual({ owner: 'other', age: 34, sex: 'female' });
+    });
+
+    it("someone else's report may leave age and sex unknown", async () => {
+      const alice = await makeUser('subject.blank@example.com');
+      const res = await uploadAs(alice.token, { subjectOwner: 'other' });
+      expect(res.status).toBe(201);
+      expect(res.body.data.report.subject).toEqual({ owner: 'other' });
+    });
+
+    it("refuses an age or sex on the owner's own report -- the profile holds those", async () => {
+      const alice = await makeUser('subject.selfage@example.com');
+      const res = await uploadAs(alice.token, { subjectOwner: 'self', subjectAge: '34' });
+      expect(res.status).toBe(422);
+    });
+
+    it.each([['200'], ['-1'], ['3.5'], ['abc']])('refuses an age of %s', async (age) => {
+      const alice = await makeUser(`subject.badage.${age}@example.com`);
+      const res = await uploadAs(alice.token, { subjectOwner: 'other', subjectAge: age });
+      expect(res.status).toBe(422);
+    });
+
+    it('refuses a sex outside the listed options', async () => {
+      const alice = await makeUser('subject.badsex@example.com');
+      const res = await uploadAs(alice.token, { subjectOwner: 'other', subjectSex: 'unicorn' });
+      expect(res.status).toBe(422);
+    });
+
+    it('changes whose report it is later, and back', async () => {
+      const alice = await makeUser('subject.patch@example.com');
+      const { body } = await uploadFile(alice.token, pdfBytes(), 'labs.pdf');
+      const id = body.data.report.id;
+
+      const toOther = await patchSubject(alice.token, id, { subjectOwner: 'other', subjectAge: 63, subjectSex: 'male' });
+      expect(toOther.status).toBe(200);
+      expect(toOther.body.data.report.subject).toEqual({ owner: 'other', age: 63, sex: 'male' });
+
+      const back = await patchSubject(alice.token, id, { subjectOwner: 'self' });
+      expect(back.status).toBe(200);
+      // Back to the owner's: the typed age and sex are dropped, not kept.
+      expect(back.body.data.report.subject).toEqual({ owner: 'self' });
+    });
+
+    it('says the analysis is out of date after a change', async () => {
+      const alice = await makeUser('subject.stale@example.com');
+      const { body } = await uploadFile(alice.token, pdfBytes(), 'labs.pdf');
+      const id = body.data.report.id;
+      await Report.updateOne({ _id: id }, { $set: { 'analysis.completedAt': new Date(Date.now() - 60_000), 'analysis.version': 1 } });
+
+      const res = await patchSubject(alice.token, id, { subjectOwner: 'other' });
+      expect(res.body.data.report.subjectChangedSinceAnalysis).toBe(true);
+    });
+
+    // FOUND LIVE 2026-10-04: Test 3 was switched to "mine" 30 s into a run
+    // that had started as someone else's, so the run used only the typed sex
+    // -- and the page said nothing, because the change preceded the run's END.
+    it('says the analysis is out of date after a change made WHILE it was running', async () => {
+      const alice = await makeUser('subject.midrun@example.com');
+      const { body } = await uploadFile(alice.token, pdfBytes(), 'labs.pdf');
+      const id = body.data.report.id;
+      await Report.updateOne({ _id: id }, {
+        $set: {
+          'analysis.startedAt': new Date(Date.now() - 60_000),
+          'analysis.completedAt': new Date(Date.now() + 60_000), // finishes after the change
+          'analysis.version': 1,
+        },
+      });
+
+      const res = await patchSubject(alice.token, id, { subjectOwner: 'other' });
+      expect(res.body.data.report.subjectChangedSinceAnalysis).toBe(true);
+    });
+
+    it('does not ask for a re-analysis when the change came before the run began', async () => {
+      const alice = await makeUser('subject.beforerun@example.com');
+      const { body } = await uploadFile(alice.token, pdfBytes(), 'labs.pdf');
+      const id = body.data.report.id;
+      await patchSubject(alice.token, id, { subjectOwner: 'other' });
+      await Report.updateOne({ _id: id }, {
+        $set: {
+          'analysis.startedAt': new Date(Date.now() + 1_000),
+          'analysis.completedAt': new Date(Date.now() + 90_000),
+          'analysis.version': 1,
+        },
+      });
+
+      const res = await request(app).get(`${REPORTS}/${id}`).set(auth(alice.token));
+      expect(res.status).toBe(200);
+      expect(res.body.data.report.subjectChangedSinceAnalysis).toBe(false);
+    });
+
+    it("another user cannot change it -- the same 404 as a missing report", async () => {
+      const alice = await makeUser('subject.owner@example.com');
+      const bob = await makeUser('subject.intruder@example.com');
+      const { body } = await uploadFile(alice.token, pdfBytes(), 'labs.pdf');
+
+      const res = await patchSubject(bob.token, body.data.report.id, { subjectOwner: 'other' });
+      expect(res.status).toBe(404);
+      expect((await Report.findById(body.data.report.id)).subject.owner).toBe('self');
+    });
+
+    it('requires an answer', async () => {
+      const alice = await makeUser('subject.required@example.com');
+      const { body } = await uploadFile(alice.token, pdfBytes(), 'labs.pdf');
+      expect((await patchSubject(alice.token, body.data.report.id, {})).status).toBe(422);
+    });
+  });
 });

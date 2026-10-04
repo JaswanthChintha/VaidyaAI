@@ -58,7 +58,7 @@ const userSchema = new mongoose.Schema(
           return Buffer.byteLength(String(value), 'utf8') <= config.maxPasswordBytes;
         },
         // Measured in BYTES, not characters: one emoji is 4 bytes.
-        message: `Password must be at most ${config.maxPasswordBytes} bytes long`,
+        message: `Password is too long. Use at most ${config.maxPasswordBytes} characters (emoji and letters from some other alphabets count as more than one)`,
       },
     },
     role: {

@@ -388,6 +388,17 @@ function buildProfilePayload(profile) {
 }
 
 /**
+ * The only person details sent for SOMEONE ELSE's report: the age and sex
+ * typed for it on upload, or nothing. Never the account holder's profile.
+ */
+function subjectProfile(subject) {
+  return {
+    age: Number.isFinite(subject?.age) ? subject.age : undefined,
+    gender: typeof subject?.sex === 'string' && subject.sex ? subject.sex : undefined,
+  };
+}
+
+/**
  * The caller's own profile, or null.
  *
  * Module 2 answers 404 when a user has no profile, and the pipeline must still
@@ -1791,8 +1802,17 @@ async function runAnalysis({ user, report, requestId }) {
     // NOTE the unwrap: `aiService.extract` already returns the `data` object,
     // and `engineerFeatures` sends it under `extraction`. Passing the wrapped
     // `{ success, data }` envelope here would break the pipeline silently.
-    const profileDoc = await loadOwnProfile(user);
-    const profile = buildProfilePayload(profileDoc);
+    // WHOSE REPORT (2026-10-03). For someone else's report the ACCOUNT's
+    // profile is not loaded at all -- not its age or sex, and not its BMI,
+    // smoking, blood pressure or heart history, which describe the account
+    // holder and would otherwise be applied to another person's blood. Only
+    // what was typed for this report is sent, in the profile's own field
+    // names; a value the report PRINTS still wins inside Module 5, exactly as
+    // it does for the owner's reports.
+    const profile =
+      report.subject?.owner === 'other'
+        ? buildProfilePayload(subjectProfile(report.subject))
+        : buildProfilePayload(await loadOwnProfile(user));
 
     // The FULL extraction goes to Module 5 (it is the pinned contract); only
     // the copy we persist is reduced.
@@ -2030,6 +2050,7 @@ module.exports = {
   unmappedTestNames,
   runDownstreamStages,
   buildProfilePayload,
+  subjectProfile,
   loadOwnProfile,
   tagWarning,
   collectWarnings,

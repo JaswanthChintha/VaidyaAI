@@ -7,6 +7,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const { sendSuccess } = require('../utils/apiResponse');
 const { ownerScopedFilter, assertCanAccess, OWNER_ONLY } = require('../utils/ownership');
 const aiService = require('../services/aiServiceClient');
+const { valuesUsed } = require('../utils/printedIdentity');
 
 /**
  * Module 31 - Population Context and Percentiles.
@@ -40,9 +41,17 @@ const aiService = require('../services/aiServiceClient');
  * WHERE AGE AND GENDER COME FROM - THE ONE THING THIS FILE MUST GET RIGHT
  * ==========================================================================
  *
- * From the AUTHENTICATED user's own Module 2 profile, loaded through the same
- * owner-scoped filter as the report. NOT from a query parameter, NOT from the
- * request body, and NOT from the report's own stored `age` / `gender` features.
+ * THE SAME SEX AND AGE THE ANALYSIS USED (2026-10-02). Since 2026-09-25
+ * Module 5 uses the sex and age PRINTED ON THE REPORT in place of the
+ * profile's (`report_details`), so every other screen judges a 63-year-old's
+ * report as a 63-year-old's. This endpoint kept reading the profile and scored
+ * that same report against 20-29-year-olds -- the account owner's group, not
+ * the person whose blood it is. Now, per field: a value the analysis took from
+ * the report is used; otherwise the AUTHENTICATED user's own Module 2 profile,
+ * loaded through the same owner-scoped filter as the report, exactly as before.
+ *
+ * NEVER from a query parameter or the request body. The printed values are
+ * read from the stored analysis, which the caller cannot set.
  *
  * The reason is that age and sex do not describe the value - they CHOOSE the
  * cohort it is scored against. A caller who could set them could score any
@@ -99,14 +108,15 @@ const ownFilter = (req, base = {}) => ownerScopedFilter(req.user, { ...OWNER_ONL
 /**
  * The `select: false` payload this endpoint needs, AND NO MORE.
  *
- * Only `featureValidation` - Module 6's verdict, which is the one place a value
- * this platform is willing to stand behind lives. The extraction, the raw
- * engineered features, both decision payloads, the clinical report, the patient
- * explanation and the guidance are not read at all; none of them contributes a
- * number to a percentile lookup. Same restraint, and the same reason, as
+ * `featureValidation` - Module 6's verdict, which is the one place a value
+ * this platform is willing to stand behind lives - and `features`, read ONLY
+ * for which sex and age the analysis used and where each came from (see the
+ * header). No value is taken from `features` into `measurements`. The
+ * extraction, both decision payloads, the clinical report, the patient
+ * explanation and the guidance are not read at all. Same restraint, and the same reason, as
  * `dashboardController` and `doctorSummaryController`.
  */
-const POPULATION_PROJECTION = '+featureValidation';
+const POPULATION_PROJECTION = '+featureValidation +features';
 
 /**
  * The report's validated readings, in Module 31's `measurements` shape.
@@ -210,17 +220,45 @@ const getPopulationContext = asyncHandler(async (req, res) => {
   // and is readable, and "we do not know your age" is a refusal Module 31
   // already words better than this file could. So the ownership re-check runs
   // only over a document that was actually found.
-  const profile = await Profile.findOne(ownFilter(req)).select('user age gender').lean();
-  if (profile) assertCanAccess(req.user, profile, { ...OWNER_ONLY });
+  // SOMEONE ELSE's REPORT (2026-10-03): the account profile is not read at
+  // all. Its place is taken by the age and sex typed for this report, which
+  // the analysis used under the same `patient_profile` source -- so the
+  // "fallback" below is the typed values, never the account holder's.
+  const otherPerson = report.subject?.owner === 'other';
+  let profile = null;
+  if (!otherPerson) {
+    profile = await Profile.findOne(ownFilter(req)).select('user age gender').lean();
+    if (profile) assertCanAccess(req.user, profile, { ...OWNER_ONLY });
+  }
+  const fallback = otherPerson
+    ? { age: report.subject.age, gender: report.subject.sex }
+    : profile;
 
   // Neither field is defaulted, coerced or inferred. `Number.isFinite` rather
   // than a truthiness test, so a real age of 0 is sent and an absent one is
   // omitted; the gender string is forwarded exactly as Module 2 stored it.
-  const age = profile && Number.isFinite(profile.age) ? profile.age : undefined;
-  const gender =
-    profile && typeof profile.gender === 'string' && profile.gender
-      ? profile.gender
+  const profileAge = fallback && Number.isFinite(fallback.age) ? fallback.age : undefined;
+  const profileGender =
+    fallback && typeof fallback.gender === 'string' && fallback.gender
+      ? fallback.gender
       : undefined;
+
+  // A value the analysis took from the REPORT wins, field by field -- the
+  // cohort must describe the person the values belong to. Anything else
+  // (printed nothing, or an analysis from before printed values were read)
+  // falls back to the profile exactly as before.
+  const used = valuesUsed(report.features);
+  const ageFromReport = used.ageSource === 'report_details' && used.ageYears !== null;
+  const genderFromReport = used.sexSource === 'report_details' && used.sex !== null;
+  const age = ageFromReport ? used.ageYears : profileAge;
+  const gender = genderFromReport ? used.sex : profileGender;
+  // 'entered' for a value typed for someone else's report: it is not the
+  // account profile, and saying "profile" would claim it was.
+  const typedSource = otherPerson ? 'entered' : 'profile';
+  const sourceOf = (fromReport, value) =>
+    fromReport ? 'report' : value !== undefined ? typedSource : null;
+  const ageSource = sourceOf(ageFromReport, age);
+  const genderSource = sourceOf(genderFromReport, gender);
 
   const populationContext = await aiService.populationContext({
     measurements,
@@ -230,17 +268,45 @@ const getPopulationContext = asyncHandler(async (req, res) => {
     requestId: aiService.newRequestId(report._id.toString()),
   });
 
+  // THE TESTS THIS PLATFORM DOES NOT ASSESS, BY NAME ONLY (2026-10-02). They
+  // have no canonical feature, so they never reach Module 31 and the page
+  // listed sixteen comparisons with no word about ESR, CRP, SGPT, TSH or the
+  // average glucose printed on the same report -- "not compared" rendering as
+  // nothing. The same source the dashboard's unanalysed section reads
+  // (`report.features.unmapped`); names only, no values, so this endpoint
+  // carries no medical data it did not carry before.
+  const unmapped = Array.isArray(report.features?.unmapped) ? report.features.unmapped : [];
+  const notCompared = [
+    ...new Set(
+      unmapped
+        .map((item) => (item && typeof item.test_name === 'string' ? item.test_name.trim() : ''))
+        .filter(Boolean)
+    ),
+  ];
+
   return sendSuccess(res, 200, {
     // The file the comparison describes. Metadata only - `toPublicJSON` carries
     // no medical values and no storage key.
     report: report.toPublicJSON(),
-    // WHERE THE COHORT CAME FROM, as booleans only - no age, no gender, no
-    // value. Without it, "no profile at all" and "a profile that answered
-    // `prefer_not_to_say`" produce the same `SEX_COHORT_NOT_AVAILABLE` and a
-    // reader cannot tell which one to act on. `source` is fixed text because
-    // there is exactly one source and no way to ask for another.
+    notCompared,
+    // WHERE THE COHORT CAME FROM - no age, no gender, no value. Without it,
+    // "no profile at all" and "a profile that answered `prefer_not_to_say`"
+    // produce the same `SEX_COHORT_NOT_AVAILABLE` and a reader cannot tell
+    // which one to act on. `ageSource` / `genderSource` are 'report' (printed
+    // on the report, as the analysis used), 'profile', or null (neither).
+    // `source` summarises the two: 'report', 'profile' or 'mixed'.
     subject: {
-      source: 'profile',
+      source:
+        ageSource === 'report' && genderSource === 'report'
+          ? 'report'
+          : ageSource === 'report' || genderSource === 'report'
+            ? 'mixed'
+            : typedSource,
+      ageSource,
+      genderSource,
+      // Someone else's report (2026-10-03): the account profile was not used,
+      // so "fill in your details" is not the remedy for a missing age or sex.
+      otherPerson,
       profileExists: Boolean(profile),
       ageProvided: age !== undefined,
       genderProvided: gender !== undefined,

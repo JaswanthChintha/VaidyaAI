@@ -136,6 +136,8 @@ const uploadReport = asyncHandler(async (req, res) => {
       // Validated above as an ISO-8601 date that is neither absurdly old nor in
       // the future. Re-coerced here rather than relying on the sanitizer.
       reportDate: req.body.reportDate ? new Date(req.body.reportDate) : undefined,
+      // Validated above; age and sex only ever arrive with `other`.
+      subject: subjectFromBody(req.body),
     });
   } catch (err) {
     // Roll the file back so a failed insert cannot leave an orphan blob.
@@ -206,6 +208,34 @@ const listReports = asyncHandler(async (req, res) => {
 /** GET /reports/:id - metadata for one of the caller's own reports. */
 const getReport = asyncHandler(async (req, res) => {
   assertCanAccess(req.user, req.report, { ...OWNER_ONLY });
+  return sendSuccess(res, 200, { report: req.report.toPublicJSON() });
+});
+
+/**
+ * Whose report, from a validated body (2026-10-03). `self` carries no age or
+ * sex -- those belong to the profile -- and the validator refuses them there.
+ */
+function subjectFromBody(body) {
+  if (body.subjectOwner !== 'other') return { owner: 'self', updatedAt: new Date() };
+  return {
+    owner: 'other',
+    age: Number.isFinite(body.subjectAge) ? body.subjectAge : undefined,
+    sex: typeof body.subjectSex === 'string' && body.subjectSex ? body.subjectSex : undefined,
+    updatedAt: new Date(),
+  };
+}
+
+/**
+ * PATCH /reports/:id/subject - change whose report this is (2026-10-03).
+ *
+ * Does NOT re-run the analysis: that spends model quota and is the owner's
+ * call. The stored analysis keeps describing the old answer until then, and
+ * `subjectChangedSinceAnalysis` on the report says so.
+ */
+const setReportSubject = asyncHandler(async (req, res) => {
+  assertCanAccess(req.user, req.report, { ...OWNER_ONLY });
+  req.report.subject = subjectFromBody(req.body);
+  await req.report.save();
   return sendSuccess(res, 200, { report: req.report.toPublicJSON() });
 });
 
@@ -336,6 +366,7 @@ module.exports = {
   uploadReport,
   listReports,
   getReport,
+  setReportSubject,
   downloadReport,
   deleteReport,
 };

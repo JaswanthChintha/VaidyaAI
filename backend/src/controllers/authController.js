@@ -1,6 +1,9 @@
 'use strict';
 
 const User = require('../models/User');
+const Profile = require('../models/Profile');
+const Report = require('../models/Report');
+const { getStorage } = require('../storage');
 const ApiError = require('../utils/ApiError');
 const asyncHandler = require('../utils/asyncHandler');
 const { sendSuccess } = require('../utils/apiResponse');
@@ -185,4 +188,114 @@ const listUsers = asyncHandler(async (req, res) => {
   });
 });
 
-module.exports = { register, login, refresh, logout, getMe, listUsers, issueTokens };
+/**
+ * POST /api/v1/auth/change-password  (protected)
+ *
+ * The current password is re-checked even though the caller holds a valid
+ * access token: a session left open on a shared computer must not be enough
+ * to take the account over.
+ *
+ * Saving a new password runs the model's pre-save hook, which stamps
+ * `passwordChangedAt` and EMPTIES `refreshTokens` -- every other device is
+ * signed out, and every access token issued before now stops working at
+ * `protect`. This device then gets a fresh pair, so the person who just
+ * changed it stays signed in.
+ */
+const changePassword = asyncHandler(async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+
+  const user = await User.findById(req.user._id).select('+password +refreshTokens');
+  if (!user) throw ApiError.unauthorized('Not authenticated');
+
+  if (!(await user.comparePassword(currentPassword))) {
+    // 400, not 401: the client treats a 401 as an expired session and would
+    // refresh and RESEND the request -- a second guess at the password.
+    throw new ApiError(400, 'INVALID_CURRENT_PASSWORD', 'Your current password is not correct');
+  }
+  if (await user.comparePassword(newPassword)) {
+    throw new ApiError(
+      400,
+      'PASSWORD_UNCHANGED',
+      'Choose a new password that is different from your current one'
+    );
+  }
+
+  user.password = newPassword;
+  await user.save();
+
+  const tokens = await issueTokens(user);
+  return sendSuccess(res, 200, { user: user.toPublicJSON(), ...tokens });
+});
+
+/**
+ * DELETE /api/v1/auth/me  (protected)
+ *
+ * PERMANENT. The account, its profile, every report row (and with it every
+ * stored analysis) and every uploaded file are removed. Nothing is archived.
+ *
+ * Re-checks the password for the same reason as `changePassword`.
+ *
+ * ORDER: rows first, files second -- the same choice `deleteReport` makes and
+ * for the same reason. If removing a file fails, what is left is a file no
+ * record points at (invisible, reclaimable), never a record pointing at a
+ * missing file. Everything is scoped to the caller's own id; there is no
+ * parameter that could name anybody else.
+ */
+const deleteAccount = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user._id).select('+password');
+  if (!user) throw ApiError.unauthorized('Not authenticated');
+
+  if (!(await user.comparePassword(req.body.password))) {
+    throw new ApiError(400, 'INVALID_CURRENT_PASSWORD', 'Your password is not correct');
+  }
+
+  const userId = user._id;
+  const reports = await Report.find({ user: userId }).select('storageKey storageDriver').lean();
+
+  const reportsResult = await Report.deleteMany({ user: userId });
+  const profileResult = await Profile.deleteMany({ user: userId });
+  await User.deleteOne({ _id: userId });
+
+  // Files: each report's own file, then the whole user folder for every driver
+  // in use, which also catches anything a row no longer points at.
+  let filesRemoved = 0;
+  let filesFailed = 0;
+  const drivers = new Set();
+  for (const r of reports) {
+    try {
+      const storage = getStorage(r.storageDriver);
+      drivers.add(r.storageDriver);
+      if (await storage.remove(r.storageKey)) filesRemoved += 1;
+    } catch (err) {
+      filesFailed += 1;
+    }
+  }
+  drivers.add(undefined); // the configured default driver
+  for (const driver of drivers) {
+    try {
+      await getStorage(driver).removeUserScope(userId.toString());
+    } catch (err) {
+      // Best effort; the rows are already gone.
+    }
+  }
+
+  return sendSuccess(res, 200, {
+    deleted: true,
+    reportsDeleted: reportsResult.deletedCount,
+    profileDeleted: profileResult.deletedCount > 0,
+    filesRemoved,
+    filesFailed,
+  });
+});
+
+module.exports = {
+  register,
+  login,
+  refresh,
+  logout,
+  getMe,
+  listUsers,
+  changePassword,
+  deleteAccount,
+  issueTokens,
+};

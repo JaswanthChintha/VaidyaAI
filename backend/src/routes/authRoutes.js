@@ -12,6 +12,8 @@ const {
   loginValidator,
   refreshValidator,
   logoutValidator,
+  changePasswordValidator,
+  deleteAccountValidator,
 } = require('../middleware/authValidators');
 
 const router = express.Router();
@@ -25,6 +27,17 @@ router.post('/refresh', validate(refreshValidator), authController.refresh);
 router.post('/logout', validate(logoutValidator), authController.logout);
 
 router.get('/me', protect, authController.getMe);
+
+// Both re-check the current password, so both take the login limiter: they
+// are as good a password-guessing oracle as /login is.
+router.post(
+  '/change-password',
+  protect,
+  loginLimiter,
+  validate(changePasswordValidator),
+  authController.changePassword
+);
+router.delete('/me', protect, loginLimiter, validate(deleteAccountValidator), authController.deleteAccount);
 
 // Authorization demo//guard: admins only.
 router.get('/admin/users', protect, restrictTo(ROLES.ADMIN), authController.listUsers);

@@ -2,6 +2,7 @@
 
 const { body, param, query } = require('express-validator');
 const { SORT_FIELDS, REPORT_STATUS_VALUES } = require('../models/Report');
+const Profile = require('../models/Profile');
 
 /**
  * Module 3 validators.
@@ -60,7 +61,69 @@ const reportDateField = body('reportDate')
   .withMessage('Report date is not a valid date')
   .customSanitizer((value) => new Date(value));
 
-const uploadReportValidator = [reportDateField];
+/*
+ * WHOSE REPORT (2026-10-03). Shared by the upload form (multipart, so every
+ * value arrives as a string) and PATCH /reports/:id/subject (JSON). Type
+ * guard and `.bail()` first, as everywhere in this file. Age and sex are
+ * accepted only for someone else's report; for one's own they would be a
+ * second, competing copy of the profile, and are refused rather than ignored
+ * so a client cannot believe they were stored.
+ */
+const SUBJECT_OWNERS = Object.freeze(['self', 'other']);
+
+const subjectOwnerField = (required) => {
+  const chain = body('subjectOwner');
+  return (required ? chain : chain.optional())
+    .isString()
+    .withMessage('Whose report this is must be "self" or "other"')
+    .bail()
+    .trim()
+    .isIn(SUBJECT_OWNERS)
+    .withMessage('Whose report this is must be "self" or "other"');
+};
+
+const onlyForOther = (label) => (value, { req }) => {
+  if (req.body.subjectOwner !== 'other') {
+    throw new Error(`${label} can only be given for someone else's report`);
+  }
+  return true;
+};
+
+const subjectAgeField = body('subjectAge')
+  .optional({ values: 'falsy' })
+  .custom((value) => {
+    const text = typeof value === 'number' ? String(value) : value;
+    if (typeof text !== 'string' || !/^\d{1,3}$/.test(text.trim())) {
+      throw new Error('Age must be a whole number of years');
+    }
+    const n = Number(text.trim());
+    if (n < 0 || n > 120) throw new Error('Age must be between 0 and 120');
+    return true;
+  })
+  .bail()
+  .custom(onlyForOther('An age'))
+  .customSanitizer((value) => Number(String(value).trim()));
+
+const subjectSexField = body('subjectSex')
+  .optional({ values: 'falsy' })
+  .isString()
+  .withMessage('Sex must be one of the listed options')
+  .bail()
+  .trim()
+  .isIn(Profile.GENDER_VALUES)
+  .withMessage('Sex must be one of the listed options')
+  .bail()
+  .custom(onlyForOther('A sex'));
+
+const uploadReportValidator = [
+  reportDateField,
+  subjectOwnerField(false),
+  subjectAgeField,
+  subjectSexField,
+];
+
+/** PATCH /reports/:id/subject -- whose report, changed after upload. */
+const reportSubjectValidator = [subjectOwnerField(true), subjectAgeField, subjectSexField];
 
 /** `:id` must be a 24-char hex ObjectId before it is allowed near a query. */
 const reportIdValidator = [
@@ -127,6 +190,8 @@ const listReportsValidator = [
 
 module.exports = {
   uploadReportValidator,
+  reportSubjectValidator,
+  SUBJECT_OWNERS,
   reportIdValidator,
   listReportsValidator,
   PAGINATION,

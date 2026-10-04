@@ -100,6 +100,12 @@ const EXCLUSION_REASONS = Object.freeze({
    * readings that Module 6 never approved.
    */
   NO_VALIDATED_FEATURES: 'NO_VALIDATED_FEATURES',
+  /**
+   * Marked as SOMEONE ELSE's report (2026-10-03). Its values are another
+   * person's, so on the account holder's timeline they would read as changes
+   * in the account holder. Left out, and counted, so the page can say so.
+   */
+  SOMEONE_ELSE: 'SOMEONE_ELSE',
 });
 
 /**
@@ -140,6 +146,9 @@ const EXCLUSION_REASONS = Object.freeze({
 const INCLUSION_FILTER = Object.freeze({
   'analysis.version': { $gt: 0 },
   featureValidation: { $exists: true, $ne: null },
+  // Not someone else's report (2026-10-03). `$ne` also matches a report
+  // stored before `subject` existed, which is the owner's by default.
+  'subject.owner': { $ne: 'other' },
 });
 
 /**
@@ -329,6 +338,7 @@ async function describeExcluded({ user, limit = 50 }) {
         { 'analysis.version': { $exists: false } },
         { featureValidation: { $exists: false } },
         { featureValidation: null },
+        { 'subject.owner': 'other' },
       ],
     },
   });
@@ -339,7 +349,7 @@ async function describeExcluded({ user, limit = 50 }) {
       // No payload. `featureValidation` is asked for ONLY as an existence test
       // and these rows are the ones that do not have it, so nothing large is
       // read; the field is not selected at all.
-      .select('user chronoDate status analysis.version')
+      .select('user chronoDate status analysis.version subject.owner')
       .sort({ chronoDate: -1, _id: -1 })
       .limit(Math.max(0, limit))
       .lean(),
@@ -351,10 +361,14 @@ async function describeExcluded({ user, limit = 50 }) {
     reportId: String(row._id),
     chronoDate: row.chronoDate,
     status: row.status,
+    // Someone else's first: an unanalysed relative's report is excluded for
+    // that reason whatever its analysis state.
     reasonCode:
-      (row.analysis && row.analysis.version) > 0
-        ? EXCLUSION_REASONS.NO_VALIDATED_FEATURES
-        : EXCLUSION_REASONS.NOT_ANALYSED,
+      row.subject?.owner === 'other'
+        ? EXCLUSION_REASONS.SOMEONE_ELSE
+        : (row.analysis && row.analysis.version) > 0
+          ? EXCLUSION_REASONS.NO_VALIDATED_FEATURES
+          : EXCLUSION_REASONS.NOT_ANALYSED,
   }));
 
   return { count, reports, listed: reports.length };

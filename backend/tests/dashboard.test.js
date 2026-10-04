@@ -1060,6 +1060,26 @@ describe('Module 27 - GET /reports/:id/dashboard', () => {
       expect(potassium.labReferenceHigh).toBe(5.1);
     });
 
+    it('says where a description came from: reviewed text, or the model (2026-10-04)', () => {
+      const withReviewed = {
+        ...glossary,
+        entries: [
+          { ...glossary.entries[0], origin: 'reviewed', source_doc: 'term_x' },
+          glossary.entries[1],
+        ],
+      };
+      expect(byName(unanalysedFrom(withReviewed), 'Potassium').descriptionOrigin).toBe('reviewed');
+      // No `origin` (a glossary stored before the field existed) was the model.
+      expect(byName(unanalysedFrom(glossary), 'Potassium').descriptionOrigin).toBe('model');
+      // An unrecognised value is never promoted to "reviewed".
+      const odd = { ...glossary, entries: [{ ...glossary.entries[0], origin: 'REVIEWED!' }] };
+      expect(byName(unanalysedFrom(odd), 'Potassium').descriptionOrigin).toBe('model');
+      // A withheld description carries no origin at all.
+      expect(byName(unanalysedFrom(withReviewed), 'LDL Cholesterol')).not.toHaveProperty(
+        'descriptionOrigin'
+      );
+    });
+
     it('reports a WITHHELD description as withheld, never as an absent one', () => {
       const ldl = byName(unanalysedFrom(glossary), 'LDL Cholesterol');
       expect(ldl.descriptionAvailable).toBe(false);

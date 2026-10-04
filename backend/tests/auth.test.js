@@ -103,6 +103,18 @@ describe('Module 1 - Authentication', () => {
       expect(res.body.error.details.some((d) => d.field === 'password')).toBe(true);
     });
 
+    // 2026-10-02: an over-long password was answered with the "at least 8
+    // characters" rule, which says nothing about being too long. It is now
+    // told so, in characters a reader understands -- never "bytes".
+    it('tells an over-long password that it is too long, in plain words', async () => {
+      const { res } = await registerUser({ password: `Str0ng!${'a'.repeat(96)}` });
+      expect(res.status).toBe(422);
+      const message = res.body.error.details.find((d) => d.field === 'password').message;
+      expect(message).toMatch(/too long/i);
+      expect(message).toMatch(/72 characters/);
+      expect(message).not.toMatch(/byte/i);
+    });
+
     // The real property: for an account that DOES exist, a different string
     // sharing the password's leading bytes must not authenticate. Registering
     // an over-long password and watching the login fail proves nothing - the

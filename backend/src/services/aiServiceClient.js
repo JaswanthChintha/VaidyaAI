@@ -125,6 +125,7 @@ const PATHS = Object.freeze({
   guidance: '/api/v1/explain/guidance',
   glossary: '/api/v1/explain/glossary',
   clinicianSummary: '/api/v1/explain/clinician-summary',
+  clinicianFingerprint: '/api/v1/explain/clinician-summary/fingerprint',
   summaryProse: '/api/v1/explain/summary-prose',
   findingContext: '/api/v1/explain/finding-context',
   labPolarity: '/api/v1/explain/lab-polarity',
@@ -1219,6 +1220,42 @@ async function writeClinicianSummary({ summary, requestId }) {
 }
 
 /**
+ * Which version of the note-writing code the ai-service is running, or null.
+ *
+ * (2026-10-03) A cached clinician note is reused only while this matches the
+ * fingerprint saved beside it -- otherwise a fix to that code never reaches a
+ * note already written. NEVER THROWS: null means "could not ask", and the
+ * caller then keeps using the cached note rather than spending a model call on
+ * a hiccup. Remembered for a minute so a page view does not add a request.
+ */
+const FINGERPRINT_TTL_MS = 60 * 1000;
+let fingerprintMemo = { value: null, at: 0 };
+
+async function clinicianSummaryFingerprint() {
+  if (!isConfigured()) return null;
+  if (fingerprintMemo.value && Date.now() - fingerprintMemo.at < FINGERPRINT_TTL_MS) {
+    return fingerprintMemo.value;
+  }
+  try {
+    const res = await http().get(PATHS.clinicianFingerprint, {
+      timeout: config.aiService.healthTimeoutMs,
+      headers: authHeaders(newRequestId()),
+    });
+    const data = unwrapEnvelope(res.data, STAGES.EXPLANATION);
+    const value = typeof data.fingerprint === 'string' && data.fingerprint ? data.fingerprint : null;
+    if (value) fingerprintMemo = { value, at: Date.now() };
+    return value;
+  } catch (err) {
+    return null;
+  }
+}
+
+/** Test hook: forget the remembered fingerprint. */
+function resetFingerprintMemo() {
+  fingerprintMemo = { value: null, at: 0 };
+}
+
+/**
  * Module 33 - rewrite the patient's composed summary sentences for flow.
  *
  * REWRITES TEXT THAT ALREADY EXISTS, and sends no report. The sentences the
@@ -1444,6 +1481,8 @@ module.exports = {
   scoreProgress,
   generateDoctorSummary,
   writeClinicianSummary,
+  clinicianSummaryFingerprint,
+  resetFingerprintMemo,
   rewriteSummaryProse,
   describeFindings,
   populationContext,

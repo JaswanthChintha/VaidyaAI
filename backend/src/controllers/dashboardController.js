@@ -127,13 +127,22 @@ const getDashboard = asyncHandler(async (req, res) => {
   // it can mean the report is someone else's. Compared with the profile AS IT
   // STANDS -- the question is "is this yours". `not_checked` for a report
   // analysed before printed sex and age were read.
-  const profile = await Profile.findOne(ownerScopedFilter(req.user, { ...OWNER_ONLY })).lean();
-  const identity = compareWithProfile({
-    identity: report.printedIdentity || null,
-    profile,
-    features: report.features,
-    reportDate: report.chronoDate,
-  });
+  //
+  // NOT FOR SOMEONE ELSE's REPORT (2026-10-03): "is this yours" has been
+  // answered -- no -- so the comparison would only restate it as a mismatch.
+  // The page says the report is marked as someone else's instead.
+  let identity;
+  if (report.subject?.owner === 'other') {
+    identity = { status: 'other_person' };
+  } else {
+    const profile = await Profile.findOne(ownerScopedFilter(req.user, { ...OWNER_ONLY })).lean();
+    identity = compareWithProfile({
+      identity: report.printedIdentity || null,
+      profile,
+      features: report.features,
+      reportDate: report.chronoDate,
+    });
+  }
 
   return sendSuccess(res, 200, {
     // The file the dashboard describes, so a renderer can title the screen

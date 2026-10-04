@@ -972,3 +972,103 @@ describe('Module 32 - the parameters the platform does not assess', () => {
     expect(res.body.data.unassessed.items).toEqual([]);
   });
 });
+
+// ============================== the cached note and the code that wrote it ==
+//
+// 2026-10-03: a fix to the note-writing code never reached a note already
+// written -- 02-diabetes-and-lipids kept giving BMI 25.25 and age 20 as reasons
+// for Heart Disease from its cache. The cache is now keyed on the ai-service's
+// code fingerprint as well as the analysis version.
+describe('Module 32 - the cached narrative follows the code fingerprint', () => {
+  const CLINICIAN_PATH = '/api/v1/explain/clinician-summary';
+  const FINGERPRINT_PATH = '/api/v1/explain/clinician-summary/fingerprint';
+  let owner;
+  let reportId;
+  let fingerprint;
+  let fingerprintCalls;
+
+  const written = (text) => okResponse({ module: 32, version: '1.0.0', outcome: 'generated', text });
+  const narrativeCalls = () => callsTo(CLINICIAN_PATH);
+  const summaryOf = () =>
+    request(app).get(`${REPORTS}/${reportId}/doctor-summary`).set(auth(owner.token));
+  const cache = (over) =>
+    Report.updateOne(
+      { _id: reportId },
+      { $set: { doctorNarrative: { outcome: 'generated', text: 'cached note', analysisVersion: 1, ...over } } }
+    );
+
+  beforeEach(async () => {
+    aiServiceClient.resetFingerprintMemo();
+    owner = await makeUser(`doc.fp.${Date.now()}.${Math.random()}@example.com`);
+    reportId = await seedReport(owner.id);
+
+    // The clinician route on top of the shared wiring.
+    const shared = mockAxios.post.getMockImplementation();
+    mockAxios.post.mockImplementation(async (url, body, options) => {
+      if (url === CLINICIAN_PATH) {
+        outgoing.push({ url, body, options });
+        return written('fresh note');
+      }
+      return shared(url, body, options);
+    });
+
+    fingerprint = 'aaaaaaaaaaaaaaaa';
+    fingerprintCalls = 0;
+    mockAxios.get.mockImplementation(async (url) => {
+      if (url === FINGERPRINT_PATH) {
+        fingerprintCalls += 1;
+        if (fingerprint instanceof Error) throw fingerprint;
+        return okResponse({ fingerprint, narrative_version: '1.0.0' });
+      }
+      return okResponse({ status: 'ok' });
+    });
+  });
+
+  afterEach(() => aiServiceClient.resetFingerprintMemo());
+
+  it('reuses a cached note written by the same code -- no model call', async () => {
+    await cache({ codeFingerprint: 'aaaaaaaaaaaaaaaa' });
+    const res = await summaryOf();
+    expect(res.status).toBe(200);
+    expect(res.body.data.narrative.text).toBe('cached note');
+    expect(narrativeCalls()).toHaveLength(0);
+  });
+
+  it('re-writes a cached note written by different code, and saves the new fingerprint', async () => {
+    await cache({ codeFingerprint: 'bbbbbbbbbbbbbbbb' });
+    const res = await summaryOf();
+    expect(res.body.data.narrative.text).toBe('fresh note');
+    expect(narrativeCalls()).toHaveLength(1);
+    const stored = await Report.findById(reportId).select('+doctorNarrative').lean();
+    expect(stored.doctorNarrative.codeFingerprint).toBe('aaaaaaaaaaaaaaaa');
+  });
+
+  it('re-writes, once, a note cached before fingerprints existed', async () => {
+    await cache({});
+    await summaryOf();
+    await summaryOf();
+    expect(narrativeCalls()).toHaveLength(1);
+  });
+
+  it('trusts the cache when the fingerprint cannot be read -- a hiccup costs no model call', async () => {
+    await cache({ codeFingerprint: 'bbbbbbbbbbbbbbbb' });
+    fingerprint = new Error('ECONNREFUSED');
+    const res = await summaryOf();
+    expect(res.body.data.narrative.text).toBe('cached note');
+    expect(narrativeCalls()).toHaveLength(0);
+  });
+
+  it('still re-writes a note from an earlier analysis, whatever the fingerprint', async () => {
+    await cache({ codeFingerprint: 'aaaaaaaaaaaaaaaa', analysisVersion: 0 });
+    await summaryOf();
+    expect(narrativeCalls()).toHaveLength(1);
+  });
+
+  it('asks for the fingerprint once a minute, not once a page view', async () => {
+    await cache({ codeFingerprint: 'aaaaaaaaaaaaaaaa' });
+    await summaryOf();
+    await summaryOf();
+    await summaryOf();
+    expect(fingerprintCalls).toBe(1);
+  });
+});

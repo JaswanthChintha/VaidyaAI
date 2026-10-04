@@ -14,6 +14,7 @@ const { uploadLimiter, analysisLimiter, historyLimiter } = require('../middlewar
 const { singleReportUpload } = require('../middleware/upload');
 const {
   uploadReportValidator,
+  reportSubjectValidator,
   reportIdValidator,
   listReportsValidator,
 } = require('../middleware/reportValidators');
@@ -63,6 +64,14 @@ router.get(
   validate(reportIdValidator),
   reportController.loadOwnReport,
   reportController.downloadReport
+);
+
+/** Whose report this is, changed after upload (2026-10-03). Owner only. */
+router.patch(
+  '/:id/subject',
+  validate([...reportIdValidator, ...reportSubjectValidator]),
+  reportController.loadOwnReport,
+  reportController.setReportSubject
 );
 
 /**

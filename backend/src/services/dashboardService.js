@@ -926,8 +926,14 @@ function buildUnanalysedSection(engineeredFeatures, extraction, parameterGlossar
       const description = stringOrNull(glossaryEntry.description);
       const available = glossaryEntry.available === true && description !== null;
       descriptionFields.descriptionAvailable = available;
-      if (available) descriptionFields.description = description;
-      else descriptionFields.descriptionNotice = stringOrNull(glossaryEntry.notice);
+      if (available) {
+        descriptionFields.description = description;
+        // `reviewed` = the summary of a reviewed knowledge document, word for
+        // word; anything else (including a glossary stored before the field
+        // existed) was written by the model.
+        descriptionFields.descriptionOrigin =
+          glossaryEntry.origin === 'reviewed' ? 'reviewed' : 'model';
+      } else descriptionFields.descriptionNotice = stringOrNull(glossaryEntry.notice);
     }
     return {
       ...descriptionFields,

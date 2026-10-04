@@ -133,14 +133,21 @@ const getDoctorSummary = asyncHandler(async (req, res) => {
   // which of the patient's reports count.
   const history = await historyService.assembleHistory({ user: req.user });
   const excluded = await historyService.describeExcluded({ user: req.user });
+  // SOMEONE ELSE's REPORT (2026-10-03) is not in the account holder's history
+  // and must not be summarised against it: the account holder's reports are
+  // not sent at all, so no trend or comparison of two people can be built.
+  const otherPerson = report.subject?.owner === 'other';
+  const snapshots = otherPerson ? [] : history.snapshots;
 
-  const snapshotIds = new Set(history.snapshots.map((s) => s.report_id));
-  const pair = await historyService.resolveNamedPair({
-    user: req.user,
-    baseline: req.query.baseline,
-    comparison: req.query.comparison,
-    snapshotIds,
-  });
+  const snapshotIds = new Set(snapshots.map((s) => s.report_id));
+  const pair = otherPerson
+    ? null
+    : await historyService.resolveNamedPair({
+        user: req.user,
+        baseline: req.query.baseline,
+        comparison: req.query.comparison,
+        snapshotIds,
+      });
 
   const summary = await aiService.generateDoctorSummary({
     report: report.clinicalReport,
@@ -174,7 +181,7 @@ const getDoctorSummary = asyncHandler(async (req, res) => {
     // no caller's accounting can route around it. And this response now states
     // `subjectInHistory` so the omission is visible here too, rather than
     // being inferable only by comparing ids by hand.
-    history: history.snapshots,
+    history: snapshots,
     patientRef: String(req.user.id ?? req.user._id),
     options: pair
       ? { baseline_ref: pair.baselineRef, comparison_ref: pair.comparisonRef }
@@ -254,6 +261,15 @@ const getDoctorSummary = asyncHandler(async (req, res) => {
  */
 async function resolveNarrative(report, version, summary) {
   const cached = report.doctorNarrative;
+  // WHICH NOTE-WRITING CODE IS RUNNING (2026-10-03). A cached note written by
+  // older code is re-written: on 2026-10-03 a fixed "because" list never
+  // reached 02-diabetes-and-lipids, whose cached note kept giving BMI 25.25
+  // and age 20 as reasons for Heart Disease. `null` means the ai-service could
+  // not be asked -- then the cache is trusted as before, so a hiccup never
+  // costs a model call. A note cached before fingerprints existed has none,
+  // and is re-written once.
+  const fingerprint = await aiService.clinicianSummaryFingerprint();
+  const sameCode = fingerprint === null || cached?.codeFingerprint === fingerprint;
   // A REFUSAL IS CACHED TOO, and deliberately: a safety rejection costs two
   // model calls, and retrying it on every page view would spend a day's quota
   // on one reader. `model_unavailable` is the exception -- that is a
@@ -262,6 +278,7 @@ async function resolveNarrative(report, version, summary) {
   if (
     cached
     && cached.analysisVersion === version
+    && sameCode
     && cached.outcome
     && cached.outcome !== 'model_unavailable'
   ) {
@@ -287,7 +304,9 @@ async function resolveNarrative(report, version, summary) {
   }
   if (!written || typeof written !== 'object') return null;
 
-  const stored = { ...written, analysisVersion: version };
+  // The fingerprint read before writing. If it could not be read, none is
+  // saved, and the next view with the ai-service reachable re-writes once.
+  const stored = { ...written, analysisVersion: version, codeFingerprint: fingerprint };
   // Persisted best-effort. A write failure means the next request writes it
   // again, which is a wasted call and not a broken page.
   try {
