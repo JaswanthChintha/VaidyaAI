@@ -1,6 +1,8 @@
-import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useAuth } from './lib/auth';
 import ThemeToggle from './components/ThemeToggle';
+import Icon from './components/Icon';
+import Landing from './pages/Landing';
 import SignIn from './pages/SignIn';
 import Profile from './pages/Profile';
 import Reports from './pages/Reports';
@@ -29,20 +31,43 @@ function RequireAuth({ children }) {
 function Nav() {
   const { status, user, signOut } = useAuth();
   if (status !== 'signedIn') return null;
+  const who = user?.name || user?.email || '';
   return (
-    <nav className="nav">
+    // A sidebar from 900px up, a wrapping top bar below it -- one element,
+    // laid out by the stylesheet, so the two cannot drift apart.
+    <nav className="nav" aria-label="Main">
       {/* The wordmark carries the one italic serif flourish in the app. */}
-      <span className="nav__brand">
-        Vaidya<em>AI</em>
-      </span>
-      <Link to="/reports">Reports</Link>
-      <Link to="/timeline">Timeline</Link>
-      <Link to="/profile">Your details</Link>
+      <Link to="/reports" className="nav__brand">
+        <span className="nav__mark" aria-hidden="true">
+          <Icon name="leaf" size={18} />
+        </span>
+        <span>
+          Vaidya<em>AI</em>
+        </span>
+      </Link>
+      <NavLink to="/reports">
+        <Icon name="reports" />
+        <span>Reports</span>
+      </NavLink>
+      <NavLink to="/timeline">
+        <Icon name="timeline" />
+        <span>Timeline</span>
+      </NavLink>
+      <NavLink to="/profile">
+        <Icon name="profile" />
+        <span>Your details</span>
+      </NavLink>
       <span className="nav__spacer" />
-      <span className="nav__user">{user?.name || user?.email}</span>
+      <span className="nav__user" title={who}>
+        <span className="nav__avatar" aria-hidden="true">
+          {who.trim().charAt(0).toUpperCase() || '?'}
+        </span>
+        <span className="nav__who">{who}</span>
+      </span>
       <ThemeToggle />
-      <button type="button" className="link" onClick={signOut}>
-        Sign out
+      <button type="button" className="link nav__signout" onClick={signOut} aria-label="Sign out">
+        <Icon name="signout" size={18} />
+        <span>Sign out</span>
       </button>
     </nav>
   );
@@ -69,11 +94,27 @@ function Disclaimer() {
 
 export default function App() {
   const { status } = useAuth();
+  // The landing page carries its own footer with the same statement.
+  const onLanding = useLocation().pathname === '/';
 
   return (
-    <div className="app">
+    <div className={status === 'signedIn' ? 'app app--shell' : 'app'}>
       <Nav />
       <Routes>
+        <Route
+          path="/"
+          element={
+            status === 'signedIn' ? (
+              <Navigate to="/reports" replace />
+            ) : status === 'checking' ? (
+              // A returning reader holds a session; do not flash the
+              // marketing page at them while it is confirmed.
+              <p className="loading">Checking your session…</p>
+            ) : (
+              <Landing />
+            )
+          }
+        />
         <Route
           path="/signin"
           element={status === 'signedIn' ? <Navigate to="/reports" replace /> : <SignIn />}
@@ -126,9 +167,9 @@ export default function App() {
             </RequireAuth>
           }
         />
-        <Route path="*" element={<Navigate to={status === 'signedIn' ? '/reports' : '/signin'} replace />} />
+        <Route path="*" element={<Navigate to={status === 'signedIn' ? '/reports' : '/'} replace />} />
       </Routes>
-      <Disclaimer />
+      {onLanding ? null : <Disclaimer />}
     </div>
   );
 }

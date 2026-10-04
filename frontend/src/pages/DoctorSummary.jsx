@@ -3,6 +3,8 @@ import { Link, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { isPresent } from '../lib/absence';
 import { isPatientDetail } from '../lib/sources';
+import { readableName } from '../lib/displayName';
+import Icon from '../components/Icon';
 
 /**
  * Module 32 -- the summary a patient hands to a clinician, as ONE PASSAGE.
@@ -73,6 +75,13 @@ import { isPatientDetail } from '../lib/sources';
 const nameList = (names) =>
   names.join(names.some((name) => String(name).includes(',')) ? '; ' : ', ');
 
+/** "a, b and c" -- for the sentences composed on 2026-10-02 only; the
+    lists above keep `nameList`. */
+const andList = (names) =>
+  names.length < 2
+    ? names.join('')
+    : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+
 const humanFeature = (key) => String(key).replace(/_/g, ' ');
 
 /** First letter capitalised, for a list that opens a sentence. */
@@ -99,12 +108,21 @@ function readableDate(value) {
  * scanner withheld has no printed text and falls back silently -- the value
  * is what matters and it is unaffected.
  */
-function parameterName(row) {
+function printedParameterName(row) {
   const printed = row.provenance?.original_test_name;
   if (row.provenance?.source === 'lab_report' && isPresent(printed?.text)) {
     return printed.text;
   }
   return row.display_name || row.feature;
+}
+
+/* AS A READER WOULD WRITE IT (2026-10-02): `GLYCATED HAEMOGLOBIN (HBA1C)`
+   becomes `Glycated haemoglobin (HBA1C)`. Only the lists this page composes
+   use it. The model's paragraphs keep the printed capitals, because the
+   server checks them word for word -- so `narrativeListsAllValues`, which
+   searches that prose, uses `printedParameterName`. */
+function parameterName(row) {
+  return readableName(printedParameterName(row));
 }
 
 /**
@@ -198,7 +216,7 @@ function narrativeListsAllValues(text, rows) {
   const body = String(text || '');
   return rows.every((row) => {
     const value = `${row.value}${isPresent(row.unit) ? ` ${row.unit}` : ''}`;
-    return body.includes(`${parameterName(row)} ${value}`);
+    return body.includes(`${printedParameterName(row)} ${value}`);
   });
 }
 
@@ -234,6 +252,11 @@ export default function DoctorSummary() {
     // reading it would make every context failure replace a rendered summary
     // with an error page. A test caught exactly that.
     let summaryRendered = false;
+    // A NEW REPORT STARTS CLEAN. React Router keeps this component mounted
+    // when only `:id` changes, so the previous report's summary -- or its
+    // error -- would otherwise stay on screen over the new one.
+    setData(null);
+    setError(null);
     (async () => {
       try {
         const result = await api.getDoctorSummary(id);
@@ -389,7 +412,7 @@ export default function DoctorSummary() {
         {outOfRange.map((item, index) => (
           <span key={`${item.testName}-${index}`}>
             {index > 0 ? '; ' : ''}
-            {item.testName} {item.value}
+            {readableName(item.testName)} {item.value}
             {item.unit ? ` ${item.unit}` : ''}
             {referenceText(item) ? ` (${referenceText(item)}` : ' ('}
             {item.labFlag ? `${referenceText(item) ? ', ' : ''}${item.labFlag}` : ''}
@@ -447,6 +470,57 @@ export default function DoctorSummary() {
     (key) => !isPresent(patient[key])
   );
 
+  /* WHO THE ANALYSIS TOOK THIS TO BE, AND WHERE THAT CAME FROM (2026-10-02).
+     The written branch had no subject line of its own: it appeared only when
+     the model chose to write one. On 01-all-normal it did ("a 34-year-old
+     female"); on Test 3 it did not, so the document flagged anaemia below
+     13 g/dL -- the MALE cut-off, taken from the profile because the report
+     prints no sex -- without saying the patient was taken to be male, or
+     that the BMI behind "Obesity" was typed in rather than printed. Composed
+     here, from each row's own `provenance.source`, and shown in that branch
+     whatever the model wrote. */
+  const personRow = (feature) =>
+    rows.find((row) => row.feature === feature && isPresent(row.value)) || null;
+  const ageRow = personRow('age');
+  const sexRow = personRow('gender');
+  const bmiRow = personRow('bmi');
+  const fromReport = (row) => row?.provenance?.source === 'report_details';
+  const fromProfile = (row) => row?.provenance?.source === 'patient_profile';
+  const subjectParts = [];
+  if (sexRow) subjectParts.push(sentenceCase(String(sexRow.value)));
+  if (ageRow) subjectParts.push(`${ageRow.value} years`);
+  if (bmiRow) subjectParts.push(`BMI ${bmiRow.value} kg/m²`);
+  // Grouped by where each came from: "age and sex as printed on the report;
+  // BMI from the patient's profile". A row with no known source is not
+  // given one.
+  const printed = [];
+  const profile = [];
+  for (const [row, label] of [[sexRow, 'sex'], [ageRow, 'age'], [bmiRow, 'BMI']]) {
+    if (fromReport(row)) printed.push(label);
+    else if (fromProfile(row)) profile.push(label);
+  }
+  const sources = [];
+  if (printed.length) sources.push(`${andList(printed)} as printed on the report`);
+  // Someone else's report (2026-10-03): a `patient_profile` value was typed
+  // for this report, not taken from the account holder's profile.
+  const otherPerson = data.report?.subject?.owner === 'other';
+  if (profile.length) {
+    sources.push(
+      `${andList(profile)} ${otherPerson ? 'as entered for this report' : "from the patient's profile"}`
+    );
+  }
+  const unprinted = [sexRow && !fromReport(sexRow) && 'sex', ageRow && !fromReport(ageRow) && 'age']
+    .filter(Boolean);
+  // "could be read", not "prints": a profile value is also used when the
+  // report printed one this tool could not read.
+  if (unprinted.length) sources.push(`no ${unprinted.join(' or ')} could be read from the report`);
+  const subjectLine = subjectParts.length ? (
+    <p className="passage__subject">
+      <strong>Analysed as.</strong> {subjectParts.join(', ')}
+      {sources.length ? ` — ${sources.join('; ')}` : ''}.
+    </p>
+  ) : null;
+
   // ---- values -------------------------------------------------------------
   const measured = rows.filter(
     (row) => !isPatientDetail(row.provenance?.source) && row.usable !== false
@@ -477,26 +551,56 @@ export default function DoctorSummary() {
      are there and values in these summary". A handover note whose values
      depend on whether a language model happened to succeed is not a handover
      note. Built once here and rendered in both branches. */
-  const reportedValuesLine = measured.length ? (
+  /* ⚠ THE TESTS THIS TOOL DOES NOT ASSESS ARE IN THE LIST TOO (2026-10-02).
+     It read only `measured`, so Test 3's "Reported values." was 16 of the 21
+     results printed: SGPT, TSH and the average blood glucose appeared nowhere
+     on the document, and CRP and ESR only in the out-of-range line. A list
+     with this heading is read as the panel -- 6ah's "four of twenty-one"
+     again, for the tests that have no canonical feature. Listed like every
+     other value, with no remark about coverage (the owner's rule -- see the
+     note under the list). */
+  const notAssessed = (unassessed?.items || []).filter(
+    (item) => isPresent(item.testName) && isPresent(item.value)
+  );
+  const notAssessedHasInterval = notAssessed.some(
+    (item) => isPresent(item.labReferenceLow) || isPresent(item.labReferenceHigh)
+  );
+  const notAssessedFlagged = notAssessed.some((item) => item.labFlaggedAbnormal === true);
+  const reportedValuesLine = measured.length || notAssessed.length ? (
     <p>
       <strong>Reported values.</strong>{' '}
-      {measured
-        .map((row) => {
+      {[
+        ...measured.map((row) => {
           const value = `${row.value}${isPresent(row.unit) ? ` ${row.unit}` : ''}`;
-          const flag = isPresent(row.printed_flag)
-            ? ` (${row.printed_flag}, per the reporting laboratory)`
-            : '';
+          /* NO "per the reporting laboratory" (owner, 2026-10-02). Module
+             4 sets a flag when the report marks it OR when the printed
+             interval makes it plain, and the row cannot tell which --
+             Test 3 marks nothing at all, so every "high, per the reporting
+             laboratory" on it was a false attribution on a doctor's
+             document. The out-of-range line below says this once. */
+          const flag = isPresent(row.printed_flag) ? ` (${row.printed_flag})` : '';
           return `${parameterName(row)} ${value}${flag}`;
-        })
-        .join('; ')}
+        }),
+        ...notAssessed.map((item) => {
+          const value = `${item.value}${isPresent(item.unit) ? ` ${item.unit}` : ''}`;
+          const flag = isPresent(item.labFlag) ? ` (${item.labFlag})` : '';
+          return `${readableName(item.testName)} ${value}${flag}`;
+        }),
+      ].join('; ')}
       .
+      {/* NO SENTENCE ABOUT COVERAGE (owner, 2026-10-03). A closing clause
+          "…are listed as printed; this tool does not assess them" was added on
+          2026-10-02 and reverted: the owner's standing instruction is that
+          this document says nothing about what the tool did or did not assess
+          (clinical.test.jsx pins it). The tests are listed with their values
+          like every other result; nothing here claims they were checked. */}
       {/* AN ABSENT INTERVAL IS NOT AN UNREMARKABLE ONE, and this is the
           one sentence that stops eight bare numbers reading as in range. */}
-      {!anyInterval
+      {!anyInterval && !notAssessedHasInterval
         ? ' The source report printed no reference intervals, so no value here is placed relative to a range.'
         : ''}
-      {anyInterval && !labFlagged.length
-        ? ' The reporting laboratory marked none of these outside its own intervals.'
+      {(anyInterval || notAssessedHasInterval) && !labFlagged.length && !notAssessedFlagged
+        ? ' None of these is marked outside the interval printed beside it.'
         : ''}
     </p>
   ) : null;
@@ -598,13 +702,29 @@ export default function DoctorSummary() {
 
   return (
     <main className="doctor-summary">
-      <nav className="crumbs" aria-label="Breadcrumb">
-        <Link to={`/reports/${id}`}>Dashboard</Link>
-        <span aria-hidden="true">/</span>
-        <span className="crumbs__here">Clinical summary</span>
-      </nav>
-
-      <h1>Summary for a healthcare professional</h1>
+      <header className="page-hero doctor-hero">
+        <span className="page-hero__icon" aria-hidden="true">
+          <Icon name="doctor" size={26} />
+        </span>
+        <div className="doctor-hero__text">
+          <nav className="crumbs" aria-label="Breadcrumb">
+            <Link to={`/reports/${id}`}>Dashboard</Link>
+            <span aria-hidden="true">/</span>
+            <span className="crumbs__here">Clinical summary</span>
+          </nav>
+          <h1>Summary for a healthcare professional</h1>
+          <p className="hint">A short summary of this report to show your doctor.</p>
+          {isPresent(data.report?.originalName) ? (
+            <p className="doctor-hero__file">Report: {data.report.originalName}</p>
+          ) : null}
+        </div>
+        {/* Printing is how this page reaches a clinic: the print stylesheet
+            drops the app's chrome and keeps the document. */}
+        <button type="button" className="doctor-hero__print" onClick={() => window.print()}>
+          <Icon name="reports" size={18} />
+          Print or save as PDF
+        </button>
+      </header>
 
       {/* THE WRITTEN VERSION, WHEN THERE IS ONE.
           `narrative.text` is non-null only after the ai-service generated it,
@@ -628,7 +748,10 @@ export default function DoctorSummary() {
               UNLESS THE NARRATIVE ALREADY LISTED THEM ALL, in which case
               this would be the same panel printed twice -- see
               `narrativeListsAllValues`. */}
-          {narrativeListsAllValues(narrative.text, measured) ? null : reportedValuesLine}
+          {subjectLine}
+          {narrativeListsAllValues(narrative.text, measured) && !notAssessed.length
+            ? null
+            : reportedValuesLine}
           {narrativeBody(narrative.text).map((para, index) => (
             <p key={index}>{para}</p>
           ))}

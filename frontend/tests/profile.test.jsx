@@ -3,6 +3,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Profile, { answerLabel } from '../src/pages/Profile';
 import { api } from '../src/lib/api';
+import { AuthProvider } from '../src/lib/auth';
 
 /**
  * THE PROFILE FORM, WHICH HAD NO TESTS AT ALL.
@@ -28,9 +29,14 @@ function mount(profile) {
   vi.spyOn(api, 'saveProfile').mockImplementation(async (body) => ({
     profile: { ...profile, ...body, completeness: profile?.completeness },
   }));
+  // AuthProvider since 2026-10-02: the page now carries the account section
+  // (change password, delete account), which needs the session context it
+  // always has in the real app.
   return render(
     <MemoryRouter>
-      <Profile />
+      <AuthProvider>
+        <Profile />
+      </AuthProvider>
     </MemoryRouter>
   );
 }
@@ -138,7 +144,7 @@ describe('what the page says after a save', () => {
       completeness: { fields: 7, filled: 6, percent: 86, missing: ['heartDisease'] },
     });
 
-    const said = await screen.findByText(/Still blank/);
+    const said = await screen.findByText(/Not answered yet/);
     expect(said.textContent).toMatch(/diagnosed heart disease/);
     expect(said.textContent).not.toMatch(/heartDisease/);
   });
@@ -154,7 +160,7 @@ describe('what the page says after a save', () => {
       },
     });
 
-    const said = await screen.findByText(/Still blank/);
+    const said = await screen.findByText(/Not answered yet/);
     expect(said.textContent).toMatch(/diagnosed high blood pressure/);
     expect(said.textContent).toMatch(/diagnosed heart disease/);
     expect(said.textContent).not.toMatch(/hypertension|heartDisease/);

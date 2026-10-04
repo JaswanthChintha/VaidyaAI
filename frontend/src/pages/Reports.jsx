@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import Icon from '../components/Icon';
 import { api } from '../lib/api';
 import { Absent } from '../components/Absent';
 import { reportDateInfo, whyUploadDate } from '../lib/reportDates';
@@ -8,6 +9,15 @@ import { reportDateInfo, whyUploadDate } from '../lib/reportDates';
  * The date line under a report's name. See `lib/reportDates` for which date
  * wins and why a disagreement is shown rather than settled.
  */
+/** Today in the reader's own calendar, as `yyyy-mm-dd` for a date input's
+    `max`. Local, not UTC: the backend allows 24 h of skew, so the reader's
+    today is always accepted even where it is already tomorrow in UTC. */
+function todayIso() {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
 function ReportDate({ report }) {
   const info = reportDateInfo(report);
   if (info.source === 'typed') {
@@ -19,7 +29,17 @@ function ReportDate({ report }) {
             {' '}
             &middot; the report itself prints {info.printedDisagrees}
           </span>
-        ) : null}
+        ) : (
+          /* WHERE A TYPED DATE CAME FROM, SAID (2026-10-02). Test 3 read
+             "9/13/2026" exactly as a date read off a document does, while
+             the document prints none -- a reader had no way to tell. */
+          <span className="report__uploaded">
+            {' '}
+            {info.printedStatus === 'absent'
+              ? '(typed in; the report prints no date)'
+              : '(typed in)'}
+          </span>
+        )}
       </>
     );
   }
@@ -60,6 +80,152 @@ function ReportDate({ report }) {
  *  history routes do), and an analysis takes a minute or more. */
 export const PROCESSING_POLL_MS = 10000;
 
+/*
+ * WHOSE REPORT (2026-10-03). The same three fields on upload and when
+ * changing it later: mine / someone else's, and for someone else an optional
+ * age and sex. Blank stays unknown -- nothing is guessed, and the account
+ * profile is never used for someone else's report.
+ */
+const SEX_OPTIONS = [
+  { value: '', label: 'Not known' },
+  { value: 'female', label: 'Female' },
+  { value: 'male', label: 'Male' },
+  { value: 'other', label: 'Other' },
+];
+
+function SubjectFields({ owner, onOwner, age, onAge, sex, onSex, idPrefix }) {
+  return (
+    <fieldset className="subject-fields">
+      <legend>Whose report is this?</legend>
+      <label className="subject-fields__choice">
+        <input
+          type="radio"
+          name={`${idPrefix}-owner`}
+          value="self"
+          checked={owner === 'self'}
+          onChange={() => onOwner('self')}
+        />
+        Mine
+      </label>
+      <label className="subject-fields__choice">
+        <input
+          type="radio"
+          name={`${idPrefix}-owner`}
+          value="other"
+          checked={owner === 'other'}
+          onChange={() => onOwner('other')}
+        />
+        Someone else&rsquo;s
+      </label>
+      {owner === 'other' ? (
+        <div className="subject-fields__person">
+          <label>
+            Their age (optional)
+            <input
+              type="number"
+              min="0"
+              max="120"
+              step="1"
+              value={age}
+              onChange={(e) => onAge(e.target.value)}
+            />
+          </label>
+          <label>
+            Their sex (optional)
+            <select value={sex} onChange={(e) => onSex(e.target.value)}>
+              {SEX_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="hint">
+            Your profile is not used for someone else&rsquo;s report. An age or sex
+            printed on the report is used first; these fill in what it does not
+            print. Their report is kept out of your timeline.
+          </p>
+        </div>
+      ) : null}
+    </fieldset>
+  );
+}
+
+const describePerson = (subject) =>
+  [subject?.sex && subject.sex !== 'other' ? subject.sex : null, Number.isFinite(subject?.age) ? `${subject.age}` : null]
+    .filter(Boolean)
+    .join(', ');
+
+/** A report's "Whose report?" line, and its editor. */
+function WhoseReport({ report, editing, onEdit, onDone, busy }) {
+  const subject = report.subject || { owner: 'self' };
+  const [owner, setOwner] = useState(subject.owner || 'self');
+  const [age, setAge] = useState(Number.isFinite(subject.age) ? String(subject.age) : '');
+  const [sex, setSex] = useState(subject.sex || '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  if (!editing) {
+    return (
+      <>
+        {subject.owner === 'other' ? (
+          <p className="report__subject">
+            Someone else&rsquo;s report{describePerson(subject) ? ` (${describePerson(subject)})` : ''}
+            {' '}&middot; not in your timeline
+          </p>
+        ) : null}
+        {report.subjectChangedSinceAnalysis ? (
+          <p className="report__note">
+            Whose report this is was changed after it was analysed. Press
+            Re-analyse to apply it &mdash; until then the results still reflect
+            the previous answer.
+          </p>
+        ) : null}
+      </>
+    );
+  }
+
+  async function save(event) {
+    event.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      await api.setReportSubject(report.id, { owner, age, sex });
+      onDone(true);
+    } catch (err) {
+      setError(err.message);
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form className="report__subject-editor" onSubmit={save}>
+      <SubjectFields
+        idPrefix={`subject-${report.id}`}
+        owner={owner}
+        onOwner={setOwner}
+        age={age}
+        onAge={setAge}
+        sex={sex}
+        onSex={setSex}
+      />
+      {error ? (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      ) : null}
+      <span className="report__confirm">
+        <button type="submit" disabled={saving || busy}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        <button type="button" className="link" onClick={() => onDone(false)} disabled={saving}>
+          Cancel
+        </button>
+      </span>
+    </form>
+  );
+}
+
 const STATUS_COPY = {
   uploaded: 'Uploaded, not yet analysed',
   processing: 'Being analysed…',
@@ -79,6 +245,12 @@ export default function Reports() {
   // user can dismiss without reading.
   const [confirmingId, setConfirmingId] = useState(null);
   const [reanalysingId, setReanalysingId] = useState(null);
+  // Whose report (2026-10-03): the upload form's answer, and the row whose
+  // answer is being changed.
+  const [uploadOwner, setUploadOwner] = useState('self');
+  const [uploadAge, setUploadAge] = useState('');
+  const [uploadSex, setUploadSex] = useState('');
+  const [subjectEditId, setSubjectEditId] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -123,12 +295,23 @@ export default function Reports() {
     // history in one sitting would otherwise produce a timeline in which
     // every report happened today -- which is why `chronoDate` exists.
     if (reportDate) form.append('reportDate', reportDate);
+    // Whose report. Age and sex only for someone else's -- the backend refuses
+    // them on one's own, where they would compete with the profile.
+    form.append('subjectOwner', uploadOwner);
+    if (uploadOwner === 'other') {
+      if (uploadAge !== '') form.append('subjectAge', uploadAge);
+      if (uploadSex) form.append('subjectSex', uploadSex);
+    }
 
     setUploading(true);
     setError(null);
     try {
       await api.uploadReport(form);
       input.value = '';
+      // The next upload starts as the reader's own again.
+      setUploadOwner('self');
+      setUploadAge('');
+      setUploadSex('');
       await load();
     } catch (err) {
       setError(err.message);
@@ -177,23 +360,85 @@ export default function Reports() {
 
   return (
     <main className="reports">
-      <h2>Your reports</h2>
+      <header className="page-hero reports-hero">
+        <span className="page-hero__icon" aria-hidden="true">
+          <Icon name="reports" size={26} />
+        </span>
+        <div className="reports-hero__text">
+          <h1>Your reports</h1>
+          {/* ANALYSIS IS NOT AUTOMATIC (2026-10-02): an upload waits at
+              "Uploaded, not yet analysed" for its own Analyse button, and the
+              old line read as though it would start by itself. */}
+          <p className="hint">
+            Upload a report, press <strong>Analyse</strong>, then open its
+            dashboard.
+          </p>
+        </div>
+        {/* Two counts of what is in the list below -- nothing inferred. */}
+        {reports?.length ? (
+          <dl className="reports-hero__stats">
+            <div>
+              <dt>Reports</dt>
+              <dd>{reports.length}</dd>
+            </div>
+            <div>
+              <dt>Ready to view</dt>
+              <dd>
+                {reports.filter((r) => r.status === 'processed' || r.status === 'partial').length}
+              </dd>
+            </div>
+          </dl>
+        ) : null}
+      </header>
 
-      <form onSubmit={onUpload} className="card">
-        <h3>Upload a report</h3>
-        <label>
-          PDF, JPEG or PNG
-          <input type="file" name="report" accept=".pdf,.jpg,.jpeg,.png" required />
-        </label>
-        <label>
-          Date printed on the report (optional)
-          <input type="date" name="reportDate" />
-          <span className="hint">
-            Used to order your timeline. Leave blank and the date printed on
-            the report is used, if it can be read; otherwise the day you
-            upload it.
+      <form onSubmit={onUpload} className="card upload">
+        <div className="upload__head">
+          <span className="icon-disc" aria-hidden="true">
+            <Icon name="upload" />
           </span>
-        </label>
+          <div>
+            <h3 className="upload__title">Upload a report</h3>
+            {/* 10 MB is the backend's UPLOAD_MAX_BYTES (10485760). */}
+            <p className="upload__sub">
+              A PDF or a clear photo of a blood test report, up to 10 MB.
+            </p>
+          </div>
+        </div>
+        <div className="upload__fields">
+          <label className="upload__file">
+            PDF, JPEG or PNG
+            {/* The browser's own "Please select a file" bubble is easy to
+                miss and says nothing about this form; this is said instead. */}
+            <input
+              type="file"
+              name="report"
+              accept=".pdf,.jpg,.jpeg,.png"
+              required
+              onInvalid={(e) => e.target.setCustomValidity('Choose a report file to upload first.')}
+              onChange={(e) => e.target.setCustomValidity('')}
+            />
+          </label>
+          <label>
+            Date printed on the report (optional)
+            {/* No future dates: the backend refuses them ("Report date cannot
+                be in the future"), but only after the file has been sent. */}
+            <input type="date" name="reportDate" min="1900-01-01" max={todayIso()} />
+            <span className="hint">
+              Used to order your timeline. Leave blank and the date printed on
+              the report is used, if it can be read; otherwise the day you
+              upload it.
+            </span>
+          </label>
+        </div>
+        <SubjectFields
+          idPrefix="upload"
+          owner={uploadOwner}
+          onOwner={setUploadOwner}
+          age={uploadAge}
+          onAge={setUploadAge}
+          sex={uploadSex}
+          onSex={setUploadSex}
+        />
         <button type="submit" disabled={uploading}>
           {uploading ? 'Uploading…' : 'Upload'}
         </button>
@@ -211,10 +456,19 @@ export default function Reports() {
         </p>
       ) : null}
 
+      {reports?.length ? (
+        <h2 className="reports__heading">
+          Your uploaded reports
+          <span className="disclosure__count">{reports.length}</span>
+        </h2>
+      ) : null}
       <ul className="report-list">
         {(reports || []).map((report) => (
           <li key={report.id} className="card report">
             <div className="report__head">
+              <span className="report__icon" aria-hidden="true">
+                <Icon name="reports" />
+              </span>
               {/* The name opens the ORIGINAL document. A plain <a href> cannot
                   be used: the download route is owner-scoped and needs the
                   bearer token, which a link does not send. */}
@@ -258,6 +512,17 @@ export default function Reports() {
             <p className="report__meta">
               <ReportDate report={report} />
             </p>
+            <WhoseReport
+              // Remounted per edit so the editor starts from the stored answer.
+              key={`${report.id}-${subjectEditId === report.id}`}
+              report={report}
+              editing={subjectEditId === report.id}
+              busy={busyId === report.id}
+              onDone={async (saved) => {
+                setSubjectEditId(null);
+                if (saved) await load();
+              }}
+            />
             {report.statusMessage ? (
               <p className="report__note">{report.statusMessage}</p>
             ) : null}
@@ -334,6 +599,17 @@ export default function Reports() {
                   </button>
                 )
               ) : null}
+
+              {subjectEditId === report.id ? null : (
+                <button
+                  type="button"
+                  className="link"
+                  onClick={() => setSubjectEditId(report.id)}
+                  disabled={busyId === report.id}
+                >
+                  Whose report?
+                </button>
+              )}
 
               {confirmingId === report.id ? (
                 <span className="report__confirm">

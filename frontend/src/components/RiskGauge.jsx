@@ -111,7 +111,7 @@ export default function RiskGauge({ risk, assessed = true, caption }) {
           </g>
         ) : null}
 
-        {known ? <circle cx="145" cy="152" r="8" fill="var(--ink)" /> : null}
+        {known ? <circle className="gauge__hub" cx="145" cy="152" r="8" fill="var(--ink)" /> : null}
 
         {/* NOT MEASURED, drawn the way every absence in this app is drawn: a
             dashed outline with no fill, in --mono, never a risk colour. */}
@@ -132,7 +132,9 @@ export default function RiskGauge({ risk, assessed = true, caption }) {
           x="145"
           y="188"
           textAnchor="middle"
-          className={known ? 'gauge__verdict' : 'gauge__verdict gauge__verdict--absent'}
+          /* The word takes its own risk colour, as it does on every card --
+             and only when known: an absence keeps the absence treatment. */
+          className={known ? `gauge__verdict gauge__verdict--${key}` : 'gauge__verdict gauge__verdict--absent'}
         >
           {label}
         </text>

@@ -8,6 +8,9 @@ import CoverageRadar from '../components/CoverageRadar';
 import { PATIENT_LABEL } from '../lib/labels';
 import { ProfileIdentityNotice } from '../components/IdentityNotice';
 import { isPatientDetail } from '../lib/sources';
+import Icon from '../components/Icon';
+import { READING_LINKS, READING_SOURCE } from '../lib/readingLinks';
+import { readableName } from '../lib/displayName';
 
 /**
  * Module 27 -- the health dashboard.
@@ -46,9 +49,12 @@ import { isPatientDetail } from '../lib/sources';
 function OverallCard({ overall }) {
   if (!overall) return null;
   const assessed = overall.anyAssessed === true;
+  // The stripe repeats the risk word in its own colour -- only when known.
+  const riskClass =
+    assessed && typeof overall.risk === 'string' ? ` overall--${overall.risk.toLowerCase()}` : '';
 
   return (
-    <section className="card overall">
+    <section className={`card overall${riskClass}`}>
       <h2>Overall</h2>
 
       <p className="overall__status">
@@ -63,7 +69,7 @@ function OverallCard({ overall }) {
         )}
       </p>
 
-      <p>
+      <p className="overall__risk">
         Overall risk: <Risk risk={overall.risk} assessed={assessed} />
       </p>
 
@@ -449,7 +455,7 @@ function Explanations({
     })),
     ...describedUnassessed.map((item, index) => ({
       key: `${item.testName}-${index}`,
-      subject: item.testName,
+      subject: readableName(item.testName),
       body: (
         <div className="explanation__body">
           <ParameterDescription item={item} />
@@ -468,7 +474,15 @@ function Explanations({
 
   return (
     <section className="explanations">
-      <h2>What these results mean</h2>
+      <h2>
+        What these results mean
+        {disclosures.length ? (
+          <span className="disclosure__count">{disclosures.length}</span>
+        ) : null}
+      </h2>
+      {disclosures.length ? (
+        <p className="explanations__lead">Open a result to read what it measures and what yours means.</p>
+      ) : null}
 
       {/* ONE DISCLOSURE PER RESULT, CLOSED BY DEFAULT.
           Six paragraphs of five to eight lines each is most of this page, and
@@ -496,18 +510,25 @@ function Explanations({
           value would be making exactly the inference the architecture exists
           to prevent. It is said once, in the provenance sentence below, and
           not as a label on a group. */}
-      {disclosures.map((entry) => (
-        <details className="card explanation disclosure" key={entry.key}>
-          <summary className="disclosure__summary">
-            <h3 className="explanation__subject">{entry.subject}</h3>
-            <span className="disclosure__chevron" aria-hidden="true" />
-          </summary>
-          {entry.body}
-        </details>
-      ))}
+      <div className="explanation-list">
+        {disclosures.map((entry) => (
+          <details className="card explanation disclosure" key={entry.key}>
+            <summary className="disclosure__summary">
+              <span className="explanation__mark" aria-hidden="true">
+                {subjectInitials(entry.subject)}
+              </span>
+              <h3 className="explanation__subject">{entry.subject}</h3>
+              <span className="explanation__open" aria-hidden="true">
+                <span className="disclosure__chevron" />
+              </span>
+            </summary>
+            {entry.body}
+          </details>
+        ))}
+      </div>
 
       {missing.length ? (
-        <p className="hint">
+        <p className="hint explanations__absent">
           No plain-language explanation could be prepared for{' '}
           {missing
             .map((entry) => PATIENT_LABEL[entry.feature] || entry.subject)
@@ -523,7 +544,7 @@ function Explanations({
           sentence now, so the gate has to be stated here or the sentence
           points at an empty list -- §6w's scope-statement fault exactly. */}
       {notAttempted.length && written.length ? (
-        <p className="hint">
+        <p className="hint explanations__absent">
           {/* `andList`, not a plain join: a bare comma reads as a sentence
               fragment, and a laboratory name containing a comma turns a list
               of two into a list of four (§6w). */}
@@ -554,9 +575,10 @@ function Explanations({
           ranges came out of the results table in aaae0d7 and landed here;
           they are simply not shown now. `referenceLow` / `referenceHigh` and
           the laboratory's own bounds are untouched in the payload. */}
-      <p className="hint">
-        Written by a language model from your measured values and reviewed
-        reference material, and checked before being shown. They explain what
+      <p className="hint explanations__provenance">
+        Unless marked otherwise, these were written by a language model from
+        your measured values and reviewed reference material, and checked
+        before being shown. They explain what
         each test measures — they do not diagnose, and no single laboratory
         value settles anything on its own. Take anything flagged above to a
         qualified healthcare professional.
@@ -706,7 +728,19 @@ const SKIP_REASON = {
  */
 function ParameterDescription({ item }) {
   if (item.descriptionAvailable === true) {
-    return <p className="unanalysed__description">{item.description}</p>;
+    return (
+      <>
+        <p className="unanalysed__description">{item.description}</p>
+        {/* The section's closing line says these were written by a language
+            model; this one was not, and says so. */}
+        {item.descriptionOrigin === 'reviewed' ? (
+          <p className="hint unanalysed__origin">
+            From VaidyaAI’s reviewed reference material, not written by the
+            language model.
+          </p>
+        ) : null}
+      </>
+    );
   }
   if (item.descriptionAvailable === false) {
     // THE PRODUCER'S NOTICE IS ALREADY A WHOLE SENTENCE, written for a patient
@@ -1295,7 +1329,7 @@ function InShort({
             {labFlagged.length === 1 ? ' is' : 's are'} outside the range
             printed on the report
           </strong>{' '}
-          — {nameList(labFlagged.map((item) => item.testName))}. Worth raising
+          — {nameList(labFlagged.map((item) => readableName(item.testName)))}. Worth raising
           with a qualified healthcare professional.
         </p>
       ) : null}
@@ -1519,7 +1553,11 @@ function summariseEvidence(evidence) {
   const context = [];
   const missing = [];
   for (const line of byFeature.values()) {
-    if (line.sourceStage === 'lab_report' && isPresent(line.value)) {
+    // A value the engine CALCULATED from measured ones (eGFR) sits with the
+    // measurements, because it is one -- but its row says it was calculated,
+    // so it can never pass for something printed on the report.
+    if ((line.sourceStage === 'lab_report' || line.sourceStage === 'calculated')
+      && isPresent(line.value)) {
       measured.push(line);
     } else if (PATIENT_LABEL[line.feature]) {
       // AVAILABILITY DECIDES, NOT THE PRESENCE OF A LABEL.
@@ -1605,6 +1643,22 @@ function contextPhrase(context) {
   return andList(names);
 }
 
+/**
+ * Two letters for the badge beside a result's name: a single word gives its
+ * first two letters ("Hb", "Cr"), several give their initials ("TC", "VD").
+ * Anything in brackets is left out. Decoration only -- the name is beside it.
+ */
+function subjectInitials(subject) {
+  const words = String(subject || '')
+    .replace(/\(.*?\)/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!words.length) return '?';
+  if (words.length === 1) return words[0].slice(0, 2);
+  return (words[0][0] + words[1][0]).toUpperCase();
+}
+
 function ConditionCard({ card, evidence }) {
   const assessed = card.assessed !== false;
   const { measured, context, missing } = summariseEvidence(evidence);
@@ -1636,8 +1690,13 @@ function ConditionCard({ card, evidence }) {
     modelAlone ? 'model' : countsRiskFactors(evidence) ? 'risk_factors' : 'default'
   );
 
+  // A class for the card's left stripe. The stripe repeats the risk word
+  // beside the name -- it is the same categorical colour, never decoration.
+  const riskClass =
+    assessed && typeof card.risk === 'string' ? ` condition--${card.risk.toLowerCase()}` : '';
+
   return (
-    <li className="card condition">
+    <li className={`card condition${riskClass}`}>
       <div className="condition__head">
         <strong>{card.condition}</strong>
         <Risk
@@ -1665,7 +1724,12 @@ function ConditionCard({ card, evidence }) {
       {measured.length ? (
         <dl className="measured">
           {measured.map((line) => {
-            const note = crossing(line) || printedRange(line);
+            const calculated = line.sourceStage === 'calculated';
+            const note = calculated
+              ? [crossing(line), 'calculated by VaidyaAI, not printed on the report']
+                .filter(Boolean)
+                .join('; ')
+              : crossing(line) || printedRange(line);
             return (
               <div className="measured__row" key={line.feature}>
                 <dt className="measured__name">{labelFor(line)}</dt>
@@ -1829,7 +1893,11 @@ function LabRow({ row, showVerdict, verdict, fromProfile }) {
   return (
     <tr className={`lab lab--${row.state || 'unknown'}`}>
       <th scope="row">
-        {printed || titleCase(canonical)}
+        {/* DISPLAY ONLY (2026-10-02): `C-REACTIVE PROTEIN(CRP)` is shown as
+            `C-reactive protein (CRP)`, as on the timeline and the clinician
+            page. The comparison below and every name sent to the server
+            still use the printed text unchanged. */}
+        {readableName(printed || titleCase(canonical))}
         {printed && canonical.toLowerCase() !== printed.toLowerCase() ? (
           <span className="lab__printed">{canonical}</span>
         ) : null}
@@ -1935,7 +2003,16 @@ function LabRow({ row, showVerdict, verdict, fromProfile }) {
  * unconditionally -- so a report that prints neither still paid for two columns
  * of "No range printed" and "—".
  */
-function LabTable({ rows, caption, verdicts, fromProfile = false }) {
+// `source` says whose value the second column holds. A detail printed on the
+// report was not entered by anyone, and a person's age is not a "test", so
+// those two tables carry their own column titles.
+const COLUMN_TITLES = {
+  lab: ['Test', 'Result'],
+  profile: ['Detail', 'You entered'],
+  report: ['Detail', 'Printed on the report'],
+};
+
+function LabTable({ rows, caption, verdicts, fromProfile = false, source }) {
   if (!rows.length) return null;
   // NONE OF THE LABORATORY COLUMNS APPLY TO A PROFILE ANSWER. "Compared
   // with usual limits" against a stated sex is not a weak comparison, it
@@ -1950,14 +2027,18 @@ function LabTable({ rows, caption, verdicts, fromProfile = false }) {
   // "What these results mean" now, said once per test, where a range is a
   // sentence rather than a cell that is empty on most rows.
   const showVerdict = !fromProfile;
+  const [nameTitle, valueTitle] = COLUMN_TITLES[source || (fromProfile ? 'profile' : 'lab')];
 
   return (
     <>
-      <table className="lab-table">
+      {/* Profile answers and printed patient details are shown as tiles
+          (styling only -- still a table, so the column titles stay readable
+          to a screen reader). */}
+      <table className={fromProfile ? 'lab-table lab-table--details' : 'lab-table'}>
         <thead>
           <tr>
-            <th scope="col">Test</th>
-            <th scope="col">{fromProfile ? 'You entered' : 'Result'}</th>
+            <th scope="col">{nameTitle}</th>
+            <th scope="col">{valueTitle}</th>
             {showVerdict ? (
               <th scope="col">Compared with usual limits</th>
             ) : null}
@@ -2039,6 +2120,9 @@ export default function Dashboard() {
   // where the reader already expects it and only a stated profile source is
   // moved.
   const profileLabs = labs.filter((row) => row.source === 'patient_profile');
+  // Marked as someone else's (2026-10-03): `patient_profile` rows are then the
+  // values typed for this report, never the reader's profile.
+  const otherPerson = report?.subject?.owner === 'other';
   // The sex / age printed on the report (2026-09-25): a patient detail too.
   const reportDetailLabs = labs.filter((row) => row.source === 'report_details');
   const measuredLabs = labs.filter((row) => !isPatientDetail(row.source));
@@ -2338,26 +2422,59 @@ export default function Dashboard() {
           of which is the heading -- so the trail is mono micro-type, the file
           is set as the title it actually is, and the two cross-links become
           affordances you can see the edges of. */}
-      <nav className="crumbs" aria-label="Breadcrumb">
-        <Link to="/reports">Reports</Link>
-        <span aria-hidden="true">/</span>
-        <span className="crumbs__here">{report?.originalName || 'This report'}</span>
-      </nav>
-
-      <div className="page-links">
-        <Link className="page-link" to={`/reports/${id}/doctor-summary`}>
-          Summary for a clinician
-        </Link>
-        <Link className="page-link" to={`/reports/${id}/population`}>
-          How your results compare
-        </Link>
-      </div>
+      <header className="report-hero">
+        <span className="report-hero__icon" aria-hidden="true">
+          <Icon name="reports" size={26} />
+        </span>
+        <nav className="crumbs" aria-label="Breadcrumb">
+          <Link to="/reports">Reports</Link>
+          <span aria-hidden="true">/</span>
+          <span className="crumbs__here">{report?.originalName || 'This report'}</span>
+        </nav>
+        <div className="page-links">
+          <Link className="page-link" to={`/reports/${id}/doctor-summary`}>
+            <Icon name="doctor" size={17} />
+            Summary for a clinician
+          </Link>
+          <Link className="page-link" to={`/reports/${id}/population`}>
+            <Icon name="people" size={17} />
+            How your results compare
+          </Link>
+        </div>
+      </header>
 
       {/* ABOVE THE VERDICT, because it qualifies it: a verdict judged with the
           wrong sex's thresholds is only as good as the profile it used. */}
       <ProfileIdentityNotice identity={identity} />
 
       <OverallCard overall={dashboard.overall} />
+
+      {/* THREE COUNTS, EACH OF SOMETHING ON THIS PAGE. Deliberately no
+          "could not be checked" tile: the reader asked for that group to be
+          taken off this screen (see the note under "Everything else"). */}
+      {dashboard.conditions?.length ? (
+        <ul className="stats" aria-label="This report at a glance">
+          <li className="stat">
+            <span className="stat__num">{flaggedCards.length}</span>
+            <span className="stat__label">
+              {flaggedCards.length === 1 ? 'condition' : 'conditions'} worth a closer look
+            </span>
+          </li>
+          <li className="stat">
+            <span className="stat__num">{clearCards.length}</span>
+            <span className="stat__label">checked, with nothing pointing to them</span>
+          </li>
+          <li className="stat">
+            {/* The rows "Your results" shows, no more. `measuredLabs` also
+                holds catalogue rows with no value -- unanswered profile
+                questions among them -- which made 8 results read as 10. */}
+            <span className="stat__num">{allResultRows.length}</span>
+            <span className="stat__label">
+              {allResultRows.length === 1 ? 'result' : 'results'} read from the report
+            </span>
+          </li>
+        </ul>
+      ) : null}
 
       {/* THE CHARTS SAY THE SAME THINGS THE CARDS BELOW SAY, in the one
           register a reader takes in at a glance. Every number is drawn against
@@ -2485,13 +2602,20 @@ export default function Dashboard() {
           under "Laboratory values" claimed the report measured them. They are
           still shown -- they were used, so the reader is entitled to see
           them -- but as what they are. */}
+      {/* SOMEONE ELSE's REPORT (2026-10-03): these rows are the age and sex
+          typed FOR THIS REPORT, not the reader's profile -- the profile was
+          not sent at all -- so the heading must not say "your profile". */}
       {profileLabs.length ? (
         <>
-          <h2>From your profile</h2>
+          <h2>{otherPerson ? 'Entered for this report' : 'From your profile'}</h2>
           <LabTable
             rows={profileLabs}
             fromProfile
-            caption="These came from the details you entered, not from this report. They are used to interpret your results — they are not results themselves."
+            caption={
+              otherPerson
+                ? 'These were entered for this report when it was marked as someone else’s — not taken from your profile, and not from the report. They are used to interpret the results — they are not results themselves.'
+                : 'These came from the details you entered, not from this report. They are used to interpret your results — they are not results themselves.'
+            }
           />
         </>
       ) : null}
@@ -2506,6 +2630,7 @@ export default function Dashboard() {
           <LabTable
             rows={reportDetailLabs}
             fromProfile
+            source="report"
             caption="The sex and age printed on this report. They were used in place of your profile's to interpret your results — they are not results themselves."
           />
         </>
@@ -2563,15 +2688,29 @@ export default function Dashboard() {
           <ul className="guidance bullets">
             {guidance.relevant.map((item, index) => (
               <li key={item.code || index}>
-                <span className="guidance__text">
-                  {trimGeneralPrefix(item.text || item.title)}
-                </span>
-                {!sharedBecause && becausePhrase(item) ? (
-                  <span className="guidance__because">
-                    {' '}
-                    Related to: {becausePhrase(item)}.
+                <div className="guidance__body">
+                  <span className="guidance__text">
+                    {trimGeneralPrefix(item.text || item.title)}
                   </span>
-                ) : null}
+                  {!sharedBecause && becausePhrase(item) ? (
+                    <span className="guidance__because">
+                      {' '}
+                      Related to: {becausePhrase(item)}.
+                    </span>
+                  ) : null}
+                  {READING_LINKS[item.code] ? (
+                    <a
+                      className="guidance__link"
+                      href={READING_LINKS[item.code].url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Read “{READING_LINKS[item.code].title}” on the {READING_SOURCE}
+                      <span aria-hidden="true"> ↗</span>
+                      <span className="visually-hidden"> (opens in a new tab)</span>
+                    </a>
+                  ) : null}
+                </div>
               </li>
             ))}
           </ul>
@@ -2579,6 +2718,9 @@ export default function Dashboard() {
             General educational topics, matched to what this report flagged.
             They are not written for you, are not personalised treatment
             advice, and are not instructions.
+            {guidance.relevant.some((item) => READING_LINKS[item.code])
+              ? ` The links open the ${READING_SOURCE} (the UK's National Health Service) in a new tab; VaidyaAI does not run that site.`
+              : ''}
           </p>
             </div>
           </details>

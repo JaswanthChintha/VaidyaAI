@@ -104,6 +104,28 @@ async function parse(response) {
   return body?.data;
 }
 
+/**
+ * True only when the SERVER rejected the session -- the one case where the
+ * stored refresh token is worthless and must go. 422 is the backend's
+ * validator refusing a malformed token (`middleware/validate.js`); without it
+ * a corrupted token would be kept and retried on every load, forever.
+ */
+export function isSessionRejected(error) {
+  return error instanceof ApiError && [400, 401, 403, 422].includes(error.status);
+}
+
+const REFRESH_RETRY_DELAYS_MS = [1000, 2000, 4000];
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/*
+ * ONLY A REJECTION SIGNS THE PATIENT OUT (2026-10-02). Every failure used to
+ * clear the session, so a backend restart signed the owner out: the page
+ * reloaded while the server was still starting, the dev proxy answered 500
+ * for a request the backend never received, and the refresh token was
+ * deleted. A 5xx, a 429 or no connection at all says nothing about the
+ * token, so it is retried a few times (long enough for a restart) and, if
+ * the server is still unreachable, KEPT -- the next reload can still use it.
+ */
 async function refreshSession() {
   const refreshToken = getRefreshToken();
   if (!refreshToken) return false;
@@ -112,17 +134,25 @@ async function refreshSession() {
   if (!refreshInFlight) {
     refreshInFlight = (async () => {
       try {
-        const response = await fetch('/api/v1/auth/refresh', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refreshToken }),
-        });
-        const data = await parse(response);
-        setSession(data);
-        return true;
-      } catch {
-        clearSession();
-        return false;
+        for (let attempt = 0; ; attempt += 1) {
+          try {
+            const response = await fetch('/api/v1/auth/refresh', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ refreshToken }),
+            });
+            const data = await parse(response);
+            setSession(data);
+            return true;
+          } catch (error) {
+            if (isSessionRejected(error)) {
+              clearSession();
+              return false;
+            }
+            if (attempt >= REFRESH_RETRY_DELAYS_MS.length) return false;
+            await sleep(REFRESH_RETRY_DELAYS_MS[attempt]);
+          }
+        }
       } finally {
         refreshInFlight = null;
       }
@@ -271,6 +301,11 @@ export const api = {
   register: (payload) => request('POST', '/auth/register', { body: payload }),
   login: (payload) => request('POST', '/auth/login', { body: payload }),
   me: () => request('GET', '/auth/me'),
+  // Both re-check the current password server-side. A wrong one is a 400,
+  // never a 401, so it cannot trigger the refresh-and-resend path above.
+  changePassword: (currentPassword, newPassword) =>
+    request('POST', '/auth/change-password', { body: { currentPassword, newPassword } }),
+  deleteAccount: (password) => request('DELETE', '/auth/me', { body: { password } }),
   logout: () => {
     const refreshToken = getRefreshToken();
     return request('POST', '/auth/logout', { body: { refreshToken } });
@@ -286,6 +321,18 @@ export const api = {
   listReports: () => request('GET', '/reports'),
   uploadReport: (formData) => request('POST', '/reports', { formData }),
   analyzeReport: (id) => request('POST', `/reports/${id}/analyze`),
+  // Whose report this is (2026-10-03). `subject` is { owner, age?, sex? };
+  // age and sex only for someone else's.
+  setReportSubject: (id, subject) =>
+    request('PATCH', `/reports/${id}/subject`, {
+      body: {
+        subjectOwner: subject.owner,
+        ...(subject.owner === 'other' && subject.age !== '' && subject.age != null
+          ? { subjectAge: Number(subject.age) }
+          : {}),
+        ...(subject.owner === 'other' && subject.sex ? { subjectSex: subject.sex } : {}),
+      },
+    }),
   deleteReport: (id) => request('DELETE', `/reports/${id}`),
   openReportFile: (id, mimeType) => openReportFile(id, mimeType),
   getDashboard: (id) => request('GET', `/reports/${id}/dashboard`),

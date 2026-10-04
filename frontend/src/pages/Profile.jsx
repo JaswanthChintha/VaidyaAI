@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError } from '../lib/api';
 import { profileFieldLabel } from '../lib/labels';
+import AccountSettings from '../components/AccountSettings';
+import Icon from '../components/Icon';
 
 /**
  * Module 2's patient profile.
@@ -39,13 +41,18 @@ const GENDERS = [
   { value: 'prefer_not_to_say', label: 'Prefer not to say' },
 ];
 
+/* THE VALUES ARE THE DIABETES MODEL'S OWN CATEGORIES and must not change;
+   only the words do (owner, 2026-10-02). "Ever smoked" and "Not currently
+   smoking" sat beside "Former" and "Current" with nothing to tell them apart.
+   They are the two half-answers: smoked at some point but not saying whether
+   now, and not smoking now but not saying whether before. */
 const SMOKING = [
   { value: '', label: 'Not answered' },
   { value: 'never', label: 'Never smoked' },
-  { value: 'former', label: 'Former smoker' },
-  { value: 'current', label: 'Current smoker' },
-  { value: 'ever', label: 'Ever smoked' },
-  { value: 'not_current', label: 'Not currently smoking' },
+  { value: 'current', label: 'I smoke now' },
+  { value: 'former', label: 'I used to smoke and have stopped' },
+  { value: 'ever', label: 'I have smoked (not saying whether I still do)' },
+  { value: 'not_current', label: "I don't smoke now (not saying about the past)" },
   { value: 'no_info', label: 'Prefer not to say' },
 ];
 
@@ -248,157 +255,184 @@ export default function Profile() {
 
   return (
     <main className="profile">
-      <h2>Your details</h2>
-      <p className="hint">
-        These are used by the analysis. Anything you leave blank stays blank
-        &mdash; nothing here is guessed, and a question you do not answer is
-        recorded as unanswered rather than as &ldquo;no&rdquo;.
-      </p>
-
-      <form onSubmit={onSubmit} className="card">
-        <label>
-          Age (whole years)
-          <input
-            type="number"
-            min="0"
-            max="130"
-            value={form.age}
-            onChange={(e) => set('age', e.target.value)}
-          />
-        </label>
-
-        <label>
-          Gender
-          <select value={form.gender} onChange={(e) => set('gender', e.target.value)}>
-            <option value="">Not answered</option>
-            {GENDERS.map((g) => (
-              <option key={g.value} value={g.value}>
-                {g.label}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label>
-          Height (cm)
-          <input
-            type="number"
-            min="30"
-            max="275"
-            value={form.heightCm}
-            onChange={(e) => set('heightCm', e.target.value)}
-          />
-        </label>
-
-        <label>
-          Weight (kg)
-          <input
-            type="number"
-            min="1"
-            max="650"
-            value={form.weightKg}
-            onChange={(e) => set('weightKg', e.target.value)}
-          />
-        </label>
-
-        <label>
-          Smoking history
-          <select
-            value={form.smokingHistory}
-            onChange={(e) => set('smokingHistory', e.target.value)}
-          >
-            {SMOKING.map((s) => (
-              <option key={s.value} value={s.value}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <TriState
-          label="Diagnosed high blood pressure"
-          value={form.hypertension}
-          onChange={(v) => set('hypertension', v)}
-          help="If you are not sure, say so. An unanswered question is treated as unknown, not as 'no'."
-          open={openQuestion.hypertension}
-          onOpenChange={openSetter('hypertension')}
-        />
-
-        <TriState
-          label="Diagnosed heart disease"
-          value={form.heartDisease}
-          onChange={(v) => set('heartDisease', v)}
-          open={openQuestion.heartDisease}
-          onOpenChange={openSetter('heartDisease')}
-        />
-
-        {error ? (
-          <p className="error" role="alert">
-            {error}
+      <header className="page-hero">
+        <span className="page-hero__icon" aria-hidden="true">
+          <Icon name="profile" size={26} />
+        </span>
+        <div>
+          <h1>Your details</h1>
+          <p className="hint">
+            These are used by the analysis. Anything you leave blank stays blank
+            &mdash; nothing here is guessed, and a question you do not answer is
+            recorded as unanswered rather than as &ldquo;no&rdquo;.
           </p>
-        ) : null}
-        {/* WHAT "SAVED." DOES NOT MEAN, and the reason this page looked
-            broken. `analysisService.buildProfilePayload()` reads the profile
-            AT ANALYSIS TIME and the result is stored on the report, so a
-            report that has already been analysed keeps the answers that were
-            known when it ran. A reader who answers these two questions
-            BECAUSE the dashboard told them "no value was available for your
-            history of heart disease and high blood pressure" then sees the
-            dashboard say exactly the same thing, and concludes the save did
-            nothing.
-            It is the same standing property as the explanation cap and the
-            clinician narrative (MEMORY 6ad, 6ag): changing an input does not
-            rewrite what a past run stored. Said here, where the reader is
-            when the expectation forms. */}
-        {saved ? (
-          <>
-            <p className="ok">Saved.</p>
-            <p className="hint">
-              These answers are used the next time a report is analysed.
-              Reports you have already analysed keep what was known when they
-              ran, so their results do not change.
+        </div>
+      </header>
+
+      <div className="profile__grid">
+        <form onSubmit={onSubmit} className="card">
+          <h2 className="form-title">
+            <span className="form-title__icon" aria-hidden="true">
+              <Icon name="profile" size={18} />
+            </span>
+            About you
+          </h2>
+          <label>
+            Age (whole years)
+            <input
+              type="number"
+              min="0"
+              max="130"
+              value={form.age}
+              onChange={(e) => set('age', e.target.value)}
+            />
+          </label>
+
+          <label>
+            Gender
+            <select value={form.gender} onChange={(e) => set('gender', e.target.value)}>
+              <option value="">Not answered</option>
+              {GENDERS.map((g) => (
+                <option key={g.value} value={g.value}>
+                  {g.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            Height (cm)
+            <input
+              type="number"
+              min="30"
+              max="275"
+              value={form.heightCm}
+              onChange={(e) => set('heightCm', e.target.value)}
+            />
+          </label>
+
+          <label>
+            Weight (kg)
+            <input
+              type="number"
+              min="1"
+              max="650"
+              value={form.weightKg}
+              onChange={(e) => set('weightKg', e.target.value)}
+            />
+          </label>
+
+          <label>
+            Smoking history
+            <select
+              value={form.smokingHistory}
+              onChange={(e) => set('smokingHistory', e.target.value)}
+            >
+              {SMOKING.map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <TriState
+            label="Diagnosed high blood pressure"
+            value={form.hypertension}
+            onChange={(v) => set('hypertension', v)}
+            help="If you are not sure, say so. An unanswered question is treated as unknown, not as 'no'."
+            open={openQuestion.hypertension}
+            onOpenChange={openSetter('hypertension')}
+          />
+
+          <TriState
+            label="Diagnosed heart disease"
+            value={form.heartDisease}
+            onChange={(v) => set('heartDisease', v)}
+            open={openQuestion.heartDisease}
+            onOpenChange={openSetter('heartDisease')}
+          />
+
+          {error ? (
+            <p className="error" role="alert">
+              {error}
             </p>
-          </>
-        ) : null}
+          ) : null}
+          {/* WHAT "SAVED." DOES NOT MEAN, and the reason this page looked
+              broken. `analysisService.buildProfilePayload()` reads the profile
+              AT ANALYSIS TIME and the result is stored on the report, so a
+              report that has already been analysed keeps the answers that were
+              known when it ran. A reader who answers these two questions
+              BECAUSE the dashboard told them "no value was available for your
+              history of heart disease and high blood pressure" then sees the
+              dashboard say exactly the same thing, and concludes the save did
+              nothing.
+              It is the same standing property as the explanation cap and the
+              clinician narrative (MEMORY 6ad, 6ag): changing an input does not
+              rewrite what a past run stored. Said here, where the reader is
+              when the expectation forms. */}
+          {saved ? (
+            <>
+              <p className="ok">Saved.</p>
+              <p className="hint">
+                These answers are used the next time a report is analysed.
+                Reports you have already analysed keep what was known when they
+                ran, so their results do not change.
+              </p>
+            </>
+          ) : null}
 
-        <button type="submit">{exists ? 'Save changes' : 'Create profile'}</button>
-      </form>
+          <button type="submit">{exists ? 'Save changes' : 'Create profile'}</button>
+        </form>
 
-      <aside className="card">
-        <h3>Derived by the server</h3>
-        <p>
-          BMI:{' '}
-          {server?.bmi != null ? (
-            <strong>{server.bmi} kg/m²</strong>
-          ) : (
-            <em>Not calculated &mdash; height and weight are both needed.</em>
-          )}
-        </p>
-        <p className="hint">
-          BMI is always computed from your height and weight, never accepted
-          from this form, so the number here is the one the analysis uses.
-        </p>
-        {completeness ? (
-          <p>
-            Profile completeness: <strong>{completeness.percent}%</strong> (
-            {completeness.filled} of {completeness.fields} fields the analysis
-            can use).
-            {/* THE FIELD NAMES WERE PRINTED RAW. "Still blank: heartDisease"
-                is a key from the profile document shown to the person whose
-                heart it is -- the same defect as `vitamin_b12` reaching a
-                patient, one layer up. The words now match the question the
-                form asks above, so a reader can find what they are told is
-                missing. */}
-            {completeness.missing?.length ? (
-              <>
-                {' '}
-                Still blank:{' '}
-                {completeness.missing.map(profileFieldLabel).join(', ')}.
-              </>
-            ) : null}
+        <aside className="card profile__summary">
+          <h3>Worked out for you</h3>
+          <p className="profile__bmi">
+            BMI:{' '}
+            {server?.bmi != null ? (
+              <strong>{server.bmi} kg/m²</strong>
+            ) : (
+              <em>Not calculated &mdash; height and weight are both needed.</em>
+            )}
           </p>
-        ) : null}
-      </aside>
+          <p className="hint">
+            BMI is always worked out from your height and weight &mdash; you
+            can&rsquo;t type it in &mdash; so the number here is the one the
+            analysis uses.
+          </p>
+          {completeness ? (
+            <span className="meter" aria-hidden="true">
+              <i style={{ width: `${Math.max(0, Math.min(100, Number(completeness.percent) || 0))}%` }} />
+            </span>
+          ) : null}
+          {completeness ? (
+            <p>
+              Profile completeness: <strong>{completeness.percent}%</strong> (
+              {completeness.filled} of {completeness.fields} fields the analysis
+              can use).
+              {/* THE FIELD NAMES WERE PRINTED RAW. "Still blank: heartDisease"
+                  is a key from the profile document shown to the person whose
+                  heart it is -- the same defect as `vitamin_b12` reaching a
+                  patient, one layer up. The words now match the question the
+                  form asks above, so a reader can find what they are told is
+                  missing. */}
+              {completeness.missing?.length ? (
+                <>
+                  {' '}
+                  {/* "Not answered yet", not "Still blank" (2026-10-02): the
+                      form above shows "Not sure / prefer not to say" for the
+                      same unanswered question, and "blank" beside a visible
+                      answer read as two different facts. */}
+                  Not answered yet:{' '}
+                  {completeness.missing.map(profileFieldLabel).join(', ')}.
+                </>
+              ) : null}
+            </p>
+          ) : null}
+        </aside>
+      </div>
+
+      <AccountSettings />
     </main>
   );
 }

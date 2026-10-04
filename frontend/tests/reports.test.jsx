@@ -100,7 +100,7 @@ describe('Module 3 -- the report list', () => {
     // frontend test covered upload at all when that shipped.
     const upload = vi.spyOn(api, 'uploadReport').mockResolvedValue({});
     mount([]);
-    await screen.findByText(/Upload a report/i);
+    await screen.findByRole('heading', { name: /Upload a report/i });
 
     const file = new File(['%PDF-1.4'], 'labs.pdf', { type: 'application/pdf' });
     const input = document.querySelector('input[type="file"]');
@@ -297,7 +297,7 @@ describe('Module 3 -- the report list', () => {
 
   it('tells the uploader a blank date falls back to the printed one', async () => {
     mount([]);
-    await screen.findByText(/Upload a report/i);
+    await screen.findByRole('heading', { name: /Upload a report/i });
     expect(screen.getByText(/date printed on the report is used, if it can be read/i)).toBeInTheDocument();
   });
 });

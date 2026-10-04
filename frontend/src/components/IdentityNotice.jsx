@@ -36,6 +36,19 @@ const describe = (sex, years) =>
 export function ProfileIdentityNotice({ identity }) {
   if (!identity || identity.status === 'consistent') return null;
 
+  // MARKED AS SOMEONE ELSE's (2026-10-03). Nothing was compared with the
+  // profile, because the profile was not used; this says what that meant.
+  if (identity.status === 'other_person') {
+    return (
+      <p className="hint identity-note">
+        Marked as someone else&rsquo;s report. Your profile was not used: age and
+        sex come from the report or from what was entered for it, and your BMI,
+        smoking and health history were not applied. It is not part of your
+        timeline.
+      </p>
+    );
+  }
+
   if (identity.status === 'not_checked') {
     return (
       <p className="hint identity-note">

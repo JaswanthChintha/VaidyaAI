@@ -1,5 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { api, clearSession, hasSession, refreshSession, setSession } from './api';
+import {
+  api,
+  clearSession,
+  hasSession,
+  isSessionRejected,
+  refreshSession,
+  setSession,
+} from './api';
 
 const AuthContext = createContext(null);
 
@@ -37,9 +44,11 @@ export function AuthProvider({ children }) {
         if (cancelled) return;
         setUser(me.user || me);
         setStatus('signedIn');
-      } catch {
+      } catch (error) {
         if (cancelled) return;
-        clearSession();
+        // Same rule as `refreshSession`: only a rejection deletes the stored
+        // session; a server that is down for a moment does not.
+        if (isSessionRejected(error)) clearSession();
         setStatus('signedOut');
       }
     })();
@@ -76,9 +85,26 @@ export function AuthProvider({ children }) {
     setStatus('signedOut');
   }, []);
 
+  // A password change signs out every other session server-side and returns
+  // a fresh pair for this one, which must replace the old pair at once.
+  const changePassword = useCallback(async (currentPassword, newPassword) => {
+    const data = await api.changePassword(currentPassword, newPassword);
+    setSession(data);
+    if (data.user) setUser(data.user);
+  }, []);
+
+  // PERMANENT. On success the account no longer exists, so this device's
+  // session is cleared locally -- there is nothing left to log out of.
+  const deleteAccount = useCallback(async (password) => {
+    await api.deleteAccount(password);
+    clearSession();
+    setUser(null);
+    setStatus('signedOut');
+  }, []);
+
   const value = useMemo(
-    () => ({ status, user, signIn, register, signOut }),
-    [status, user, signIn, register, signOut]
+    () => ({ status, user, signIn, register, signOut, changePassword, deleteAccount }),
+    [status, user, signIn, register, signOut, changePassword, deleteAccount]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

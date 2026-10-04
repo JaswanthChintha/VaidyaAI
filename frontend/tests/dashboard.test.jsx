@@ -573,6 +573,70 @@ describe('condition cards', () => {
   });
 });
 
+describe('a calculated eGFR on the Kidney card (2026-10-04)', () => {
+  const kidneyCard = (egfrLine) => ({
+    overall: { statusLabel: 'Attention Needed', anyAssessed: true, risk: 'Medium' },
+    conditions: [
+      {
+        condition: 'Kidney Disease',
+        status: 'Indicated',
+        risk: 'Medium',
+        flagged: true,
+        assessed: true,
+        sourceKinds: ['clinical_rule'],
+      },
+    ],
+    evidence: {
+      conditions: [
+        {
+          condition: 'Kidney Disease',
+          lines: [
+            {
+              feature: 'creatinine',
+              value: 1.0,
+              unit: 'mg/dl',
+              availability: 'observed',
+              sourceStage: 'lab_report',
+            },
+            egfrLine,
+          ],
+        },
+      ],
+    },
+  });
+
+  const EGFR = {
+    feature: 'egfr',
+    displayName: 'eGFR (estimated from creatinine, age and sex)',
+    value: 59,
+    unit: 'mL/min/1.73 m²',
+    threshold: 60,
+    comparator: '<',
+    availability: 'observed',
+    sourceStage: 'calculated',
+  };
+
+  it('shows the estimate with its crossing, and says it was calculated', async () => {
+    withDashboard(kidneyCard(EGFR));
+    renderDashboard();
+
+    expect(await screen.findByText('eGFR (estimated from creatinine, age and sex)'))
+      .toBeInTheDocument();
+    expect(
+      screen.getByText(/below 60 mL\/min\/1.73 m²; calculated by VaidyaAI, not printed on the report/)
+    ).toBeInTheDocument();
+  });
+
+  it('still says calculated when no cut-off was crossed', async () => {
+    withDashboard(kidneyCard({ ...EGFR, value: 72, threshold: null, comparator: null }));
+    renderDashboard();
+
+    await screen.findByText('eGFR (estimated from creatinine, age and sex)');
+    const note = screen.getByText('calculated by VaidyaAI, not printed on the report');
+    expect(note.className).not.toMatch(/crossed/);
+  });
+});
+
 describe('what a condition card says it took into account', () => {
   // THE CARD NAMED TWO THINGS IT DID NOT HAVE. Every cited feature with a
   // patient label was listed as "taken into account" regardless of
@@ -1768,6 +1832,31 @@ describe('descriptions of tests this platform does not assess', () => {
     for (const mark of markings) expect(mark.textContent).toMatch(/high/i);
   });
 
+  it('marks a reviewed description as not written by the model, and only that one (2026-10-04)', async () => {
+    withDashboard({
+      unanalysed: {
+        ...unanalysed,
+        items: [
+          {
+            ...unanalysed.items[0],
+            testName: 'SGPT',
+            description: 'ALT, also printed as SGPT, measures an enzyme found mainly inside liver cells.',
+            descriptionOrigin: 'reviewed',
+          },
+          { ...unanalysed.items[0], descriptionOrigin: 'model' },
+        ],
+      },
+    });
+    renderDashboard();
+
+    await screen.findByText(/measures an enzyme found mainly inside liver cells/);
+    const tags = screen.getAllByText(/reviewed reference material, not written by the\s+language model/);
+    expect(tags).toHaveLength(1);
+    // The section's closing line now allows for the exception.
+    expect(screen.getByText(/Unless marked otherwise, these were written by a language model/))
+      .toBeInTheDocument();
+  });
+
   it('says a description was WITHHELD rather than showing an empty space', async () => {
     withDashboard({ unanalysed });
     renderDashboard();
@@ -1959,6 +2048,40 @@ describe('guidance attribution', () => {
     risk: 'High',
     assessed: true,
     flagged: true,
+  });
+
+  // 2026-10-02: each topic links to one fixed NHS page. Nothing about the
+  // reader may leave the app: no query string, no referrer, a new tab.
+  it('links a known topic to its fixed NHS page, safely', async () => {
+    withDashboard(
+      withGuidance(
+        [{ code: 'GENERAL_VITAMIN_D_SOURCES', text: 'Vitamin D sources.', becauseOfConditions: ['Obesity'] }],
+        [flagged('Obesity')]
+      )
+    );
+    renderDashboard();
+    await screen.findByText(/Topics you could read about/);
+    const link = document.querySelector('.guidance__link');
+    expect(link).not.toBeNull();
+    expect(link.getAttribute('href')).toBe('https://www.nhs.uk/conditions/vitamins-and-minerals/vitamin-d/');
+    expect(link.getAttribute('href')).not.toContain('?');
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(link.textContent).toMatch(/opens in a new tab/);
+    expect(screen.getByText(/The links open the NHS website/)).toBeInTheDocument();
+  });
+
+  it('gives an unknown topic no link at all, and no note about links', async () => {
+    withDashboard(
+      withGuidance(
+        [{ code: 'DIET', text: 'A varied diet.', becauseOfConditions: ['Obesity'] }],
+        [flagged('Obesity')]
+      )
+    );
+    renderDashboard();
+    await screen.findByText(/Topics you could read about/);
+    expect(document.querySelector('.guidance__link')).toBeNull();
+    expect(screen.queryByText(/The links open the NHS website/)).toBeNull();
   });
 
   it('states one shared reason once, not once per row', async () => {
@@ -2187,7 +2310,7 @@ describe('what may be collapsed, and what may not', () => {
     renderDashboard();
 
     await screen.findByText(/What these results mean/);
-    const said = screen.getByText(/Written by a language model/);
+    const said = screen.getByText(/written by a language model/i);
     expect(said.closest('details')).toBeNull();
   });
 
@@ -2698,8 +2821,8 @@ describe('the count of further out-of-range results', () => {
     const text = summaryText();
     // neutrophils + lymphocytes + ESR. NOT haemoglobin: Anemia cites it.
     expect(text).toMatch(/3 further results are outside the range printed on the report/);
-    expect(text).toMatch(/NEUTROPHILS/);
-    expect(text).toMatch(/LYMPHOCYTES/);
+    expect(text).toMatch(/Neutrophils/);
+    expect(text).toMatch(/Lymphocytes/);
     expect(text).toMatch(/ESR/);
   });
 

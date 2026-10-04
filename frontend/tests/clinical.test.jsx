@@ -630,7 +630,7 @@ describe('Module 31 -- population context', () => {
     expect(document.querySelectorAll('.population__entry')).toHaveLength(0);
     // ...but NOT silently dropped: still named, once, in a line.
     const body = document.querySelector('main').textContent;
-    expect(body).toMatch(/age, gender and smoking history/);
+    expect(body).toMatch(/Age, sex and smoking history/);
     expect(body).toMatch(/not measured values, so no percentile is offered/);
   });
 
@@ -648,7 +648,10 @@ describe('Module 31 -- population context', () => {
     });
 
     expect(await screen.findByText(/No other group is substituted/)).toBeInTheDocument();
-    expect(screen.getByText('SEX_COHORT_NOT_AVAILABLE')).toBeInTheDocument();
+    // The reason CODE is not shown to the reader (2026-10-02); the sentence
+    // above says it in words. It is still carried on the card for debugging.
+    expect(screen.queryByText('SEX_COHORT_NOT_AVAILABLE')).toBeNull();
+    expect(document.querySelector('[data-reason="SEX_COHORT_NOT_AVAILABLE"]')).toBeTruthy();
     expect(screen.getByText('No comparison offered')).toBeInTheDocument();
   });
 

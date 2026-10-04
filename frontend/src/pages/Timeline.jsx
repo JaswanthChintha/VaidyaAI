@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import Icon from '../components/Icon';
 import { api } from '../lib/api';
 import { Absent, Value, WarningList } from '../components/Absent';
 import TrendChart from '../components/TrendChart';
@@ -6,6 +7,7 @@ import { PATIENT_LABEL } from '../lib/labels';
 import { isPresent } from '../lib/absence';
 import { reportDateInfo } from '../lib/reportDates';
 import { PairIdentityNotice } from '../components/IdentityNotice';
+import { readableName } from '../lib/displayName';
 
 /**
  * Modules 28, 29 and 30 -- trends, comparison and the progress score.
@@ -42,14 +44,26 @@ import { PairIdentityNotice } from '../components/IdentityNotice';
 function HistorySummary({ history }) {
   if (!history) return null;
   const dropped = history.droppedByCap;
+  // SOMEONE ELSE's REPORTS ARE SAID APART (2026-10-03). They were left out on
+  // purpose -- another person's values are not changes in the reader -- which
+  // is a different fact from "could not contribute".
+  const someoneElse = (history.excluded || []).filter((r) => r?.reasonCode === 'SOMEONE_ELSE').length;
+  const otherExcluded = isPresent(history.excludedCount)
+    ? Math.max(0, history.excludedCount - someoneElse)
+    : null;
 
   return (
     <p className="history">
       Built from <strong>{history.included}</strong> of{' '}
       <strong>{history.considered}</strong> report(s).
-      {isPresent(history.excludedCount) && history.excludedCount > 0 ? (
-        <> {history.excludedCount} could not contribute.</>
+      {someoneElse > 0 ? (
+        <>
+          {' '}
+          {someoneElse} report{someoneElse === 1 ? ' is' : 's are'} marked as someone
+          else&rsquo;s and {someoneElse === 1 ? 'is' : 'are'} not included.
+        </>
       ) : null}
+      {otherExcluded ? <> {otherExcluded} could not contribute.</> : null}
       {isPresent(dropped) && dropped > 0 ? (
         <>
           {' '}
@@ -134,6 +148,38 @@ function ChangePair({ from, to, unit }) {
  * readings at all, and an axis with nothing on it is not a chart.
  */
 const NOT_A_TRAJECTORY = new Set(['NOT_TRENDABLE', 'NOT_NUMERIC']);
+
+/**
+ * THE SHORT REASON ON A SHUT ROW THAT HAS NO DIRECTION (2026-10-02).
+ *
+ * Every such row said "no direction", whether the test was on one report
+ * only, or on both but taken fasting once and random once. Those are
+ * different facts, and the shut list is where a reader scans; the full
+ * sentence is still inside the row. Branches on `outcome`, never on `trend`.
+ */
+function noDirectionWord(trend) {
+  if (trend.outcome === 'NOT_COMPARABLE_SAMPLE_TIMING') {
+    const timings = [
+      ...new Set((trend.points || []).map((p) => p.sample_timing).filter(isPresent)),
+    ];
+    return timings.length === 2 ? `${timings[0]} vs ${timings[1]}` : 'not comparable';
+  }
+  if (trend.outcome === 'INSUFFICIENT_DATA' && (trend.points || []).length === 1) {
+    return 'one report only';
+  }
+  return 'no direction';
+}
+
+/**
+ * THE PERSON, NOT THE BLOOD (2026-10-02). Age, sex and smoking describe who a
+ * report is about, and the trends card already leaves them out. In the
+ * comparison table they read as measurements: "Age 34 -> 20" between two
+ * reports that may not be the same person, and "Not measured -- not on the
+ * earlier report" for a sex the earlier report PRINTS (the service carries no
+ * value for a word, only for a number). Whether the two reports are the same
+ * person is said once, above the table, by `PairIdentityNotice`.
+ */
+const PERSON_DETAILS = new Set(['age', 'gender', 'smoking_history']);
 
 /**
  * Module 28's payload, turned into the chart's already-derived props.
@@ -247,9 +293,10 @@ function readingDate(value) {
  *      their own two readings, claiming nothing about what it means. It takes
  *      NO COLOUR, because green and rust on this page mean better and worse
  *      and that is exactly the judgement not being made.
- *   2. THE LABORATORY'S OWN MARKING of the latest reading -- `High`, `Low`,
- *      `In range`. Not this platform's verdict; the laboratory compared the
- *      value to its own printed interval and said so. Same three words and
+ *   2. WHERE THE LATEST READING SAT against the interval printed on its report
+ *      -- `High`, `Low`, `In range`. Not this platform's verdict; but not
+ *      necessarily the laboratory's either, since a flag may have been read
+ *      from the printed interval rather than a marking. Same three words and
  *      the same wording the dashboard uses for the same fact, so the two
  *      screens cannot disagree.
  *
@@ -261,6 +308,30 @@ const MOVEMENT_WORD = { rose: 'rose', fell: 'fell', same: 'no change' };
 const LAB_FLAG_WORD = { high: 'High', low: 'Low', critical: 'High', normal: 'In range' };
 
 const TREND_WORDS = ['improving', 'worsening', 'stable'];
+
+/*
+ * A PANEL WITH NO LINE GETS THE SAME KIND OF CHIP AS THE ROWS ABOVE IT
+ * (owner, 2026-10-03). It used to show the latest reading's flag -- "High",
+ * "In range" -- so the shut list mixed two kinds of fact: how a value moved
+ * between reports, and where one value sat against one printed range. The
+ * chip now says why there is no movement, in the words the assessed rows use;
+ * the flag moved inside the panel (`PRINTED_RANGE_SENTENCE`).
+ */
+function noLineWord(panel) {
+  if (panel.blocked) return 'units differ';
+  if ((panel.rows || []).length === 1) return 'one report only';
+  return 'not a number';
+}
+
+/* Where the reading sat against the range printed beside it. NO AGENT: the
+   flag is set when the report marks it OR when the printed interval makes it
+   plain, and the stored row cannot tell which (MEMORY.md section 0, item 5). */
+const PRINTED_RANGE_SENTENCE = {
+  high: 'Above the range printed on the report.',
+  critical: 'Above the range printed on the report.',
+  low: 'Below the range printed on the report.',
+  normal: 'Within the range printed on the report.',
+};
 
 function LabStatus({ movement, latestFlag, trend, classified }) {
   // BOTH HALVES, and THE SAME FUNCTION THE CARD'S TALLY USES. A payload
@@ -285,12 +356,15 @@ function LabStatus({ movement, latestFlag, trend, classified }) {
       {declared ? <span className={`trend trend--${trend}`}>{trend}</span> : null}
       {moved ? <span className="lab-status__move">{moved}</span> : null}
       {flag ? (
-        // ATTRIBUTED IN THE MARKUP, not only in a comment. A reader hovering,
-        // and a screen reader, are told whose judgement this is; the visible
-        // chip stays short enough to sit in a row of them.
+        // SAID IN THE MARKUP WHAT THE CHIP IS COMPARED WITH -- and, since
+        // 2026-10-03, NOT WHO COMPARED IT. It read "Your laboratory's own
+        // marking", but the flag is set when the report marks it OR when the
+        // printed interval makes it plain, and the row cannot tell which
+        // (MEMORY.md section 0, item 5); the clinician page and the shut-row
+        // sentences already stopped naming an agent.
         <span
           className={`lab-status__flag lab-status__flag--${latestFlag}`}
-          title="Your laboratory's own marking, from the range printed on that report"
+          title="The latest reading against the range printed on that laboratory report"
         >
           {flag}
         </span>
@@ -334,6 +408,7 @@ function labPanelsOf(data) {
             // No movement for a blocked series -- the service withholds it,
             // because two units have not been shown to have moved at all.
             movement: entry.movement,
+            blocked: true,
             latestFlag: entry.latestFlag,
             joinedFrom: entry.joinedFrom,
           }
@@ -492,7 +567,7 @@ function LabPanels({ panels }) {
       {panels.map((panel) => (
         <details className="trend-chart__block disclosure" key={`lab-${panel.key}`}>
           <summary className="disclosure__summary">
-            <h3 className="trend-chart__title">{panel.name}</h3>
+            <h3 className="trend-chart__title">{readableName(panel.name)}</h3>
             <span className="disclosure__spacer" />
             {/* READ OFF THE SERIES, so the pair exists exactly where a line
                 was drawn. A blocked panel and a single reading have no
@@ -505,12 +580,16 @@ function LabPanels({ panels }) {
               to={panel.chart?.movementTo}
               unit={panel.chart?.unit}
             />
-            <LabStatus
-              movement={panel.movement}
-              latestFlag={panel.latestFlag}
-              trend={panel.trend}
-              classified={panel.classified}
-            />
+            {panel.chart ? (
+              <LabStatus
+                movement={panel.movement}
+                latestFlag={panel.latestFlag}
+                trend={panel.trend}
+                classified={panel.classified}
+              />
+            ) : (
+              <span className="trend-chart__nodirection">{noLineWord(panel)}</span>
+            )}
             <span className="disclosure__chevron" aria-hidden="true" />
           </summary>
           {/* WHICH NAMES WERE TREATED AS ONE TEST.
@@ -632,14 +711,23 @@ function LabPanels({ panels }) {
               trend={panel.trend}
             />
           ) : (
-            <p className="trend-chart__readings">
-              {panel.rows
-                .map(
-                  (r) =>
-                    `${r.valueRaw ?? ''}${r.unit ? ` ${r.unit}` : ''} (${readingDate(r.date)})`
-                )
-                .join(' · ')}
-            </p>
+            <>
+              <p className="trend-chart__readings">
+                {panel.rows
+                  .map(
+                    (r) =>
+                      `${r.valueRaw ?? ''}${r.unit ? ` ${r.unit}` : ''} (${readingDate(r.date)})`
+                  )
+                  .join(' · ')}
+              </p>
+              {/* The flag that used to be the shut row's chip. Nothing is said
+                  when there is none: unmarked is "not checked", not in range. */}
+              {PRINTED_RANGE_SENTENCE[panel.latestFlag] ? (
+                <p className="trend-chart__joined">
+                  {PRINTED_RANGE_SENTENCE[panel.latestFlag]}
+                </p>
+              ) : null}
+            </>
           )}
         </details>
       ))}
@@ -687,8 +775,11 @@ function Trends({ data, history, labSeries }) {
   const provenance = provenanceNote(labPanels);
 
   return (
-    <section className="card">
-      <h2>Trends over time</h2>
+    <section className="card tl-section">
+      <h2>
+        <span className="tl-section__icon tl-section__icon--trends" aria-hidden="true" />
+        Trends over time
+      </h2>
       <HistorySummary history={history} />
 
       {/* THE TALLY, OVER THE PANELS BELOW IT. See `cardTally` for what this
@@ -743,7 +834,7 @@ function Trends({ data, history, labSeries }) {
               {declared ? (
                 <span className={`trend trend--${trend.trend}`}>{trend.trend}</span>
               ) : (
-                <span className="trend-chart__nodirection">no direction</span>
+                <span className="trend-chart__nodirection">{noDirectionWord(trend)}</span>
               )}
               <span className="disclosure__chevron" aria-hidden="true" />
             </summary>
@@ -1027,7 +1118,7 @@ function LabComparisonRow({ row }) {
   return (
     <tr>
       <th scope="row">
-        {row.name}
+        {readableName(row.name)}
         {Array.isArray(row.joinedFrom) && row.joinedFrom.length > 1 ? (
           // The join, named where the name is. `title` rather than a second
           // line, because this table is already four columns wide and the
@@ -1072,12 +1163,15 @@ function LabComparisonRow({ row }) {
 
 /** The spec's Parameter / Previous / Current / Trend table. */
 function Comparison({ data, lab, identity, reports, namesById, pair, onPairChange, busy }) {
-  const rows = data?.table || [];
+  const rows = (data?.table || []).filter((row) => !PERSON_DETAILS.has(row.feature));
   const labRows = lab?.rows || [];
 
   return (
-    <section className="card">
-      <h2>Comparing two reports</h2>
+    <section className="card tl-section">
+      <h2>
+        <span className="tl-section__icon tl-section__icon--compare" aria-hidden="true" />
+        Comparing two reports
+      </h2>
 
       <PairPicker
         reports={reports}
@@ -1092,6 +1186,9 @@ function Comparison({ data, lab, identity, reports, namesById, pair, onPairChang
           Comparing the report of{' '}
           {new Date(data.pair.baseline_date || data.pair.baseline?.date).toLocaleDateString()}{' '}
           with {new Date(data.pair.comparison_date || data.pair.comparison?.date).toLocaleDateString()}
+          {Number.isFinite(data.pair.days_between)
+            ? `, ${Math.abs(data.pair.days_between)} day${Math.abs(data.pair.days_between) === 1 ? '' : 's'} apart`
+            : ''}
           {/* The full stop belongs to whichever ending is used. Both were
               printed before, giving "…is reversed.." -- invisible until the
               picker made an out-of-order comparison reachable at all. */}
@@ -1174,7 +1271,11 @@ function Comparison({ data, lab, identity, reports, namesById, pair, onPairChang
         <p className="empty">Nothing could be compared between these reports.</p>
       )}
 
-      {data?.summary?.headline ? <p>{data.summary.headline}</p> : null}
+      {/* THE SERVICE'S HEADLINE IS NOT PRINTED (2026-10-02). It repeated the
+          two dates from the top of this card and added "24 parameter(s) were
+          examined" under a table counting a different set (it includes age,
+          sex and smoking and none of the unassessed tests). One count per
+          page, taken from what is shown. The field stays on the API. */}
       {data?.warnings?.length ? (
         <WarningList warnings={data.warnings} />
       ) : null}
@@ -1237,16 +1338,37 @@ function Progress({ data, alreadyWarned }) {
   const ownWarnings = (data?.warnings || []).filter((w) => !seen.has(w));
 
   return (
-    <section className="card">
-      <h2>Progress score</h2>
+    <section className="card tl-section">
+      <h2>
+        <span className="tl-section__icon tl-section__icon--progress" aria-hidden="true" />
+        Progress score
+      </h2>
 
       {computed && isPresent(data.score) ? (
         <>
-          <p className="progress__score">
-            <strong>{data.score}</strong>
-            <span className="hint"> / 100</span>
-          </p>
-          <ScoreScale score={data.score} />
+          {/* ONE PANEL: the number, its scale and its band, read together. */}
+          <div className="progress__panel">
+            <div className="progress__figure">
+              <p className="progress__score">
+                <strong>{data.score}</strong>
+                <span className="hint"> / 100</span>
+              </p>
+              {data.band ? (
+                <p className="progress__band">
+                  <strong>{data.band.label}</strong>
+                </p>
+              ) : null}
+            </div>
+            <div className="progress__scale">
+              <ScoreScale score={data.score} />
+              {/* The scale's own end points and middle -- not readings. */}
+              <div className="progress__ticks" aria-hidden="true">
+                <span>0</span>
+                <span>50</span>
+                <span>100</span>
+              </div>
+            </div>
+          </div>
           {/* THE BAND DESCRIPTION IS NOT RENDERED, and that is a rendering
               call rather than an edit to the service.
               It restates its own label in this platform's vocabulary: under
@@ -1257,11 +1379,6 @@ function Progress({ data, alreadyWarned }) {
               field is untouched on the API for any other consumer; it is the
               SECOND sentence on this card that was the problem, not the
               existence of the sentence. */}
-          {data.band ? (
-            <p className="progress__band">
-              <strong>{data.band.label}</strong>
-            </p>
-          ) : null}
           {/* "Higher is better." WAS PRINTED HERE AS A LITERAL, immediately
               in front of `direction_text`, which itself opened "The scale
               runs from 0 to 100 and HIGHER IS BETTER". The card said it
@@ -1290,13 +1407,15 @@ function Progress({ data, alreadyWarned }) {
           The counts are the service's, verbatim. */}
       {data?.coverage ? (
         <p className="progress__coverage">
-          Worked out from {data.coverage.contributing_count} of your{' '}
-          {data.coverage.features_examined} results.
+          {/* NO "OF YOUR N" (2026-10-02). The service's total counts age, sex
+              and smoking and none of the unassessed tests, so it disagreed
+              with the parameter count on the two cards above. The
+              contributing count is the one this number is made of. */}
+          Worked out from {data.coverage.contributing_count}{' '}
+          {data.coverage.contributing_count === 1 ? 'result' : 'results'}: the
+          ones whose change between the two reports could be judged.
           {data.coverage.excluded_count > 0
-            ? ` The other ${data.coverage.excluded_count} could not be
-               compared this way, so ${
-                 data.coverage.excluded_count === 1 ? 'it is' : 'they are'
-               } not in the number.`.replace(/\s+/g, ' ')
+            ? ' Everything else above is not in the number.'
             : ''}
           {!computed
             ? ` At least ${data.coverage.minimum_required} are needed before a score is shown.`
@@ -1422,12 +1541,19 @@ export default function Timeline() {
 
   return (
     <main className="timeline">
-      <h1>Your timeline</h1>
-      <p className="hint">
-        These views describe how measured values changed between your reports.
-        They report arithmetic and a declared direction of change &mdash; they
-        do not interpret those changes or identify any condition.
-      </p>
+      <header className="page-hero">
+        <span className="page-hero__icon" aria-hidden="true">
+          <Icon name="timeline" size={26} />
+        </span>
+        <div>
+          <h1>Your timeline</h1>
+          <p className="hint">
+            These views describe how measured values changed between your reports.
+            They report arithmetic and a declared direction of change &mdash; they
+            do not interpret those changes or identify any condition.
+          </p>
+        </div>
+      </header>
 
       {state.trendsError ? (
         <p className="error" role="alert">{state.trendsError}</p>

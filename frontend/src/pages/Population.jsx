@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { Absent } from '../components/Absent';
-import { isPresent } from '../lib/absence';
 import PercentileBar from '../components/PercentileBar';
+import Icon from '../components/Icon';
+import { PATIENT_LABEL } from '../lib/labels';
+import { readableName } from '../lib/displayName';
 
 /**
  * Module 31 -- how a value compares with an age- and sex-matched group.
@@ -43,6 +45,13 @@ import PercentileBar from '../components/PercentileBar';
 /** The same wording `Entry` puts in its heading, so the two cannot drift. */
 const humanName = (key) => String(key).replace(/_/g, ' ');
 
+/** A card's title: the reader's own name for the test where there is one. */
+const cardTitle = (key) => {
+  const label = PATIENT_LABEL[key];
+  const text = label || humanName(key);
+  return text.charAt(0).toUpperCase() + text.slice(1);
+};
+
 /** "a, b and c" -- an Oxford-less list for a sentence, not a data dump. */
 function readableList(names) {
   if (names.length <= 1) return names[0] || '';
@@ -80,16 +89,25 @@ function Entry({ name, entry, cohortLabel }) {
   const available = entry.available === true;
 
   return (
-    <li className="card population__entry">
-      <h3>{humanName(name)}</h3>
+    // The service's reason CODE is kept on the element for debugging but not
+    // shown (owner's decision, 2026-10-02): the reader gets the service's own
+    // sentence, which says the same thing in words.
+    <li
+      className={available ? 'card population__entry' : 'card population__entry population__entry--none'}
+      data-reason={available ? undefined : entry.reason_code || undefined}
+    >
+      <h3>{cardTitle(name)}</h3>
 
       {available ? (
         <>
           <p className="population__band">
             <strong>{entry.comparison.band.label}</strong>
           </p>
-          <p>
-            Your value: {entry.comparison.value} {entry.comparison.unit}
+          <p className="population__value">
+            Your value:{' '}
+            <span className="population__valnum">
+              {entry.comparison.value} {entry.comparison.unit}
+            </span>
             {entry.comparison.submitted &&
             entry.comparison.submitted.unit !== entry.comparison.unit ? (
               <span className="hint">
@@ -128,11 +146,6 @@ function Entry({ name, entry, cohortLabel }) {
         <Absent label="No comparison offered" reason={entry.message} />
       )}
 
-      {!available && isPresent(entry.reason_code) ? (
-        <p className="hint">
-          <code>{entry.reason_code}</code>
-        </p>
-      ) : null}
     </li>
   );
 }
@@ -188,20 +201,54 @@ export default function Population() {
     ([, entry]) => entry?.reason_code !== 'FEATURE_NOT_CONTINUOUS'
   );
   const cohortLabel = sharedCohortLabel(features);
+  // WHOSE AGE AND SEX CHOSE THE GROUP. Since 2026-10-02 the backend uses the
+  // ones printed on the report when the analysis did, so the page has to say
+  // so -- "your age and sex" would be false for someone else's report.
+  const fromReport = subject?.source === 'report' || subject?.source === 'mixed';
+  const reportFields = subject
+    ? [
+        subject.ageSource === 'report' ? 'age' : null,
+        subject.genderSource === 'report' ? 'sex' : null,
+      ].filter(Boolean)
+    : [];
 
   return (
     <main className="population">
-      <nav className="crumbs" aria-label="Breadcrumb">
-        <Link to={`/reports/${id}`}>Dashboard</Link>
-        <span aria-hidden="true">/</span>
-        <span className="crumbs__here">Population context</span>
-      </nav>
+      <header className="page-hero population-hero">
+        <span className="page-hero__icon" aria-hidden="true">
+          <Icon name="people" size={26} />
+        </span>
+        <div>
+          <nav className="crumbs" aria-label="Breadcrumb">
+            <Link to={`/reports/${id}`}>Dashboard</Link>
+            <span aria-hidden="true">/</span>
+            <span className="crumbs__here">Population context</span>
+          </nav>
+          <h1>How your results compare</h1>
+          {context?.what_this_means ? <p className="hint">{context.what_this_means}</p> : null}
+          {data.report?.originalName ? (
+            <p className="doctor-hero__file">Report: {data.report.originalName}</p>
+          ) : null}
+        </div>
+      </header>
 
-      <h1>How your results compare</h1>
-      {context?.what_this_means ? <p>{context.what_this_means}</p> : null}
-
-      {/* Which missing answer to act on -- see the header. */}
-      {subject && (!subject.ageProvided || !subject.genderProvided) ? (
+      {/* Which missing answer to act on -- see the header. SOMEONE ELSE's
+          REPORT (2026-10-03): the profile is not the remedy; the age and sex
+          entered for the report are, on the reports page. */}
+      {subject?.otherPerson && (!subject.ageProvided || !subject.genderProvided) ? (
+        <p className="caveat">
+          No {[
+            !subject.ageProvided ? 'age' : null,
+            !subject.genderProvided ? 'sex' : null,
+          ]
+            .filter(Boolean)
+            .join(' or ')}{' '}
+          is known for the person this report describes, so comparisons that need
+          it were not made.{' '}
+          <Link to="/reports">Enter them under &ldquo;Whose report?&rdquo;</Link>
+        </p>
+      ) : null}
+      {subject && !subject.otherPerson && (!subject.ageProvided || !subject.genderProvided) ? (
         <p className="caveat">
           {!subject.profileExists
             ? 'You have not filled in your details yet, so no age- or sex-matched group could be chosen.'
@@ -228,8 +275,11 @@ export default function Population() {
           {/* The cohort reads as an aside, not as a noun phrase glued into
               the sentence: "among people of 20-29 years, male in the survey"
               was the first version and it is not English. */}
-          Each bar below shows where your result sits among people of your age
-          and sex in the survey
+          Each bar below shows where your result sits among people of{' '}
+          {fromReport || subject?.otherPerson
+            ? 'the age and sex of the person this report describes'
+            : 'your age and sex'}{' '}
+          in the survey
           {cohortLabel ? ` (${cohortLabel})` : ''} — the share whose result was
           at or below yours, with people whose result equals yours counted in
           that share.{' '}
@@ -237,6 +287,47 @@ export default function Population() {
             It does not say whether a result is normal, high, or low. It only
             says how common it is.
           </strong>
+        </p>
+      ) : null}
+
+      {fromReport && reportFields.length ? (
+        <p className="hint population__note">
+          The {reportFields.join(' and ')} printed on this report{' '}
+          {reportFields.length === 1 ? 'was' : 'were'} used to choose the group,
+          as for the rest of this report&rsquo;s analysis
+          {subject.source === 'mixed'
+            ? subject.otherPerson
+              ? '; the rest was entered for this report'
+              : '; the rest came from your profile'
+            : ''}
+          .
+        </p>
+      ) : null}
+
+      {/* Someone else's report, details typed for it (2026-10-03). */}
+      {subject?.source === 'entered' &&
+      features.some(([, entry]) => entry?.available === true) ? (
+        <p className="hint population__note">
+          The age and sex entered for this report were used to choose the group
+          &mdash; this report is marked as someone else&rsquo;s, so your profile
+          was not used.
+        </p>
+      ) : null}
+
+      {/* THE PROFILE CASE IS SAID TOO (2026-10-02). Only the report case had a
+          note, so a report printing no age or sex -- Test 3 -- was compared as
+          "your age and sex" with nothing saying those came from the profile.
+          It matters most exactly here: haemoglobin, haematocrit and red cell
+          count sit "below the 1st percentile" for young men and far less
+          unusually for women, so the reader must know which group was used. */}
+      {subject?.source === 'profile' && subject.ageProvided && subject.genderProvided &&
+      features.some(([, entry]) => entry?.available === true) ? (
+        <p className="hint population__note">
+          No age or sex could be read from this report, so the ones in your
+          profile were used to choose the group. Several results &mdash; haemoglobin among them
+          &mdash; are very different for men and women, so if the profile does
+          not describe the person on this report, these comparisons do not
+          apply.
         </p>
       ) : null}
 
@@ -260,14 +351,33 @@ export default function Population() {
 
       {/* Said once, in a line, instead of three cards. */}
       {notMeasurements.length ? (
-        <p className="hint">
+        <p className="hint population__note">
           {/* The trailing "age and sex are what the group is chosen by" read
               as a repeat of the list it followed, and it was only true of two
               of the three names. One clause, true of all of them. */}
-          {readableList(notMeasurements.map(([name]) => humanName(name)))}{' '}
+          {/* Capitalised, and "sex" as the rest of this page says it --
+              the payload's key is `gender` (2026-10-02). */}
+          {(() => {
+            const list = readableList(
+              notMeasurements.map(([name]) => (name === 'gender' ? 'sex' : humanName(name)))
+            );
+            return list.charAt(0).toUpperCase() + list.slice(1);
+          })()}{' '}
           {notMeasurements.length === 1 ? 'is' : 'are'} not measured values, so
           no percentile is offered for{' '}
           {notMeasurements.length === 1 ? 'it' : 'them'}.
+        </p>
+      ) : null}
+
+      {/* NOT COMPARED, BY NAME (2026-10-02). Tests this platform does not
+          assess never reach the population service, and the page said nothing
+          about them -- an absence rendered as nothing. Names only, from the
+          backend's `notCompared`. */}
+      {Array.isArray(data.notCompared) && data.notCompared.length ? (
+        <p className="hint population__note">
+          Also on this report but not compared, because this tool has no
+          population data for {data.notCompared.length === 1 ? 'it' : 'them'}:{' '}
+          {readableList(data.notCompared.map(readableName))}.
         </p>
       ) : null}
 

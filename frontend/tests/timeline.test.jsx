@@ -64,7 +64,7 @@ describe('trends', () => {
     // ON THE CHART, which is where the refusal is now stated. The table that
     // used to carry it under the word "No trend" is gone; the sentence itself
     // never moved, and it is the sentence that matters.
-    expect(await screen.findByText('no direction')).toBeInTheDocument();
+    expect(await screen.findByText('one report only')).toBeInTheDocument();
     // SCOPED TO THE CHART'S OWN "WHY" LINE. The chart states this three times
     // -- in that paragraph, in its accessible title, and in its no-line
     // notice -- so an unscoped match finds all three and fails on the
@@ -142,7 +142,7 @@ describe('trends', () => {
       },
     });
 
-    await screen.findByText('no direction');
+    await screen.findByText('one report only');
     expect(document.querySelectorAll('.disclosure__pair')).toHaveLength(0);
     expect(document.querySelector('.trend-chart__block > summary').textContent).not.toContain(
       '→'
@@ -183,6 +183,36 @@ describe('trends', () => {
       screen.getByText(/No direction of benefit is declared/)
     ).toBeInTheDocument();
     expect(screen.queryByText('improving')).not.toBeInTheDocument();
+  });
+
+  it('says "fasting vs random" when the two samples were not comparable (2026-10-02)', async () => {
+    // 88 fasting -> 168 random read "no direction" on the shut row, hiding the
+    // reason the service had already given.
+    mount({
+      trends: {
+        trends: {
+          features: {
+            blood_glucose: {
+              feature: 'blood_glucose',
+              outcome: 'NOT_COMPARABLE_SAMPLE_TIMING',
+              trend: null,
+              usable_point_count: 2,
+              canonical_unit: 'mg/dl',
+              points: [
+                { date: '2026-09-11T00:00:00Z', value: 88, unit: 'mg/dl', sample_timing: 'fasting' },
+                { date: '2026-09-13T00:00:00Z', value: 168, unit: 'mg/dl', sample_timing: 'random' },
+              ],
+              gaps: [],
+              reason: 'Blood glucose readings were taken under different sample timings.',
+            },
+          },
+          summary: { improving: 0, worsening: 0, stable: 0, not_determinable: 1 },
+        },
+      },
+    });
+
+    expect(await screen.findByText('fasting vs random')).toBeInTheDocument();
+    expect(screen.queryByText('no direction')).not.toBeInTheDocument();
   });
 
   /**
@@ -259,7 +289,7 @@ describe('trends', () => {
       },
     });
 
-    await screen.findByText('no direction');
+    await screen.findByText('one report only');
     expect(document.querySelectorAll('.trend-chart__line')).toHaveLength(0);
     expect(document.querySelectorAll('.trend-chart__point')).toHaveLength(1);
     // The whole hazard, in one assertion -- scoped to the chart, because the
@@ -782,6 +812,8 @@ describe('comparison -- the rest of the report', () => {
   // reports carry 28 parameters between them and the card showed twelve, so
   // the reader counted them and asked where the others were -- the same
   // question, and the same answer, as the timeline.
+  // Fixture names are printed-style capitals; the page shows them through
+  // `readableName` (2026-10-02), so the assertions below look for 'Zorblex'.
   const labRow = (over = {}) => ({
     key: 'zbx',
     name: 'ZORBLEX',
@@ -807,14 +839,14 @@ describe('comparison -- the rest of the report', () => {
       { feature: 'hba1c', description: 'HbA1c', unit: '%', previous: 5.4, current: 7, category: 'worsened' },
     ]);
 
-    expect(await screen.findByText('ZORBLEX')).toBeInTheDocument();
+    expect(await screen.findByText('Zorblex')).toBeInTheDocument();
     // One table on the card, carrying both kinds of row.
     expect(document.querySelectorAll('table.lab-table')).toHaveLength(1);
     const headings = [...document.querySelectorAll('table tbody th')].map((th) =>
       th.textContent.trim()
     );
     expect(headings).toContain('HbA1c');
-    expect(headings.some((h) => h.startsWith('ZORBLEX'))).toBe(true);
+    expect(headings.some((h) => h.startsWith('Zorblex'))).toBe(true);
   });
 
   it('counts every parameter on the card, both kinds', async () => {
@@ -822,7 +854,7 @@ describe('comparison -- the rest of the report', () => {
       { feature: 'hba1c', description: 'HbA1c', unit: '%', previous: 5.4, current: 7, category: 'worsened' },
     ]);
 
-    await screen.findByText('ZORBLEX');
+    await screen.findByText('Zorblex');
     expect(screen.getByText(/3 parameters across these two reports/)).toBeInTheDocument();
   });
 
@@ -842,7 +874,7 @@ describe('comparison -- the rest of the report', () => {
       }),
     ]);
 
-    await screen.findByText('ZORBLEX');
+    await screen.findByText('Zorblex');
     expect(screen.getByText('101.9 U/L')).toBeInTheDocument();
     expect(screen.getByText('13 IU/L')).toBeInTheDocument();
     expect(
@@ -876,7 +908,7 @@ describe('comparison -- the rest of the report', () => {
       }),
     ]);
 
-    await screen.findByText('ZORBLEX');
+    await screen.findByText('Zorblex');
     expect(screen.getByText(/in different units/)).toBeInTheDocument();
     expect(screen.queryByText(/did not print a unit/)).not.toBeInTheDocument();
   });
@@ -884,7 +916,7 @@ describe('comparison -- the rest of the report', () => {
   it('renders a parameter on only one of the two reports as not measured', async () => {
     mountPair([labRow({ current: null, currentUnit: null, category: 'not_classifiable', symbol: null })]);
 
-    await screen.findByText('ZORBLEX');
+    await screen.findByText('Zorblex');
     expect(screen.getByText('12.1 mg/L')).toBeInTheDocument();
     expect(screen.getByText('This parameter was not on that report.')).toBeInTheDocument();
     // NOT rendered as zero. The whole point of the Absent component.
@@ -909,7 +941,7 @@ describe('comparison -- the rest of the report', () => {
       }),
     ]);
 
-    await screen.findByText('ZORBLEX');
+    await screen.findByText('Zorblex');
     expect(screen.getAllByText('Negative').length).toBeGreaterThan(0);
   });
 
@@ -918,7 +950,7 @@ describe('comparison -- the rest of the report', () => {
     // here, and these rows must not introduce a third set of words.
     mountPair([labRow({ category: 'worsened', symbol: '↑' })]);
 
-    await screen.findByText('ZORBLEX');
+    await screen.findByText('Zorblex');
     expect(screen.getByText(/worsened/)).toBeInTheDocument();
     expect(screen.queryByText(/worsening/)).not.toBeInTheDocument();
   });
@@ -926,9 +958,9 @@ describe('comparison -- the rest of the report', () => {
   it('names the spellings it treated as one test', async () => {
     mountPair([labRow({ name: 'NEUTROPHILS', joinedFrom: ['Polymorphs', 'NEUTROPHILS'] })]);
 
-    await screen.findByText(/NEUTROPHILS/);
+    await screen.findByText(/Neutrophils/);
     const heading = [...document.querySelectorAll('table tbody th')].find((th) =>
-      th.textContent.includes('NEUTROPHILS')
+      th.textContent.includes('Neutrophils')
     );
     expect(heading.textContent).toContain('2 names');
     expect(heading.querySelector('[title]').getAttribute('title')).toContain('Polymorphs');
@@ -945,11 +977,29 @@ describe('comparison -- the rest of the report', () => {
       labRow({ name: 'EOSINOPHILS', previous: 5, current: 2, unit: '%', previousUnit: '%', currentUnit: '%', category: 'unchanged', symbol: '↓' }),
     ]);
 
-    await screen.findByText('EOSINOPHILS');
+    await screen.findByText('Eosinophils');
     expect(screen.getByText(/no real change/)).toBeInTheDocument();
     expect(screen.queryByText(/unchanged/)).not.toBeInTheDocument();
     // The arrow stays. It is the true half of the row.
     expect(screen.getByText(/↓/)).toBeInTheDocument();
+  });
+
+  it('leaves age, sex and smoking out of the table (2026-10-02)', async () => {
+    // They read as measurements -- "Age 34 -> 20" between two people -- and
+    // as "Not measured" for a sex the report PRINTS (Module 29 carries no
+    // value for a word). Who the reports are about is said above the table.
+    mountPair([labRow()], [
+      { feature: 'hba1c', description: 'HbA1c', unit: '%', previous: 5.4, current: 7, category: 'worsened' },
+      { feature: 'age', description: 'Age in whole years', unit: 'years', previous: 34, current: 20, category: 'not_classifiable' },
+      { feature: 'gender', description: 'Self-described gender', unit: null, previous: null, current: null, category: 'not_classifiable' },
+      { feature: 'smoking_history', description: 'Smoking history', unit: null, previous: null, current: null, category: 'not_classifiable' },
+    ]);
+
+    await screen.findByText('Zorblex');
+    const headings = [...document.querySelectorAll('table tbody th')].map((th) => th.textContent);
+    expect(headings.some((h) => /Age in whole years|gender|Smoking/.test(h))).toBe(false);
+    // ...and the count is of what is shown: HbA1c + Zorblex.
+    expect(screen.getByText(/2 parameters across these two reports/)).toBeInTheDocument();
   });
 
   it("uses the same words for Module 29's own rows", async () => {
@@ -1196,36 +1246,40 @@ describe('the progress score card', () => {
     ).toBeInTheDocument();
   });
 
-  it('KEEPS the coverage line, in words that agree with their own numbers', async () => {
+  it('KEEPS the coverage line, without a total that disagrees with the page', async () => {
     // An absence: four results are not in the number, and the card says so.
+    // "of your 12" WAS DROPPED (2026-10-02): the service's total counts age,
+    // sex and smoking and none of the unassessed tests, so it disagreed with
+    // the parameter count on the two cards above it.
     mount({ progress: { progress: progress() } });
 
-    const said = await screen.findByText(/Worked out from 8 of your 12 results/);
-    expect(said.textContent).toMatch(/other 4 could not be compared/);
-    expect(said.textContent).toMatch(/they are not in the number/);
+    const said = await screen.findByText(/Worked out from 8 results/);
+    expect(said.textContent).toMatch(/could be judged/);
+    expect(said.textContent).toMatch(/Everything else above is not in the number/);
+    expect(said.textContent).not.toMatch(/of your 12/);
     // The placeholder plural is gone from this card.
     expect(said.textContent).not.toMatch(/\(s\)/);
   });
 
-  it('uses a singular pronoun when exactly one result is excluded', async () => {
+  it('uses the singular for exactly one contributing result', async () => {
     mount({ progress: { progress: progress({
         coverage: {
-          contributing_count: 8,
+          contributing_count: 1,
           features_examined: 9,
-          excluded_count: 1,
-          minimum_required: 3,
+          excluded_count: 8,
+          minimum_required: 1,
         },
       }) } });
 
-    const said = await screen.findByText(/Worked out from 8 of your 9 results/);
-    expect(said.textContent).toMatch(/it is not in the number/);
+    const said = await screen.findByText(/Worked out from 1 result:/);
+    expect(said.textContent).not.toMatch(/1 results/);
   });
 
   it('mentions the minimum only when it is the reason there is no score', async () => {
     // "At least 3 are needed" under a score built from 8 answers a question
     // nobody asked. Under a refusal it is the whole explanation.
     mount({ progress: { progress: progress() } });
-    await screen.findByText(/Worked out from 8 of your 12 results/);
+    await screen.findByText(/Worked out from 8 results/);
     expect(screen.queryByText(/At least 3 are needed/)).not.toBeInTheDocument();
   });
 
@@ -2430,10 +2484,77 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
 
     await screen.findByText(/Trends over time/);
     const section = card();
-    expect(section.textContent).toMatch(/FRIMBULATOR/);
+    // Readable name (2026-10-02), and the shut row says WHY there is no line
+    // in the same kind of chip the other rows use (2026-10-03).
+    expect(section.textContent).toMatch(/Frimbulator/);
+    expect(section.querySelector('.trend-chart__nodirection')?.textContent).toBe('units differ');
     expect(section.textContent).toMatch(/101\.9/);
     expect(section.textContent).toMatch(/13/);
     expect(section.querySelectorAll('svg')).toHaveLength(0);
+  });
+
+  // 2026-10-03, the owner: these rows showed "High" / "In range" while every
+  // other row showed how the value MOVED. A single reading now says why it has
+  // no movement, and its printed-range position moved inside the panel.
+  it('a single reading says "one report only", not its flag', async () => {
+    mountLab(
+      labSeries({
+        readings: [{ ...reading('C-REACTIVE PROTEIN(CRP)', [['2026-09-13', '38.9', 'mg/L']]), latestFlag: 'high' }],
+        consideredCount: 1,
+        singleReportCount: 1,
+      })
+    );
+
+    await screen.findByText(/Trends over time/);
+    const panel = card().querySelector('details.trend-chart__block');
+    const row = panel.querySelector('summary');
+    expect(row.querySelector('.trend-chart__nodirection').textContent).toBe('one report only');
+    expect(row.textContent).not.toMatch(/High|In range/);
+    expect(row.querySelector('.lab-status__flag')).toBeNull();
+    // The readable name, as on the other pages.
+    expect(row.textContent).toMatch(/C-reactive protein \(CRP\)/);
+  });
+
+  it('keeps the printed-range position inside the panel, naming no agent', async () => {
+    mountLab(
+      labSeries({
+        readings: [
+          { ...reading('ESR', [['2026-09-13', '45', 'mm/hr']]), latestFlag: 'high' },
+          { ...reading('SGPT', [['2026-09-13', '13', 'IU/L']]), latestFlag: 'normal' },
+          { ...reading('AVERAGE BLOOD GLUCOSE', [['2026-09-13', '154', 'mg/dL']]), latestFlag: null },
+        ],
+        consideredCount: 3,
+        singleReportCount: 3,
+      })
+    );
+
+    await screen.findByText(/Trends over time/);
+    const bodies = [...card().querySelectorAll('details.trend-chart__block')].map((d) => d.textContent);
+    expect(bodies[0]).toMatch(/Above the range printed on the report\./);
+    expect(bodies[1]).toMatch(/Within the range printed on the report\./);
+    // No flag is "not checked" -- never rendered as in range.
+    expect(bodies[2]).not.toMatch(/range printed on the report/);
+    for (const text of bodies) expect(text).not.toMatch(/laboratory's own/i);
+  });
+
+  it("a charted panel's flag tooltip names the range, not who marked it", async () => {
+    mountLab(
+      labSeries({
+        series: [
+          series('ZORBLEX', [['2026-01-01', 35], ['2026-02-01', 45]], null, 'mm/hr', {
+            movement: 'rose',
+            latestFlag: 'high',
+          }),
+        ],
+        consideredCount: 1,
+        plottedCount: 1,
+      })
+    );
+
+    await screen.findByText(/Trends over time/);
+    const title = card().querySelector('.lab-status__flag').getAttribute('title');
+    expect(title).toBe('The latest reading against the range printed on that laboratory report');
+    expect(title).not.toMatch(/own marking/i);
   });
 
   it('never prints the reference range itself, or draws a band for it', async () => {

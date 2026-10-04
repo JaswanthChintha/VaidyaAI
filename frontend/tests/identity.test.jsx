@@ -134,6 +134,14 @@ describe('the report\'s own sex and age are details, never results (2026-09-25)'
     const profile = screen.getByRole('heading', { name: /From your profile/ }).nextElementSibling;
     expect(profile.textContent).toMatch(/BMI/);
     expect(profile.textContent).not.toMatch(/female/i);
+
+    // 2026-10-02: the printed details' column said "You entered" -- nobody
+    // entered them, the report printed them -- and called age a "Test".
+    const head = (table) => [...table.querySelectorAll('thead th')].map((th) => th.textContent);
+    expect(head(detailsTable)).toEqual(['Detail', 'Printed on the report']);
+    expect(head(profile)).toEqual(['Detail', 'You entered']);
+    expect(head(results)[0]).toBe('Test');
+    expect(head(results)[1]).toBe('Result');
   });
 
   it('isPatientDetail covers both kinds of detail and nothing measured', async () => {
