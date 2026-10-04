@@ -125,6 +125,13 @@ def fire(rule: cr.ThresholdRule, value: float, sex: Optional[str] = None, age: f
 def _boundary_cases():
     cases = []
     for rule in cr.THRESHOLD_RULES:
+        # A CALCULATED-value rule (eGFR) compares the calculation, not the
+        # value fed in, so "fire at the threshold" cannot be set up by passing
+        # the threshold as creatinine. Its bands get the same on / either-side
+        # treatment in `test_egfr.py`, by solving for the creatinine that
+        # produces each eGFR.
+        if rule.derived is not None:
+            continue
         contextual = any(
             isinstance(band.threshold, cr.ContextualThreshold) for band in rule.bands
         )

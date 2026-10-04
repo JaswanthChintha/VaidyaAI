@@ -56,7 +56,11 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from app.core.logging import get_logger, safe_meta
 from app.data import conditions as C
+from app.data.egfr import EGFR_DISPLAY_NAME, EGFR_FEATURE
 from app.data.feature_catalog import FEATURES
+
+#: Names for values a rule CALCULATED, which have no catalogue entry.
+_CALCULATED_DISPLAY_NAMES = {EGFR_FEATURE: EGFR_DISPLAY_NAME}
 from app.data.recommendation_catalog import RECOMMENDATIONS
 from app.ml.base import REASON_MODEL_UNAVAILABLE, REASON_REQUIRED_IMPUTED
 from app.schemas.decisions import (
@@ -123,6 +127,7 @@ from app.schemas.report import (
 )
 from app.services.decision_engine import unique
 from app.services.fusion_engine import run_decision_fusion
+from app.services.rule_engine import NOTE_FACTOR_NOT_MET
 
 logger = get_logger(__name__)
 
@@ -609,6 +614,17 @@ def _triggering_values(
         for item in decision.evidence:
             if item.threshold is None:
                 continue
+            # A COUNTED-FACTOR RULE'S UNMET CRITERIA DID NOT TRIGGER IT
+            # (2026-10-03). The cardiovascular rule records every factor it
+            # evaluated, each with a threshold, and marks the unmet ones with
+            # `NOTE_FACTOR_NOT_MET`. Without this they arrived here as
+            # "triggering values" -- BMI 25.25 against >= 30 and age 20
+            # against >= 45 -- and the clinician narrative wrote them up as
+            # the reasons for a borderline Heart Disease they did not count
+            # towards. They remain on `decision.evidence`, where "evaluated
+            # and not met" is the true statement.
+            if isinstance(item.note, str) and item.note.startswith(NOTE_FACTOR_NOT_MET):
+                continue
             out.append(
                 line(
                     item,
@@ -801,7 +817,11 @@ def _evidence_line(
 
     return EvidenceLine(
         feature=feature,
-        display_name=definition.description if definition else None,
+        display_name=(
+            definition.description
+            if definition
+            else _CALCULATED_DISPLAY_NAMES.get(feature)
+        ),
         value=item.value,
         unit=item.unit,
         threshold=item.threshold,

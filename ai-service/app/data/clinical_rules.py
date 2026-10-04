@@ -75,6 +75,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional, Tuple
 
 from app.data import conditions as C
+from app.data.egfr import EGFR_FEATURE, EGFR_MIN_AGE_YEARS, EGFR_UNIT
 from app.data.feature_catalog import FEATURES, normalize_test_name
 from app.data.recommendation_catalog import (
     CONFIRM_WITH_REPEAT_TESTING,
@@ -100,7 +101,7 @@ from app.schemas.decisions import DecisionStatus, RiskLevel
 
 #: Bumped whenever any threshold, band or rule in this file changes. Recorded
 #: in every decision's `metadata` so a past report can be reproduced.
-RULE_TABLE_VERSION = "1.0.0"
+RULE_TABLE_VERSION = "1.1.0"
 
 #: The human-readable producer name written into every `ClinicalDecision`.
 RULE_ENGINE_SOURCE = "Clinical Rule Engine"
@@ -250,6 +251,23 @@ class ThresholdRule:
     context_features: Tuple[str, ...] = ()
     #: Recommendations added to every decision this rule produces.
     always_recommend: Tuple[str, ...] = ()
+    #: When set, the bands compare a value CALCULATED from `feature` (and the
+    #: context features), not `feature` itself. One of `DERIVED_VALUES`.
+    #: `feature` stays the measured input, so a report without it still means
+    #: "no input, no decision".
+    derived: Optional[str] = None
+
+
+#: Values a rule may calculate rather than read, with the unit they are
+#: compared in and the context features the calculation needs.
+DERIVED_VALUES: Dict[str, Dict[str, Any]] = {
+    EGFR_FEATURE: {
+        "input": "creatinine",
+        "unit": EGFR_UNIT,
+        "requires": ("age", "gender"),
+        "min_age_years": EGFR_MIN_AGE_YEARS,
+    },
+}
 
 
 # --------------------------------------------------------------------------
@@ -840,10 +858,10 @@ THRESHOLD_RULES: Tuple[ThresholdRule, ...] = (
         basis=(
             "IMPORTANT SCOPE NOTE: KDIGO 2012/2024 defines and stages chronic "
             "kidney disease by eGFR and albuminuria, NOT by raw creatinine. "
-            "Computing eGFR requires the CKD-EPI 2021 equation, and staging "
-            "requires a second sample at least 90 days apart plus a urine "
-            "albumin-to-creatinine ratio -- none of which this threshold engine "
-            "has. So this rule reports a RAISED CREATININE against sex-specific "
+            "eGFR is calculated separately by RULE_KIDNEY_EGFR (CKD-EPI 2021); "
+            "staging requires a second sample at least 90 days apart plus a "
+            "urine albumin-to-creatinine ratio -- neither of which this "
+            "threshold engine has. So this rule reports a RAISED CREATININE against sex-specific "
             "adult reference limits and says it may warrant discussion. It does "
             "not stage, and must not be read as staging. 5.0 mg/dL matches "
             "Module 6's extreme_high. Adult references only, so under-18 yields "
@@ -899,6 +917,82 @@ THRESHOLD_RULES: Tuple[ThresholdRule, ...] = (
             _normal_band(
                 "at or below the applicable adult upper reference limit",
                 "Inside the adult reference interval for the recorded sex.",
+            ),
+        ),
+    ),
+    # ======================================================= KIDNEY: eGFR ==
+    #
+    # THE VALUE KDIGO ACTUALLY USES (owner, 2026-10-04). Calculated from the
+    # creatinine above with the CKD-EPI 2021 equation (`app/data/egfr.py`),
+    # only for an adult whose sex is recorded as male or female -- otherwise
+    # this rule does not fire and the creatinine rule speaks alone. A low eGFR
+    # can flag the topic even when creatinine sits inside its reference
+    # interval (owner's decision): a 75-year-old woman with creatinine 1.0
+    # mg/dL (inside 0.59-1.04) has an eGFR of 59, and that is the reading a
+    # clinician would make.
+    #
+    # Compared on the WHOLE NUMBER the reader is shown, so "59.6" is reported
+    # as 60 and not flagged as below 60.
+    ThresholdRule(
+        id="RULE_KIDNEY_EGFR",
+        version="1.0.0",
+        condition=C.KIDNEY_DISEASE,
+        feature="creatinine",
+        derived=EGFR_FEATURE,
+        min_age_years=EGFR_MIN_AGE_YEARS,
+        context_features=("gender", "age"),
+        basis=(
+            "KDIGO 2012/2024 GFR categories (mL/min/1.73 m2): G1 >= 90, G2 "
+            "60-89, G3a 45-59, G3b 30-44, G4 15-29, G5 < 15. eGFR from the "
+            "CKD-EPI 2021 creatinine equation (Inker et al., NEJM 2021). A "
+            "single estimate does not stage chronic kidney disease: staging "
+            "needs the finding to persist for at least three months and a "
+            "urine albumin-to-creatinine ratio, neither of which this engine "
+            "has. G2 without markers of kidney damage does not meet the CKD "
+            "definition, so 60 and above is not flagged."
+        ),
+        always_recommend=(GENERAL_HYDRATION,),
+        bands=(
+            Band(
+                comparator="<",
+                threshold=15.0,
+                status=DecisionStatus.INDICATED,
+                risk=RiskLevel.HIGH,
+                label="estimated filtration below 15 mL/min/1.73 m²",
+                recommendations=_FLAGGED_HIGH,
+                basis="KDIGO GFR category G5 (< 15).",
+            ),
+            Band(
+                comparator="<",
+                threshold=30.0,
+                status=DecisionStatus.INDICATED,
+                risk=RiskLevel.HIGH,
+                label="estimated filtration below 30 mL/min/1.73 m²",
+                recommendations=_FLAGGED_HIGH,
+                basis="KDIGO GFR category G4 (15-29).",
+            ),
+            Band(
+                comparator="<",
+                threshold=45.0,
+                status=DecisionStatus.INDICATED,
+                risk=RiskLevel.MEDIUM,
+                label="estimated filtration below 45 mL/min/1.73 m²",
+                recommendations=_FLAGGED,
+                basis="KDIGO GFR category G3b (30-44).",
+            ),
+            Band(
+                comparator="<",
+                threshold=60.0,
+                status=DecisionStatus.INDICATED,
+                risk=RiskLevel.MEDIUM,
+                label="estimated filtration below 60 mL/min/1.73 m²",
+                recommendations=_FLAGGED,
+                basis="KDIGO GFR category G3a (45-59): below the eGFR at "
+                "which guidelines describe kidney function as decreased.",
+            ),
+            _normal_band(
+                "estimated filtration at or above 60 mL/min/1.73 m²",
+                "KDIGO GFR categories G1-G2 (60 and above).",
             ),
         ),
     ),
@@ -1439,6 +1533,42 @@ def _self_check() -> None:
         for name in rule.context_features:
             if name not in FEATURES:
                 raise ValueError(f"{rule.id}: unknown context feature {name!r}")
+        if rule.derived is not None:
+            spec = DERIVED_VALUES.get(rule.derived)
+            if spec is None:
+                raise ValueError(f"{rule.id}: unknown derived value {rule.derived!r}")
+            if rule.derived in FEATURES:
+                raise ValueError(
+                    f"{rule.id}: derived value {rule.derived!r} collides with a "
+                    "catalogue feature -- a calculated value must never be "
+                    "mistaken for one read off the report"
+                )
+            if rule.feature != spec["input"]:
+                raise ValueError(
+                    f"{rule.id}: {rule.derived!r} is calculated from "
+                    f"{spec['input']!r}, not {rule.feature!r}"
+                )
+            missing = [n for n in spec["requires"] if n not in rule.context_features]
+            if missing:
+                raise ValueError(
+                    f"{rule.id}: {rule.derived!r} needs context features {missing}"
+                )
+            if rule.min_age_years != spec["min_age_years"]:
+                raise ValueError(
+                    f"{rule.id}: {rule.derived!r} is validated from age "
+                    f"{spec['min_age_years']}, and the rule must say so"
+                )
+            if any(band.only_when_sex_unknown for band in rule.bands):
+                raise ValueError(
+                    f"{rule.id}: a derived value that needs sex cannot have a "
+                    "sex-unknown band"
+                )
+            if any(
+                isinstance(band.threshold, ContextualThreshold) for band in rule.bands
+            ):
+                raise ValueError(
+                    f"{rule.id}: derived-value bands use plain thresholds"
+                )
         for code in rule.always_recommend:
             if not is_known_code(code):
                 raise ValueError(f"{rule.id}: unknown recommendation code {code!r}")
@@ -1573,7 +1703,12 @@ def rules_document() -> Dict[str, Any]:
                 "version": rule.version,
                 "condition": rule.condition,
                 "feature": rule.feature,
-                "unit": FEATURES[rule.feature].canonical_unit,
+                "derived": rule.derived,
+                "unit": (
+                    DERIVED_VALUES[rule.derived]["unit"]
+                    if rule.derived
+                    else FEATURES[rule.feature].canonical_unit
+                ),
                 "min_age_years": rule.min_age_years,
                 "only_timing": list(rule.only_timing),
                 "context_features": list(rule.context_features),
@@ -1642,6 +1777,7 @@ __all__ = [
     "COMPARATORS",
     "COMPOSITE_RULES",
     "CONDITION_INPUTS",
+    "DERIVED_VALUES",
     "FACTOR_BOOLEAN_TRUE",
     "FACTOR_CATEGORY",
     "FACTOR_NUMERIC",

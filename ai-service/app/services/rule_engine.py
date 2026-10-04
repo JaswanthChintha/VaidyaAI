@@ -75,6 +75,14 @@ from app.data.clinical_rules import (
     resolve_threshold,
     sample_timing,
 )
+from app.data.egfr import (
+    EGFR_FEATURE,
+    EGFR_METHOD,
+    EGFR_UNIT,
+    SOURCE_CALCULATED,
+    ckd_epi_2021,
+    reported_egfr,
+)
 from app.data.feature_catalog import FEATURES
 from app.data.recommendation_catalog import (
     INFORMATION_INCOMPLETE,
@@ -184,6 +192,13 @@ NOTE_UNREADABLE = (
     "part of the document could not be read, so this value may be missing "
     "rather than absent from the report"
 )
+#: A calculated eGFR is never presented as a printed value.
+NOTE_EGFR_METHOD = (
+    "calculated from creatinine, age and sex with the CKD-EPI 2021 equation; "
+    "one estimate from one sample, which does not by itself stage kidney "
+    "function"
+)
+NOTE_EGFR_INPUT = "used to calculate the estimated filtration rate"
 
 ALL_NOTE_FRAGMENTS: Tuple[str, ...] = (
     NOTE_QUESTIONABLE,
@@ -196,6 +211,8 @@ ALL_NOTE_FRAGMENTS: Tuple[str, ...] = (
     NOTE_FACTOR_NOT_MET,
     NOTE_BELOW_MIN_AGE,
     NOTE_UNREADABLE,
+    NOTE_EGFR_METHOD,
+    NOTE_EGFR_INPUT,
 )
 
 
@@ -470,6 +487,9 @@ def _evaluate_threshold_rule(
         )
         return None
 
+    if rule.derived is not None:
+        return _evaluate_derived_rule(rule, view, views, sex, age, warnings, metadata)
+
     # Adult reference intervals must not be applied to a child.
     if (
         rule.min_age_years is not None
@@ -546,6 +566,107 @@ def _evaluate_threshold_rule(
         )
 
     # Unreachable: `_self_check()` guarantees a final always-matching band.
+    return None
+
+
+def _evaluate_derived_rule(
+    rule: ThresholdRule,
+    view: FeatureView,
+    views: Dict[str, FeatureView],
+    sex: Optional[str],
+    age: Optional[float],
+    warnings: List[str],
+    metadata: Dict[str, Any],
+) -> Optional[ClinicalDecision]:
+    """A rule whose bands compare a CALCULATED value (today: eGFR only).
+
+    NO ESTIMATE, NO DECISION. Without an adult age and a sex recorded as male
+    or female the equation has nothing valid to say, so the rule does not fire
+    -- it never computes on an assumed value, and never falls through to "at
+    or above 60". The measured-value rule on the same input still reports, so
+    the topic is not left silent. Under 18 that rule already emits
+    INSUFFICIENT_DATA, so this one adds nothing.
+    """
+    if rule.derived != EGFR_FEATURE:
+        warnings.append(f"{rule.id} was not applied: unknown derived value")
+        return None
+    if age is None or sex is None:
+        warnings.append(
+            f"{rule.id} was not applied: the estimated filtration rate needs a "
+            "recorded age and a sex recorded as male or female"
+        )
+        return None
+    if rule.min_age_years is not None and age < rule.min_age_years:
+        warnings.append(
+            f"{rule.id} was not applied: the equation is validated in adults only"
+        )
+        return None
+
+    raw = ckd_epi_2021(view.numeric, age, sex)
+    if raw is None:
+        warnings.append(
+            f"{rule.id} was not applied: no estimate could be calculated from "
+            "the recorded values"
+        )
+        return None
+    value = reported_egfr(raw)
+
+    used: List[FeatureView] = [view] + [
+        views[name] for name in rule.context_features if name in views
+    ]
+    for band in rule.bands:
+        threshold = None if band.threshold is None else float(band.threshold)
+        if band.comparator is not None and threshold is not None:
+            if not COMPARATORS[band.comparator](value, threshold):
+                continue
+
+        notes = [band.label, NOTE_EGFR_METHOD]
+        if view.questionable:
+            notes.append(NOTE_QUESTIONABLE)
+        evidence = [
+            EvidenceItem(
+                feature=EGFR_FEATURE,
+                value=value,
+                unit=EGFR_UNIT,
+                threshold=threshold,
+                comparator=band.comparator,
+                note="; ".join(notes),
+                source_stage=SOURCE_CALCULATED,
+            ),
+            _context_evidence(view, NOTE_EGFR_INPUT),
+        ]
+        for name in rule.context_features:
+            if name in views:
+                evidence.append(_context_evidence(views[name], NOTE_EGFR_INPUT))
+
+        questionable, extreme = _input_notes(used)
+        metadata.update(
+            {
+                "band_label": band.label,
+                "comparator": band.comparator,
+                "threshold": threshold,
+                "threshold_is_contextual": False,
+                "derived": rule.derived,
+                "derived_value": value,
+                "derived_value_unrounded": round(raw, 2),
+                "derived_unit": EGFR_UNIT,
+                "derived_method": EGFR_METHOD,
+                "features_used": [v.name for v in used],
+                "questionable_inputs": questionable,
+                "clinically_extreme_inputs": extreme,
+                "sex_established": True,
+            }
+        )
+        codes = (
+            tuple(band.recommendations)
+            + tuple(rule.always_recommend)
+            + _quality_codes(used)
+            + (NOT_A_DIAGNOSIS,)
+        )
+        return _decision(
+            rule.condition, band.status, band.risk, evidence, codes, metadata
+        )
+
     return None
 
 
