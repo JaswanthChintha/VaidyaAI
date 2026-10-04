@@ -37,9 +37,10 @@ platform already maintains (`feature_catalog.SYNONYM_INDEX` via
 covers that are not canonical features). There is no similarity, no threshold,
 no nearest match, and no fallback to search. An unmapped term is refused.
 
-The cost of this design is real and is accepted: the spec names SGPT, and the
-corpus holds no liver-enzyme document, so SGPT is REFUSED rather than answered.
-That is a Module 22 content gap, and the honest failure is a refusal.
+The cost of this design is real and is accepted: a term the corpus does not
+cover is REFUSED rather than answered. SGPT was the spec's own example of that
+gap until 2026-10-04, when reviewed ALT/SGPT and AST/SGOT documents were added
+and mapped by exact alias below.
 
 ==========================================================================
 WHY THE DEFAULT PATH DOES NOT USE THE LLM
@@ -246,6 +247,52 @@ def _build_aliases() -> Dict[str, TermTarget]:
             "mg per dL",
             "mmol per L",
             docs=("term_units_mgdl_mmoll",),
+        ),
+        # LIVER ENZYMES (owner, 2026-10-04). Still EXACT keys: every printed
+        # form below was chosen by hand, and anything else is refused as
+        # before. No `feature` -- these are not catalogue features and
+        # nothing on this platform assesses them.
+        _alias(
+            "ALT (SGPT)",
+            "ALT",
+            "SGPT",
+            "S.G.P.T",
+            "SGPT (ALT)",
+            "ALT (SGPT)",
+            "SGPT/ALT",
+            "ALT/SGPT",
+            "Serum SGPT",
+            "SGPT Serum",
+            "Serum ALT",
+            "alanine aminotransferase",
+            "alanine transaminase",
+            "alanine aminotransferase (ALT)",
+            "alanine aminotransferase (SGPT)",
+            "alanine aminotransferase (ALT/SGPT)",
+            "alanine aminotransferase (SGPT/ALT)",
+            "serum glutamic pyruvic transaminase",
+            docs=("term_alt_sgpt",),
+        ),
+        _alias(
+            "AST (SGOT)",
+            "AST",
+            "SGOT",
+            "S.G.O.T",
+            "SGOT (AST)",
+            "AST (SGOT)",
+            "SGOT/AST",
+            "AST/SGOT",
+            "Serum SGOT",
+            "SGOT Serum",
+            "Serum AST",
+            "aspartate aminotransferase",
+            "aspartate transaminase",
+            "aspartate aminotransferase (AST)",
+            "aspartate aminotransferase (SGOT)",
+            "aspartate aminotransferase (AST/SGOT)",
+            "aspartate aminotransferase (SGOT/AST)",
+            "serum glutamic oxaloacetic transaminase",
+            docs=("term_ast_sgot",),
         ),
     ):
         for key, target in group.items():
@@ -743,9 +790,11 @@ def terminology_policy_document() -> Dict[str, Any]:
 
 #: Terms the SPEC names that the corpus does not cover, stated openly rather
 #: than answered from the nearest document. Reviewed alongside Module 22.
+#: SGPT / ALT left this list on 2026-10-04 (reviewed documents
+#: `term_alt_sgpt` and `term_ast_sgot`). The rest of the liver panel --
+#: alkaline phosphatase, bilirubin, GGT, albumin -- is still not covered.
 KNOWN_GAPS: Tuple[str, ...] = (
-    "SGPT / ALT (liver enzymes) -- spec Module 25 names SGPT and the Module "
-    "22 corpus holds no liver document, so it is refused",
+    "Other liver tests (alkaline phosphatase, bilirubin, GGT, albumin)",
     "TSH and thyroid tests",
     "ferritin and iron studies",
     "full blood count parameters (WBC, RBC, platelets)",

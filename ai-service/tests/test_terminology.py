@@ -50,7 +50,14 @@ def offline_settings():
 #: becomes a canonical feature. Whoever does that must move the term out of
 #: here DELIBERATELY and say so, exactly as this note does -- not discover it
 #: as a failing test and quietly delete the row.
-UNCOVERED_TERMS = ["TSH", "ferritin", "ALT", "PSA", "CRP"]
+#:
+#: ⚠ `ALT` LEFT ON 2026-10-04, DELIBERATELY. It now maps by exact alias onto
+#: the reviewed `term_alt_sgpt` document (owner's request), and the tests for
+#: that are in `test_liver_enzymes.py`. `bilirubin` takes its place: another
+#: liver test, and one the corpus still does not cover -- so this list keeps
+#: guarding exactly the neighbourhood where a nearby document could be served
+#: for the wrong test.
+UNCOVERED_TERMS = ["TSH", "ferritin", "bilirubin", "PSA", "CRP"]
 
 
 @pytest.mark.parametrize("term", UNCOVERED_TERMS)
@@ -114,13 +121,22 @@ def test_an_uncovered_term_never_reaches_the_retriever(term, monkeypatch):
     assert explain_term(term).covered is False
 
 
-def test_sgpt_is_refused_because_the_corpus_has_no_liver_document():
-    """The spec names SGPT. Refusing is the honest answer to a content gap."""
-    from app.services.terminology import KNOWN_GAPS, explain_term
+def test_sgpt_is_answered_from_the_reviewed_liver_document():
+    """The spec names SGPT. It was refused while the corpus had no liver
+    document (the honest answer to a content gap); since 2026-10-04 it is
+    served from the reviewed one, and is no longer listed as a gap."""
+    from app.services.terminology import (
+        KNOWN_GAPS,
+        OUTCOME_SERVED_FROM_KNOWLEDGE_BASE,
+        explain_term,
+    )
 
     answer = explain_term("SGPT")
-    assert answer.covered is False
-    assert any("SGPT" in gap for gap in KNOWN_GAPS)
+    assert answer.covered is True
+    assert answer.outcome == OUTCOME_SERVED_FROM_KNOWLEDGE_BASE
+    assert answer.explanation is not None
+    assert {s.doc_id for s in answer.sources} == {"term_alt_sgpt"}
+    assert not any("SGPT" in gap for gap in KNOWN_GAPS)
 
 
 def test_the_gap_is_published_rather_than_hidden():

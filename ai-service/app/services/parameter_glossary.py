@@ -137,6 +137,16 @@ class GlossaryEntry(BaseModel):
     #: Why there is no description, when there is none.
     notice: Optional[str] = None
     cached: bool = False
+    #: `model` -- written by the language model from the test name.
+    #: `reviewed` -- the summary of a reviewed knowledge document, word for
+    #: word; no model was asked. See `reviewed_entry`.
+    origin: str = "model"
+    #: The knowledge document a `reviewed` description was taken from.
+    source_doc: Optional[str] = None
+
+
+ORIGIN_MODEL = "model"
+ORIGIN_REVIEWED = "reviewed"
 
 
 class GlossaryData(BaseModel):
@@ -148,6 +158,7 @@ class GlossaryData(BaseModel):
     cached_count: int = 0
     withheld_count: int = 0
     skipped_over_limit: int = 0
+    reviewed_count: int = 0
     policy: str = Field(
         default=(
             "Descriptions answer 'what does this test measure' from the test "
@@ -196,7 +207,7 @@ def describe_parameters(
     this module has no transport of its own and the caller controls the model.
     """
     entries: List[GlossaryEntry] = []
-    generated = cached = withheld = 0
+    generated = cached = withheld = reviewed = 0
     calls_left = max(0, int(max_calls))
     skipped = 0
 
@@ -208,6 +219,13 @@ def describe_parameters(
         if key in seen:
             continue
         seen.add(key)
+
+        # A REVIEWED DESCRIPTION BEATS A GENERATED ONE, and costs no call.
+        curated = reviewed_entry(raw_name)
+        if curated is not None:
+            entries.append(curated)
+            reviewed += 1
+            continue
 
         with _CACHE_LOCK:
             hit = _CACHE.get(key)
@@ -241,6 +259,7 @@ def describe_parameters(
             cached=cached,
             withheld=withheld,
             skipped_over_limit=skipped,
+            reviewed=reviewed,
         ),
     )
     return GlossaryData(
@@ -249,6 +268,48 @@ def describe_parameters(
         cached_count=cached,
         withheld_count=withheld,
         skipped_over_limit=skipped,
+        reviewed_count=reviewed,
+    )
+
+
+def reviewed_entry(test_name: str) -> Optional[GlossaryEntry]:
+    """The reviewed description for this printed test name, or None.
+
+    Only for a name that maps, by the term explainer's EXACT alias table, onto
+    ONE reviewed document and NO catalogue feature -- i.e. a test this
+    platform does not assess but has reviewed text about (today: ALT/SGPT and
+    AST/SGOT). An assessed test never reaches this module, and a near-miss
+    spelling is not a match: it falls through to the model as before.
+
+    The document's summary is used word for word and held to the same rule as
+    a generated description -- no number of any kind -- so a later edit to
+    the summary cannot slip a threshold onto the dashboard.
+    """
+    # Imported here: the terminology service imports the explanation stack,
+    # which this module must not pull in at import time.
+    from app.data.feature_catalog import normalize_test_name
+    from app.data.knowledge_base import DOCUMENTS
+    from app.services.terminology import TERM_ALIASES
+
+    target = TERM_ALIASES.get(normalize_test_name(test_name or ""))
+    if target is None or target.feature is not None or len(target.doc_ids) != 1:
+        return None
+    doc = DOCUMENTS.get(target.doc_ids[0])
+    if doc is None:
+        return None
+    text = " ".join(doc.summary.split())
+    if not text or _ANY_DIGIT.search(text) or _SPELLED_NUMBER.search(text):
+        logger.warning(
+            "parameter_glossary_reviewed_summary_refused %s",
+            safe_meta(doc_id=doc.doc_id),
+        )
+        return None
+    return GlossaryEntry(
+        test_name=test_name,
+        description=text,
+        available=True,
+        origin=ORIGIN_REVIEWED,
+        source_doc=doc.doc_id,
     )
 
 
@@ -334,8 +395,11 @@ def reset_cache() -> None:
 __all__ = [
     "GLOSSARY_VERSION",
     "MAX_PER_REQUEST",
+    "ORIGIN_MODEL",
+    "ORIGIN_REVIEWED",
     "GlossaryData",
     "GlossaryEntry",
     "describe_parameters",
     "reset_cache",
+    "reviewed_entry",
 ]

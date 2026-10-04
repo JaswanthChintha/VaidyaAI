@@ -208,16 +208,20 @@ amount of albumin in the urine. Neither value alone gives a stage, and the
 definition also requires the finding to persist for at least three months.
 
 An alternative marker, cystatin C, is less affected by muscle mass and is used
-when a creatinine-based estimate is likely to mislead. This platform does not
-receive either eGFR or cystatin C; it sees serum creatinine only, which is why
-it describes a prompt to look further rather than a stage. This material is
-educational and is not a diagnosis.
+when a creatinine-based estimate is likely to mislead. This platform calculates
+eGFR itself from serum creatinine, age and sex using the CKD-EPI 2021 equation,
+and only for adults whose sex is recorded. It does not receive cystatin C or
+urine albumin, which is why it describes one estimate as a prompt to look
+further rather than as a stage. This material is educational and is not a
+diagnosis.
 """,
         basis=(
-            "KDIGO 2012/2024 chronic kidney disease guideline; CKD-EPI "
-            "creatinine equation and its stated limitations. Records the scope "
-            "limit already documented in RULE_KIDNEY_CREATININE."
+            "KDIGO 2012/2024 chronic kidney disease guideline; CKD-EPI 2021 "
+            "creatinine equation (Inker et al., NEJM 2021) and its stated "
+            "limitations. Matches RULE_KIDNEY_EGFR and the scope limit in "
+            "RULE_KIDNEY_CREATININE."
         ),
+        last_reviewed="2026-10-04",
     ),
     KnowledgeDocument(
         doc_id="term_ldl_hdl",
@@ -411,6 +415,118 @@ a diagnosis.
             "Describes how ClinicalDecision.confidence is defined in "
             "app/schemas/decisions.py."
         ),
+    ),
+    # ------------------------------------------------------------------
+    # LIVER ENZYMES (owner, 2026-10-04). Spec Module 25 names SGPT, and the
+    # corpus had nothing on it, so the term was refused. These two documents
+    # describe the TESTS only: no thresholds, because this platform applies
+    # none to them, and nothing about what a particular result means.
+    #
+    # THE SUMMARY IS ALSO THE DASHBOARD'S DESCRIPTION of an unassessed ALT or
+    # AST row (`parameter_glossary.py`), so it must stand alone, stay within
+    # two sentences, and contain no number -- the same rules the
+    # model-written descriptions are held to.
+    # ------------------------------------------------------------------
+    KnowledgeDocument(
+        doc_id="term_alt_sgpt",
+        title="ALT (SGPT), a liver enzyme test",
+        topic=TOPIC_TERMINOLOGY,
+        keywords=(
+            "alt", "sgpt", "alanine aminotransferase", "alanine transaminase",
+            "serum glutamic pyruvic transaminase", "liver enzyme",
+            "liver function test", "lft",
+        ),
+        summary=(
+            "ALT, also printed as SGPT, measures an enzyme found mainly inside "
+            "liver cells, which passes into the blood in larger amounts when "
+            "those cells are irritated or damaged. It is usually tested as part "
+            "of a liver panel to look at how the liver is coping."
+        ),
+        body="""
+Alanine aminotransferase, shortened to ALT, is an enzyme that helps liver cells
+turn food into energy. Older reports call the same test SGPT, which stands for
+serum glutamic pyruvic transaminase; the two names describe one measurement.
+
+Most ALT sits inside liver cells, so only a small amount is normally found in
+the blood. When liver cells are inflamed or injured, more of the enzyme leaks
+out, which is why ALT is one of the most commonly used signals of liver cell
+irritation.
+
+ALT is usually ordered together with other liver tests, such as AST, alkaline
+phosphatase, bilirubin and albumin. The pattern across the panel says more than
+any one enzyme, because each reflects a different part of how the liver and the
+bile ducts are working.
+
+A raised ALT on its own does not say what caused it. Many things can affect it
+for a short time, including recent strenuous exercise, body weight, infections
+and other substances the liver processes, and a result is often repeated before
+anything is concluded from it.
+
+ALT measures irritation of liver cells, not how well the liver is doing its
+work. A liver can have a normal ALT and still need attention, and a raised ALT
+can settle without any lasting problem. Reference intervals differ between
+laboratories, so a result is read against the range printed by the laboratory
+that measured it.
+
+This platform reads and lists an ALT result but does not assess it against any
+threshold. A qualified healthcare professional interprets it alongside the rest
+of the panel, symptoms and history. This material is educational and is not a
+diagnosis.
+""",
+        basis=(
+            "ACG Clinical Guideline: Evaluation of Abnormal Liver Chemistries "
+            "(Kwo, Cohen and Lim; American Journal of Gastroenterology, 2017); "
+            "MedlinePlus, ALT blood test (U.S. NLM). "
+            "Describes the test only; no threshold is applied by this platform."
+        ),
+        last_reviewed="2026-10-04",
+    ),
+    KnowledgeDocument(
+        doc_id="term_ast_sgot",
+        title="AST (SGOT), a liver enzyme test",
+        topic=TOPIC_TERMINOLOGY,
+        keywords=(
+            "ast", "sgot", "aspartate aminotransferase",
+            "aspartate transaminase", "serum glutamic oxaloacetic transaminase",
+            "liver enzyme", "liver function test", "lft",
+        ),
+        summary=(
+            "AST, also printed as SGOT, measures an enzyme found in the liver "
+            "and also in muscle, the heart and red blood cells, which passes "
+            "into the blood when those cells are damaged. It is usually tested "
+            "alongside ALT as part of a liver panel."
+        ),
+        body="""
+Aspartate aminotransferase, shortened to AST, is an enzyme involved in how cells
+process energy. Older reports call the same test SGOT, which stands for serum
+glutamic oxaloacetic transaminase; the two names describe one measurement.
+
+Unlike ALT, AST is found in several tissues: the liver, skeletal muscle, the
+heart, the kidneys and red blood cells. A raised AST can therefore come from
+outside the liver, for example after hard physical exercise or a muscle injury,
+which is one reason it is read together with ALT rather than on its own.
+
+AST is usually ordered as part of a liver panel with ALT, alkaline phosphatase,
+bilirubin and albumin. Clinicians look at the pattern across these tests, and at
+how AST and ALT compare with each other, rather than at a single value.
+
+A raised AST on its own does not say what caused it. Short-lived changes are
+common, a result is often repeated before anything is concluded from it, and
+reference intervals differ between laboratories, so a result is read against the
+range printed by the laboratory that measured it.
+
+This platform reads and lists an AST result but does not assess it against any
+threshold. A qualified healthcare professional interprets it alongside the rest
+of the panel, symptoms and history. This material is educational and is not a
+diagnosis.
+""",
+        basis=(
+            "ACG Clinical Guideline: Evaluation of Abnormal Liver Chemistries "
+            "(Kwo, Cohen and Lim; American Journal of Gastroenterology, 2017); "
+            "MedlinePlus, AST test (U.S. NLM). "
+            "Describes the test only; no threshold is applied by this platform."
+        ),
+        last_reviewed="2026-10-04",
     ),
 )
 
