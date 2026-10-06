@@ -54,6 +54,13 @@ const REPORT_STATUS = Object.freeze({
 });
 const REPORT_STATUS_VALUES = Object.freeze(Object.values(REPORT_STATUS));
 
+/**
+ * The steps a running analysis reports, in order (2026-10-04). Each is
+ * written when the step BEGINS, so the Reports page can show where a
+ * one-to-two-minute run has got to. Real milestones only -- no percentage.
+ */
+const ANALYSIS_STEPS = Object.freeze(['reading', 'checking', 'deciding', 'explaining']);
+
 /** Ordering keys a client may ask for. */
 const SORT_FIELDS = Object.freeze(['chronoDate', 'uploadedAt', 'reportDate']);
 
@@ -515,6 +522,9 @@ const reportSchema = new mongoose.Schema(
       startedAt: { type: Date, default: undefined },
       completedAt: { type: Date, default: undefined },
       durationMs: { type: Number, default: undefined },
+      /** The step a RUNNING analysis is on; cleared when it ends. */
+      progressStep: { type: String, enum: ANALYSIS_STEPS, default: undefined },
+      progressAt: { type: Date, default: undefined },
       /** Whether a Module 2 profile existed and was sent with the features call. */
       profileUsed: { type: Boolean, default: undefined },
       /** Module 4's own confidence, surfaced without unpacking the payload. */
@@ -748,6 +758,22 @@ reportSchema.methods.toPublicJSON = function toPublicJSON() {
     chronoDate: this.chronoDate,
     status: this.status,
     statusMessage: this.statusMessage,
+    // Where a RUNNING analysis has got to (2026-10-04). Only while
+    // processing: a finished report has no "current step", and a stale value
+    // left by a crashed run must not read as live.
+    analysisProgress:
+      this.status === REPORT_STATUS.PROCESSING
+        ? {
+            step: ANALYSIS_STEPS.includes(this.analysis?.progressStep)
+              ? this.analysis.progressStep
+              : null,
+            stepNumber: ANALYSIS_STEPS.includes(this.analysis?.progressStep)
+              ? ANALYSIS_STEPS.indexOf(this.analysis.progressStep) + 1
+              : null,
+            totalSteps: ANALYSIS_STEPS.length,
+            startedAt: this.analysis?.startedAt,
+          }
+        : undefined,
     // Whose report, and whether that changed since the stored analysis ran
     // (the analysis then still reflects the old answer -- see `subject`).
     subject: {
@@ -877,5 +903,6 @@ const Report = mongoose.model('Report', reportSchema);
 module.exports = Report;
 module.exports.REPORT_STATUS = REPORT_STATUS;
 module.exports.REPORT_STATUS_VALUES = REPORT_STATUS_VALUES;
+module.exports.ANALYSIS_STEPS = ANALYSIS_STEPS;
 module.exports.SORT_FIELDS = SORT_FIELDS;
 module.exports.deriveChronoDate = deriveChronoDate;

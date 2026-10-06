@@ -918,6 +918,110 @@ describe('Modules 4+5 - analysis orchestration', () => {
     fs.rmSync(UPLOAD_ROOT, { recursive: true, force: true });
   });
 
+  // ================================================ progress (2026-10-04) ===
+  describe('progress steps for the Reports page', () => {
+    /** Wrap a stage so it records the step stored at the moment it is called. */
+    const recording = (seen, name, id, respond) => async (body, options) => {
+      const doc = await Report.findById(id);
+      seen.push([name, doc.analysis.progressStep, doc.toPublicJSON().analysisProgress]);
+      return respond(body, options);
+    };
+
+    it('records each step as it begins, in order, and clears it at the end', async () => {
+      const user = await makeUser('progress.order@example.com');
+      const report = await uploadReport(user.token);
+      const seen = [];
+      wireAiService({
+        extract: recording(seen, 'extract', report.id, () => okResponse(extractionFixture())),
+        engineer: recording(seen, 'engineer', report.id, () => okResponse(featuresFixture())),
+        validate: recording(seen, 'validate', report.id, (b) => okResponse(validationFixture(b))),
+        rules: recording(seen, 'rules', report.id, (b) => okResponse(rulesFixture(b))),
+        predict: recording(seen, 'predict', report.id, (b) => okResponse(mlFixture(b))),
+        report: recording(seen, 'report', report.id, (b) => okResponse(clinicalReportFixture(b))),
+        explain: recording(seen, 'explain', report.id, (b) => okResponse(explanationFixture(b))),
+        guidance: recording(seen, 'guidance', report.id, (b) => okResponse(guidanceFixture(b))),
+      });
+
+      const res = await analyze(user.token, report.id);
+      expect(res.status).toBe(200);
+
+      const stepAt = Object.fromEntries(seen.map(([name, step]) => [name, step]));
+      expect(stepAt).toEqual({
+        extract: 'reading',
+        engineer: 'checking',
+        validate: 'checking',
+        rules: 'deciding',
+        predict: 'deciding',
+        report: 'deciding',
+        explain: 'explaining',
+        guidance: 'explaining',
+      });
+      // What the page is shown while it runs.
+      const shown = Object.fromEntries(seen.map(([name, , progress]) => [name, progress]));
+      expect(shown.extract).toMatchObject({ step: 'reading', stepNumber: 1, totalSteps: 4 });
+      expect(shown.explain).toMatchObject({ step: 'explaining', stepNumber: 4, totalSteps: 4 });
+      expect(new Date(shown.extract.startedAt).getTime()).not.toBeNaN();
+
+      const done = await Report.findById(report.id);
+      expect(done.analysis.progressStep).toBeUndefined();
+      expect(done.analysis.progressAt).toBeUndefined();
+      expect(done.toPublicJSON().analysisProgress).toBeUndefined();
+      expect(res.body.data.report.analysisProgress).toBeUndefined();
+    });
+
+    it('clears the step when the run fails', async () => {
+      const user = await makeUser('progress.fail@example.com');
+      const report = await uploadReport(user.token);
+      wireAiService({
+        engineer: () => {
+          throw transportError({ code: 'ECONNREFUSED' });
+        },
+      });
+
+      await analyze(user.token, report.id);
+      const failed = await Report.findById(report.id);
+      expect(failed.status).toBe('failed');
+      expect(failed.analysis.progressStep).toBeUndefined();
+      expect(failed.toPublicJSON().analysisProgress).toBeUndefined();
+    });
+
+    it('never fails an analysis because a progress write did not land', async () => {
+      const user = await makeUser('progress.writefail@example.com');
+      const report = await uploadReport(user.token);
+      const original = Report.updateOne.bind(Report);
+      const spy = jest.spyOn(Report, 'updateOne').mockImplementation((filter, update, ...rest) => {
+        const set = (update && update.$set) || {};
+        if ('analysis.progressStep' in set && !('status' in set)) {
+          return Promise.reject(new Error('write failed'));
+        }
+        return original(filter, update, ...rest);
+      });
+      try {
+        const res = await analyze(user.token, report.id);
+        expect(res.status).toBe(200);
+        expect(spy.mock.calls.some(([, u]) => u && u.$set && u.$set['analysis.progressStep'])).toBe(true);
+        expect((await Report.findById(report.id)).status).toBe('processed');
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('shows no step for a processing report that has none, and nothing once finished', () => {
+      const base = { user: new mongoose.Types.ObjectId(), originalName: 'x.pdf' };
+      const running = new Report({ ...base, status: 'processing', analysis: { startedAt: new Date() } });
+      expect(running.toPublicJSON().analysisProgress).toMatchObject({
+        step: null,
+        stepNumber: null,
+        totalSteps: 4,
+      });
+      const checking = new Report({ ...base, status: 'processing', analysis: { progressStep: 'checking' } });
+      expect(checking.toPublicJSON().analysisProgress).toMatchObject({ step: 'checking', stepNumber: 2 });
+      // A step left behind by a crashed run never reads as live.
+      const stale = new Report({ ...base, status: 'failed', analysis: { progressStep: 'deciding' } });
+      expect(stale.toPublicJSON().analysisProgress).toBeUndefined();
+    });
+  });
+
   // ============================================================ happy path ===
   describe('happy path', () => {
     it('runs extraction then feature engineering and persists both', async () => {

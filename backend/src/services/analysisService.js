@@ -1548,12 +1548,34 @@ async function claimForAnalysis({ user, reportId, requestId, now = new Date() })
         status: REPORT_STATUS.PROCESSING,
         'analysis.requestId': requestId,
         'analysis.startedAt': now,
+        // Step 1 begins the moment the lock is taken.
+        'analysis.progressStep': 'reading',
+        'analysis.progressAt': now,
       },
       $unset: { statusMessage: '', 'analysis.completedAt': '', 'analysis.durationMs': '' },
       $inc: { 'analysis.runCount': 1 },
     },
     { new: true }
   );
+}
+
+/**
+ * Record which step a running analysis has reached (2026-10-04), for the
+ * Reports page's progress bar.
+ *
+ * NEVER FAILS THE RUN. Progress is a courtesy to the reader; a write that
+ * does not land leaves the bar on the previous step and nothing else. The
+ * filter carries this run's `requestId`, so a run that lost its lock cannot
+ * move a newer run's bar.
+ */
+async function markStep(ownerFilter, step) {
+  try {
+    await Report.updateOne(ownerFilter, {
+      $set: { 'analysis.progressStep': step, 'analysis.progressAt': new Date() },
+    });
+  } catch {
+    // Deliberately ignored -- see above.
+  }
 }
 
 // ------------------------------------------------------------- pipeline -----
@@ -1634,7 +1656,13 @@ async function openStorage(report) {
  * @returns {Promise<{validation: object|null, rules: object|null, ml: object|null,
  *                    report: object|null, stages: Record<string, object>}>}
  */
-async function runDownstreamStages({ features, extraction = null, requestId }) {
+async function runDownstreamStages({
+  features,
+  extraction = null,
+  requestId,
+  // Told when a progress step begins ('deciding', 'explaining'). Optional.
+  onStep = async () => {},
+}) {
   const stages = {};
 
   const validationRun = await runStage(() =>
@@ -1662,6 +1690,7 @@ async function runDownstreamStages({ features, extraction = null, requestId }) {
     };
   }
 
+  await onStep('deciding');
   const [rulesRun, mlRun, reportRun] = await Promise.all([
     runStage(() => aiService.evaluateRules({ validated: validation, requestId })),
     runStage(() => aiService.predict({ validated: validation, requestId })),
@@ -1718,6 +1747,7 @@ async function runDownstreamStages({ features, extraction = null, requestId }) {
   // listed on the dashboard, just without a description.
   const glossaryAsk = unmappedTestNames(features, extraction);
 
+  await onStep('explaining');
   const [explanationRun, guidanceRun, glossaryRun] = await Promise.all([
     runStage(() => aiService.explainReport({ report: clinicalReport, requestId })),
     runStage(() =>
@@ -1798,6 +1828,7 @@ async function runAnalysis({ user, report, requestId }) {
       mimeType: report.mimeType,
       requestId,
     });
+    await markStep(ownerFilter, 'checking');
 
     // NOTE the unwrap: `aiService.extract` already returns the `data` object,
     // and `engineerFeatures` sends it under `extraction`. Passing the wrapped
@@ -1822,7 +1853,12 @@ async function runAnalysis({ user, report, requestId }) {
     assertProductiveFeatures(extraction, features);
 
     // Stages 6, 8 and 9/10. None of them can fail the run - see the header.
-    const downstream = await runDownstreamStages({ features, extraction, requestId });
+    const downstream = await runDownstreamStages({
+      features,
+      extraction,
+      requestId,
+      onStep: (step) => markStep(ownerFilter, step),
+    });
     const { validation, rules, ml, report: clinicalReport } = downstream;
 
     // MODULE 23'S PAYLOAD IS NORMALISED BEFORE IT IS LOOKED AT AT ALL, so that
@@ -1963,6 +1999,10 @@ async function runAnalysis({ user, report, requestId }) {
       $set.statusMessage = safeStatusMessage({ code: 'ANALYSIS_PARTIAL' });
     }
 
+    // A finished run has no current step.
+    $unset['analysis.progressStep'] = '';
+    $unset['analysis.progressAt'] = '';
+
     const result = await Report.updateOne(ownerFilter, {
       $set,
       $unset,
@@ -1998,6 +2038,7 @@ async function runAnalysis({ user, report, requestId }) {
         'analysis.completedAt': new Date(),
         'analysis.durationMs': Date.now() - startedAt,
       },
+      $unset: { 'analysis.progressStep': '', 'analysis.progressAt': '' },
     }).catch(() => {
       // A bookkeeping write must never mask the real failure.
     });
