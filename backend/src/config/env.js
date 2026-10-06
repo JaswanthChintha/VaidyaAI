@@ -111,6 +111,13 @@ const config = {
   // See parseTrustProxy above. Default: trust no proxy.
   trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
 
+  // The built React app to serve from this server (src/frontend.js), resolved
+  // against the backend directory like UPLOAD_ROOT. Unset = API only, which is
+  // how development (Vite's own server) and the tests run.
+  frontendDist: process.env.FRONTEND_DIST
+    ? path.resolve(path.join(__dirname, '..', '..'), process.env.FRONTEND_DIST)
+    : null,
+
   jwt: {
     accessSecret: process.env.JWT_SECRET,
     accessExpiresIn: process.env.JWT_EXPIRES_IN || '15m',
@@ -145,9 +152,9 @@ const config = {
 
   // --- Module 3: report upload / storage -----------------------------------
   upload: {
-    // Which storage adapter backs report files. Only `local` exists today; the
-    // adapter interface (src/storage/StorageAdapter.js) is the seam where a
-    // cloud driver would be added later without touching the controller.
+    // Which storage adapter backs report files: `local` (disk) or `mongo`
+    // (GridFS, for hosts whose disk is wiped on restart). The adapter
+    // interface (src/storage/StorageAdapter.js) is the seam for any other.
     driver: (process.env.STORAGE_DRIVER || 'local').trim().toLowerCase(),
 
     // Absolute directory that holds uploaded report files. It MUST NOT be

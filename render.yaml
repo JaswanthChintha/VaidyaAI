@@ -1,0 +1,87 @@
+# VaidyaAI on Render -- a Blueprint (Render dashboard: New -> Blueprint).
+#
+# Two free web services in Singapore:
+#   vaidyaai-ai   the Python/FastAPI ai-service (reading, rules, models, Gemini)
+#   vaidyaai      the Node backend, which ALSO serves the built React app, so
+#                 the browser talks to one address and nothing else.
+# MongoDB stays on Atlas; report FILES are kept there too (STORAGE_DRIVER=mongo),
+# because a free service's disk is wiped every time it sleeps.
+#
+# Secrets marked `sync: false` are typed into the Render dashboard by the owner
+# when the Blueprint is created. They are never written in this file.
+
+services:
+  - type: web
+    name: vaidyaai-ai
+    runtime: python
+    plan: free
+    region: singapore
+    rootDir: ai-service
+    buildCommand: pip install -r requirements-deploy.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.11
+      # Shared with the backend (it reads this same value below).
+      - key: AI_SERVICE_API_KEY
+        generateValue: true
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-3.6-flash
+      # 120, not 45: at 45 a page of a real report was lost to a timeout and
+      # seven results with it (MEMORY.md 6bh).
+      - key: GEMINI_TIMEOUT_SECONDS
+        value: "120"
+      - key: GEMINI_MAX_RETRIES
+        value: "3"
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+
+  - type: web
+    name: vaidyaai
+    runtime: node
+    plan: free
+    region: singapore
+    # No rootDir: the build needs both backend/ and frontend/.
+    # --include=dev for the frontend because NODE_ENV=production would otherwise
+    # skip Vite, which only the build needs.
+    buildCommand: >-
+      npm ci --prefix backend --omit=dev &&
+      npm ci --prefix frontend --include=dev &&
+      npm run build --prefix frontend
+    startCommand: npm start --prefix backend
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      # Render puts exactly one proxy in front of the service. Wrong in either
+      # direction breaks login rate limiting (see backend/.env.example).
+      - key: TRUST_PROXY
+        value: "1"
+      - key: FRONTEND_DIST
+        value: ../frontend/dist
+      - key: STORAGE_DRIVER
+        value: mongo
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      # The ai-service's public address, e.g. https://vaidyaai-ai.onrender.com
+      # (copy it from the vaidyaai-ai page once it exists).
+      - key: AI_SERVICE_URL
+        sync: false
+      - key: AI_SERVICE_API_KEY
+        fromService:
+          type: web
+          name: vaidyaai-ai
+          envVarKey: AI_SERVICE_API_KEY
+      - key: LOGIN_RATE_LIMIT_MAX
+        value: "5"

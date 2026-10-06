@@ -92,7 +92,7 @@ const reportSchema = new mongoose.Schema(
       immutable: true,
     },
 
-    /** Which adapter produced `storageKey` (`local` today). */
+    /** Which adapter produced `storageKey` (`local` or `mongo`). */
     storageDriver: {
       type: String,
       required: true,

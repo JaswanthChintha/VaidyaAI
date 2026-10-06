@@ -10,6 +10,7 @@ const morgan = require('morgan');
 const config = require('./config/env');
 const routes = require('./routes');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
+const { mountFrontend } = require('./frontend');
 
 const app = express();
 
@@ -48,6 +49,11 @@ if (!config.isTest) {
 
 // --- Routes --------------------------------------------------------------
 app.use(config.apiPrefix, routes);
+
+// --- The built React app, when FRONTEND_DIST is set (deployment) ---------
+if (config.frontendDist) {
+  mountFrontend(app, { distDir: config.frontendDist, apiPrefix: config.apiPrefix });
+}
 
 // --- Error handling ------------------------------------------------------
 app.use(notFoundHandler);
