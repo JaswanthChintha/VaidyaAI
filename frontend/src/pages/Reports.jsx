@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Icon from '../components/Icon';
-import { api } from '../lib/api';
+import { api, ApiError } from '../lib/api';
+import { joinDetails, missingKeyDetails } from '../lib/profileGaps';
 import { Absent } from '../components/Absent';
 import { reportDateInfo, whyUploadDate } from '../lib/reportDates';
 
@@ -337,6 +338,28 @@ export default function Reports() {
     load();
   }, [load]);
 
+  // KEY PROFILE DETAILS STILL MISSING (owner, 2026-10-06): a reminder, never a
+  // block. `null` = not known, and then NOTHING is shown -- a failed profile
+  // request must not tell a user with a complete profile that theirs is empty.
+  // A 404 is the backend's documented "no profile yet".
+  const [profileGaps, setProfileGaps] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const data = await api.getProfile();
+        if (alive) setProfileGaps(missingKeyDetails(data.profile || data));
+      } catch (err) {
+        if (alive && err instanceof ApiError && err.status === 404) {
+          setProfileGaps(missingKeyDetails(null));
+        }
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   // A ROW THAT SAYS "Being analysed…" MUST FIND OUT WHEN IT STOPS (2026-09-25).
   // The list only refreshed when THIS page's own Analyse click returned. A
   // list loaded while an analysis was already running -- leave the page and
@@ -472,6 +495,23 @@ export default function Reports() {
           </dl>
         ) : null}
       </header>
+
+      {profileGaps?.length ? (
+        <section className="card profile-nudge" aria-labelledby="profile-nudge-title">
+          <h2 id="profile-nudge-title">Your profile is missing your {joinDetails(profileGaps)}</h2>
+          <p>
+            Without {profileGaps.length > 1 ? 'them' : 'it'}, some checks on your own
+            reports &mdash; such as estimating kidney function &mdash; cannot be done,
+            and others are less exact. The results will say what could not be
+            checked; nothing is guessed.
+          </p>
+          <p>
+            <Link to="/profile" className="button-link">
+              Complete your profile
+            </Link>
+          </p>
+        </section>
+      ) : null}
 
       <form onSubmit={onUpload} className="card upload">
         <div className="upload__head">

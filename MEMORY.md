@@ -36,7 +36,11 @@
 
 ## 0. RESUME HERE (read this first in a new session)
 
-> **NEWEST: §6br (2026-10-06) — Render deployment PREPARED and pushed (files
+> **NEWEST: §6bs (2026-10-06) — LIVE at https://vaidyaai-bo0z.onrender.com
+> (NOT vaidyaai.onrender.com — someone else's); new users are nudged to fill
+> in their profile. Read §6bs, then §6br.**
+>
+> **§6br (2026-10-06) — Render deployment PREPARED and pushed (files
 > in MongoDB, backend serves the frontend, `render.yaml`); not yet deployed —
 > the owner creates the Blueprint and types the secrets. Read §6br.**
 >
@@ -13397,6 +13401,39 @@ Render metrics. Free services sleep after 15 min (first visit ~1 min).
 Existing local-disk reports in Atlas point at `storageDriver: local` — their
 files are NOT on Render, so download/re-analyse of those old reports fails
 there (404); new uploads are fine.
+
+---
+
+## 6bs. LIVE ON RENDER + "COMPLETE YOUR PROFILE" NUDGE · 2026-10-06 · COMMITTED, PUSHED
+
+**Live:** website + backend `https://vaidyaai-bo0z.onrender.com` (the plain
+`vaidyaai.onrender.com` belongs to SOMEONE ELSE — never sign in there);
+ai-service `https://vaidyaai-ai.onrender.com`. Deploy problems were all the
+MONGODB_URI: first a wrong link (host read as a password fragment), then
+`bad auth` — the password in `backend/.env` itself was wrong; the owner
+reset the Atlas DB user password and updated both places. Checked with a
+scratchpad script that prints only works/fails + user + server (never the
+password); this laptop's router refuses SRV lookups, so it uses 8.8.8.8.
+**The Atlas link has NO database name → data lives in the default `test`
+database; do not add `/vaidyaai` (it would start empty).**
+
+**Nudge (owner chose nudge, not block; key details = age + sex):**
+* `SignIn.jsx`: after register → `/profile` with `state.welcome`; sign-in
+  still → `/reports`.
+* `Profile.jsx`: welcome note when `state.welcome` ("start with your
+  details", Skip for now → /reports); after save → "You're all set" +
+  "Upload your first report".
+* `Reports.jsx`: reminder card while age or sex is missing (404 = no profile
+  = both missing); names only what is missing; HIDDEN when the profile
+  request fails (unknown ≠ empty); never blocks upload/analyse.
+* `lib/profileGaps.js`: `missingKeyDetails` ("prefer_not_to_say" is an
+  answer, age 0 is a value), `joinDetails`. CSS `.profile-nudge` uses the
+  BRAND colour (amber = borderline result in this app).
+* `tests/profileNudge.test.jsx` (14; the sign-up test mounts the REAL App
+  router and fails if the redirect reverts to /reports — mutation-checked).
+  Frontend **555** passed / 0 failed.
+* Not seen by eye locally (needs a signed-in account; the local backend uses
+  the real Atlas DB). Owner to check on Render with a fresh account.
 
 ---
 

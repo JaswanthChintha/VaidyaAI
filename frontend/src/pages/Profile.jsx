@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import { profileFieldLabel } from '../lib/labels';
 import AccountSettings from '../components/AccountSettings';
@@ -130,6 +131,8 @@ const EMPTY = {
 };
 
 export default function Profile() {
+  // Set by SignIn right after a new account is created (owner, 2026-10-06).
+  const welcome = Boolean(useLocation().state?.welcome);
   const [form, setForm] = useState(EMPTY);
   /**
    * Which diagnosis questions are open.
@@ -268,6 +271,38 @@ export default function Profile() {
           </p>
         </div>
       </header>
+
+      {welcome ? (
+        <section className="card profile-nudge" aria-labelledby="welcome-title">
+          {saved ? (
+            <>
+              <h2 id="welcome-title">You&rsquo;re all set</h2>
+              <p>
+                Your details are saved. You can change them here at any time.
+              </p>
+              <p>
+                <Link to="/reports" className="button-link">
+                  Upload your first report
+                </Link>
+              </p>
+            </>
+          ) : (
+            <>
+              <h2 id="welcome-title">Welcome to VaidyaAI &mdash; start with your details</h2>
+              <p>
+                Please fill these in before your first report. The analysis
+                uses your <strong>age and sex</strong> (for example to estimate
+                kidney function, and for limits that differ for men and women),
+                and your <strong>height and weight</strong>. Anything you leave
+                blank is shown as &ldquo;not known&rdquo; &mdash; never guessed.
+              </p>
+              <p>
+                <Link to="/reports">Skip for now</Link>
+              </p>
+            </>
+          )}
+        </section>
+      ) : null}
 
       <div className="profile__grid">
         <form onSubmit={onSubmit} className="card">

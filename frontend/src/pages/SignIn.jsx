@@ -53,9 +53,13 @@ export default function SignIn() {
     try {
       if (registering) {
         await register({ name, email, password });
-      } else {
-        await signIn(email, password);
+        // A NEW ACCOUNT STARTS ON ITS DETAILS (owner, 2026-10-06): the
+        // analysis reads age, sex, height and weight from the profile, and a
+        // new user had no way to know. `welcome` shows the note explaining why.
+        navigate('/profile', { state: { welcome: true } });
+        return;
       }
+      await signIn(email, password);
       navigate('/reports');
     } catch (err) {
       // The backend's messages are fixed strings written to be shown; they
