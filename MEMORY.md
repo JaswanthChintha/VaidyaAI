@@ -36,7 +36,13 @@
 
 ## 0. RESUME HERE (read this first in a new session)
 
-> **NEWEST: §6bp (2026-10-04 → 10-06) — LIVER TOPIC (rules), progress bar,
+> **NEWEST: §6bq (2026-10-06) — liver ML model trained and compared with the
+> liver rules on held-out data: it does NOT beat them, so it is NOT shipped.
+> B and D dropped; title chosen ("Hybrid Rule-Based and Machine-Learning
+> Analysis of Laboratory Reports with Verifiable Evidence"). 100-split
+> robustness check agrees. Committed (not pushed). Read §6bq, then §6bp.**
+>
+> **§6bp (2026-10-04 → 10-06) — LIVER TOPIC (rules), progress bar,
 > Timeline chip words, read aloud, multer/morgan update, the coordinator's
 > "same project" feedback and the NEXT STEP (liver ML model, Phase 2).
 > ALL COMMITTED AND PUSHED: `main` = `origin/main` at the docs commit after
@@ -13279,6 +13285,64 @@ age, sex — or add ALP/albumin first); compare with the liver rules on held-out
 data; ship only if it beats them; report either way. Then B / D per the owner.
 Other open: qs audit; OpenRouter key rotation; random-glucose 140 cut-off;
 kidney model-alone High; 02-diabetes owner?; module audit 19/23/27+.
+
+---
+
+## 6bq. LIVER ML MODEL (PHASE 2): DOES NOT BEAT THE RULES — NOT SHIPPED · 2026-10-06 · COMMITTED
+
+**Owner decisions (2026-10-06):** enhancements **B and D are NOT being done**.
+Title chosen: **"VaidyaAI: Hybrid Rule-Based and Machine-Learning Analysis of
+Laboratory Reports with Verifiable Evidence"**. Owner said continue Phase 2.
+
+**Data:** ILPD from UCI (id 225), downloaded 2026-10-06 with the owner's OK,
+→ `ai-service/datasets/raw/ilpd_uci.csv` (no header; sha256 84FEAC16…3425,
+23,755 bytes). 583 rows (416 patient / 167 not). Cleaning: 13 exact
+duplicate copies dropped, 3 rows with direct > total bilirubin dropped
+(impossible), under-18 dropped (rules are adults-only) → **542 rows**,
+prevalence 0.721; split 406 / 136 (stratified, seed 42). Weak labels:
+~43% of "non-patients" have ≥1 of ALT/AST/bili above the usual limit,
+~27% of "patients" have all three normal.
+
+**Method (`ai-service/ml/train_liver.py`, new, untracked):** the REAL
+validator + rule engine + `merge_decision_set` run on every row (fallback
+limits, no printed ULN); RF (kidney hyperparameters) on ALT, AST, total
+bilirubin, age, sex; model threshold chosen on TRAINING out-of-fold scores to
+match the rules' TRAINING specificity; 2,000 paired bootstraps on test.
+**Ship criterion fixed before scoring:** 95% CI of sensitivity gain > 0 AND
+model specificity ≥ rules' − 0.05.
+
+**Result (`ai-service/ml/artifacts/liver_rules_vs_model.json`):**
+
+| held-out (n=136) | sens | spec | ROC-AUC |
+|---|---|---|---|
+| rules | 0.714 | 0.553 | 0.706 |
+| RF, app inputs | 0.765 | 0.395 | 0.734 |
+| RF + ALP + albumin (paper only) | 0.765 | 0.447 | 0.770 |
+
+App-inputs model: sens diff +0.05 (CI −0.03 to +0.13), spec diff −0.16
+(CI −0.35 to +0.05), AUC diff +0.03 (CI −0.06 to +0.11) → **does not beat the
+rules; NOT shipped; no joblib written; nothing in `app/` changed.** ALP +
+albumin add ~+0.06 AUC (CI −0.01 to +0.14) — also not significant. The
+matched-specificity threshold did not hold on test (0.553 train target →
+0.395): only ~38 negatives in test. Liver stays RULES ONLY,
+`always_assessed` stays False.
+
+**Robustness, 100 random splits (owner asked; `repeated_splits`, seeds 0–99,
+does NOT change the ship decision):** app-inputs model vs rules, mean over
+splits: sensitivity 0.788 vs 0.786 (diff +0.002, middle 95% of splits −0.09
+to +0.07), specificity 0.477 vs 0.467 (+0.01, −0.22 to +0.25), AUC 0.740 vs
+0.704 (+0.036, −0.04 to +0.09); model AUC higher in 83% of splits, the
+(looser) point-estimate criterion met in only 29%. With ALP + albumin: AUC
+0.759 vs 0.704 (+0.054), higher in 92%, criterion met in 37%. READ: the
+model RANKS patients slightly better, but at the rules' own specificity it
+catches the same number of liver patients — so there is no practical gain;
+the seed-42 split (sens +0.05, spec −0.16) was not typical. The single-split
+numbers reproduced exactly on the rerun.
+
+**Committed at the owner's request (2026-10-06):** the dataset,
+`ml/train_liver.py`, `ml/artifacts/liver_rules_vs_model.json`, this file.
+NOT committed: the 45 review-strip `D` paths, `.claude/`, the owner's note.
+Possible follow-up (offered, not done): paper write-up of this result.
 
 ---
 
