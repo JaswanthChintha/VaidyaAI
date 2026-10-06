@@ -36,7 +36,13 @@
 
 ## 0. RESUME HERE (read this first in a new session)
 
-> **NEWEST: §6bo (2026-10-04) — eGFR, liver-enzyme documents, a mid-run
+> **NEWEST: §6bp (2026-10-04 → 10-06) — LIVER TOPIC (rules), progress bar,
+> Timeline chip words, read aloud, multer/morgan update, the coordinator's
+> "same project" feedback and the NEXT STEP (liver ML model, Phase 2).
+> ALL COMMITTED AND PUSHED: `main` = `origin/main` at the docs commit after
+> `2a89c61`. Read §6bp first, then §6bo.**
+>
+> **§6bo (2026-10-04) — eGFR, liver-enzyme documents, a mid-run
 > "whose report" bug — and EVERYTHING FROM §6bn IS NOW COMMITTED** (six
 > commits on top of `e0dbb43`, 2026-10-04; run `git log --oneline -8`). The
 > 45 review-strip `D` paths were NOT committed and must never be. Test
@@ -13173,6 +13179,106 @@ Read-only checker scripts in the session scratchpad (`check_latest.js`,
 
 **Process slip:** one file edit was made through a Python heredoc in Bash
 (owner's rule: Write/Edit only). Diff checked — only intended lines, LF kept.
+
+---
+
+## 6bp. LIVER TOPIC + PROGRESS BAR + READ ALOUD + REFRAMING · 2026-10-04 → 10-06 · COMMITTED, PUSHED
+
+**Commits (all pushed, no Co-Authored-By trailer):** `b3cd4bb` eGFR NKF
+cross-check test · `2f54e5d` multer 2.4.0 / morgan 1.12.1 · `e352852` liver
+topic (ai-service) · `d4dce05` analysis progress steps (backend) · `2a89c61`
+progress bar + Timeline chip words + read aloud (frontend) · then this docs
+commit. Still never commit the 45 review-strip `D` paths, the owner's
+`cd d …txt` note, or `.claude/` (launch.json is kept there between sessions;
+delete when the owner says).
+
+**Tests at commit:** ai-service **5,488** + 7 skipped / 0 failed (5,495
+collected), backend **927** + 3 skipped, frontend **541**.
+
+**1. eGFR cross-checked (owner asked):** 8 invented cases typed into the NKF
+online CKD-EPI 2021 calculator, all 8 matched to the integer; pinned as
+`test_matches_the_nkf_calculator` in `ai-service/tests/test_egfr.py`. Test 3
+live: eGFR **132** (male 20, Scr 0.75), not flagged, shown "calculated by
+VaidyaAI". Kidney card still says **High from the ML model alone** while both
+rules are clear — known limitation; offered to the owner as a guide question.
+
+**2. Forgot password + email confirmation: BUILT, THEN REMOVED COMPLETELY at
+the owner's request (2026-10-04)** — never configured Gmail. All files reverted
+with `git checkout`, nodemailer uninstalled, `backend/.env` restored
+byte-for-byte. ⚠ The owner pasted their GMAIL PASSWORD in chat; told to change
+it; it was never used or stored. Lesson kept: Module 24 refuses "prescribed
+preparations" and reads "Gastroenterol" as a drug (`-ol`) — the KB scanner
+disagrees on the first.
+
+**3. Small changes (owner):** Reports "processing" note is one sentence;
+Timeline comparison chips now say both halves — "↓ went down · improved",
+"↑ went up · within normal variation", "→ no change" — plus a key line
+(`comparisonText` in `Timeline.jsx`; panels still say "rose/fell" — offered).
+
+**4. multer 2.2.0→2.4.0, morgan 1.12.0→1.12.1** (audit high/moderate). One
+moderate left: `qs` via express/supertest (`npm audit fix` in range; not done).
+
+**5. Progress bar (owner):** backend `Report.analysis.progressStep/progressAt`
+(`ANALYSIS_STEPS` reading→checking→deciding→explaining), set at claim and by
+`markStep` (never fails the run, requestId-scoped), cleared at end/failure;
+`toPublicJSON().analysisProgress` only while processing. Frontend
+`AnalysisProgress` in `Reports.jsx` (4 dots, "Step n of 4", time so far),
+poll 10 s→**4 s**. ⚠ FIRST VERSION NEVER SHOWED for the page's own click
+(list reloaded only when the run returned) — fixed 2026-10-05 with
+`ANALYSIS_FIRST_LOOK_MS` (reload 1 s after the click); test presses the button.
+
+**6. Liver topic, Phase 1 = RULES ONLY (owner's choices: report's own limit;
+ALT, AST, bilirubin). THERE IS NO LIVER ML MODEL YET** — the owner asked;
+Phase 2 is next. Features `alt`, `ast` (u/l), `bilirubin_total` (mg/dl);
+condition `LIVER_DISEASE = "Liver Disease"` (not always_assessed; reported as
+INSUFFICIENT_DATA when absent, so reports without liver tests read "partial").
+`PrintedLimitThreshold` in `clinical_rules.py`: multiple × the report's
+printed upper limit if 15–100 U/L, else fallback (ALT `ContextualThreshold`
+33/25/33, AST 40) with a note; `uses_printed_limit()`; rules
+`RULE_LIVER_ALT` (>ULN Medium, ≥5×ULN High, sex-unknown 25–33 Borderline),
+`RULE_LIVER_AST`, `RULE_LIVER_BILIRUBIN` (>1.2 Medium, ≥3.0 High), min age
+18. `FEATURE_DISTINCT_TOKENS` guard: "direct" is a STRIPPABLE qualifier, so
+without it "Bilirubin Direct" read as total. Units: `u/l` aliases incl. IU/L
+(⚠ the backend labSeriesService deliberately keeps U/L ≠ IU/L for
+UNASSESSED rows — conflict flagged for the guide), bilirubin umol/L ×0.058467.
+Validation bounds, polarity (increase harm), RCV bands (ALT/AST 29 %,
+bilirubin 62 %, "pending verification"), weights 1.0, population EXCLUDED
+("not yet compared"; NHANES BIOPRO_J has them), docs `cond_liver_disease`,
+`lab_bilirubin_total`, `ref_liver_bands`, term_alt_sgpt/term_ast_sgot tagged.
+Index rebuilt (79 docs, 283 chunks) via `git show HEAD:ai-service/knowledge/
+build_index.py` in the scratchpad (script is review-stripped). New
+`tests/test_liver_rules.py` (46). ~20 older tests deliberately updated (ALT/
+bilirubin were "uncovered" examples → GGT/ALP). Test 3 live: SGPT 13 U/L vs
+printed 5–40 → Liver not flagged; SGPT now in the results table (27 rows).
+Cut-offs and U/L=IU/L to be approved by the guide.
+
+**7. Read aloud (owner):** `components/ReadAloud.jsx` (Web Speech API,
+on-device voices first, `pickVoice`, hidden with no voice/support, one at a
+time, stops on unmount) on each dashboard explanation. Works after deploy
+(browser-side). ⚠ The Claude browser pane has NO voices — button hidden
+there; test in the owner's Chrome/Edge (not yet confirmed by the owner).
+
+**8. PROJECT COORDINATOR (2026-10-06): "I saw the same project"** — wants it
+told differently plus enhancements. Proposed: title "VaidyaAI: A
+Safety-Validated, Explainable Platform for Interpreting Laboratory Reports"
+(alt: hybrid rule+ML with verifiable evidence); a differentiation table
+(safety validator, absence ≠ normal, printed/sex-specific limits, rules+ML
+fusion with evidence, RCV timeline, Indian conventions, doctor summary,
+whose-report, NHANES). Enhancement menu: A Telugu/Hindi (English-checked then
+1 batched Gemini call per report + number check), **B verify the RCV figures
+from EFLM**, C rules-vs-ML study, **D doctor PDF**, E check-what-the-AI-read,
+F "what would change this result", G DPDP-Act privacy, H read aloud (DONE),
+I family accounts, J extraction accuracy study. Recommended: B + D (+ J, E).
+A full updated project description was written in chat (not saved as a file).
+Title NOT yet confirmed by the coordinator.
+
+**NEXT (owner): LIVER ML MODEL, Phase 2** — ask before downloading the Indian
+Liver Patient Dataset (UCI/Kaggle, 583 rows; Kaggle MCP available); check
+quality; RF like the others on inputs the app reads (ALT, AST, total bilirubin,
+age, sex — or add ALP/albumin first); compare with the liver rules on held-out
+data; ship only if it beats them; report either way. Then B / D per the owner.
+Other open: qs audit; OpenRouter key rotation; random-glucose 140 cut-off;
+kidney model-alone High; 02-diabetes owner?; module audit 19/23/27+.
 
 ---
 
