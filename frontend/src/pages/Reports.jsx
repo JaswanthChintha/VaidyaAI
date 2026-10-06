@@ -77,8 +77,80 @@ function ReportDate({ report }) {
 
 /** How often a list with a report still being analysed is asked again. The
  *  list endpoint carries no rate limiter (only upload, analysis and the
- *  history routes do), and an analysis takes a minute or more. */
-export const PROCESSING_POLL_MS = 10000;
+ *  history routes do), and an analysis takes a minute or more.
+ *  10 s -> 4 s (2026-10-04): the progress bar's later steps can pass in a few
+ *  seconds, and at 10 s the reader never saw them. */
+export const PROCESSING_POLL_MS = 4000;
+
+/** How soon after an Analyse click the list is asked again, so the row turns
+ *  into the progress bar instead of waiting for the whole run. */
+export const ANALYSIS_FIRST_LOOK_MS = 1000;
+
+/** The analysis steps, in the server's order (`Report.ANALYSIS_STEPS`). */
+const ANALYSIS_STEP_LABEL = {
+  reading: 'Reading the report',
+  checking: 'Checking the values',
+  deciding: 'Clinical rules and models',
+  explaining: 'Writing explanations',
+};
+const ANALYSIS_STEP_ORDER = ['reading', 'checking', 'deciding', 'explaining'];
+
+/** "45 s", "1 min 10 s". Never negative: two clocks can disagree slightly. */
+export function elapsedText(ms) {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  if (seconds < 60) return `${seconds} s`;
+  return `${Math.floor(seconds / 60)} min ${seconds % 60} s`;
+}
+
+/**
+ * WHERE A RUNNING ANALYSIS HAS GOT TO (2026-10-04).
+ *
+ * REAL STEPS ONLY. The bar moves when the server records that a step began --
+ * never a percentage that creeps forward on a timer. Reading the report is
+ * usually most of the wait, so the time so far is shown to prove it is still
+ * working; it ticks here, from the server's start time.
+ */
+function AnalysisProgress({ progress }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const current = ANALYSIS_STEP_ORDER.indexOf(progress?.step);
+  const total = ANALYSIS_STEP_ORDER.length;
+  const started = progress?.startedAt ? new Date(progress.startedAt).getTime() : NaN;
+  const elapsed = Number.isFinite(started) ? elapsedText(now - started) : null;
+
+  return (
+    <div className="progress" role="group" aria-label="Analysis progress">
+      <p className="progress__now" aria-live="polite">
+        {current >= 0
+          ? `Step ${current + 1} of ${total}: ${ANALYSIS_STEP_LABEL[progress.step]}`
+          : 'Starting…'}
+        {elapsed ? <span className="progress__time"> · {elapsed} so far</span> : null}
+      </p>
+      <ol className="progress__steps">
+        {ANALYSIS_STEP_ORDER.map((step, index) => {
+          const state = index < current ? 'done' : index === current ? 'current' : 'todo';
+          return (
+            <li
+              key={step}
+              className={`progress__step progress__step--${state}`}
+              aria-current={state === 'current' ? 'step' : undefined}
+            >
+              <span className="progress__dot" aria-hidden="true" />
+              <span className="progress__label">
+                {ANALYSIS_STEP_LABEL[step]}
+                {state === 'done' ? <span className="visually-hidden"> (done)</span> : null}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
 
 /*
  * WHOSE REPORT (2026-10-03). The same three fields on upload and when
@@ -323,12 +395,22 @@ export default function Reports() {
   async function onAnalyze(id) {
     setBusyId(id);
     setError(null);
+    // THE PROGRESS BAR NEVER APPEARED FOR THIS PAGE'S OWN CLICK (2026-10-05).
+    // The request below takes a minute or two, and the list was only reloaded
+    // when it returned -- so the row kept saying "Analysed", no progress was
+    // ever asked for, and the bar showed only to someone who left and came
+    // back. The server marks the report `processing` the moment it takes the
+    // lock, so the list is asked again shortly after the click; from then the
+    // processing poll above keeps it current. Nothing is faked here: the
+    // first step shown is the one the server recorded.
+    const early = setTimeout(load, ANALYSIS_FIRST_LOOK_MS);
     try {
       await api.analyzeReport(id);
       await load();
     } catch (err) {
       setError(err.message);
     } finally {
+      clearTimeout(early);
       setBusyId(null);
     }
   }
@@ -485,11 +567,12 @@ export default function Reports() {
               </span>
             </div>
             {report.status === 'processing' ? (
-              <p className="report__note">
-                This page updates by itself when the analysis finishes. It
-                usually takes a minute or two, longer when the model service is
-                slow.
-              </p>
+              <>
+                <AnalysisProgress progress={report.analysisProgress} />
+                <p className="report__note">
+                  This page updates by itself when the analysis finishes.
+                </p>
+              </>
             ) : null}
             {/* THE DATE ON THE REPORT, OR THE DAY IT WAS UPLOADED -- SAID.
 

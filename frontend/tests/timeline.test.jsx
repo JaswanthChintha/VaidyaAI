@@ -978,10 +978,26 @@ describe('comparison -- the rest of the report', () => {
     ]);
 
     await screen.findByText('Eosinophils');
-    expect(screen.getByText(/no real change/)).toBeInTheDocument();
+    // 2026-10-04: the arrow's half is said in words too, so it cannot be read
+    // as the verdict ("↓ improved" beside "↑ no real change" looked wrong).
+    expect(screen.getByText('↓ went down · within normal variation')).toBeInTheDocument();
     expect(screen.queryByText(/unchanged/)).not.toBeInTheDocument();
-    // The arrow stays. It is the true half of the row.
-    expect(screen.getByText(/↓/)).toBeInTheDocument();
+    expect(screen.queryByText(/no real change/)).not.toBeInTheDocument();
+  });
+
+  it('says which way the number moved and whether it counts, in words (2026-10-04)', async () => {
+    mountPair([
+      labRow({ name: 'GLUCOSE', previous: 168, current: 110, unit: 'mg/dl', previousUnit: 'mg/dl', currentUnit: 'mg/dl', category: 'improved', symbol: '↓' }),
+      labRow({ key: 'esr', name: 'ESR', previous: 30, current: 32, unit: 'mm/hr', previousUnit: 'mm/hr', currentUnit: 'mm/hr', category: 'unchanged', symbol: '↑' }),
+    ]);
+
+    await screen.findByText('Glucose');
+    expect(screen.getByText('↓ went down · improved')).toBeInTheDocument();
+    expect(screen.getByText('↑ went up · within normal variation')).toBeInTheDocument();
+    // The key above the table names the two halves.
+    expect(
+      screen.getByText(/the arrow shows which way the number moved; the\s+words after the dot say whether that move counts/)
+    ).toBeInTheDocument();
   });
 
   it('leaves age, sex and smoking out of the table (2026-10-02)', async () => {
@@ -1010,8 +1026,9 @@ describe('comparison -- the rest of the report', () => {
     ]);
 
     await screen.findByText('Body mass index');
-    expect(screen.getByText(/no real change/)).toBeInTheDocument();
-    expect(screen.queryByText(/unchanged/)).not.toBeInTheDocument();
+    // Truly the same value: no movement words, and no "variation" claim.
+    expect(screen.getByText('→ no change')).toBeInTheDocument();
+    expect(screen.queryByText(/unchanged|within normal variation/)).not.toBeInTheDocument();
   });
 
   it('never prints "changed direction only", which reads as its opposite', async () => {
@@ -1024,11 +1041,12 @@ describe('comparison -- the rest of the report', () => {
     ]);
 
     await screen.findByText('Haemoglobin concentration');
-    expect(screen.getByText(/real change, not rated better or worse/)).toBeInTheDocument();
+    expect(
+      screen.getByText('↑ went up · real change, not rated better or worse')
+    ).toBeInTheDocument();
     expect(screen.queryByText(/direction only/)).not.toBeInTheDocument();
-    // Not mistaken for its counterpart, and the arrow -- the true half -- stays.
-    expect(screen.queryByText(/no real change/)).not.toBeInTheDocument();
-    expect(screen.getByText(/↑/)).toBeInTheDocument();
+    // Not mistaken for its counterpart.
+    expect(screen.queryByText(/within normal variation/)).not.toBeInTheDocument();
   });
 
   it('uses the same words for a laboratory row that moved with no polarity', async () => {

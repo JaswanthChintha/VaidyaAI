@@ -1066,6 +1066,33 @@ function comparisonWord(category) {
   );
 }
 
+/*
+ * THE ARROW WAS READ AS THE VERDICT (owner, 2026-10-04). "↓ improved" beside
+ * "↑ no real change" looked contradictory: the arrow is which way the NUMBER
+ * moved, the word is whether that move COUNTS, and nothing on screen said so.
+ * Each chip now says both halves in words -- "↓ went down · improved",
+ * "↑ went up · within normal variation", "→ no change" -- and a line above
+ * the table names the two halves. Categories and symbols are untouched.
+ */
+const ARROW_WORD = { '↑': 'went up', '↓': 'went down' };
+
+const VERDICT_WORD = {
+  unchanged: 'within normal variation',
+  changed_direction_only: 'real change, not rated better or worse',
+};
+
+function comparisonText(category, symbol) {
+  const movement = ARROW_WORD[symbol];
+  if (symbol === '→' && category === 'unchanged') return '→ no change';
+  if (!movement) {
+    // No arrow to explain: the word alone, as before.
+    return `${isPresent(symbol) ? `${symbol} ` : ''}${comparisonWord(category)}`;
+  }
+  const verdict =
+    VERDICT_WORD[category] || String(category || '').replace(/_/g, ' ');
+  return `${symbol} ${movement} · ${verdict}`;
+}
+
 /**
  * ONE ROW OF THE COMPARISON, FOR A TEST THIS PLATFORM DOES NOT ASSESS.
  *
@@ -1135,8 +1162,7 @@ function LabComparisonRow({ row }) {
       <td>
         {isPresent(row.category) && row.category !== 'not_classifiable' ? (
           <span className={`category category--${row.category}`}>
-            {isPresent(row.symbol) ? `${row.symbol} ` : ''}
-            {comparisonWord(row.category)}
+            {comparisonText(row.category, row.symbol)}
           </span>
         ) : (
           <Absent
@@ -1213,6 +1239,12 @@ function Comparison({ data, lab, identity, reports, namesById, pair, onPairChang
           {rows.length + labRows.length === 1 ? '' : 's'} across these two reports.
         </p>
       ) : null}
+      {rows.length + labRows.length ? (
+        <p className="hint comparison-key">
+          In the Change column, the arrow shows which way the number moved; the
+          words after the dot say whether that move counts.
+        </p>
+      ) : null}
 
       {rows.length + labRows.length ? (
         <table className="lab-table">
@@ -1245,10 +1277,9 @@ function Comparison({ data, lab, identity, reports, namesById, pair, onPairChang
                 <td>
                   {isPresent(row.category) ? (
                     <span className={`category category--${row.category}`}>
-                      {isPresent(row.symbol) ? `${row.symbol} ` : ''}
                       {/* MODULE 29's ROWS GET THE SAME WORDS. One table, one
-                          vocabulary -- see `COMPARISON_WORD`. */}
-                      {comparisonWord(row.category)}
+                          vocabulary -- see `comparisonText`. */}
+                      {comparisonText(row.category, row.symbol)}
                     </span>
                   ) : (
                     <Absent

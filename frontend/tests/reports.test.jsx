@@ -255,6 +255,89 @@ describe('Module 3 -- the report list', () => {
     }
   });
 
+  // ---- progress bar (2026-10-04) ------------------------------------------
+  const running = (progress) => ({ ...REPORT, status: 'processing', analysisProgress: progress });
+
+  it('shows which of the four steps is running, with the ones before it done', async () => {
+    mount([running({ step: 'deciding', stepNumber: 3, totalSteps: 4, startedAt: new Date(Date.now() - 70_000).toISOString() })]);
+
+    expect(await screen.findByText(/Step 3 of 4: Clinical rules and models/)).toBeInTheDocument();
+    expect(screen.getByText(/1 min 1\d s so far/)).toBeInTheDocument();
+    const steps = [...document.querySelectorAll('.progress__step')];
+    expect(steps.map((li) => li.className.match(/--(\w+)/)[1])).toEqual(['done', 'done', 'current', 'todo']);
+    expect(steps[2]).toHaveAttribute('aria-current', 'step');
+    expect(steps[0]).toHaveTextContent('(done)');
+  });
+
+  it('says "Starting…" when no step has been recorded yet', async () => {
+    mount([running({ step: null, stepNumber: null, totalSteps: 4 })]);
+    expect(await screen.findByText('Starting…')).toBeInTheDocument();
+    expect(document.querySelectorAll('.progress__step--todo')).toHaveLength(4);
+    expect(screen.queryByText(/so far/)).not.toBeInTheDocument();
+  });
+
+  it('moves to the next step when the list is asked again', async () => {
+    const { PROCESSING_POLL_MS } = await import('../src/pages/Reports');
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      vi.spyOn(api, 'listReports')
+        .mockResolvedValueOnce({ reports: [running({ step: 'reading', stepNumber: 1, totalSteps: 4 })] })
+        .mockResolvedValue({ reports: [running({ step: 'explaining', stepNumber: 4, totalSteps: 4 })] });
+      render(
+        <MemoryRouter>
+          <Reports />
+        </MemoryRouter>
+      );
+      await screen.findByText(/Step 1 of 4: Reading the report/);
+      await vi.advanceTimersByTimeAsync(PROCESSING_POLL_MS);
+      expect(await screen.findByText(/Step 4 of 4: Writing explanations/)).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows the progress bar for this page's own Analyse click, while the run is still going", async () => {
+    // FOUND LIVE 2026-10-05: the list was reloaded only when the analyse
+    // request RETURNED, so during the run the row still said "Analysed".
+    const { ANALYSIS_FIRST_LOOK_MS } = await import('../src/pages/Reports');
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let finish;
+      vi.spyOn(api, 'analyzeReport').mockImplementation(
+        () => new Promise((resolve) => { finish = resolve; })
+      );
+      vi.spyOn(api, 'listReports')
+        .mockResolvedValueOnce({ reports: [{ ...REPORT, status: 'uploaded' }] })
+        .mockResolvedValue({ reports: [running({ step: 'reading', stepNumber: 1, totalSteps: 4 })] });
+      render(
+        <MemoryRouter>
+          <Reports />
+        </MemoryRouter>
+      );
+      fireEvent.click(await screen.findByRole('button', { name: 'Analyse' }));
+
+      await vi.advanceTimersByTimeAsync(ANALYSIS_FIRST_LOOK_MS);
+      // The request has NOT returned, and the bar is already there.
+      expect(await screen.findByText(/Step 1 of 4: Reading the report/)).toBeInTheDocument();
+      finish({ report: REPORT });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('shows no progress bar for a finished report', async () => {
+    mount([{ ...REPORT, status: 'processed' }]);
+    await screen.findByText('Analysed');
+    expect(document.querySelector('.progress')).toBeNull();
+  });
+
+  it('formats the time so far, never negative', async () => {
+    const { elapsedText } = await import('../src/pages/Reports');
+    expect(elapsedText(-5000)).toBe('0 s');
+    expect(elapsedText(45_900)).toBe('45 s');
+    expect(elapsedText(70_000)).toBe('1 min 10 s');
+  });
+
   it('never polls a list with nothing being analysed', async () => {
     const { PROCESSING_POLL_MS } = await import('../src/pages/Reports');
     vi.useFakeTimers({ shouldAdvanceTime: true });

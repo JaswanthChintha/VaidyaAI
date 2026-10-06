@@ -5,6 +5,7 @@ import { Absent, Risk, Value, WarningList } from '../components/Absent';
 import { isPresent } from '../lib/absence';
 import RiskGauge from '../components/RiskGauge';
 import CoverageRadar from '../components/CoverageRadar';
+import ReadAloud from '../components/ReadAloud';
 import { PATIENT_LABEL } from '../lib/labels';
 import { ProfileIdentityNotice } from '../components/IdentityNotice';
 import { isPatientDetail } from '../lib/sources';
@@ -452,6 +453,9 @@ function Explanations({
       body: (
         <p className="explanation__text">{trimClosingAdvice(entry.explanation)}</p>
       ),
+      // Exactly the words on screen, so the voice never says something the
+      // page does not.
+      speech: trimClosingAdvice(entry.explanation),
     })),
     ...describedUnassessed.map((item, index) => ({
       key: `${item.testName}-${index}`,
@@ -461,6 +465,7 @@ function Explanations({
           <ParameterDescription item={item} />
         </div>
       ),
+      speech: item.descriptionAvailable === true ? item.description : null,
     })),
   ];
 
@@ -523,6 +528,9 @@ function Explanations({
               </span>
             </summary>
             {entry.body}
+            {entry.speech ? (
+              <ReadAloud text={`${entry.subject}. ${entry.speech}`} label={entry.subject} />
+            ) : null}
           </details>
         ))}
       </div>
@@ -1455,6 +1463,7 @@ const RADAR_LABEL = {
   'Elevated Hemoglobin': 'Haemoglobin (high)',
   'Kidney Disease': 'Kidney',
   'Heart Disease': 'Heart',
+  'Liver Disease': 'Liver',
 };
 
 /* PATIENT_LABEL (patient-facing names; the catalog's own wording is for

@@ -59,6 +59,13 @@ export const PATIENT_LABEL = {
   eosinophils: 'Eosinophils',
   basophils: 'Basophils',
   platelet_count: 'Platelet count',
+
+  // ---- the liver panel (2026-10-04) ----
+  // The names Indian reports print beside the formal ones, so a reader can
+  // find the row on the paper.
+  alt: 'ALT (SGPT)',
+  ast: 'AST (SGOT)',
+  bilirubin_total: 'Total bilirubin',
 };
 
 /**
