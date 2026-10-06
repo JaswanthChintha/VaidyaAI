@@ -31,6 +31,8 @@ const BY_CODE = {
     'The analysis service refused the request. Please contact whoever runs it.',
   AI_SERVICE_REJECTED_INPUT:
     'This file could not be read as a lab report. Check that it is a clear PDF or photo of the report.',
+  NO_LAB_RESULTS:
+    'No test results were found in this file, so nothing was assessed. Please check it is a lab report (a clear PDF or photo of it).',
   AI_SERVICE_EMPTY_RESULT:
     'No test results could be read from this file. Check that it is a clear PDF or photo of the report.',
   UNSUPPORTED_MEDIA_TYPE: 'This file type cannot be analysed. Upload a PDF, JPG or PNG.',

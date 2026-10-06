@@ -1078,6 +1078,49 @@ describe('Modules 4+5 - analysis orchestration', () => {
     });
   });
 
+  // A RÉSUMÉ WAS UPLOADED ON THE LIVE SITE (2026-10-06): 0 results were read,
+  // the run went on with the profile alone and the dashboard said "Healthy --
+  // Overall risk: Low". A file with no test results now stops the run.
+  describe('a file with no test results is not assessed at all', () => {
+    it.each([
+      ['no rows at all', []],
+      ['only blank rows', [{ test_name: '  ', value_raw: '' }, { test_name: 'HbA1c', value_raw: null }]],
+    ])('%s -> failed with NO_LAB_RESULTS, and no later stage is called', async (_label, rows) => {
+      wireAiService({
+        extract: () => okResponse({ ...extractionFixture(), extracted_parameters: rows }),
+      });
+      const user = await makeUser(`empty-${rows.length}@example.com`);
+      const report = await uploadReport(user.token);
+
+      const res = await analyze(user.token, report.id);
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe('NO_LAB_RESULTS');
+      // Nothing after reading: no features, no rules, no models, no LLM.
+      expect(outgoing.map((c) => c.url)).toEqual([EXTRACT_PATH]);
+
+      const stored = await loadRaw(report.id);
+      expect(stored.status).toBe('failed');
+      expect(stored.statusMessage).toBe('NO_LAB_RESULTS: No test results were found in this file');
+      expect(stored.clinicalReport).toBeUndefined();
+    });
+
+    it('one real result is enough to go on', async () => {
+      wireAiService({
+        extract: () =>
+          okResponse({
+            ...extractionFixture(),
+            extracted_parameters: [extractionFixture().extracted_parameters[0]],
+          }),
+      });
+      const user = await makeUser('one-result@example.com');
+      const report = await uploadReport(user.token);
+      const res = await analyze(user.token, report.id);
+      expect(res.status).toBe(200);
+      expect(outgoing.length).toBeGreaterThan(1);
+    });
+  });
+
   describe('happy path', () => {
     it('runs extraction then feature engineering and persists both', async () => {
       const user = await makeUser('happy@example.com');

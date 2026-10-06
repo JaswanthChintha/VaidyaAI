@@ -83,6 +83,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from app.data import conditions as C
+from app.data.feature_catalog import FEATURES, SOURCE_LAB_REPORT
 from app.schemas.decisions import (
     ClinicalDecision,
     DecisionSourceKind,
@@ -405,14 +406,49 @@ def _join(names: Sequence[str]) -> str:
 # --------------------------------------------------------------------------
 
 
+def rests_on_lab_result(decision: Any) -> bool:
+    """Does this decision use at least one TEST RESULT read from the report?
+
+    A laboratory feature (catalogue source `lab_report`) with a value. Not a
+    profile detail (BMI, age, sex, smoking), and not an input a model was NOT
+    given -- an imputed or absent model input carries no value. The one
+    spelling of "this came from the lab", shared by Module 16 here and Module
+    18 in `report_builder.overall_status`, so the two cannot disagree.
+    """
+    for item in getattr(decision, "evidence", None) or []:
+        definition = FEATURES.get(getattr(item, "feature", None))
+        if (
+            definition is not None
+            and definition.source == SOURCE_LAB_REPORT
+            and getattr(item, "value", None) is not None
+            and getattr(item, "source_stage", None) != "not_available"
+        ):
+            return True
+    return False
+
+
 def _summarise(
     fused: Sequence[FusedDecision], collection: DecisionCollectionData
 ) -> FusionSummary:
     flagged = [f for f in fused if f.decision.is_flagged]
     assessed = [f for f in fused if f.decision.was_assessed]
     unassessed = [f for f in fused if not f.decision.was_assessed]
+    # NO HEALTHY WITHOUT A TEST RESULT (2026-10-06). A résumé uploaded on the
+    # live site read 0 results, yet Obesity / Underweight (from BMI) and the
+    # heart model (from age and sex) were "assessed" and found nothing -- and
+    # the report said "Healthy, Overall risk: Low". Nothing in it came from the
+    # report. A clean result now needs at least one decision that rests on a
+    # test result; without one there is no overall status and no overall risk.
+    # A FLAGGED profile finding (a high BMI) is still a finding and still
+    # reported -- it is only the reassurance that needs a lab behind it.
+    lab_backed = any(rests_on_lab_result(f.decision) for f in assessed)
+    clean_without_lab = bool(assessed) and not flagged and not lab_backed
 
-    overall_risk = RiskLevel.highest([f.risk for f in fused if f.risk is not None])
+    overall_risk = (
+        None
+        if clean_without_lab
+        else RiskLevel.highest([f.risk for f in fused if f.risk is not None])
+    )
 
     # ---- Module 18 -----------------------------------------------------
     # Spec: no abnormal findings -> Healthy; abnormal but no High -> Needs
@@ -423,7 +459,7 @@ def _summarise(
     # "Healthy" for a report whose every test was unreadable is precisely the
     # failure `decisions.py` calls the most dangerous this type can have. So
     # `overall_status` is None there, and `any_assessed` says why.
-    if not assessed:
+    if not assessed or clean_without_lab:
         overall_status: Optional[str] = None
     elif not flagged:
         overall_status = STATUS_HEALTHY
@@ -465,7 +501,9 @@ def _summarise(
         collapsed_decision_count=max(raw_count - len(fused), 0),
         overall_status=overall_status,
         overall_risk=overall_risk,
-        any_assessed=bool(assessed),
+        # False whenever there is no overall status -- including a clean
+        # result with no test result behind it (see `clean_without_lab`).
+        any_assessed=bool(assessed) and not clean_without_lab,
         assessment_incomplete=bool(unassessed)
         or bool(collection.summary.sources_failed)
         or any(f.partially_assessed for f in fused),

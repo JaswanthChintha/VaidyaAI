@@ -593,6 +593,42 @@ def test_case_4_nothing_assessed_must_not_regress():
     assert overall.caveat
 
 
+def test_case_6_profile_only_is_not_healthy():
+    """THE RÉSUMÉ (live site, 2026-10-06). No test result was read; BMI 24.97,
+    age 20, male, non-smoker, no hypertension or heart disease. The real rules
+    and models judged Obesity, Underweight and Heart Disease from those alone
+    and the report said "Healthy (partial assessment) -- Overall risk: Low"."""
+    overall = generate_report(
+        engineered=engineered(
+            bmi=feature("bmi", 24.97, "kg/m2", "patient_profile"),
+            age=feature("age", 20, "years", "patient_profile"),
+            gender=feature("gender", "male", None, "patient_profile"),
+            hypertension=feature("hypertension", False, None, "patient_profile"),
+            heart_disease=feature("heart_disease", False, None, "patient_profile"),
+            smoking_history=feature("smoking_history", "never", None, "patient_profile"),
+        )
+    ).overall
+    assert overall.status is None
+    assert overall.status_label == STATUS_NOT_ASSESSED
+    assert overall.risk is None
+    assert overall.any_assessed is False
+    assert overall.rule_applied == "no_lab_result_assessed"
+    assert "details entered" in overall.caveat
+
+
+def test_case_7_one_real_test_result_restores_healthy():
+    overall = generate_report(
+        engineered=engineered(
+            hba1c=feature("hba1c", 5.1, "%"),
+            bmi=feature("bmi", 24.97, "kg/m2", "patient_profile"),
+            age=feature("age", 20, "years", "patient_profile"),
+            gender=feature("gender", "male", None, "patient_profile"),
+        )
+    ).overall
+    assert overall.status == STATUS_HEALTHY
+    assert overall.rule_applied == "no_abnormal_findings"
+
+
 def test_case_5_partial_healthy_is_labelled_as_partial():
     """THE DEFECT. One normal HbA1c is not a clean bill of health."""
     partial = generate_report(

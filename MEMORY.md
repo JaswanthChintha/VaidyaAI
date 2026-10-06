@@ -13499,6 +13499,42 @@ owner to check both services' Environment pages for the 3 new keys.
 
 ---
 
+## 6bv. A RÉSUMÉ WAS CALLED "HEALTHY" — FIXED TWICE · 2026-10-06
+
+**Found live by the owner:** uploading a résumé gave "Healthy (partial
+assessment) — Overall risk: Low", 0 results read. Cause: extraction with 0
+parameters was treated as legitimate (`assertProductiveFeatures` comment), the
+run went on with the PROFILE only, and Obesity/Underweight (BMI) + the heart
+model (age/sex, labs imputed) counted as "assessed, nothing found" → Healthy.
+
+1. **backend `hasLabResults(extraction)`** (≥1 row with a non-blank
+   `test_name` and `value_raw`): otherwise `runAnalysis` throws
+   `ApiError(422, 'NO_LAB_RESULTS', 'No test results were found in this
+   file')` right after extraction — status failed, nothing else called (no
+   features/rules/ML/LLM). `SAFE_STATUS_MESSAGES.NO_LAB_RESULTS`; frontend
+   `friendlyErrors` wording. Tests in `analysis.test.js` "a file with no test
+   results…" (3; mutation-checked).
+2. **ai-service: no Healthy without a test result.**
+   `fusion_engine.rests_on_lab_result(decision)` = some evidence item whose
+   feature is a catalogue `lab_report` feature, with a value, not
+   `not_available` (imputed model inputs carry value None → not counted).
+   `_summarise`: clean (assessed, none flagged) with no lab-backed decision →
+   `overall_status` None, `overall_risk` None, `any_assessed` False.
+   `report_builder.overall_status` mirrors it with the SAME predicate:
+   label Not Assessed, `rule_applied` NEW `RULE_NO_LAB_RESULT_ASSESSED`
+   ("no_lab_result_assessed"), caveat NEW `CAVEAT_NO_LAB_RESULT_ASSESSED`
+   (in the import-time safety self-check). A FLAGGED profile finding (high
+   BMI) still gives Needs Monitoring — only the reassurance needs a lab.
+   Tests: `test_fusion_engine.py` (+4; two old tests given LAB_EVIDENCE
+   deliberately — their hand-made decisions had no evidence at all) and
+   `test_audit_defects.py` case 6 (the résumé's exact profile → Not
+   Assessed) and case 7 (one HbA1c → Healthy). Mutation-checked.
+
+**Tests:** ai-service **5,498** + 7 skipped (junit, 0 failed/0 errors),
+backend **953** + 3 skipped, frontend **568** — all 0 failed.
+
+---
+
 ## 7. Module 1 → later modules: inherited obligations
 
 **RESOLVED by Module 2:** `ownership.js` is now wired up and enforced, `ownerScopedFilter` throws

@@ -508,10 +508,19 @@ def test_the_conflict_note_reaches_the_warnings_and_is_safe_to_display():
 # --------------------------------------------------------------------------
 
 
+#: A test result read from the report. Since 2026-10-06 a clean result needs
+#: one behind it to be called Healthy (`rests_on_lab_result`).
+LAB_EVIDENCE = [EvidenceItem(feature="hba1c", value=5.2, unit="%", source_stage="lab_report")]
+#: Profile details only -- no test result.
+PROFILE_EVIDENCE = [
+    EvidenceItem(feature="bmi", value=24.97, unit="kg/m2", source_stage="patient_profile")
+]
+
+
 def test_no_abnormal_findings_is_healthy():
     data = fuse(
         [
-            decision(C.DIABETES, DecisionStatus.NOT_INDICATED, RiskLevel.LOW),
+            decision(C.DIABETES, DecisionStatus.NOT_INDICATED, RiskLevel.LOW, evidence=LAB_EVIDENCE),
             decision(C.ANEMIA, DecisionStatus.NOT_INDICATED, RiskLevel.LOW),
         ]
     )
@@ -565,7 +574,7 @@ def test_a_report_where_nothing_could_be_assessed_is_NOT_healthy():
 def test_a_partly_readable_report_is_still_given_a_status_but_flagged():
     data = fuse(
         [
-            decision(C.DIABETES, DecisionStatus.NOT_INDICATED, RiskLevel.LOW),
+            decision(C.DIABETES, DecisionStatus.NOT_INDICATED, RiskLevel.LOW, evidence=LAB_EVIDENCE),
             decision(C.KIDNEY_DISEASE, DecisionStatus.INSUFFICIENT_DATA, None),
         ]
     )
@@ -573,6 +582,54 @@ def test_a_partly_readable_report_is_still_given_a_status_but_flagged():
     assert data.summary.any_assessed is True
     assert data.summary.assessment_incomplete is True
     assert data.summary.unassessed_conditions == [C.KIDNEY_DISEASE]
+
+
+# --------------------------------------------------------------------------
+# No "Healthy" without a test result (2026-10-06). A résumé uploaded on the
+# live site was called "Healthy -- Overall risk: Low" from BMI, age and sex.
+# --------------------------------------------------------------------------
+
+
+def test_clean_from_the_profile_alone_is_not_healthy_and_has_no_risk():
+    data = fuse(
+        [
+            decision(C.OBESITY, DecisionStatus.NOT_INDICATED, RiskLevel.LOW, evidence=PROFILE_EVIDENCE),
+            decision(C.UNDERWEIGHT, DecisionStatus.NOT_INDICATED, RiskLevel.LOW, evidence=PROFILE_EVIDENCE),
+        ]
+    )
+    assert data.summary.overall_status is None
+    assert data.summary.overall_risk is None
+    assert data.summary.any_assessed is False
+
+
+def test_a_model_whose_lab_inputs_were_all_imputed_is_not_a_lab_result():
+    imputed = [
+        EvidenceItem(feature="hba1c", value=None, source_stage="model_input"),
+        EvidenceItem(feature="age", value=20, unit="years", source_stage="model_input"),
+    ]
+    data = fuse([ml(C.HEART_DISEASE, status=DecisionStatus.NOT_INDICATED, risk=RiskLevel.LOW,
+                    confidence=0.05, evidence=imputed)])
+    assert data.summary.overall_status is None
+
+
+def test_one_test_result_anywhere_is_enough_for_healthy():
+    data = fuse(
+        [
+            decision(C.OBESITY, DecisionStatus.NOT_INDICATED, RiskLevel.LOW, evidence=PROFILE_EVIDENCE),
+            decision(C.DIABETES, DecisionStatus.NOT_INDICATED, RiskLevel.LOW, evidence=LAB_EVIDENCE),
+        ]
+    )
+    assert data.summary.overall_status == STATUS_HEALTHY
+    assert data.summary.overall_risk is RiskLevel.LOW
+
+
+def test_a_flagged_profile_finding_is_still_reported():
+    # Only the REASSURANCE needs a lab behind it; a high BMI is a real finding.
+    data = fuse(
+        [decision(C.OBESITY, DecisionStatus.INDICATED, RiskLevel.MEDIUM, evidence=PROFILE_EVIDENCE)]
+    )
+    assert data.summary.overall_status == STATUS_NEEDS_MONITORING
+    assert data.summary.overall_risk is RiskLevel.MEDIUM
 
 
 # --------------------------------------------------------------------------

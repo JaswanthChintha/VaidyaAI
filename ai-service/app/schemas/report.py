@@ -194,9 +194,13 @@ RULE_NOTHING_ASSESSED = "nothing_assessed"
 RULE_NO_ABNORMAL_FINDINGS = "no_abnormal_findings"
 RULE_ABNORMAL_WITHOUT_HIGH_RISK = "abnormal_without_high_risk"
 RULE_ABNORMAL_WITH_HIGH_RISK = "abnormal_with_high_risk"
+#: Topics WERE judged, none flagged -- but every one of them from the details
+#: entered (BMI, age, sex), none from a test result on the report (2026-10-06).
+RULE_NO_LAB_RESULT_ASSESSED = "no_lab_result_assessed"
 
 OVERALL_STATUS_RULES: Tuple[str, ...] = (
     RULE_NOTHING_ASSESSED,
+    RULE_NO_LAB_RESULT_ASSESSED,
     RULE_NO_ABNORMAL_FINDINGS,
     RULE_ABNORMAL_WITHOUT_HIGH_RISK,
     RULE_ABNORMAL_WITH_HIGH_RISK,
@@ -209,6 +213,16 @@ CAVEAT_NOTHING_ASSESSED = (
     "Nothing in this report could be assessed, so no overall health status is "
     "given. An absence of findings here is not a finding of good health: it "
     "means the analysis had nothing it could use."
+)
+
+#: A résumé uploaded on the live site (2026-10-06) read 0 results and was then
+#: called "Healthy -- Overall risk: Low" from BMI, age and sex alone. A clean
+#: result that no test result supports is not a statement about health.
+CAVEAT_NO_LAB_RESULT_ASSESSED = (
+    "No test result on this report is one this tool assesses, so no overall "
+    "health status is given. Any topic shown was judged only from the details "
+    "entered, such as age, height and weight, and that is not a check of the "
+    "report."
 )
 
 CAVEAT_ASSESSMENT_INCOMPLETE = (
@@ -1090,6 +1104,7 @@ def _self_check() -> None:
 
     fixed = {
         "report.CAVEAT_NOTHING_ASSESSED": CAVEAT_NOTHING_ASSESSED,
+        "report.CAVEAT_NO_LAB_RESULT_ASSESSED": CAVEAT_NO_LAB_RESULT_ASSESSED,
         "report.CAVEAT_ASSESSMENT_INCOMPLETE": CAVEAT_ASSESSMENT_INCOMPLETE,
         "report.OVERALL_STATUS_POLICY": OVERALL_STATUS_POLICY,
         "report.PRIORITIZATION_POLICY": PRIORITIZATION_POLICY,
@@ -1130,6 +1145,7 @@ __all__ = [
     "AVAILABILITY_VALUES",
     "CAVEAT_ASSESSMENT_INCOMPLETE",
     "CAVEAT_NOTHING_ASSESSED",
+    "CAVEAT_NO_LAB_RESULT_ASSESSED",
     "EVIDENCE_CHAIN",
     "EXPLAINABILITY_POLICY",
     "EXPLANATION_FOUND_BUT_NOT_TRUSTED",
@@ -1153,6 +1169,7 @@ __all__ = [
     "RULE_ABNORMAL_WITH_HIGH_RISK",
     "RULE_NOTHING_ASSESSED",
     "RULE_NO_ABNORMAL_FINDINGS",
+    "RULE_NO_LAB_RESULT_ASSESSED",
     "STAGE_REPORT",
     "STATUS_NOT_ASSESSED",
     "TIER_FLAGGED",

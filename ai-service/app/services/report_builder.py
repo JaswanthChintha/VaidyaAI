@@ -88,6 +88,7 @@ from app.schemas.report import (
     AVAILABILITY_UNREADABLE,
     CAVEAT_ASSESSMENT_INCOMPLETE,
     CAVEAT_NOTHING_ASSESSED,
+    CAVEAT_NO_LAB_RESULT_ASSESSED,
     EXPLAINABILITY_POLICY,
     ML_IMPORTANCE_CAVEAT,
     OVERALL_STATUS_POLICY,
@@ -101,6 +102,7 @@ from app.schemas.report import (
     RULE_ABNORMAL_WITH_HIGH_RISK,
     RULE_NOTHING_ASSESSED,
     RULE_NO_ABNORMAL_FINDINGS,
+    RULE_NO_LAB_RESULT_ASSESSED,
     STAGE_REPORT,
     STATUS_HEALTHY_PARTIAL,
     STATUS_NOT_ASSESSED,
@@ -126,7 +128,7 @@ from app.schemas.report import (
     SourceExplanation,
 )
 from app.services.decision_engine import unique
-from app.services.fusion_engine import run_decision_fusion
+from app.services.fusion_engine import rests_on_lab_result, run_decision_fusion
 from app.services.rule_engine import NOTE_FACTOR_NOT_MET
 
 logger = get_logger(__name__)
@@ -255,12 +257,25 @@ def overall_status(fusion: DecisionFusionData) -> OverallHealthStatus:
     assessed = [f for f in fusion.fused if f.decision.was_assessed]
     flagged = [f for f in fusion.fused if f.decision.is_flagged]
     high = [f for f in flagged if f.risk is RiskLevel.HIGH]
-    any_assessed = bool(assessed)
+    # THE SIXTH CASE (2026-10-06): topics were judged and none flagged, but
+    # not one of them used a test result from the report -- BMI, age and sex
+    # only. Same predicate as Module 16 (`rests_on_lab_result`), so the two
+    # layers still agree on the value.
+    clean_without_lab = (
+        bool(assessed)
+        and not flagged
+        and not any(rests_on_lab_result(f.decision) for f in assessed)
+    )
+    any_assessed = bool(assessed) and not clean_without_lab
 
-    if not any_assessed:
-        rule = RULE_NOTHING_ASSESSED
+    if clean_without_lab:
+        rule = RULE_NO_LAB_RESULT_ASSESSED
         label = STATUS_NOT_ASSESSED
         status: Optional[str] = None
+    elif not any_assessed:
+        rule = RULE_NOTHING_ASSESSED
+        label = STATUS_NOT_ASSESSED
+        status = None
     elif not flagged:
         rule = RULE_NO_ABNORMAL_FINDINGS
         label = STATUS_HEALTHY
@@ -302,8 +317,10 @@ def overall_status(fusion: DecisionFusionData) -> OverallHealthStatus:
     if status == STATUS_HEALTHY and not complete:
         label = STATUS_HEALTHY_PARTIAL
 
-    if not any_assessed:
-        caveat: Optional[str] = CAVEAT_NOTHING_ASSESSED
+    if clean_without_lab:
+        caveat: Optional[str] = CAVEAT_NO_LAB_RESULT_ASSESSED
+    elif not any_assessed:
+        caveat = CAVEAT_NOTHING_ASSESSED
     elif not complete:
         caveat = CAVEAT_ASSESSMENT_INCOMPLETE
     else:

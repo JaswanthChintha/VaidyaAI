@@ -196,6 +196,7 @@ const SAFE_STATUS_MESSAGES = Object.freeze({
   AI_SERVICE_ERROR: 'The analysis service failed to process this report',
   AI_SERVICE_MALFORMED_RESPONSE: 'The analysis service returned an unexpected response',
   AI_SERVICE_EMPTY_RESULT: 'The analysis service accounted for none of the extracted parameters',
+  NO_LAB_RESULTS: 'No test results were found in this file',
   STORAGE_UNAVAILABLE: 'The storage backend for this report is not available',
   STORAGE_READ_FAILED: 'The stored report file could not be read',
   PAYLOAD_TOO_LARGE: 'The stored report file is too large to analyse',
@@ -1465,6 +1466,27 @@ function redactExtraction(extraction) {
 }
 
 /**
+ * Did reading the file find at least one test result?
+ *
+ * A row counts when it has a name and a printed value -- the two fields Module
+ * 4's contract makes non-nullable. A blank row is not a result.
+ */
+function hasLabResults(extraction) {
+  const rows = Array.isArray(extraction && extraction.extracted_parameters)
+    ? extraction.extracted_parameters
+    : [];
+  return rows.some(
+    (row) =>
+      row &&
+      typeof row.test_name === 'string' &&
+      row.test_name.trim() !== '' &&
+      row.value_raw !== undefined &&
+      row.value_raw !== null &&
+      String(row.value_raw).trim() !== ''
+  );
+}
+
+/**
  * Reject a feature-engineering response that succeeded but produced nothing.
  *
  * THIS IS A REAL, OBSERVED SILENT FAILURE, not a hypothetical. Relaying Module
@@ -1476,7 +1498,8 @@ function redactExtraction(extraction) {
  * would take, so it is checked here too rather than trusted.
  *
  * The check is narrow on purpose. An extraction that found no lab parameters
- * legitimately yields no features, and a report whose parameters were all
+ * never gets here (`hasLabResults` stops the run first, 2026-10-06), and a
+ * report whose parameters were all
  * rejected legitimately yields none either - but in that case Module 5 lists
  * them in `unmapped`/`duplicates_resolved`, proving it saw them. Only the
  * combination "the extraction had parameters AND Module 5 accounted for none of
@@ -1833,6 +1856,16 @@ async function runAnalysis({ user, report, requestId }) {
       mimeType: report.mimeType,
       requestId,
     });
+
+    // A FILE WITH NO TEST RESULTS IS NOT A REPORT TO JUDGE (owner, 2026-10-06).
+    // A résumé was uploaded on the live site: 0 results were read, the run
+    // carried on with the PROFILE alone (BMI, age, sex), and the dashboard
+    // said "Healthy (partial assessment) -- Overall risk: Low". Nothing on that
+    // page came from a laboratory. Stop here instead, before any model call is
+    // spent explaining nothing.
+    if (!hasLabResults(extraction)) {
+      throw new ApiError(422, 'NO_LAB_RESULTS', SAFE_STATUS_MESSAGES.NO_LAB_RESULTS);
+    }
     await markStep(ownerFilter, 'checking');
 
     // NOTE the unwrap: `aiService.extract` already returns the `data` object,
