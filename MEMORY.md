@@ -13437,6 +13437,29 @@ database; do not add `/vaidyaai` (it would start empty).**
 
 ---
 
+## 6bt. NEW LOGO (DROP + PULSE) + MOVING HERO · 2026-10-06 · COMMITTED, PUSHED
+
+**Owner chose logo B** from four drawn options (A leaf+check, B drop+pulse,
+C two-leaf V, D report+check). `components/Logo.jsx` exports `LOGO_DROP`,
+`LOGO_PULSE`; colours are tokens (`.logo__tile` --brand, `.logo__drop`
+--logo-drop = #cfe5d7 light / #0f1512 dark, `.logo__pulse` stroke --brand).
+Used in the App sidebar, the Landing header, the Splash (tile pops, drop drawn
++ filled, pulse traced) and NEW `public/favicon.svg` (+ `<link rel="icon">`).
+`tests/logo.test.jsx` keeps the three drawings on the same paths.
+
+**Hero motion (CSS only, styles.css "THE HERO MOVES"):** rows glide in by
+`--i`, a flat brand-tint scan band sweeps once, tags fade in, the verdict card
+rises, the safety tick draws, then both small cards float forever. All
+delays add `--hero-delay`, which Landing sets to SPLASH_COVER_MS when the
+splash plays (else it would play unseen). Resting state = finished picture,
+so the global reduced-motion rule leaves it correct (checked: rows/tags/
+verdict opacity 1, tick offset 0, scan hidden). ⚠ Bug found in the browser:
+the tick path is 50 long and the first dasharray was 26 → tick half missing
+at rest; now 64. Frontend **559** passed. Not done (offered): the faint
+leaf watermark in the hero background is a leftover of the old logo.
+
+---
+
 ## 7. Module 1 → later modules: inherited obligations
 
 **RESOLVED by Module 2:** `ownership.js` is now wired up and enforced, `ownerScopedFilter` throws

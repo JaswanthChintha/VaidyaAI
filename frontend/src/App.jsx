@@ -2,6 +2,7 @@ import { Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-route
 import { useAuth } from './lib/auth';
 import ThemeToggle from './components/ThemeToggle';
 import Icon from './components/Icon';
+import Logo from './components/Logo';
 import Landing from './pages/Landing';
 import SignIn from './pages/SignIn';
 import Profile from './pages/Profile';
@@ -38,9 +39,7 @@ function Nav() {
     <nav className="nav" aria-label="Main">
       {/* The wordmark carries the one italic serif flourish in the app. */}
       <Link to="/reports" className="nav__brand">
-        <span className="nav__mark" aria-hidden="true">
-          <Icon name="leaf" size={18} />
-        </span>
+        <Logo size={32} className="nav__mark" />
         <span>
           Vaidya<em>AI</em>
         </span>

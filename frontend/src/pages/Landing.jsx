@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import ThemeToggle from '../components/ThemeToggle';
 import Icon from '../components/Icon';
-import Splash from '../components/Splash';
+import Logo from '../components/Logo';
+import Splash, { SPLASH_COVER_MS, shouldShow as splashWillShow } from '../components/Splash';
 
 /**
  * The public front page, shown only to someone who is not signed in.
@@ -93,9 +95,7 @@ const EXAMPLE = [
 function Brand() {
   return (
     <Link to="/" className="landing__brand">
-      <span className="nav__mark" aria-hidden="true">
-        <Icon name="leaf" size={18} />
-      </span>
+      <Logo size={34} className="nav__mark" />
       <span>
         Vaidya<em>AI</em>
       </span>
@@ -121,8 +121,9 @@ function ExampleSheet() {
           </tr>
         </thead>
         <tbody>
-          {EXAMPLE.map((row) => (
-            <tr key={row.name}>
+          {EXAMPLE.map((row, i) => (
+            // `--i` staggers the row-by-row "reading" animation (styles.css).
+            <tr key={row.name} style={{ '--i': i }}>
               <td>{row.name}</td>
               <td className="specimen__num">{row.value}</td>
               <td>
@@ -132,13 +133,19 @@ function ExampleSheet() {
           ))}
         </tbody>
       </table>
+      {/* A soft line that sweeps down the rows once, as if reading them.
+          Invisible at rest, so with reduced motion there is simply nothing. */}
+      <span className="specimen__scan" aria-hidden="true" />
     </figure>
   );
 }
 
 export default function Landing() {
+  // The hero's "reading" animation would play unseen under the intro, so it
+  // waits for the intro to lift. Read once, before the splash marks itself seen.
+  const [heroDelay] = useState(() => (splashWillShow() ? `${SPLASH_COVER_MS}ms` : '0ms'));
   return (
-    <div className="landing">
+    <div className="landing" style={{ '--hero-delay': heroDelay }}>
       <Splash />
       <header className="landing__bar">
         <Brand />

@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
+import { LOGO_DROP, LOGO_PULSE } from './Logo';
 
 /**
  * The short intro shown over the landing page, once per visit.
  *
- * About 4.5 seconds: the leaf draws itself, the wordmark and tagline rise in,
+ * About 4.5 seconds: the logo draws itself, the wordmark and tagline rise in,
  * a thin line fills, and the whole screen lifts away to the page underneath.
  * The landing page is already rendered beneath it, so nothing shifts when it
  * goes.
@@ -17,7 +18,10 @@ const SEEN_KEY = 'vaidyaai-intro-seen';
 const LEAVE_AT_MS = 4000;
 const GONE_AT_MS = 4800;
 
-function shouldShow() {
+/** How long the page underneath is covered, for anything that should wait. */
+export const SPLASH_COVER_MS = 4400;
+
+export function shouldShow() {
   try {
     if (window.sessionStorage.getItem(SEEN_KEY)) return false;
   } catch {
@@ -64,9 +68,12 @@ export default function Splash() {
   return (
     <div className={phase === 'leaving' ? 'splash splash--leaving' : 'splash'} aria-label="VaidyaAI">
       <div className="splash__inner">
-        <svg className="splash__leaf" width="72" height="72" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path pathLength="1" d="M5 19c0-8 5-13.5 14-14-.5 9-6 14-14 14z" />
-          <path pathLength="1" d="M5 19 13 11" />
+        {/* The logo builds itself: the tile settles, the drop is drawn and
+            filled, then the pulse line traces across it like a monitor. */}
+        <svg className="splash__logo" width="88" height="88" viewBox="0 0 48 48" aria-hidden="true">
+          <rect className="splash__tile" width="48" height="48" rx="13" />
+          <path className="splash__drop" pathLength="1" d={LOGO_DROP} />
+          <path className="splash__pulse" pathLength="1" d={LOGO_PULSE} />
         </svg>
         <p className="splash__word">
           Vaidya<em>AI</em>
