@@ -27,3 +27,6 @@ Thumbs.db
 
 # Module 3: uploaded report files (medical data - never commit)
 storage/
+# ...but not the storage CODE in src/storage (see the root .gitignore).
+!src/storage/
+!src/storage/*.js

@@ -18,6 +18,13 @@ uploads/
 **/uploads/**
 **/storage/**
 
+# EXCEPT the storage CODE. The two lines above also matched
+# backend/src/storage/ -- the adapters that write the files -- so that folder
+# was never committed, and a clean clone (e.g. a Render deploy) could not
+# start (found 2026-10-06). Only its .js source is re-included; uploads stay out.
+!backend/src/storage/
+!backend/src/storage/*.js
+
 # Real credentials. `.env.example` is committed on purpose -- it documents
 # which variables exist without carrying a single value.
 .env
