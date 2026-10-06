@@ -272,7 +272,8 @@ def test_the_non_zero_weights_are_exactly_the_trendable_features():
     # none of them reaches a score. Weight 0 here would mean 'not a trend
     # at all', which is what `gender` and `smoking_history` are and what
     # these are not.
-    assert len(non_zero) == 21, sorted(non_zero)
+    # 2026-10-04: + the three liver-panel features (declared, monotone) -> 24.
+    assert len(non_zero) == 24, sorted(non_zero)
     assert {name for name, e in WEIGHTS.items() if e.weight == 0.0} == (
         set(CANONICAL_FEATURES) - trendable
     )
@@ -287,7 +288,8 @@ def test_every_declared_polarity_feature_can_reach_the_score():
         for name, p in POLARITY.items()
         if p.trendable and p.kind != POLARITY_UNDECLARED
     ]
-    assert len(scorable) == 7, sorted(scorable)
+    # 7 + alt, ast, bilirubin_total (2026-10-04).
+    assert len(scorable) == 10, sorted(scorable)
     for name in scorable:
         assert WEIGHTS[name].weight > 0.0, f"{name} is silently dropped"
 

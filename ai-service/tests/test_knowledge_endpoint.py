@@ -184,7 +184,7 @@ def test_an_uncovered_medical_question_is_refused_over_HTTP(kclient):
     floor can separate them, and only anchoring can.
     """
     response = kclient.post(
-        RETRIEVE, json={"text": "my ALT and AST liver enzymes are high"}
+        RETRIEVE, json={"text": "my ALP and GGT liver enzymes are high"}
     )
     assert response.status_code == 200
     data = response.json()["data"]

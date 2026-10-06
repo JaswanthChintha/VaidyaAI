@@ -1044,7 +1044,10 @@ _DECLARED = sorted(
 
 def test_the_declared_entries_are_the_ones_this_section_is_about():
     # If this list changes, the sentences below must be re-read for it.
+    # 2026-10-04: + alt, ast, bilirubin_total (the liver panel), all three
+    # monotone with harm on increase -- the sentences below were re-read.
     assert _DECLARED == [
+        "alt", "ast", "bilirubin_total",
         "bmi", "cholesterol", "creatinine", "hba1c",
         "triglycerides", "vitamin_b12", "vitamin_d",
     ]
@@ -1061,12 +1064,15 @@ def test_a_declared_polarity_is_never_explained_as_undeclared(feature):
         assert token not in text, f"{feature}: {token!r}"
 
 
-@pytest.mark.parametrize("feature", ["hba1c", "creatinine", "cholesterol", "triglycerides"])
+@pytest.mark.parametrize(
+    "feature",
+    ["hba1c", "creatinine", "cholesterol", "triglycerides", "alt", "ast", "bilirubin_total"],
+)
 def test_a_monotone_explanation_names_the_direction_declared(feature):
     from app.data.trend_polarity import reader_reason
 
     text = reader_reason(POLARITY[feature])
-    # All four declare harm on INCREASE.
+    # All of these declare harm on INCREASE.
     assert "counts a rise in this measurement as unfavourable" in text
     assert "a fall as favourable" in text
 

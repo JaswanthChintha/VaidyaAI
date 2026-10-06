@@ -443,6 +443,10 @@ WEIGHTS: Dict[str, ParameterWeight] = {
     "creatinine": ParameterWeight("creatinine", 1.0, _EQUAL_WEIGHT_BASIS),
     "cholesterol": ParameterWeight("cholesterol", 1.0, _EQUAL_WEIGHT_BASIS),
     "triglycerides": ParameterWeight("triglycerides", 1.0, _EQUAL_WEIGHT_BASIS),
+    # The liver panel (2026-10-04): equal weight, like every measured value.
+    "alt": ParameterWeight("alt", 1.0, _EQUAL_WEIGHT_BASIS),
+    "ast": ParameterWeight("ast", 1.0, _EQUAL_WEIGHT_BASIS),
+    "bilirubin_total": ParameterWeight("bilirubin_total", 1.0, _EQUAL_WEIGHT_BASIS),
     "bmi": ParameterWeight("bmi", 1.0, _EQUAL_WEIGHT_BASIS),
     "age": ParameterWeight(
         "age",

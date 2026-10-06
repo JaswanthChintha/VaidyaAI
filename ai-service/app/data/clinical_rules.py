@@ -186,12 +186,72 @@ class ContextualThreshold:
     basis: str = ""
 
 
+@dataclass(frozen=True)
+class PrintedLimitThreshold:
+    """A multiple of the upper limit PRINTED ON THE REPORT (owner, 2026-10-04).
+
+    Laboratories set their own upper limits for enzymes such as ALT and AST,
+    because methods differ, and guidelines grade a result by multiples of
+    "the upper limit of normal" -- the laboratory's. So the comparison uses
+    the printed limit when there is one.
+
+    A printed limit outside `plausible_low..plausible_high` is NOT trusted --
+    a misread "0-400" must not hide a raised value -- and `fallback` (a
+    guideline limit, plain or sex-specific) is used instead, with a note
+    saying so. Never the other way round: the guideline value never
+    overrides a sensible printed one.
+    """
+
+    multiple: float
+    fallback: Any
+    plausible_low: float
+    plausible_high: float
+    unit: str
+    basis: str = ""
+
+
+def uses_printed_limit(threshold: Any, reference_high: Optional[float]) -> bool:
+    """Does this `PrintedLimitThreshold` use the report's own limit here?"""
+    if not isinstance(threshold, PrintedLimitThreshold) or reference_high is None:
+        return False
+    try:
+        printed = float(reference_high)
+    except (TypeError, ValueError):
+        return False
+    return threshold.plausible_low <= printed <= threshold.plausible_high
+
+
 def resolve_threshold(
-    threshold: Any, sex: Optional[str], age: Optional[float]
+    threshold: Any,
+    sex: Optional[str],
+    age: Optional[float],
+    reference_high: Optional[float] = None,
 ) -> Tuple[Optional[float], Optional[str]]:
-    """`(value, note)` for a plain float or a `ContextualThreshold`."""
+    """`(value, note)` for a plain float, a `ContextualThreshold` or a
+    `PrintedLimitThreshold` (which also reads `reference_high`)."""
     if threshold is None:
         return None, None
+    if isinstance(threshold, PrintedLimitThreshold):
+        try:
+            printed = float(reference_high) if reference_high is not None else None
+        except (TypeError, ValueError):
+            printed = None
+        if printed is not None and threshold.plausible_low <= printed <= threshold.plausible_high:
+            return (
+                round(threshold.multiple * printed, 2),
+                f"compared with the upper limit printed on the report "
+                f"({printed:g} {threshold.unit})",
+            )
+        base, base_note = resolve_threshold(threshold.fallback, sex, age)
+        if base is None:
+            return None, None
+        notes = [
+            "the report printed no usable upper limit, so the guideline limit "
+            f"of {base:g} {threshold.unit} was used"
+        ]
+        if base_note:
+            notes.append(base_note)
+        return round(threshold.multiple * base, 2), "; ".join(notes)
     if not isinstance(threshold, ContextualThreshold):
         return float(threshold), None
     if age is not None:
@@ -360,6 +420,43 @@ CVD_AGE_THRESHOLD = ContextualThreshold(
     ),
     basis="NCEP ATP III major risk factor: age >= 45 (men) / >= 55 (women).",
 )
+
+# ACG Clinical Guideline: Evaluation of Abnormal Liver Chemistries (Kwo, Cohen,
+# Lim; Am J Gastroenterol 2017): "The true healthy normal ALT level ranges from
+# 29 to 33 IU/L for males, 19 to 25 IU/L for females." The top of each range is
+# used. Applied ONLY when the report prints no usable upper limit.
+ALT_GUIDELINE_ULN = ContextualThreshold(
+    male=33.0,
+    female=25.0,
+    unknown=33.0,
+    unknown_note=(
+        "sex was not recorded, so the higher (male) guideline limit of 33 U/L "
+        "was used to avoid over-calling"
+    ),
+    basis="ACG 2017 healthy upper limits for ALT: 33 IU/L men, 25 IU/L women.",
+)
+# AST has no guideline-defined healthy limit comparable to ALT's; 40 U/L is the
+# usual adult laboratory upper limit and is used only when none is printed.
+AST_GUIDELINE_ULN = 40.0
+
+#: A printed ALT/AST upper limit outside this range is a misread, not a limit.
+_ENZYME_ULN_PLAUSIBLE = (15.0, 100.0)
+
+
+def _alt_limit(multiple: float) -> PrintedLimitThreshold:
+    return PrintedLimitThreshold(
+        multiple, ALT_GUIDELINE_ULN, *_ENZYME_ULN_PLAUSIBLE, unit="U/L",
+        basis="Multiple of the report's printed ALT upper limit; ACG 2017 "
+        "limits when none is printed.",
+    )
+
+
+def _ast_limit(multiple: float) -> PrintedLimitThreshold:
+    return PrintedLimitThreshold(
+        multiple, AST_GUIDELINE_ULN, *_ENZYME_ULN_PLAUSIBLE, unit="U/L",
+        basis="Multiple of the report's printed AST upper limit; 40 U/L when "
+        "none is printed.",
+    )
 
 
 # --------------------------------------------------------------------------
@@ -1112,6 +1209,149 @@ THRESHOLD_RULES: Tuple[ThresholdRule, ...] = (
             ),
         ),
     ),
+    # ============================================================== LIVER ==
+    #
+    # 2026-10-04, owner's decisions: ALT and AST against the upper limit
+    # PRINTED ON THE REPORT (guideline limits only when none is usable), total
+    # bilirubin against 1.2 mg/dL. Graded as the ACG 2017 guideline grades
+    # liver enzymes, by multiples of the upper limit. Adults only: children's
+    # references differ and newborn bilirubin has its own charts.
+    ThresholdRule(
+        id="RULE_LIVER_ALT",
+        version="1.0.0",
+        condition=C.LIVER_DISEASE,
+        feature="alt",
+        min_age_years=18,
+        context_features=("gender", "age"),
+        basis=(
+            "ACG Clinical Guideline: Evaluation of Abnormal Liver Chemistries "
+            "(Kwo, Cohen, Lim; Am J Gastroenterol 2017). ALT is graded by "
+            "multiples of the upper limit of normal; the report's printed upper "
+            "limit is used, or the ACG healthy limits (33 IU/L men, 25 IU/L "
+            "women) when none is printed. A raised ALT reflects liver-cell "
+            "irritation and does not name a cause."
+        ),
+        bands=(
+            Band(
+                comparator=">=",
+                threshold=_alt_limit(5.0),
+                status=DecisionStatus.INDICATED,
+                risk=RiskLevel.HIGH,
+                label="at or above five times the upper limit",
+                recommendations=_FLAGGED_HIGH,
+                basis="ACG 2017: 5-15x the upper limit is a moderate rise and "
+                "above 15x a severe one; both warrant prompt review.",
+            ),
+            Band(
+                comparator=">",
+                threshold=_alt_limit(1.0),
+                status=DecisionStatus.INDICATED,
+                risk=RiskLevel.MEDIUM,
+                label="above the upper limit",
+                recommendations=_FLAGGED,
+                basis="ACG 2017: any value above the upper limit is abnormal "
+                "and is evaluated, usually starting with a repeat test.",
+            ),
+            Band(
+                comparator=">",
+                # Only ever reached with NO usable printed limit: with one, the
+                # band above already caught anything over it.
+                threshold=PrintedLimitThreshold(
+                    1.0, 25.0, *_ENZYME_ULN_PLAUSIBLE, unit="U/L",
+                    basis="ACG 2017 female limit, for the sex-unknown zone.",
+                ),
+                status=DecisionStatus.BORDERLINE,
+                risk=RiskLevel.LOW,
+                label=(
+                    "above the guideline limit for women (25 U/L) but not for "
+                    "men (33 U/L), and sex was not recorded"
+                ),
+                recommendations=_FLAGGED,
+                basis="Sex decides which ACG limit applies; with sex unrecorded "
+                "this zone is reported as borderline.",
+                only_when_sex_unknown=True,
+            ),
+            _normal_band(
+                "at or below the upper limit",
+                "At or below the applicable upper limit of normal.",
+            ),
+        ),
+    ),
+    ThresholdRule(
+        id="RULE_LIVER_AST",
+        version="1.0.0",
+        condition=C.LIVER_DISEASE,
+        feature="ast",
+        min_age_years=18,
+        basis=(
+            "ACG 2017 grading by multiples of the upper limit of normal, "
+            "applied to AST. The report's printed upper limit is used, or "
+            "40 U/L (the usual adult laboratory limit) when none is printed. "
+            "AST also rises from muscle, so it is read with ALT."
+        ),
+        bands=(
+            Band(
+                comparator=">=",
+                threshold=_ast_limit(5.0),
+                status=DecisionStatus.INDICATED,
+                risk=RiskLevel.HIGH,
+                label="at or above five times the upper limit",
+                recommendations=_FLAGGED_HIGH,
+                basis="ACG 2017 grading: 5x the upper limit or more.",
+            ),
+            Band(
+                comparator=">",
+                threshold=_ast_limit(1.0),
+                status=DecisionStatus.INDICATED,
+                risk=RiskLevel.MEDIUM,
+                label="above the upper limit",
+                recommendations=_FLAGGED,
+                basis="Above the upper limit of normal.",
+            ),
+            _normal_band(
+                "at or below the upper limit",
+                "At or below the applicable upper limit of normal.",
+            ),
+        ),
+    ),
+    ThresholdRule(
+        id="RULE_LIVER_BILIRUBIN",
+        version="1.0.0",
+        condition=C.LIVER_DISEASE,
+        feature="bilirubin_total",
+        min_age_years=18,
+        basis=(
+            "Adult total bilirubin upper reference limit 1.2 mg/dL (20.5 "
+            "umol/L); jaundice usually becomes visible from about 2.5-3 mg/dL. "
+            "A mildly raised isolated total is often benign (e.g. Gilbert "
+            "syndrome), so it is flagged for discussion, not alarm."
+        ),
+        bands=(
+            Band(
+                comparator=">=",
+                threshold=3.0,
+                status=DecisionStatus.INDICATED,
+                risk=RiskLevel.HIGH,
+                label="at or above 3.0 mg/dL",
+                recommendations=_FLAGGED_HIGH,
+                basis="The range in which jaundice is usually visible.",
+            ),
+            Band(
+                comparator=">",
+                threshold=1.2,
+                status=DecisionStatus.INDICATED,
+                risk=RiskLevel.MEDIUM,
+                label="above 1.2 mg/dL",
+                recommendations=_FLAGGED,
+                basis="Adult upper reference limit for total bilirubin. '>' "
+                "because a value at the limit is inside the interval.",
+            ),
+            _normal_band(
+                "at or below 1.2 mg/dL",
+                "Inside the adult reference interval.",
+            ),
+        ),
+    ),
     # ============================================================ OBESITY ==
     ThresholdRule(
         id="RULE_OBESITY_BMI",
@@ -1675,6 +1915,17 @@ _self_check()
 
 
 def _threshold_document(threshold: Any) -> Any:
+    if isinstance(threshold, PrintedLimitThreshold):
+        return {
+            "multiple_of_printed_upper_limit": threshold.multiple,
+            "printed_limit_trusted_between": [
+                threshold.plausible_low,
+                threshold.plausible_high,
+            ],
+            "fallback_when_none_printed": _threshold_document(threshold.fallback),
+            "unit": threshold.unit,
+            "basis": threshold.basis,
+        }
     if isinstance(threshold, ContextualThreshold):
         return {
             "male": threshold.male,
@@ -1792,6 +2043,8 @@ __all__ = [
     "Band",
     "CompositeRule",
     "ContextualThreshold",
+    "PrintedLimitThreshold",
+    "uses_printed_limit",
     "CountBand",
     "RiskFactorDefinition",
     "ThresholdRule",

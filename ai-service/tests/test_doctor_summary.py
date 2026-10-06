@@ -122,6 +122,10 @@ def healthy_payload() -> Dict[str, Any]:
         triglycerides=feature("triglycerides", 110.0, "mg/dl"),
         vitamin_d=feature("vitamin_d", 42.0, "ng/ml"),
         vitamin_b12=feature("vitamin_b12", 480.0, "pg/ml"),
+        # The liver panel (2026-10-04): "every condition assessed" includes it.
+        alt=feature("alt", 18.0, "u/l"),
+        ast=feature("ast", 21.0, "u/l"),
+        bilirubin_total=feature("bilirubin_total", 0.6, "mg/dl"),
         bmi=feature("bmi", 22.4, "kg/m2", "patient_profile"),
         age=feature("age", 34, "years", "patient_profile"),
         gender=feature("gender", "female", None, "patient_profile"),

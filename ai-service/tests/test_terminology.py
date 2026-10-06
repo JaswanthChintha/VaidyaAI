@@ -57,7 +57,11 @@ def offline_settings():
 #: liver test, and one the corpus still does not cover -- so this list keeps
 #: guarding exactly the neighbourhood where a nearby document could be served
 #: for the wrong test.
-UNCOVERED_TERMS = ["TSH", "ferritin", "bilirubin", "PSA", "CRP"]
+#:
+#: ⚠ AND `bilirubin` LEFT LATER THE SAME DAY, when total bilirubin became a
+#: feature of the Liver Disease topic. `GGT` -- a liver enzyme with no
+#: document -- now holds the place.
+UNCOVERED_TERMS = ["TSH", "ferritin", "GGT", "PSA", "CRP"]
 
 
 @pytest.mark.parametrize("term", UNCOVERED_TERMS)

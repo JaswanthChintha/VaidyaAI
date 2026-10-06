@@ -641,6 +641,36 @@ POLARITY: Dict[str, TrendPolarity] = {
             "automatically good news."
         ),
     ),
+    # ================================ the liver panel (2026-10-04) ==========
+    "alt": TrendPolarity(
+        "alt",
+        POLARITY_MONOTONE,
+        direction_of_harm=HARM_INCREASE,
+        basis=(
+            "ACG 2017 abnormal liver chemistries: ALT leaks from injured "
+            "hepatocytes, so a RISE reflects more liver-cell injury. A low ALT "
+            "carries no clinical harm in this context."
+        ),
+    ),
+    "ast": TrendPolarity(
+        "ast",
+        POLARITY_MONOTONE,
+        direction_of_harm=HARM_INCREASE,
+        basis=(
+            "ACG 2017: AST rises with hepatocellular (and muscle) injury; a "
+            "low AST is not a clinical concern."
+        ),
+    ),
+    "bilirubin_total": TrendPolarity(
+        "bilirubin_total",
+        POLARITY_MONOTONE,
+        direction_of_harm=HARM_INCREASE,
+        basis=(
+            "Raised total bilirubin reflects reduced clearance (liver, bile "
+            "ducts) or increased red-cell breakdown; a low value is not a "
+            "clinical concern in adults."
+        ),
+    ),
 }
 
 
@@ -969,6 +999,43 @@ STABILITY: Dict[str, StabilityBand] = {
         basis=(
             _RCV_NOTE + " CVa 4.0 %, CVi 7.3 % (EFLM median) -> RCV 23.1 %, "
             "taken as 23 %. Absolute floor 10 x10^3/uL."
+        ),
+    ),
+    # ================================ the liver panel (2026-10-04) ==========
+    "alt": StabilityBand(
+        "alt",
+        significant_change_pct=29.0,
+        min_absolute_change=3.0,
+        analytical_cv_pct=4.0,
+        within_subject_cv_pct=9.6,
+        basis=(
+            _RCV_NOTE + " CVa 4.0 %, CVi 9.6 % (EFLM biological variation "
+            "database, adult) -> RCV 28.8 %, taken as 29 %. Absolute floor "
+            "3 U/L."
+        ),
+    ),
+    "ast": StabilityBand(
+        "ast",
+        significant_change_pct=29.0,
+        min_absolute_change=3.0,
+        analytical_cv_pct=4.0,
+        within_subject_cv_pct=9.5,
+        basis=(
+            _RCV_NOTE + " CVa 4.0 %, CVi 9.5 % (EFLM biological variation "
+            "database, adult) -> RCV 28.6 %, taken as 29 %. Absolute floor "
+            "3 U/L."
+        ),
+    ),
+    "bilirubin_total": StabilityBand(
+        "bilirubin_total",
+        significant_change_pct=62.0,
+        min_absolute_change=0.1,
+        analytical_cv_pct=5.0,
+        within_subject_cv_pct=21.8,
+        basis=(
+            _RCV_NOTE + " CVa 5.0 %, CVi 21.8 % (EFLM biological variation "
+            "database) -> RCV 62.0 %, taken as 62 %. Bilirubin varies a lot "
+            "from day to day in the same person. Absolute floor 0.1 mg/dL."
         ),
     ),
 }

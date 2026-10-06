@@ -840,6 +840,10 @@ def test_observed_module_4_output_produces_the_expected_feature_set():
         "eosinophils",
         "basophils",
         "platelet_count",
+        # The liver panel (2026-10-04): not on this report, so missing.
+        "alt",
+        "ast",
+        "bilirubin_total",
     }
     assert data.warnings == []
     assert data.summary.parameters_received == 7
@@ -880,5 +884,9 @@ def test_observed_module_4_output_with_profile_context():
         "eosinophils",
         "basophils",
         "platelet_count",
+        # The liver panel follows the blood count in catalogue order.
+        "alt",
+        "ast",
+        "bilirubin_total",
         "heart_disease",
     ]

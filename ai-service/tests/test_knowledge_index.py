@@ -474,7 +474,10 @@ def test_index_stats_report_shape_only(index):
 @pytest.mark.parametrize(
     "question",
     [
-        "my ALT and AST liver enzymes are high",
+        # Was "my ALT and AST liver enzymes are high" until 2026-10-04, when
+        # ALT and AST became features with their own documents. ALP and GGT
+        # are the liver tests the corpus still does not cover.
+        "my ALP and GGT liver enzymes are high",
         "C reactive protein CRP",
         "what should I take for my thyroid",
         "is my liver enzyme high",

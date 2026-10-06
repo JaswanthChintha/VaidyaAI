@@ -409,6 +409,54 @@ boundaries for people of South Asian, Chinese and other Asian descent.
             "Asian BMI cut-off points."
         ),
     ),
+    KnowledgeDocument(
+        doc_id="ref_liver_bands",
+        title="Liver test limits: ALT, AST and total bilirubin",
+        topic=TOPIC_REFERENCE,
+        features=("alt", "ast", "bilirubin_total"),
+        conditions=(C.LIVER_DISEASE,),
+        keywords=(
+            "alt normal range", "sgpt normal range", "ast normal range",
+            "sgot normal range", "bilirubin normal range", "upper limit of normal",
+            "1.2", "33", "25", "40",
+        ),
+        summary=(
+            "ALT and AST are compared with the upper limit printed on the "
+            "laboratory's own report, or the guideline limits when none is "
+            "printed; total bilirubin is compared with 1.2 mg/dL."
+        ),
+        body="""
+Laboratories set their own upper limits for ALT and AST, because methods
+differ. This platform therefore compares ALT and AST with the upper limit
+printed on the report itself. A value above that limit is flagged, and a value
+at or above five times that limit is flagged for prompt attention.
+
+When a report prints no upper limit, the guideline limits are used instead: for
+ALT, 33 U/L for men and 25 U/L for women, and 33 U/L when sex is not recorded;
+for AST, 40 U/L. A printed limit far outside the usual range is not trusted and
+the guideline limit is used in its place.
+
+Total bilirubin above 1.2 mg/dL is flagged, and at or above 3.0 mg/dL, the
+range in which yellowing of the skin and eyes usually becomes visible, it is
+flagged for prompt attention.
+
+These limits apply to adults. Results in children are read against
+age-specific references, and newborn bilirubin follows its own charts.
+
+U/L and IU/L are the same unit. Bilirubin reported in micromoles per litre is
+divided by 17.1 to give milligrams per decilitre.
+"""
+        + "\n\n" + BANDS_CAVEAT,
+        basis=(
+            "ACG Clinical Guideline: Evaluation of Abnormal Liver Chemistries "
+            "(American Journal of Gastroenterology, 2017) for the ALT limits "
+            "and grading by multiples of the upper limit; common adult "
+            "reference values for AST and total bilirubin. Byte-aligned with "
+            "RULE_LIVER_ALT, RULE_LIVER_AST and RULE_LIVER_BILIRUBIN in "
+            "app/data/clinical_rules.py."
+        ),
+        last_reviewed="2026-10-04",
+    ),
 )
 
 __all__ = ["REFERENCE_DOCUMENTS"]

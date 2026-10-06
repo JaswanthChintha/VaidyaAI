@@ -1074,6 +1074,10 @@ def REALISTIC_FEATURES() -> Dict[str, Any]:
         "creatinine": vf("creatinine", 1.6, test_name="Serum Creatinine"),
         "cholesterol": vf("cholesterol", 232.0, test_name="Total Cholesterol"),
         "triglycerides": vf("triglycerides", 260.0, test_name="Triglycerides"),
+        # The liver panel (2026-10-04): a raised ALT against its printed limit.
+        "alt": vf("alt", 62.0, test_name="SGPT", reference_high=45.0),
+        "ast": vf("ast", 38.0, test_name="SGOT", reference_high=40.0),
+        "bilirubin_total": vf("bilirubin_total", 0.9, test_name="Total Bilirubin"),
         "bmi": vf("bmi", 31.4),
         "age": vf("age", 57),
         "gender": vf("gender", "male"),
@@ -1098,6 +1102,12 @@ def test_a_realistic_feature_set_produces_a_coherent_set_of_decisions():
     assert by_condition[C.OBESITY].status is DecisionStatus.INDICATED
     assert by_condition[C.HEART_DISEASE].status is DecisionStatus.INDICATED
     assert by_condition[C.HYPOGLYCEMIA].status is DecisionStatus.NOT_INDICATED
+    liver = [d for d in data.decisions if d.condition == C.LIVER_DISEASE]
+    assert {d.metadata["rule_id"]: d.status for d in liver} == {
+        "RULE_LIVER_ALT": DecisionStatus.INDICATED,
+        "RULE_LIVER_AST": DecisionStatus.NOT_INDICATED,
+        "RULE_LIVER_BILIRUBIN": DecisionStatus.NOT_INDICATED,
+    }
 
     assert data.summary.highest_risk is RiskLevel.HIGH
     assert data.summary.insufficient_data_count == 0

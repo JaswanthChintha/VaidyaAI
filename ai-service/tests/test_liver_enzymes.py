@@ -89,22 +89,28 @@ class StubClient:
 
 @pytest.mark.parametrize("name", ALT_NAMES)
 def test_alt_spellings_resolve_to_the_alt_document(name):
+    # Since ALT became a feature (later on 2026-10-04) the bare key "ALT"
+    # resolves as the canonical feature and also brings its limits document;
+    # every other spelling resolves by exact alias. Either way, the ALT
+    # document is what answers.
     resolution = resolve_term(name)
     assert resolution.covered is True
-    assert resolution.doc_ids == ("term_alt_sgpt",)
-    assert resolution.canonical_feature is None
+    assert "term_alt_sgpt" in resolution.doc_ids
+    assert resolution.canonical_feature in (None, "alt")
 
 
 @pytest.mark.parametrize("name", AST_NAMES)
 def test_ast_spellings_resolve_to_the_ast_document(name):
     resolution = resolve_term(name)
     assert resolution.covered is True
-    assert resolution.doc_ids == ("term_ast_sgot",)
-    assert resolution.canonical_feature is None
+    assert "term_ast_sgot" in resolution.doc_ids
+    assert resolution.canonical_feature in (None, "ast")
 
 
 @pytest.mark.parametrize(
-    "name", ["SGPT level", "liver enzymes", "ALTT", "GGT", "bilirubin", "ALP"]
+    # "SGPT level" and "bilirubin" LEFT THIS LIST ON 2026-10-04: the liver
+    # panel made both real features ("level" is a strippable qualifier).
+    "name", ["liver enzymes", "ALTT", "GGT", "ALP"]
 )
 def test_near_misses_and_other_liver_tests_are_still_refused(name):
     answer = explain_term(name)
@@ -126,11 +132,18 @@ def test_the_term_explainer_serves_the_reviewed_document(name, doc):
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("doc_id", ["term_alt_sgpt", "term_ast_sgot"])
-def test_documents_describe_the_test_and_tag_no_feature_or_condition(doc_id):
+@pytest.mark.parametrize(
+    "doc_id,feature", [("term_alt_sgpt", "alt"), ("term_ast_sgot", "ast")]
+)
+def test_documents_describe_the_test_and_carry_their_feature(doc_id, feature):
+    # Untagged when written; tagged once ALT and AST became features of the
+    # Liver Disease topic (2026-10-04). Still no number in the body: the
+    # limits live in `ref_liver_bands`.
+    from app.data import conditions as C
+
     doc = DOCUMENTS[doc_id]
-    assert doc.features == ()
-    assert doc.conditions == ()
+    assert doc.features == (feature,)
+    assert doc.conditions == (C.LIVER_DISEASE,)
     assert doc.basis.strip()
     assert doc.last_reviewed == "2026-10-04"
     # No threshold: this platform applies none to these tests.

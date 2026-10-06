@@ -218,6 +218,16 @@ UNIT_ALIASES: Dict[str, str] = {
     "lac/cumm": "lakhs/cumm",
     "lakhs/cu mm": "lakhs/cumm",
     "lakhs/cmm": "lakhs/cumm",
+    # ENZYME ACTIVITY (2026-10-04, liver panel). U/L and IU/L are the same
+    # unit -- one international unit per litre -- printed both ways.
+    "u/l": "u/l",
+    "iu/l": "u/l",
+    "units/l": "u/l",
+    "unit/l": "u/l",
+    "u/litre": "u/l",
+    "iu/litre": "u/l",
+    "u/ltr": "u/l",
+    "iu/ltr": "u/l",
 }
 
 
@@ -306,6 +316,7 @@ MW_TRIGLYCERIDE = 885.7  # triolein, the conventional clinical basis
 MW_25OH_VITAMIN_D = 400.64  # 25-hydroxycholecalciferol, C27H44O2
 MW_COBALAMIN = 1355.37  # cyanocobalamin, C63H88CoN14O14P
 MW_HAEMOGLOBIN_PER_HEME = 16114.5  # tetramer 64458 / 4
+MW_BILIRUBIN = 584.66  # C33H36N4O6
 
 
 # CONVERSIONS[canonical_feature][normalised_source_unit] -> UnitConversion
@@ -541,6 +552,24 @@ CONVERSIONS: Dict[str, Dict[str, UnitConversion]] = {
                 "gives 10^3/uL. Indian reporting convention."
             ),
         ),
+    },
+    # ------------------------------------------- liver panel (2026-10-04) --
+    # Enzyme activity: U/L only. No conversion is offered from ukat/L -- a
+    # report printing it is reported as an unrecognised unit, never guessed.
+    "alt": {"u/l": _identity("u/l")},
+    "ast": {"u/l": _identity("u/l")},
+    # Canonical: mg/dL. 1 mg/dL = 17.104 umol/L (MW 584.66), so
+    # umol/L x 0.058467 = mg/dL. Check: 17.1 umol/L -> 1.000 mg/dL;
+    # 1.2 mg/dL -> 20.52 umol/L.
+    "bilirubin_total": {
+        "mg/dl": _identity("mg/dl"),
+        "umol/l": UnitConversion(
+            "umol/l",
+            "mg/dl",
+            0.058467,
+            basis=f"MW bilirubin {MW_BILIRUBIN} g/mol; 1 mg/dL = 17.104 umol/L",
+        ),
+        "mg/l": UnitConversion("mg/l", "mg/dl", 0.1, basis="decimal prefix"),
     },
     # ------------------------------------------- patient-profile features --
     "bmi": {"kg/m2": _identity("kg/m2")},

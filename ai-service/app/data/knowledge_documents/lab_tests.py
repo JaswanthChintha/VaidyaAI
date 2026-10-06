@@ -993,6 +993,56 @@ unusual at either end and a fall is not automatically good news.
             "distribution: NHANES 2017-2018 (LBXPLTSI)."
         ),
     ),
+    # ALT and AST are described by `term_alt_sgpt` / `term_ast_sgot` in
+    # terminology.py (2026-10-04), tagged with their features there.
+    KnowledgeDocument(
+        doc_id="lab_bilirubin_total",
+        title="Total bilirubin",
+        topic=TOPIC_LAB_TEST,
+        features=("bilirubin_total",),
+        conditions=(C.LIVER_DISEASE,),
+        keywords=(
+            "bilirubin", "total bilirubin", "serum bilirubin", "tbil",
+            "jaundice", "yellow skin", "liver function test", "lft",
+        ),
+        summary=(
+            "Total bilirubin measures a yellow pigment made when old red blood "
+            "cells are broken down, which the liver clears into bile; a raised "
+            "level can come from the liver, the bile ducts or faster red-cell "
+            "breakdown."
+        ),
+        body="""
+Red blood cells live for about three months. When they are broken down, the
+haemoglobin inside them is turned into bilirubin, a yellow pigment. The liver
+takes up bilirubin, changes it into a form that dissolves in water, and passes
+it into bile, which carries it out of the body.
+
+Total bilirubin is the sum of two forms: the form before the liver has
+processed it, often reported as indirect bilirubin, and the form after, often
+reported as direct bilirubin. Reports frequently show all three. This platform
+reads the total; the direct and indirect fractions are listed as printed.
+
+A raised total can arise at three points: more red cells breaking down than
+usual, the liver taking up or processing bilirubin less well, or bile not
+draining freely. Which fraction is raised helps a clinician tell these apart.
+
+A common and harmless cause of a mildly raised total is an inherited
+difference in how the liver processes bilirubin, which often shows up during
+fasting or illness. A raised result is therefore read together with the other
+liver tests and the person's history rather than on its own.
+
+When bilirubin is high enough, the skin and the whites of the eyes turn yellow,
+which is called jaundice.
+"""
+        + "\n\n" + CONSULT,
+        basis=(
+            "ACG Clinical Guideline: Evaluation of Abnormal Liver Chemistries "
+            "(American Journal of Gastroenterology, 2017); standard adult "
+            "reference values for total bilirubin. Matches RULE_LIVER_BILIRUBIN "
+            "in app/data/clinical_rules.py."
+        ),
+        last_reviewed="2026-10-04",
+    ),
 )
 
 __all__ = ["LAB_TEST_DOCUMENTS"]

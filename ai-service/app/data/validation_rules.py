@@ -649,6 +649,54 @@ RULES: Dict[str, ValidationRule] = {
         "threshold for extreme thrombocytosis. 10^3/uL and 10^9/L are "
         "numerically identical, so a report printing either maps correctly.",
     ),
+    # ================================ the liver panel (2026-10-04) ==========
+    # ---------------------------------------------------------------- alt --
+    "alt": ValidationRule(
+        "alt",
+        "number",
+        "u/l",
+        # POSSIBLE 1 - 30000 U/L.
+        #   Low bound: 0 is not a real measurement (labs print "<5").
+        #   High bound: acute toxic and ischaemic hepatitis exceed 10,000 U/L
+        #   and published cases pass 20,000; 30,000 gives headroom.
+        possible_low=1.0,
+        possible_high=30000.0,
+        # EXTREME: >= 1000 U/L is the range of acute hepatitis, toxic or
+        #   ischaemic injury (ACG 2017: > 15x the upper limit is "severe").
+        extreme_high=1000.0,
+        basis="U/L (= IU/L). ACG 2017 abnormal liver chemistries: > 1000 U/L "
+        "implies acute hepatocellular injury; possible band from acute liver "
+        "failure case reports.",
+    ),
+    # ---------------------------------------------------------------- ast --
+    "ast": ValidationRule(
+        "ast",
+        "number",
+        "u/l",
+        # POSSIBLE 1 - 40000 U/L. AST also rises from muscle: rhabdomyolysis
+        #   and ischaemic hepatitis can exceed 20,000 U/L.
+        possible_low=1.0,
+        possible_high=40000.0,
+        extreme_high=1000.0,
+        basis="U/L (= IU/L). Same urgency threshold as ALT (ACG 2017); "
+        "possible band widened for muscle injury.",
+    ),
+    # ---------------------------------------------------- bilirubin_total --
+    "bilirubin_total": ValidationRule(
+        "bilirubin_total",
+        "number",
+        "mg/dl",
+        # POSSIBLE 0.05 - 60 mg/dL. Severe cholestasis and haemolysis reach
+        #   30-50 mg/dL in adults. A umol/L result NOT converted is caught by
+        #   the unit check, not by this band (17 umol/L would sit inside it).
+        possible_low=0.05,
+        possible_high=60.0,
+        # EXTREME: >= 15 mg/dL is severe hyperbilirubinaemia in an adult.
+        extreme_high=15.0,
+        basis="mg/dL (umol/L / 17.1). Severe adult hyperbilirubinaemia "
+        "threshold (15 mg/dL); possible band from cholestasis and haemolysis "
+        "extremes.",
+    ),
 }
 
 

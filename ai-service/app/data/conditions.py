@@ -68,6 +68,7 @@ ELEVATED_VITAMIN_D = "Elevated Vitamin D"
 VITAMIN_B12_DEFICIENCY = "Vitamin B12 Deficiency"
 HIGH_CHOLESTEROL = "High Cholesterol"
 HIGH_TRIGLYCERIDES = "High Triglycerides"
+LIVER_DISEASE = "Liver Disease"
 OBESITY = "Obesity"
 UNDERWEIGHT = "Underweight"
 
@@ -148,6 +149,13 @@ CONDITIONS: Dict[str, ConditionDefinition] = {
     ),
     HIGH_TRIGLYCERIDES: ConditionDefinition(
         HIGH_TRIGLYCERIDES, "Raised triglycerides."
+    ),
+    # 2026-10-04. Rule-based only for now (no predictor), named to match
+    # "Kidney Disease": the rules report raised liver tests worth discussing,
+    # they do not diagnose a disease.
+    LIVER_DISEASE: ConditionDefinition(
+        LIVER_DISEASE,
+        "Liver tests (ALT, AST, total bilirubin) against their upper limits.",
     ),
     OBESITY: ConditionDefinition(OBESITY, "Body mass index in the WHO obesity range."),
     UNDERWEIGHT: ConditionDefinition(

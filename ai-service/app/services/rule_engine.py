@@ -70,10 +70,12 @@ from app.data.clinical_rules import (
     CompositeRule,
     ContextualThreshold,
     CountBand,
+    PrintedLimitThreshold,
     RiskFactorDefinition,
     ThresholdRule,
     resolve_threshold,
     sample_timing,
+    uses_printed_limit,
 )
 from app.data.egfr import (
     EGFR_FEATURE,
@@ -514,7 +516,8 @@ def _evaluate_threshold_rule(
     for band in rule.bands:
         if band.only_when_sex_unknown and sex is not None:
             continue
-        threshold, note = resolve_threshold(band.threshold, sex, age)
+        reference_high = _as_float(view.reference_high)
+        threshold, note = resolve_threshold(band.threshold, sex, age, reference_high)
         if band.comparator is not None and threshold is not None:
             if not COMPARATORS[band.comparator](view.numeric, threshold):
                 continue
@@ -522,8 +525,18 @@ def _evaluate_threshold_rule(
         extra_notes: List[str] = []
         if note:
             extra_notes.append(note)
-        contextual = isinstance(band.threshold, ContextualThreshold)
-        if contextual and age is None and band.threshold.paediatric:
+        # Sex and age chose this threshold when it is sex-specific -- including
+        # a printed-limit threshold that fell back to a sex-specific guideline.
+        contextual = isinstance(band.threshold, ContextualThreshold) or (
+            isinstance(band.threshold, PrintedLimitThreshold)
+            and isinstance(band.threshold.fallback, ContextualThreshold)
+            and not uses_printed_limit(band.threshold, reference_high)
+        )
+        if (
+            isinstance(band.threshold, ContextualThreshold)
+            and age is None
+            and band.threshold.paediatric
+        ):
             extra_notes.append(NOTE_AGE_UNKNOWN)
 
         evidence = [

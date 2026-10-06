@@ -272,6 +272,10 @@ def test_catalog_publishes_the_canonical_feature_space(api):
         "eosinophils",
         "basophils",
         "platelet_count",
+        # ---- the liver panel (2026-10-04) ----
+        "alt",
+        "ast",
+        "bilirubin_total",
     }
     # The differentials are PERCENTAGES of the white cell count and accept no
     # other unit, which the published catalogue has to say out loud: a caller

@@ -82,6 +82,10 @@ def test_lab_and_profile_features_are_disjoint_and_complete():
         "eosinophils",
         "basophils",
         "platelet_count",
+        # ---- the liver panel (2026-10-04) ----
+        "alt",
+        "ast",
+        "bilirubin_total",
     }
 
 
@@ -263,7 +267,11 @@ def test_lipid_subfractions_are_not_total_cholesterol(printed):
     # so asserting that it maps to nothing would now be satisfied only by
     # removing the mapping. The remaining five are still genuinely unmapped;
     # TSH and ESR are known gaps recorded in MEMORY.md.
-    "printed", ["Sodium", "Potassium", "TSH", "ESR", "Bilirubin"]
+    #
+    # ⚠ "Bilirubin" LEFT ON 2026-10-04, for the same reason: it is now TOTAL
+    # bilirubin (the liver panel). "Alkaline Phosphatase" takes its place --
+    # another liver test this platform still does not map.
+    "printed", ["Sodium", "Potassium", "TSH", "ESR", "Alkaline Phosphatase"]
 )
 def test_unknown_tests_report_no_canonical_feature(printed):
     match, reason = lookup_test_name(printed)

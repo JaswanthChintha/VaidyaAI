@@ -546,6 +546,56 @@ definition and why repeat measurement is the usual next step.
         ),
     ),
     KnowledgeDocument(
+        doc_id="cond_liver_disease",
+        title="Liver conditions: what the term describes",
+        topic=TOPIC_CONDITION,
+        features=("alt", "ast", "bilirubin_total"),
+        conditions=(C.LIVER_DISEASE,),
+        keywords=(
+            "liver disease", "liver condition", "fatty liver", "hepatitis",
+            "jaundice", "liver function", "lft", "raised liver enzymes",
+        ),
+        summary=(
+            "Liver conditions range from short-lived irritation of liver cells "
+            "to long-standing scarring; blood tests such as ALT, AST and "
+            "bilirubin point to where a problem may lie but do not by "
+            "themselves name it."
+        ),
+        body="""
+The liver processes nutrients, makes many of the proteins in blood, clears
+waste products such as bilirubin, and breaks down substances the body takes in.
+A liver condition is anything that interferes with that work, and the range is
+wide: from brief irritation of liver cells that settles by itself to
+long-standing inflammation or scarring.
+
+Common routes to liver-cell irritation include fat building up in the liver,
+viral infections, heavy use of alcohol, and other substances the liver has to
+process.
+Many people with a raised liver enzyme have no symptoms at all, which is why
+such results are often found on a routine blood test.
+
+Blood tests describe different parts of the picture. ALT and AST reflect
+irritation or injury of liver cells; bilirubin reflects how well the liver and
+bile ducts are clearing a waste pigment. A pattern across several tests says
+more than any single one.
+
+A raised result is a prompt to look further, not a conclusion. Results are
+usually repeated, and a clinician may add other tests or an ultrasound scan
+before anything is said about the cause.
+
+When symptoms do occur they can include tiredness, discomfort under the right
+ribs, dark urine, pale stools, itching, or yellowing of the skin and eyes.
+"""
+        + "\n\n" + NOT_A_FINDING,
+        basis=(
+            "ACG Clinical Guideline: Evaluation of Abnormal Liver Chemistries "
+            "(Kwo, Cohen and Lim; American Journal of Gastroenterology, 2017). "
+            "Condition name matches conditions.LIVER_DISEASE; the rules are "
+            "RULE_LIVER_ALT, RULE_LIVER_AST and RULE_LIVER_BILIRUBIN."
+        ),
+        last_reviewed="2026-10-04",
+    ),
+    KnowledgeDocument(
         doc_id="cond_heart_disease",
         title="Cardiovascular risk: what the term describes",
         topic=TOPIC_CONDITION,

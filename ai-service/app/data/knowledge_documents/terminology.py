@@ -419,18 +419,19 @@ a diagnosis.
     # ------------------------------------------------------------------
     # LIVER ENZYMES (owner, 2026-10-04). Spec Module 25 names SGPT, and the
     # corpus had nothing on it, so the term was refused. These two documents
-    # describe the TESTS only: no thresholds, because this platform applies
-    # none to them, and nothing about what a particular result means.
+    # describe the TESTS; the numbers live in `ref_liver_bands`.
     #
-    # THE SUMMARY IS ALSO THE DASHBOARD'S DESCRIPTION of an unassessed ALT or
-    # AST row (`parameter_glossary.py`), so it must stand alone, stay within
-    # two sentences, and contain no number -- the same rules the
-    # model-written descriptions are held to.
+    # LATER THE SAME DAY ALT and AST became assessed features (the Liver
+    # Disease topic), so these documents now carry their feature tags and are
+    # the features' own "what is this test" documents. Their bodies still
+    # hold no number, so a cut-off has one home.
     # ------------------------------------------------------------------
     KnowledgeDocument(
         doc_id="term_alt_sgpt",
         title="ALT (SGPT), a liver enzyme test",
         topic=TOPIC_TERMINOLOGY,
+        features=("alt",),
+        conditions=(C.LIVER_DISEASE,),
         keywords=(
             "alt", "sgpt", "alanine aminotransferase", "alanine transaminase",
             "serum glutamic pyruvic transaminase", "liver enzyme",
@@ -468,16 +469,16 @@ can settle without any lasting problem. Reference intervals differ between
 laboratories, so a result is read against the range printed by the laboratory
 that measured it.
 
-This platform reads and lists an ALT result but does not assess it against any
-threshold. A qualified healthcare professional interprets it alongside the rest
-of the panel, symptoms and history. This material is educational and is not a
-diagnosis.
+This platform compares an ALT result with the upper limit printed on the
+report, and flags a value above it as worth discussing. A qualified healthcare
+professional interprets it alongside the rest of the panel, symptoms and
+history. This material is educational and is not a diagnosis.
 """,
         basis=(
             "ACG Clinical Guideline: Evaluation of Abnormal Liver Chemistries "
             "(Kwo, Cohen and Lim; American Journal of Gastroenterology, 2017); "
-            "MedlinePlus, ALT blood test (U.S. NLM). "
-            "Describes the test only; no threshold is applied by this platform."
+            "MedlinePlus, ALT blood test (U.S. NLM). The limits applied are in "
+            "ref_liver_bands and RULE_LIVER_ALT."
         ),
         last_reviewed="2026-10-04",
     ),
@@ -485,6 +486,8 @@ diagnosis.
         doc_id="term_ast_sgot",
         title="AST (SGOT), a liver enzyme test",
         topic=TOPIC_TERMINOLOGY,
+        features=("ast",),
+        conditions=(C.LIVER_DISEASE,),
         keywords=(
             "ast", "sgot", "aspartate aminotransferase",
             "aspartate transaminase", "serum glutamic oxaloacetic transaminase",
@@ -515,16 +518,16 @@ common, a result is often repeated before anything is concluded from it, and
 reference intervals differ between laboratories, so a result is read against the
 range printed by the laboratory that measured it.
 
-This platform reads and lists an AST result but does not assess it against any
-threshold. A qualified healthcare professional interprets it alongside the rest
-of the panel, symptoms and history. This material is educational and is not a
-diagnosis.
+This platform compares an AST result with the upper limit printed on the
+report, and flags a value above it as worth discussing. A qualified healthcare
+professional interprets it alongside the rest of the panel, symptoms and
+history. This material is educational and is not a diagnosis.
 """,
         basis=(
             "ACG Clinical Guideline: Evaluation of Abnormal Liver Chemistries "
             "(Kwo, Cohen and Lim; American Journal of Gastroenterology, 2017); "
-            "MedlinePlus, AST test (U.S. NLM). "
-            "Describes the test only; no threshold is applied by this platform."
+            "MedlinePlus, AST test (U.S. NLM). The limits applied are in "
+            "ref_liver_bands and RULE_LIVER_AST."
         ),
         last_reviewed="2026-10-04",
     ),

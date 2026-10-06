@@ -84,6 +84,11 @@ def healthy_payload() -> Dict[str, Any]:
         triglycerides=feature("triglycerides", 110.0, "mg/dl"),
         vitamin_d=feature("vitamin_d", 42.0, "ng/ml"),
         vitamin_b12=feature("vitamin_b12", 480.0, "pg/ml"),
+        # The liver panel (2026-10-04): without it the topic is unassessed and
+        # the report is, correctly, only a partial assessment.
+        alt=feature("alt", 18.0, "u/l"),
+        ast=feature("ast", 21.0, "u/l"),
+        bilirubin_total=feature("bilirubin_total", 0.6, "mg/dl"),
         bmi=feature("bmi", 22.4, "kg/m2", "patient_profile"),
         age=feature("age", 34, "years", "patient_profile"),
         gender=feature("gender", "female", None, "patient_profile"),
@@ -115,6 +120,10 @@ def high_risk_payload() -> Dict[str, Any]:
         triglycerides=feature("triglycerides", 320.0, "mg/dl"),
         vitamin_d=feature("vitamin_d", 12.0, "ng/ml"),
         vitamin_b12=feature("vitamin_b12", 140.0, "pg/ml"),
+        # The liver panel (2026-10-04), raised, so the case stays complete.
+        alt=feature("alt", 96.0, "u/l"),
+        ast=feature("ast", 71.0, "u/l"),
+        bilirubin_total=feature("bilirubin_total", 1.4, "mg/dl"),
         bmi=feature("bmi", 33.8, "kg/m2", "patient_profile"),
         age=feature("age", 62, "years", "patient_profile"),
         gender=feature("gender", "male", None, "patient_profile"),

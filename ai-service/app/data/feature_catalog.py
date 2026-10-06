@@ -137,6 +137,20 @@ FEATURES: Dict[str, FeatureDefinition] = {
     "platelet_count": FeatureDefinition(
         "platelet_count", "10^3/ul", "number", SOURCE_LAB_REPORT, "Platelet count"
     ),
+    # ---- the liver panel (owner, 2026-10-04) ----
+    #
+    # ALT and AST are enzymes, printed in U/L (IU/L is the same unit). TOTAL
+    # bilirubin only: direct / indirect / conjugated / unconjugated are
+    # different analytes and are refused by `FEATURE_DISTINCT_TOKENS` below.
+    "alt": FeatureDefinition(
+        "alt", "u/l", "number", SOURCE_LAB_REPORT, "ALT (SGPT)"
+    ),
+    "ast": FeatureDefinition(
+        "ast", "u/l", "number", SOURCE_LAB_REPORT, "AST (SGOT)"
+    ),
+    "bilirubin_total": FeatureDefinition(
+        "bilirubin_total", "mg/dl", "number", SOURCE_LAB_REPORT, "Total bilirubin"
+    ),
     # ---- from the patient profile (Module 2 input) ----
     "bmi": FeatureDefinition(
         "bmi", "kg/m2", "number", SOURCE_PATIENT_PROFILE, "Body mass index"
@@ -498,6 +512,74 @@ FEATURE_SYNONYMS: Dict[str, Tuple[Synonym, ...]] = {
         "PLT",
         "Platelet Count (PLT)",
     ),
+    # ================================ the liver panel (2026-10-04) ==========
+    #
+    # `S.G.P.T` normalises to "s g p t", and a leading "s" is a strippable
+    # qualifier -- the dotted spellings are listed so they match whole, first.
+    # ------------------------------------------------------------- alt --
+    "alt": _s(
+        "ALT",
+        "SGPT",
+        "S.G.P.T",
+        "SGPT (ALT)",
+        "ALT (SGPT)",
+        "SGPT/ALT",
+        "ALT/SGPT",
+        "ALAT",
+        "Alanine Aminotransferase",
+        "Alanine Transaminase",
+        "Alanine Aminotransferase (ALT)",
+        "Alanine Aminotransferase (SGPT)",
+        "Alanine Aminotransferase (ALT/SGPT)",
+        "Serum Glutamic Pyruvic Transaminase",
+        "SGPT (Alanine Aminotransferase)",
+    ),
+    # ------------------------------------------------------------- ast --
+    "ast": _s(
+        "AST",
+        "SGOT",
+        "S.G.O.T",
+        "SGOT (AST)",
+        "AST (SGOT)",
+        "SGOT/AST",
+        "AST/SGOT",
+        "ASAT",
+        "Aspartate Aminotransferase",
+        "Aspartate Transaminase",
+        "Aspartate Aminotransferase (AST)",
+        "Aspartate Aminotransferase (SGOT)",
+        "Aspartate Aminotransferase (AST/SGOT)",
+        "Serum Glutamic Oxaloacetic Transaminase",
+        "SGOT (Aspartate Aminotransferase)",
+    ),
+    # ------------------------------------------------- bilirubin_total --
+    "bilirubin_total": _s(
+        "Total Bilirubin",
+        "Bilirubin Total",
+        "Bilirubin (Total)",
+        "Total Bilirubin (TBIL)",
+        "T. Bilirubin",
+        "T.Bilirubin",
+        "TBIL",
+        "T Bil",
+        "Bilirubin",
+        "Serum Bilirubin",
+        "Bilirubin Total Serum",
+    ),
+}
+
+#: TOKENS THAT MAKE A NAME A DIFFERENT ANALYTE OF ONE FEATURE ONLY.
+#:
+#: `direct` is a strippable METHOD qualifier for most tests ("Glucose direct"),
+#: so it cannot join `DISTINCT_ANALYTE_TOKENS` -- but for bilirubin it names a
+#: different fraction. Without this, "Bilirubin Direct" lost its qualifier and
+#: was read as TOTAL bilirubin. Checked whenever the name also carries the
+#: feature's own word.
+FEATURE_DISTINCT_TOKENS: Dict[str, Tuple[str, Tuple[str, ...]]] = {
+    "bilirubin_total": (
+        "bilirubin",
+        ("direct", "indirect", "conjugated", "unconjugated", "dbil", "ibil", "neonatal"),
+    ),
 }
 
 
@@ -704,6 +786,9 @@ def lookup_test_name(name: str) -> Tuple[Optional[SynonymMatch], Optional[str]]:
         return None, UnmappedReason.NON_BLOOD_SPECIMEN
     if tokens & set(DISTINCT_ANALYTE_TOKENS):
         return None, UnmappedReason.DISTINCT_ANALYTE
+    for word, distinct in FEATURE_DISTINCT_TOKENS.values():
+        if word in tokens and tokens & set(distinct):
+            return None, UnmappedReason.DISTINCT_ANALYTE
 
     without_parens = normalize_test_name(strip_parentheticals(name))
 

@@ -320,7 +320,7 @@ def test_a_legitimate_term_is_still_echoed_and_served() -> None:
 @pytest.mark.parametrize(
     "query",
     [
-        "my ALT and AST liver enzymes are high",
+        "my ALP and GGT liver enzymes are high",
         "C reactive protein CRP",
         "what is my TSH level",
         "how do I bake a chocolate cake",

@@ -111,6 +111,31 @@ EXCLUDED_FEATURES: Dict[str, Dict[str, str]] = {
             "honestly."
         ),
     },
+    # THE LIVER PANEL (2026-10-04). NHANES 2017-2018 (BIOPRO_J, already in
+    # this repository's git history) holds ALT, AST and total bilirubin, so a
+    # verified table is possible -- but none has been built or checked yet,
+    # and an unverified percentile is worse than none.
+    "alt": {
+        "reason_code": PopulationReason.NO_VERIFIED_DISTRIBUTION,
+        "message": (
+            "No population comparison is offered for ALT yet. A comparison "
+            "group for it has not been built and checked."
+        ),
+    },
+    "ast": {
+        "reason_code": PopulationReason.NO_VERIFIED_DISTRIBUTION,
+        "message": (
+            "No population comparison is offered for AST yet. A comparison "
+            "group for it has not been built and checked."
+        ),
+    },
+    "bilirubin_total": {
+        "reason_code": PopulationReason.NO_VERIFIED_DISTRIBUTION,
+        "message": (
+            "No population comparison is offered for total bilirubin yet. A "
+            "comparison group for it has not been built and checked."
+        ),
+    },
     "hypertension": {
         "reason_code": PopulationReason.FEATURE_NOT_CONTINUOUS,
         "message": (
