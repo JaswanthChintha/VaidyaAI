@@ -13460,6 +13460,45 @@ leaf watermark in the hero background is a leftover of the old logo.
 
 ---
 
+## 6bu. RENDER FREE PLAN: "PARTIAL" ANALYSES FIXED · 2026-10-06
+
+**What the live logs showed** (owner pasted Render logs; Events had NO
+out-of-memory): 1st Analyse after idle → `AI_SERVICE_ERROR` (ai-service asleep,
+Render answered 502). 2nd → extraction OK in ~32 s (3.6-flash ServerError →
+fell back to 3.5-flash on its own), then rules/ml/report started at 08:57:22,
+the ML stage loaded the 3 models for the first time on 0.1 CPU (~30 s), the
+backend's 30 s `AI_SERVICE_STAGE_TIMEOUT_MS` fired (`ECONNABORTED`), retries
+hit the busy service (502), and the ai-service finished 1 s too late
+(`report_generated` 08:57:53) → status `partial`, no dashboard.
+Also learned: Render health-checks the backend every 5 s and each refreshes
+the ai-service probe (15 s cache) — so the ai-service stays awake while the
+backend is; a frontend "wake early" call would add nothing (not built).
+
+**Fixes:**
+1. ai-service `PRELOAD_ON_STARTUP` (config, default False; render.yaml true):
+   FastAPI lifespan `_preload()` loads every registry model + the knowledge
+   index before the port opens; a failure is logged, never fatal.
+   `tests/test_preload.py` (4).
+2. render.yaml backend `AI_SERVICE_STAGE_TIMEOUT_MS=120000`.
+3. backend `aiService.waitUntilReady()` (config `wakeWaitMs` from
+   `AI_SERVICE_WAKE_WAIT_MS`, default 0 = off; `wakeIntervalMs` 5000): asks
+   /health until it answers, never throws; `runAnalysis` calls it before
+   extraction (inside the 'reading' step). render.yaml sets 180000. Tests in
+   `analysis.test.js` "a sleeping ai-service…" (3; mutation-checked).
+4. frontend `lib/friendlyErrors.js`: `friendlyStatus` (code → plain words,
+   code kept small as "(code: X)", `.report__code`) on Reports;
+   `friendlyPageError` on Dashboard / DoctorSummary / Population (rewrites the
+   "See GET /reports/…" / "Run POST …" API wording). Backend API messages
+   UNCHANGED (contract + tests). `tests/friendlyErrors.test.jsx` (9); one
+   dashboard test's expected text updated deliberately.
+   Frontend **568** passed.
+**Tests:** backend **950** + 3 skipped, ai-service **5,492** + 7 skipped
+(junit, 0 failed/0 errors), frontend **568** — all 0 failed.
+⚠ Blueprint env changes reach Render only if the Blueprint syncs on push —
+owner to check both services' Environment pages for the 3 new keys.
+
+---
+
 ## 7. Module 1 → later modules: inherited obligations
 
 **RESOLVED by Module 2:** `ownership.js` is now wired up and enforced, `ownerScopedFilter` throws

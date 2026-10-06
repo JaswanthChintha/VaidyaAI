@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import Icon from '../components/Icon';
 import { api, ApiError } from '../lib/api';
 import { joinDetails, missingKeyDetails } from '../lib/profileGaps';
+import { friendlyStatus } from '../lib/friendlyErrors';
 import { Absent } from '../components/Absent';
 import { reportDateInfo, whyUploadDate } from '../lib/reportDates';
 
@@ -296,6 +297,21 @@ function WhoseReport({ report, editing, onEdit, onDone, busy }) {
         </button>
       </span>
     </form>
+  );
+}
+
+/**
+ * Why the last analysis did not finish, in plain words (2026-10-06). The
+ * machine code stays, small, so a problem report can still name it.
+ */
+function StatusNote({ statusMessage }) {
+  const note = friendlyStatus(statusMessage);
+  if (!note) return null;
+  return (
+    <p className="report__note">
+      {note.text}
+      {note.code ? <span className="report__code"> (code: {note.code})</span> : null}
+    </p>
   );
 }
 
@@ -646,9 +662,7 @@ export default function Reports() {
                 if (saved) await load();
               }}
             />
-            {report.statusMessage ? (
-              <p className="report__note">{report.statusMessage}</p>
-            ) : null}
+            <StatusNote statusMessage={report.statusMessage} />
             <div className="report__actions">
               {report.status === 'processed' || report.status === 'partial' ? (
                 <Link className="button-link" to={`/reports/${report.id}`}>

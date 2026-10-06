@@ -1023,6 +1023,61 @@ describe('Modules 4+5 - analysis orchestration', () => {
   });
 
   // ============================================================ happy path ===
+  // RENDER'S FREE PLAN (2026-10-06): the first Analyse after a quiet spell hit
+  // an ai-service still waking, got 502, and the run failed. With
+  // AI_SERVICE_WAKE_WAIT_MS set the backend asks /health until it answers.
+  describe('a sleeping ai-service is waited for, not failed on', () => {
+    const saved = {};
+    const badGateway = () => Object.assign(new Error('bad gateway'), { response: { status: 502, data: '' } });
+
+    beforeEach(() => {
+      saved.wait = config.aiService.wakeWaitMs;
+      saved.interval = config.aiService.wakeIntervalMs;
+      config.aiService.wakeWaitMs = 2000;
+      config.aiService.wakeIntervalMs = 1;
+    });
+    afterEach(() => {
+      config.aiService.wakeWaitMs = saved.wait;
+      config.aiService.wakeIntervalMs = saved.interval;
+    });
+
+    it('asks /health until it answers, and only THEN sends the report', async () => {
+      let probes = 0;
+      mockAxios.get.mockImplementation(async () => {
+        probes += 1;
+        if (probes < 3) throw badGateway();
+        return { status: 200, data: { success: true, data: { status: 'ok' } } };
+      });
+      const user = await makeUser('sleepy@example.com');
+      const report = await uploadReport(user.token);
+
+      const res = await analyze(user.token, report.id);
+
+      expect(res.body.data.report.status).toBe('processed');
+      expect(probes).toBe(3);
+      const lastProbe = Math.max(...mockAxios.get.mock.invocationCallOrder);
+      expect(lastProbe).toBeLessThan(mockAxios.post.mock.invocationCallOrder[0]);
+    });
+
+    it('gives up at the deadline WITHOUT throwing, so the real call reports the real error', async () => {
+      const aiService = require('../src/services/aiServiceClient');
+      mockAxios.get.mockRejectedValue(badGateway());
+      const verdict = await aiService.waitUntilReady({ maxWaitMs: 30, intervalMs: 10 });
+      expect(verdict.ready).toBe(false);
+      expect(verdict.attempts).toBeGreaterThan(1);
+    });
+
+    it('is off by default: no /health probe at all', async () => {
+      config.aiService.wakeWaitMs = 0;
+      mockAxios.get.mockClear();
+      const user = await makeUser('awake@example.com');
+      const report = await uploadReport(user.token);
+      const res = await analyze(user.token, report.id);
+      expect(res.body.data.report.status).toBe('processed');
+      expect(mockAxios.get).not.toHaveBeenCalled();
+    });
+  });
+
   describe('happy path', () => {
     it('runs extraction then feature engineering and persists both', async () => {
       const user = await makeUser('happy@example.com');

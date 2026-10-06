@@ -1455,6 +1455,37 @@ async function health() {
   }
 }
 
+/**
+ * Ask /health until the ai-service answers, for at most `maxWaitMs`.
+ *
+ * For hosts that put an idle service to sleep: the first request after a
+ * quiet spell is what wakes it, and until it is up the host answers 502.
+ * Never throws and never fails the analysis by itself -- if the service is
+ * still not up at the deadline, the real call goes ahead and fails with its
+ * own, accurate error.
+ *
+ * @returns {Promise<{ready: boolean, attempts: number, waitedMs: number}>}
+ */
+async function waitUntilReady({
+  maxWaitMs = config.aiService.wakeWaitMs,
+  intervalMs = config.aiService.wakeIntervalMs,
+} = {}) {
+  const startedAt = Date.now();
+  let attempts = 0;
+  if (!isConfigured() || !(maxWaitMs > 0)) return { ready: false, attempts, waitedMs: 0 };
+  for (;;) {
+    attempts += 1;
+    // eslint-disable-next-line no-await-in-loop
+    const verdict = await health();
+    if (verdict.reachable) return { ready: true, attempts, waitedMs: Date.now() - startedAt };
+    if (Date.now() - startedAt + intervalMs > maxWaitMs) {
+      return { ready: false, attempts, waitedMs: Date.now() - startedAt };
+    }
+    // eslint-disable-next-line no-await-in-loop
+    await sleep(intervalMs);
+  }
+}
+
 module.exports = {
   PATHS,
   STAGES,
@@ -1487,6 +1518,7 @@ module.exports = {
   describeFindings,
   populationContext,
   health,
+  waitUntilReady,
   resetClient,
   // exported for unit tests
   mapAxiosError,

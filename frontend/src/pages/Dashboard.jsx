@@ -12,6 +12,7 @@ import { isPatientDetail } from '../lib/sources';
 import Icon from '../components/Icon';
 import { READING_LINKS, READING_SOURCE } from '../lib/readingLinks';
 import { readableName } from '../lib/displayName';
+import { friendlyPageError } from '../lib/friendlyErrors';
 
 /**
  * Module 27 -- the health dashboard.
@@ -2095,10 +2096,9 @@ export default function Dashboard() {
         // than returning an empty dashboard that would read as "all clear".
         if (err instanceof ApiError && err.status === 404) {
           setNotAnalysed(true);
-          setError(err.message);
-        } else {
-          setError(err.message);
         }
+        // The backend words this for API callers ("See GET /reports/...").
+        setError(friendlyPageError(err.message));
       }
     })();
     return () => {

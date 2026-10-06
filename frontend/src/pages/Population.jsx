@@ -6,6 +6,7 @@ import PercentileBar from '../components/PercentileBar';
 import Icon from '../components/Icon';
 import { PATIENT_LABEL } from '../lib/labels';
 import { readableName } from '../lib/displayName';
+import { friendlyPageError } from '../lib/friendlyErrors';
 
 /**
  * Module 31 -- how a value compares with an age- and sex-matched group.
@@ -162,7 +163,7 @@ export default function Population() {
         const result = await api.getPopulationContext(id);
         if (!cancelled) setData(result);
       } catch (err) {
-        if (!cancelled) setError(err.message);
+        if (!cancelled) setError(friendlyPageError(err.message));
       }
     })();
     return () => {

@@ -1937,8 +1937,12 @@ describe('an unanalysed report', () => {
 
     renderDashboard();
 
+    // Plain words since 2026-10-06 (friendlyErrors.js): what to do next, not
+    // which endpoint an API caller should hit.
     expect(
-      await screen.findByText('This report has not been analysed yet.')
+      await screen.findByText(
+        'This report has not been analysed yet. Go back to your reports and press Analyse.'
+      )
     ).toBeInTheDocument();
   });
 });

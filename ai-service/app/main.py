@@ -87,6 +87,9 @@ service refuses to start if no key is configured -- see app/core/auth.py.
 
 from __future__ import annotations
 
+import time
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -132,7 +135,41 @@ logger = get_logger(__name__)
 # rather than serving PHI to anyone who can reach the port. See app/core/auth.py.
 enforce_service_auth_configuration(settings)
 
+def _preload() -> None:
+    """Load the ML models and the knowledge index now, not on first use.
+
+    Each is loaded lazily and cached, so this only moves the cost from the
+    first patient's analysis to service startup -- where Render is still
+    showing its "waking up" page and nobody is waiting on a 30 s stage timeout.
+    A failure here is logged and NOT raised: the same failure would surface,
+    with its proper reason, on the first request anyway.
+    """
+    started = time.monotonic()
+    try:
+        from app.ml.registry import default_registry
+        from app.rag.retriever import get_index
+
+        models = {p.name: p.is_available() for p in default_registry()}
+        chunks = len(get_index().chunks)
+        logger.info(
+            "preload_complete %s",
+            safe_meta(models=models, knowledge_chunks=chunks,
+                      seconds=round(time.monotonic() - started, 1)),
+        )
+    except Exception as exc:  # noqa: BLE001 - startup must not die on this
+        logger.error("preload_failed %s", safe_meta(error_type=type(exc).__name__))
+
+
+@asynccontextmanager
+async def _lifespan(_: FastAPI):
+    # Read at startup, not import, so a test can switch it.
+    if get_settings().preload_on_startup:
+        _preload()
+    yield
+
+
 app = FastAPI(
+    lifespan=_lifespan,
     title="VaidyaAI AI Service",
     description=(
         "Modules 4-26 of VaidyaAI. Converts an uploaded laboratory report "

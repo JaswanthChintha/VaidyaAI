@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { isPresent } from '../lib/absence';
 import { isPatientDetail } from '../lib/sources';
 import { readableName } from '../lib/displayName';
+import { friendlyPageError } from '../lib/friendlyErrors';
 import Icon from '../components/Icon';
 
 /**
@@ -269,7 +270,7 @@ export default function DoctorSummary() {
         // something a clinician has any use for being told about, and the
         // document is complete without it -- so a failure after `setData` must
         // not replace a rendered summary with an error.
-        if (!cancelled && !summaryRendered) setError(err.message);
+        if (!cancelled && !summaryRendered) setError(friendlyPageError(err.message));
       }
     })();
     return () => {

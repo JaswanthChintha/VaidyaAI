@@ -416,6 +416,16 @@ const config = {
     retries: toInt(process.env.AI_SERVICE_RETRIES, 1),
     retryDelayMs: toInt(process.env.AI_SERVICE_RETRY_DELAY_MS, 500),
 
+    // WAIT FOR A SLEEPING ai-service BEFORE AN ANALYSIS (2026-10-06). On a
+    // host that puts idle services to sleep (Render's free plan), the first
+    // Analyse after a quiet spell hit a service still waking and failed with
+    // a 502. With this set, `runAnalysis` asks /health every
+    // AI_SERVICE_WAKE_INTERVAL_MS until it answers, for at most this long,
+    // before sending the report. 0 (the default) = do not wait, which is
+    // right for an always-on service and for the tests.
+    wakeWaitMs: toInt(process.env.AI_SERVICE_WAKE_WAIT_MS, 0),
+    wakeIntervalMs: toInt(process.env.AI_SERVICE_WAKE_INTERVAL_MS, 5000),
+
     // How long a report may sit in `processing` before another analyze call is
     // allowed to take the lock over. Covers a crash mid-analysis; without it a
     // report would be stuck in `processing` forever.

@@ -124,6 +124,14 @@ class Settings(BaseSettings):
     # Extraction confidence at or below this value raises a warning.
     low_confidence_threshold: float = 0.6
 
+    # --- Startup ---
+    # Load the ML models and the knowledge index BEFORE the port opens
+    # (2026-10-06). On Render's free plan (0.1 CPU) the first analysis spent
+    # ~30 s loading the models mid-request, the backend's 30 s stage timeout
+    # fired, and the report came out "partial". Off by default so development
+    # and the test suite start instantly; render.yaml turns it on.
+    preload_on_startup: bool = False
+
     # --- Service-to-service authentication -------------------------------
     # The ONLY legitimate caller of this service is the Node backend. The
     # shared secret arrives in the `X-Service-Key` header.

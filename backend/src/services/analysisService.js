@@ -1822,6 +1822,11 @@ async function runAnalysis({ user, report, requestId }) {
   try {
     const streamFactory = await openStorage(report);
 
+    // A sleeping ai-service (Render's free plan) answers 502 while it wakes;
+    // wait for it rather than fail the run. No-op unless AI_SERVICE_WAKE_WAIT_MS
+    // is set. Inside the 'reading' step, so the progress bar is unchanged.
+    await aiService.waitUntilReady();
+
     const extraction = await aiService.extract({
       streamFactory,
       filename: syntheticFilename(report),

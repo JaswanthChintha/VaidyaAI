@@ -40,6 +40,11 @@ services:
         value: production
       - key: LOG_LEVEL
         value: INFO
+      # Load the ML models and knowledge index before the port opens. On 0.1
+      # CPU loading them took ~30 s inside the first analysis, past the
+      # backend's stage timeout, and the report came out "partial" (2026-10-06).
+      - key: PRELOAD_ON_STARTUP
+        value: "true"
 
   - type: web
     name: vaidyaai
@@ -85,3 +90,12 @@ services:
           envVarKey: AI_SERVICE_API_KEY
       - key: LOGIN_RATE_LIMIT_MAX
         value: "5"
+      # THE FREE PLAN IS SLOW AND SLEEPS (2026-10-06, from the live logs):
+      # 0.1 CPU makes the fast stages slow, so each gets 2 minutes instead of
+      # 30 s; and an Analyse that arrives while the ai-service is still waking
+      # waits for it (up to 3 minutes, asking /health every 5 s) instead of
+      # failing with a 502.
+      - key: AI_SERVICE_STAGE_TIMEOUT_MS
+        value: "120000"
+      - key: AI_SERVICE_WAKE_WAIT_MS
+        value: "180000"
