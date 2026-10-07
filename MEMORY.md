@@ -13535,6 +13535,28 @@ backend **953** + 3 skipped, frontend **568** — all 0 failed.
 
 ---
 
+## 6bw. LOCAL BACKEND WOULD NOT START: SRV DNS · 2026-10-07
+
+Local sign-in "request failed": the backend was not running — it exited at
+startup with `querySrv ECONNREFUSED _mongodb._tcp.cluster0.ihccztp...`
+(the laptop's Wi-Fi router refuses SRV lookups; Render unaffected). New
+optional `DNS_SERVERS` (backend config `dnsServers`, `parseDnsServers` —
+IPs only, a non-IP stops startup with a clear message);
+`config/database.js applyDnsServers()` calls `dns.setServers` before
+`mongoose.connect` (Node's resolver only, not dns.lookup/HTTP).
+`tests/dnsServers.test.js` (9). Backend **962** + 3 skipped. Verified live:
+"MongoDB connected" with `DNS_SERVERS=8.8.8.8,1.1.1.1`, and
+localhost:5173 → backend health 200. **Owner to add
+`DNS_SERVERS=8.8.8.8,1.1.1.1` to `backend/.env`** (the local
+`.claude/launch.json` "backend" entry passes it for now).
+
+Also open from 2026-10-06/07 (owner not yet answered): Google sign-in
+(recommended B: link an existing email only after one password sign-in);
+chatbot (OpenRouter free models vs Grok; guided vs free typing; privacy
+note; OpenRouter key must be rotated first and is not set on Render).
+
+---
+
 ## 7. Module 1 → later modules: inherited obligations
 
 **RESOLVED by Module 2:** `ownership.js` is now wired up and enforced, `ownerScopedFilter` throws

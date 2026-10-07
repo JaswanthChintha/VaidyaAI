@@ -94,6 +94,36 @@ function parseTrustProxy(raw) {
 }
 
 /**
+ * Parse DNS_SERVERS: a comma-separated list of DNS server IP addresses for
+ * Node's own resolver (see `applyDnsServers` in config/database.js).
+ *
+ * Unset -> [] (use the system's DNS, as before). A value that is not an IP
+ * address stops startup with a clear message rather than being passed on: a
+ * typo here would otherwise surface as the same opaque "querySrv" failure the
+ * setting exists to fix.
+ *
+ * @param {string|undefined} raw
+ * @returns {string[]}
+ */
+function parseDnsServers(raw) {
+  if (raw === undefined || raw === null || String(raw).trim() === '') return [];
+  // eslint-disable-next-line global-require
+  const { isIP } = require('net');
+  const servers = String(raw)
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const bad = servers.filter((s) => isIP(s) === 0);
+  if (bad.length) {
+    throw new Error(
+      `DNS_SERVERS must be IP addresses separated by commas (e.g. 8.8.8.8,1.1.1.1); ` +
+        `not an IP address: ${bad.join(', ')}`
+    );
+  }
+  return servers;
+}
+
+/**
  * Default timeout for every ai-service stage EXCEPT extraction and health.
  * See `aiService.stageTimeoutMs` below for why the extraction timeout must not
  * be reused for them.
@@ -107,6 +137,8 @@ const config = {
   port: toInt(process.env.PORT, 5000),
   apiPrefix: process.env.API_PREFIX || '/api/v1',
   mongoUri: process.env.MONGODB_URI,
+  // DNS servers for Node's own resolver; [] = the system's. See parseDnsServers.
+  dnsServers: parseDnsServers(process.env.DNS_SERVERS),
 
   // See parseTrustProxy above. Default: trust no proxy.
   trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
@@ -499,3 +531,4 @@ if (config.aiService.url && !/^https?:\/\/[^\s]+$/i.test(config.aiService.url)) 
 
 module.exports = config;
 module.exports.parseTrustProxy = parseTrustProxy;
+module.exports.parseDnsServers = parseDnsServers;
