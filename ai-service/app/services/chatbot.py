@@ -42,7 +42,7 @@ from typing import Any, Dict, List, Optional, Sequence
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.logging import get_logger, safe_meta
-from app.data.app_help import match_help
+from app.data.app_help import SITE_MAP, match_help
 from app.safety.fallback import guarded_generation
 from app.safety.validator import SafetyContext
 
@@ -238,6 +238,13 @@ SYSTEM_INSTRUCTION = (
     "- Use ONLY the material given below for facts about the app and the "
     "report. If the material does not answer an app question, say you are not "
     "sure and suggest the Reports or Your details page.\n"
+    "- Never describe a button, icon, page or feature of the app that is not "
+    "in the material. If the material does not have it, say VaidyaAI does not "
+    "have it. (Live 2026-10-09: a 'share icon' and email sharing were invented.)\n"
+    "- For a question about the app, answer exactly what was asked: say where "
+    "to click, using the exact names of the menu items, pages, sections and "
+    "buttons in the material (for example: click Timeline in the menu on the "
+    "left).\n"
     "- Never say the person has, or does not have, a disease. Never name a "
     "medicine, a dose or a treatment.\n"
     "- Do not state any number unless it appears in the material given. Copy "
@@ -297,13 +304,15 @@ def answer_question(
 
     help_notes = match_help(q)
     chunks = _knowledge(q)
+    app_question = bool(help_notes) and not chunks
 
-    # AN APP QUESTION IS ANSWERED WITH THE REVIEWED NOTE ITSELF (2026-10-09).
-    # Live, the model rephrased "What does population context mean?" as
-    # "Population context means..." on both attempts and Module 24 refused
-    # it both times. The note is already reviewed, already Module-24-approved
-    # (tests/test_chatbot.py), always correct, instant, and spends no quota.
-    if help_notes and not chunks:
+    # Nothing about health, tests, a report or the app: redirect, no model.
+    if not help_notes and not chunks and not _HEALTH_WORDS.search(q.lower()):
+        return _fixed("off_topic", OUTCOME_OFF_TOPIC)
+
+    def note_answer() -> ChatAnswer:
+        """The best-matching reviewed note, word for word -- the app-question
+        fallback. Already Module-24-approved (tests/test_chatbot.py)."""
         note = help_notes[0]
         logger.info("chat_answer %s", safe_meta(outcome=OUTCOME_ANSWERED, kind="app_help", model=False))
         return ChatAnswer(
@@ -312,18 +321,22 @@ def answer_question(
             sources=[ChatSource(kind="app_help", title=note.title)],
         )
 
-    # Nothing about health, tests, a report or the app: redirect, no model.
-    if not help_notes and not chunks and not _HEALTH_WORDS.search(q.lower()):
-        return _fixed("off_topic", OUTCOME_OFF_TOPIC)
-
     if llm is None:
-        return _fixed("unavailable", OUTCOME_UNAVAILABLE)
+        return note_answer() if app_question else _fixed("unavailable", OUTCOME_UNAVAILABLE)
 
-    report_lines = _report_lines(report) if report else []
+    # AN APP QUESTION (owner, 2026-10-09): the model answers the EXACT question
+    # ("where can we go to check timeline?" -- a note that said only WHAT the
+    # Timeline is did not answer it) from the site map plus the matching notes.
+    # If its wording is refused, or anything else goes wrong, the reviewed
+    # note is shown instead, so an app question never ends in "unavailable".
+    if app_question and SITE_MAP not in help_notes:
+        help_notes = help_notes + [SITE_MAP]
+
+    report_lines = _report_lines(report) if (report and not app_question) else []
     grounding: Sequence[str] = tuple(
         [n.text for n in help_notes] + [c["text"] for c in chunks] + report_lines
     )
-    health_question = bool(chunks or report_lines) or not help_notes
+    health_question = not app_question
 
     context = SafetyContext(
         grounding_sources=tuple(grounding),
@@ -361,6 +374,8 @@ def answer_question(
 
     result = guarded_generation(generate, context=context, attempts=2)
 
+    if result.approved_text is None and app_question:
+        return note_answer()
     if off_topic["seen"] and result.approved_text is None:
         return _fixed("off_topic", OUTCOME_OFF_TOPIC)
     if result.approved_text is None:
@@ -369,7 +384,9 @@ def answer_question(
     sources: List[ChatSource] = []
     if report_lines:
         sources.append(ChatSource(kind="report", title="This report's results"))
-    sources += [ChatSource(kind="app_help", title=n.title) for n in help_notes]
+    # The site map is cited only when it is all there was.
+    cited = [n for n in help_notes if n is not SITE_MAP] or help_notes
+    sources += [ChatSource(kind="app_help", title=n.title) for n in cited]
     seen_docs = set()
     for c in chunks:
         if c["doc_id"] not in seen_docs:

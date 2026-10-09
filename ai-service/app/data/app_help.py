@@ -1,20 +1,22 @@
 """How to use VaidyaAI -- the help notes the chatbot answers app questions from.
 
-Fixed, reviewed text (owner, 2026-10-09), like the knowledge base: the chatbot
-is GROUNDED in these notes for questions about the app, so it cannot invent a
-button or a page. Every statement here was checked against the code the day
-it was written (file names in the comments). If the app changes, change the
-note -- a stale note is a wrong answer.
+Fixed, reviewed text (owner, 2026-10-09; widened the same day: "the chatbot
+should be able to tell about the app everything -- how to upload, where to
+go, what each section is"). Every page title, section heading and button
+name below was read from the frontend code (pages/*.jsx, components/*.jsx)
+the day it was written. If the app changes, change the note -- a stale note
+is a wrong answer.
 
-Matching is deliberately plain: a note is chosen when the question shares its
-keywords. No embedding and no model call -- the same reason the knowledge
-retriever anchors free text to the catalogue first.
+HOW THEY ARE USED (services/chatbot.py): for an app question the model is
+given the SITE MAP plus the best-matching notes and answers the exact
+question in its own words. If its answer is refused by the safety check, or
+no model is available, the best-matching note is shown word for word -- so
+every note must pass Module 24 as it stands (tests/test_chatbot.py).
 
-KEYWORDS ARE APP WORDS ONLY (2026-10-09). A matched note is now served WORD
-FOR WORD (see `chatbot.answer_question`), so a health word here ("weight",
-"results", "doctor") would answer a health question with an app note.
-Hyphens are written as spaces ("re analyse"): the question is normalised to
-letters and digits before matching.
+KEYWORDS ARE APP WORDS ONLY: a health word here ("weight", "results",
+"doctor") would route a health question to an app note. Hyphens are written
+as spaces ("re analyse"): the question is reduced to letters and digits
+before matching.
 """
 
 from __future__ import annotations
@@ -32,68 +34,161 @@ class HelpNote:
     text: str
 
 
+#: Given to the model with EVERY app question, so "where is...?" can always be
+#: answered. App.jsx (Nav), Reports.jsx, Dashboard.jsx headings.
+SITE_MAP = HelpNote(
+    "site_map",
+    "Finding your way around VaidyaAI",
+    ("where", "menu", "navigate", "navigation", "go to", "find", "page", "pages", "section",
+     "sections", "button", "buttons", "click", "open", "settings", "sidebar", "app", "website",
+     "screen", "share", "send", "email", "icon", "download", "export", "save"),
+    "The menu is on the left of the screen (on a phone it is a bar at the top). "
+    "It has: Reports, Timeline and Your details, then your name, a Dark or Light "
+    "button for the colour theme, and Sign out. Clicking the VaidyaAI logo goes "
+    "to Reports. The Reports page is where you upload, analyse and open your "
+    "reports. A report's dashboard opens with its 'View dashboard' button, and "
+    "at the top of a dashboard are two more buttons: 'Summary for a clinician' "
+    "and 'How your results compare'. The Timeline page compares your reports "
+    "over time. 'Your details' holds your profile and your account settings. "
+    "The chat button at the bottom right opens this help chat.",
+)
+
 HELP_NOTES: Tuple[HelpNote, ...] = (
+    SITE_MAP,
     HelpNote(
         "upload",
         "Uploading a report",
-        ("upload", "uploading", "add report", "add a report", "pdf", "jpg", "png", "file size", "attach"),
+        # No bare "pdf": "download my results as pdf" matched this note live.
+        ("upload", "uploading", "add report", "add a report", "jpg", "png", "file size", "attach",
+         "new report"),
         # Reports.jsx: accept=".pdf,.jpg,.jpeg,.png", "up to 10 MB".
-        "Open the Reports page and use the 'Upload a report' box. Choose a PDF or "
+        "Click Reports in the menu. In the 'Upload a report' box, choose a PDF or "
         "a clear photo (JPG or PNG) of a blood test report, up to 10 MB. You can "
-        "also type the date printed on the report and say whose report it is. "
-        "Then press Upload. Uploading does not start the analysis by itself: "
-        "press the Analyse button on the report afterwards.",
+        "also type the date printed on the report and say whose report it is "
+        "(yours or someone else's). Then press Upload. Uploading does not start "
+        "the analysis by itself: press the Analyse button on the report "
+        "afterwards.",
     ),
     HelpNote(
         "analyse",
         "Analysing a report",
         ("analyse", "analyze", "analysis", "analysing", "progress bar", "slow", "taking long",
-         "taking so long", "stuck", "re analyse", "reanalyse", "how long"),
+         "taking so long", "stuck", "re analyse", "reanalyse", "how long", "being analysed"),
         # Reports.jsx STEP labels; the free hosting sleeps (MEMORY 6bu).
-        "Press Analyse on a report in the Reports page. A progress bar walks "
-        "through four steps: reading the report, checking the values, clinical rules and "
-        "models, and writing explanations. It usually takes one to three "
-        "minutes. On the online version the service sleeps when nobody has used "
-        "it for a while, so the first analysis after a quiet spell can take a "
-        "few minutes longer. Press it only once. Re-analyse runs a report again "
-        "and replaces its earlier result.",
+        "On the Reports page, press Analyse on a report. A progress bar walks "
+        "through four steps: reading the report, checking the values, clinical "
+        "rules and models, and writing explanations. It usually takes one to "
+        "three minutes. On the online version the service sleeps when nobody has "
+        "used it for a while, so the first analysis after a quiet spell can take "
+        "a few minutes longer. Press it only once. Re-analyse runs a report again "
+        "and replaces its earlier result, for example after you change your "
+        "details.",
+    ),
+    HelpNote(
+        "reports_page",
+        "The Reports page",
+        ("reports page", "your reports", "uploaded reports", "report list", "status", "badge",
+         "not yet analysed", "original file", "open the file"),
+        # Reports.jsx: headings, STATUS_COPY, row buttons.
+        "Click Reports in the menu. At the top is the 'Upload a report' box, and "
+        "below it 'Your uploaded reports'. Each report has a label: 'Uploaded, not "
+        "yet analysed', 'Being analysed', 'Analysed', 'Analysed, with some stages "
+        "incomplete', or 'Analysis failed'. Its buttons are Analyse (or Re-analyse), "
+        "View dashboard, Whose report? and Delete. The small file icon opens the "
+        "original file you uploaded.",
     ),
     HelpNote(
         "whose_report",
         "Whose report?",
-        ("whose", "someone else", "family member", "my mother", "my father", "other person", "not mine"),
-        "Each report can be marked as yours or as someone else's, with the "
-        "'Whose report?' button. Your own details are used only for your own "
-        "reports. For someone else's report you can type their age and sex "
-        "instead, and your details are not used for it.",
+        ("whose", "someone else", "family member", "my mother", "my father", "other person",
+         "not mine"),
+        "Each report can be marked as yours or as someone else's, with its "
+        "'Whose report?' button on the Reports page. Your own details are used "
+        "only for your own reports. For someone else's report you can type their "
+        "age and sex instead, and your details are not used for it. Press "
+        "Re-analyse afterwards so the change is used.",
+    ),
+    HelpNote(
+        "report_date",
+        "The report's date",
+        ("report date", "date", "typed in", "printed date", "wrong date"),
+        "When you upload, you can type the date printed on the report. If the "
+        "report itself prints a date, VaidyaAI reads it too, and the Reports page "
+        "lists both, for example '(typed in)' next to your date and 'the report "
+        "itself prints' next to the printed one. The Timeline uses these dates to "
+        "put your reports in order.",
     ),
     HelpNote(
         "profile",
         "Your details (profile)",
         ("profile", "your details", "my details", "personal details", "enter my age",
-         "change my age", "change my weight", "change my height", "update my details"),
+         "change my age", "change my weight", "change my height", "update my details",
+         "fill details"),
         # Profile.jsx hints.
-        "The 'Your details' page holds your age, sex, height, weight, smoking "
-        "history, and whether you have high blood pressure or heart disease. "
-        "The analysis uses them, for example age and sex for limits that differ "
-        "for men and women. Anything left blank stays blank and is never "
-        "guessed. BMI is worked out from your height and weight. Changes are "
-        "used the next time a report is analysed.",
+        "Click 'Your details' in the menu. It holds your age, sex, height, "
+        "weight, smoking history, and whether you have high blood pressure or "
+        "heart disease. The analysis uses them, for example age and sex for "
+        "limits that differ for men and women. Anything left blank stays blank "
+        "and is never guessed. BMI is worked out from your height and weight. "
+        "Press Save after changing anything; changes are used the next time a "
+        "report is analysed.",
     ),
     HelpNote(
         "dashboard",
         "The report dashboard",
-        ("dashboard", "result page", "results page", "risk gauge", "overall status", "view dashboard"),
-        "After an analysis, press 'View dashboard' on the report. It has an "
-        "overall summary, the topics that were checked, each of your results "
-        "with its usual range, and plain-language explanations that are "
-        "safety-checked before you see them. From there you can open the "
-        "summary for a clinician and the population comparison.",
+        ("dashboard", "result page", "results page", "view dashboard", "report page",
+         "open a report", "open my report"),
+        # Dashboard.jsx headings, top to bottom.
+        "On the Reports page, press 'View dashboard' on an analysed report. From "
+        "top to bottom it has: the Overall card and 'In short', the 'Overall "
+        "risk' gauge, 'Coverage of the conditions checked', 'Worth a closer look' "
+        "(topics that were flagged), 'Everything else that was checked', 'What "
+        "these results mean' (plain-language explanations), 'Your results' (each "
+        "value with the range printed on the report), 'From your profile', and "
+        "'Topics you could read about'. At the top are the buttons 'Summary for a "
+        "clinician' and 'How your results compare'.",
+    ),
+    HelpNote(
+        "overall",
+        "Overall, overall risk and coverage",
+        ("overall", "overall status", "overall risk", "risk gauge", "gauge", "coverage",
+         "radar", "in short", "needs monitoring", "needs medical attention", "worth a closer look"),
+        "The Overall card at the top of a dashboard gives one summary of the "
+        "report: Healthy, Needs Monitoring, Needs Medical Attention, or Not "
+        "assessed. 'Overall risk' is a gauge of the highest risk found (Low, "
+        "Medium or High). 'Coverage of the conditions checked' is a chart of "
+        "which topics could be checked. 'Worth a closer look' lists the topics "
+        "that were flagged, and 'Everything else that was checked' lists the "
+        "ones that were not.",
+    ),
+    HelpNote(
+        "explanations",
+        "What these results mean, and Read aloud",
+        ("what these results mean", "explanations", "explanation", "read aloud", "listen",
+         "speak", "voice", "audio", "topics you could read about", "reading links"),
+        "On a dashboard, 'What these results mean' has a plain-language "
+        "explanation for each topic. They are written by an AI and "
+        "safety-checked before you see them. Each one has a 'Read aloud' button "
+        "that reads it using your browser's own voice; it appears only when your "
+        "browser has a voice installed. 'Topics you could read about' links to "
+        "trusted NHS pages on general health topics.",
+    ),
+    HelpNote(
+        "your_results",
+        "Your results and From your profile",
+        ("your results section", "results table", "from your profile", "patient details",
+         "entered for this report", "usual range", "range printed"),
+        "On a dashboard, 'Your results' lists every value VaidyaAI read from the "
+        "report, with the range printed on the report. 'From your profile' lists "
+        "the details from your profile that were used (or 'Entered for this "
+        "report' for someone else's report); they help interpret the results "
+        "and are not results themselves.",
     ),
     HelpNote(
         "not_assessed",
         "'Not assessed' and 'partial assessment'",
-        ("not assessed", "partial", "partly", "incomplete", "nothing assessed", "not checked"),
+        ("not assessed", "partial", "partly", "incomplete", "nothing assessed", "not checked",
+         "some stages incomplete"),
         "'Not assessed' is used when none of the test results on the report "
         "are ones VaidyaAI checks, so it gives no overall status rather than "
         "guessing. 'Partial assessment' is used when some topics could be "
@@ -104,54 +199,104 @@ HELP_NOTES: Tuple[HelpNote, ...] = (
         "timeline",
         "Timeline",
         ("timeline", "trend", "trends", "over time", "compare reports", "compare my reports",
-         "previous report", "went up", "went down", "arrows"),
-        "The Timeline page compares your analysed reports over time, test by "
-        "test. It needs at least two analysed reports. Arrows mark whether a "
-        "result went up, went down or stayed the same, and whether that change "
-        "is larger than normal day-to-day variation.",
+         "previous report", "went up", "went down", "arrows", "progress score",
+         "comparing two reports"),
+        # Timeline.jsx sections.
+        "Click Timeline in the menu. It compares your analysed reports over "
+        "time and needs at least two of them. It has three parts: 'Trends over "
+        "time' (a chart for each test), 'Comparing two reports' (two reports side "
+        "by side), and 'Progress score'. Arrows mark whether a result went up, "
+        "went down or stayed the same, and whether that change is larger than "
+        "normal day-to-day variation.",
     ),
     HelpNote(
         "population",
         "How your results compare (population context)",
         ("population", "percentile", "people my age", "nhanes", "how my results compare",
          "how your results compare", "compared with others", "compare with others"),
-        "'How your results compare' places some of your results among people "
-        "of the same age band and sex in a large public health survey from the "
-        "United States (NHANES). It is general information only: it is not an "
-        "Indian population and not a diagnosis.",
+        "Open a report's dashboard and press 'How your results compare' at the "
+        "top. It places some of your results among people of the same age band "
+        "and sex in a large public health survey from the United States "
+        "(NHANES). It is general information only: it is not an Indian "
+        "population and not a diagnosis. 'What this comparison cannot account "
+        "for' at the bottom lists its limits.",
     ),
     HelpNote(
         "doctor_summary",
         "Summary for a clinician",
+        # "to my doctor" etc.: live (2026-10-09) "how can I show my report to my
+        # doctor?" matched nothing and the model INVENTED a share icon and email.
         ("clinician", "summary for", "doctor summary", "share with my doctor", "show my doctor",
-         "print", "handover"),
-        "'Summary for a clinician' is a short summary of one report that you "
-        "can show your doctor. Open it from the report's dashboard.",
+         "to my doctor", "to the doctor", "to a doctor", "for my doctor", "for the doctor",
+         "print", "handover", "healthcare professional summary", "share my report",
+         "share the report", "send my report"),
+        "Open a report's dashboard and press 'Summary for a clinician' at the "
+        "top. It opens a short 'Summary for a healthcare professional' of that "
+        "one report that you can show your doctor on your screen, or print with "
+        "your browser's own Print command. VaidyaAI has no share or email "
+        "button; you can also show your doctor the original report file, which "
+        "the file icon on the Reports page opens.",
     ),
     HelpNote(
-        "read_aloud",
-        "Read aloud",
-        ("read aloud", "listen", "speak", "voice", "audio"),
-        "Explanations on the dashboard have a 'Read aloud' button that reads "
-        "them using your browser's own voice. It appears only when your "
-        "browser has a voice installed.",
+        "save_print",
+        "Saving or printing your results",
+        # Live 2026-10-09: "how do I download my results as pdf?" was answered
+        # "Summary for a clinician creates a PDF" -- it does not.
+        ("download", "save", "save as pdf", "as pdf", "export", "keep a copy", "copy of my results",
+         "print my results", "print the report"),
+        "VaidyaAI has no download or export button for results. To keep a copy, "
+        "open the report's dashboard or its 'Summary for a clinician' page and "
+        "use your browser's own Print command (Ctrl+P on a computer); most "
+        "browsers can 'Save as PDF' from there. The original file you uploaded "
+        "opens from the file icon on the Reports page.",
     ),
     HelpNote(
         "account",
         "Account, password and deleting data",
         ("password", "account", "delete my", "delete a report", "remove a report", "sign out",
-         "log out", "logout", "privacy", "my data"),
-        "On the 'Your details' page you can change your password or delete "
-        "your account. Deleting the account removes your reports and their "
-        "files. A single report can be removed with its Delete button on the "
-        "Reports page.",
+         "log out", "logout", "privacy", "my data", "forgot"),
+        # AccountSettings.jsx; forgot-password was removed (MEMORY 6bp).
+        "Click 'Your details' in the menu; the Account section is at the bottom. "
+        "There you can change your password or delete your account. Deleting the "
+        "account removes your reports and their files. A single report can be "
+        "removed with its Delete button on the Reports page. To sign out, use "
+        "Sign out at the bottom of the menu. There is no 'forgot password' option "
+        "in this version, so keep your password safe.",
+    ),
+    HelpNote(
+        "theme",
+        "Dark mode",
+        ("dark mode", "dark theme", "light mode", "light theme", "theme", "colours", "colors"),
+        "Use the Dark or Light button in the menu to switch the colour theme. "
+        "Your choice is remembered on this device.",
+    ),
+    HelpNote(
+        "sign_in",
+        "Signing up and signing in",
+        ("sign up", "signup", "register", "create an account", "sign in", "signin", "log in",
+         "login"),
+        "On the home page press 'Get started' or 'Create an account' to sign up "
+        "with your name, email and a password, or 'Sign in' if you already have "
+        "an account. A new account opens on 'Your details' first, so the "
+        "analysis has your age and sex.",
+    ),
+    HelpNote(
+        "chat",
+        "This chat",
+        ("chat", "chatbot", "bot", "assistant", "who are you", "what can you do"),
+        "This chat answers questions about using VaidyaAI, general questions "
+        "about lab tests and health, and, on a report's own pages, questions "
+        "about that report. It cannot say whether you have a condition; that, "
+        "and anything about what to take, is for your doctor or pharmacist. "
+        "Your questions are not saved.",
     ),
     HelpNote(
         "about",
         "What VaidyaAI is",
         # NOT the bare word "about": "write me a poem about cricket" matched it
         # live (2026-10-09) and the model answered instead of redirecting.
-        ("what is vaidyaai", "about vaidyaai", "what does this app", "how does it work", "is it accurate"),
+        ("what is vaidyaai", "about vaidyaai", "what does this app", "how does it work",
+         "is it accurate", "what can this app"),
         "VaidyaAI reads a laboratory report, checks each value against "
         "published clinical limits and machine-learning models, and explains "
         "what it found in plain words. It is health education, not a "
@@ -159,29 +304,39 @@ HELP_NOTES: Tuple[HelpNote, ...] = (
     ),
     HelpNote(
         "no_results",
-        "'No test results were found'",
-        ("no test results", "no results", "nothing found", "not a lab report", "analysis failed", "failed"),
+        "'No test results were found' and other problems",
+        ("no test results", "no results", "nothing found", "not a lab report", "analysis failed",
+         "failed", "error", "not working"),
         "If no test results can be read from a file, the analysis stops and "
-        "nothing is assessed. Check that the file is a lab report and that the "
-        "photo or PDF is clear, then upload it again.",
+        "nothing is assessed: check that the file is a lab report and that the "
+        "photo or PDF is clear, then upload it again. If an analysis stops "
+        "partway or fails for another reason, press Analyse or Re-analyse again "
+        "after a minute.",
     ),
 )
 
 _WORD = re.compile(r"[a-z0-9]+")
 
 
-def match_help(question: str, limit: int = 2) -> List[HelpNote]:
-    """The notes whose keywords appear in the question, best first."""
+def match_help(question: str, limit: int = 3) -> List[HelpNote]:
+    """The notes whose keywords appear in the question, best first.
+
+    The site map is matched like any note but ranked AFTER every specific
+    note, whatever its hit count: "where can we go to check timeline?" hits
+    the site map twice ("where", "go to") and the Timeline note once, and the
+    Timeline note is the right fallback answer.
+    """
     text = " ".join(_WORD.findall((question or "").lower()))
     if not text:
         return []
     scored = []
-    for note in HELP_NOTES:
+    for order, note in enumerate(HELP_NOTES):
         hits = sum(1 for k in note.keywords if re.search(rf"\b{re.escape(k)}\b", text))
         if hits:
-            scored.append((hits, note))
-    scored.sort(key=lambda pair: -pair[0])
-    return [note for _, note in scored[:limit]]
+            specific = 0 if note is SITE_MAP else 1
+            scored.append((specific, hits, -order, note))
+    scored.sort(key=lambda t: (t[0], t[1], t[2]), reverse=True)
+    return [t[3] for t in scored[:limit]]
 
 
-__all__ = ["HELP_NOTES", "HelpNote", "match_help"]
+__all__ = ["HELP_NOTES", "HelpNote", "SITE_MAP", "match_help"]

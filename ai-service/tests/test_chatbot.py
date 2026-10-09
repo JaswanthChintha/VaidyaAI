@@ -96,30 +96,58 @@ def test_no_model_configured_means_unavailable():
     assert out.outcome == cb.OUTCOME_UNAVAILABLE
 
 
+def test_an_app_question_is_answered_in_the_models_words_with_the_site_map():
+    # Live 2026-10-09: "where can we go to check timeline?" got a note that
+    # said only WHAT the Timeline is. The model now answers the question.
+    llm = FakeLLM(["Click Timeline in the menu on the left. It compares your analysed reports over time."])
+    out = cb.answer_question("where can we go to check timeline?", llm=llm)
+    assert out.outcome == cb.OUTCOME_ANSWERED
+    assert out.answer.startswith("Click Timeline in the menu")
+    assert out.model_used is True
+    assert "Finding your way around VaidyaAI" in llm.prompts[0]  # the site map
+    assert "Timeline:" in llm.prompts[0]
+    assert [s.title for s in out.sources] == ["Timeline"]
+    assert "healthcare professional" not in out.answer  # app help, not health
+
+
 @pytest.mark.parametrize(
     "question, note_id",
     [
-        ("How do I upload a report?", "upload"),
         ("What does population context mean?", "population"),
-        ("What is the Timeline page?", "timeline"),
+        ("where can we go to check timeline?", "timeline"),
+        ("How do I upload a report?", "upload"),
     ],
 )
-def test_an_app_question_gets_the_reviewed_note_word_for_word_with_no_model_call(question, note_id):
-    # Live 2026-10-09: the model turned "what does X mean?" into "X means..."
-    # and Module 24 refused it twice. The reviewed note is served instead.
-    llm = FakeLLM([])
+def test_a_refused_app_answer_falls_back_to_the_reviewed_note(question, note_id):
+    # Live 2026-10-09: "Population context means..." was refused twice.
+    llm = FakeLLM(["Population context means comparing you with others."] * 2)
     out = cb.answer_question(question, llm=llm)
     note = next(n for n in HELP_NOTES if n.note_id == note_id)
     assert out.outcome == cb.OUTCOME_ANSWERED
     assert out.answer == note.text
-    assert [s.kind for s in out.sources] == ["app_help"]
-    assert llm.prompts == []
-    assert out.model_used is False
+    assert [s.title for s in out.sources] == [note.title]
 
 
 def test_app_help_works_even_with_no_model_configured():
     out = cb.answer_question("How do I upload a report?", llm=None)
     assert out.outcome == cb.OUTCOME_ANSWERED
+    assert out.answer == next(n for n in HELP_NOTES if n.note_id == "upload").text
+
+
+def test_a_failing_model_on_an_app_question_still_answers_with_the_note():
+    class Broken:
+        def generate_text(self, *a, **k):
+            raise RuntimeError("rate limited")
+
+    out = cb.answer_question("How do I change my password?", llm=Broken())
+    assert out.outcome == cb.OUTCOME_ANSWERED
+    assert "Your details" in out.answer
+
+
+def test_an_app_question_on_a_report_page_is_not_given_the_report():
+    llm = FakeLLM(["Click Timeline in the menu on the left."])
+    cb.answer_question("where is the timeline?", report=REPORT, llm=llm)
+    assert "THE USER'S REPORT" not in llm.prompts[0]
 
 
 def test_a_report_question_sees_only_that_report_and_may_quote_its_numbers():
@@ -216,10 +244,20 @@ def test_a_failing_model_becomes_a_fixed_reply_not_an_error():
     [
         ("how do I upload a pdf", "upload"),
         ("what is the timeline", "timeline"),
+        ("where can we go to check timeline?", "timeline"),
         ("what does population context mean", "population"),
         ("my analysis is slow", "analyse"),
         ("how to delete my account", "account"),
         ("what does not assessed mean", "not_assessed"),
+        ("how do I switch to dark mode", "theme"),
+        ("where is the summary for my doctor", "doctor_summary"),
+        ("what is the coverage chart", "overall"),
+        ("I forgot my password", "account"),
+        ("where are the settings", "site_map"),
+        ("how can I show my report to my doctor?", "doctor_summary"),
+        ("how do I download my results as pdf?", "save_print"),
+        ("is there a share button?", "site_map"),
+        ("what can you do", "chat"),
     ],
 )
 def test_app_questions_find_the_right_note(question, note_id):

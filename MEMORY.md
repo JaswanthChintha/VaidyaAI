@@ -13617,6 +13617,26 @@ now carries the result's unit. Live after fixes: poem → redirect, Timeline /
 population → notes, report question correct with units, "Do I have
 diabetes?" → fixed reply. ai-service **5,562** + 7 skipped.
 
+**"The bot should know EVERYTHING about the app" (owner, same day).** The
+verbatim-note answer to "where can we go to check timeline?" only said WHAT
+the Timeline is. Now: `app_help.py` = a SITE_MAP note (menu, pages, buttons,
+read from the frontend) + 22 notes covering every page/section (Reports
+page and statuses, upload, analyse, whose report, report date, profile,
+dashboard sections, overall/risk/coverage, explanations + read aloud, your
+results, not assessed, timeline's three parts, population, doctor summary,
+save/print, account incl. "no forgot password", dark mode, sign in, the
+chat, about, problems). `match_help` ranks specific notes before the site
+map. App question → the MODEL answers from site map + notes
+(`require_referral=False`, no report lines); refused/failed/no key → the best
+note word for word. System prompt: name exact buttons; NEVER describe a
+feature not in the material. Live finds fixed: model INVENTED a share icon
++ email ("show my report to my doctor") → doctor-summary keywords + site-map
+keywords share/send/email/icon/download; "download my results as pdf"
+matched the UPLOAD note via "pdf" and claimed the summary "creates a PDF" →
+"pdf" removed from upload, new `save_print` note (no download button; use
+the browser's Print → Save as PDF). Live after fixes: all 11 test questions
+correct. ai-service **5,584** + 7 skipped.
+
 ---
 
 ## 7. Module 1 → later modules: inherited obligations
