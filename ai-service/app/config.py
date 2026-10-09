@@ -98,10 +98,22 @@ class Settings(BaseSettings):
     # passed the CV gate and were approved by Module 24. A third candidate
     # (`google/gemma-4-31b-it:free`) was dropped: it answered 429 from its
     # upstream provider on every attempt.
+    #
+    # RE-PROBED 2026-10-09 with the chatbot's own prompt, live: the DeepSeek
+    # free slug now answers 404 ("unavailable for free"), and every free model
+    # left is a REASONING model that spends its budget thinking and returns
+    # empty content -- unless reasoning is switched off
+    # (`openrouter_disable_reasoning` below). With it off, these three answered
+    # in 1-3 s; `google/gemma-4-26b-a4b-it:free` answered 429.
     openrouter_models: str = (
-        "deepseek/deepseek-v4-flash-0731:free,"
-        "nvidia/nemotron-3-super-120b-a12b:free"
+        "nvidia/nemotron-3.5-lightning:free,"
+        "nvidia/nemotron-3-super-120b-a12b:free,"
+        "google/gemma-4-31b-it:free"
     )
+    #: Send `reasoning: {enabled: false}`. Measured 2026-10-09: with thinking
+    #: on, a 600-token answer budget was spent entirely on reasoning and the
+    #: message content came back empty; with it off, answers arrived in 1-3 s.
+    openrouter_disable_reasoning: bool = True
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_timeout_seconds: float = 120.0
     # Deliberately SHORTER than the Gemini cooldown. A Gemini 429 is a daily

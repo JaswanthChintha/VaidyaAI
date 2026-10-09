@@ -13599,6 +13599,24 @@ report. Google sign-in still unanswered (B recommended).
   frontend **577** — all 0 failed. (`dnsServers.test.js` fixed to not read
   the developer's own `.env`: it now holds DNS_SERVERS.)
 
+**Live with the owner's NEW OpenRouter key (same day; key checked by line
+count/format only, never shown):** the key works, but the DeepSeek free slug
+now answers 404 ("unavailable for free") and EVERY free model is a reasoning
+model that returned EMPTY content within the token budget. Fixes:
+`openrouter_models` = nemotron-3.5-lightning → nemotron-3-super → gemma-4-31b
+(all :free; probed live, 1–3 s) and new `openrouter_disable_reasoning=True`
+→ payload `reasoning: {enabled: false}` (also helps the explanation
+fallback). Then live problems and fixes: (1) "poem ABOUT cricket" matched
+the help note's bare keyword "about" and the model WROTE the poem → keyword
+removed + `_HEALTH_WORDS` gate: no note, no knowledge chunk, no health word
+→ redirect with NO model call; (2) "What does population context mean?" →
+model wrote "…means…" twice → refused → APP QUESTIONS NOW GET THE REVIEWED
+NOTE WORD FOR WORD (no model; works even without a key); help-note keywords
+narrowed to app words only; (3) "13.0 - 17.0%" for haemoglobin → the range
+now carries the result's unit. Live after fixes: poem → redirect, Timeline /
+population → notes, report question correct with units, "Do I have
+diabetes?" → fixed reply. ai-service **5,562** + 7 skipped.
+
 ---
 
 ## 7. Module 1 → later modules: inherited obligations

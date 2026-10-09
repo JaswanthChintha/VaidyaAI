@@ -96,13 +96,30 @@ def test_no_model_configured_means_unavailable():
     assert out.outcome == cb.OUTCOME_UNAVAILABLE
 
 
-def test_an_app_question_is_grounded_in_the_help_notes_and_gets_no_referral_tacked_on():
-    llm = FakeLLM(["Open the Reports page, choose a PDF or a clear photo up to 10 MB, press Upload, then press Analyse."])
-    out = cb.answer_question("How do I upload a report?", llm=llm)
+@pytest.mark.parametrize(
+    "question, note_id",
+    [
+        ("How do I upload a report?", "upload"),
+        ("What does population context mean?", "population"),
+        ("What is the Timeline page?", "timeline"),
+    ],
+)
+def test_an_app_question_gets_the_reviewed_note_word_for_word_with_no_model_call(question, note_id):
+    # Live 2026-10-09: the model turned "what does X mean?" into "X means..."
+    # and Module 24 refused it twice. The reviewed note is served instead.
+    llm = FakeLLM([])
+    out = cb.answer_question(question, llm=llm)
+    note = next(n for n in HELP_NOTES if n.note_id == note_id)
     assert out.outcome == cb.OUTCOME_ANSWERED
-    assert [s.title for s in out.sources] == ["Uploading a report"]
-    assert "HOW THE APP WORKS" in llm.prompts[0]
-    assert "healthcare professional" not in out.answer  # app help, not health
+    assert out.answer == note.text
+    assert [s.kind for s in out.sources] == ["app_help"]
+    assert llm.prompts == []
+    assert out.model_used is False
+
+
+def test_app_help_works_even_with_no_model_configured():
+    out = cb.answer_question("How do I upload a report?", llm=None)
+    assert out.outcome == cb.OUTCOME_ANSWERED
 
 
 def test_a_report_question_sees_only_that_report_and_may_quote_its_numbers():
@@ -111,6 +128,17 @@ def test_a_report_question_sees_only_that_report_and_may_quote_its_numbers():
     assert out.outcome == cb.OUTCOME_ANSWERED
     assert out.sources[0].title == "This report's results"
     assert "Result: HbA1c = 5.6 %" in llm.prompts[0]
+
+
+def test_a_printed_range_carries_its_unit_so_the_model_need_not_guess_one():
+    lines = cb._report_lines(
+        cb.ReportContext(results=[
+            cb.ReportResult(name="Haemoglobin", value="13.6", unit="g/dL", reference="13.0 - 17.0"),
+            cb.ReportResult(name="TSH", value="2.1", unit="mIU/L", reference="0.4 - 4.0 mIU/L"),
+        ])
+    )
+    assert lines[0] == "Result: Haemoglobin = 13.6 g/dL (usual range on the report: 13.0 - 17.0 g/dL)"
+    assert lines[1].endswith("(usual range on the report: 0.4 - 4.0 mIU/L)")  # not doubled
 
 
 def test_a_number_that_is_not_in_the_report_is_refused():
@@ -144,11 +172,23 @@ def test_a_diagnosis_in_the_answer_is_never_shown():
     assert "You have diabetes" not in out.answer
 
 
-def test_off_topic_gets_the_redirect():
-    llm = FakeLLM(["OFF_TOPIC", "OFF_TOPIC"])
-    out = cb.answer_question("Write me a poem about cricket", llm=llm)
+@pytest.mark.parametrize(
+    "question",
+    ["Write me a poem about cricket", "who won the election", "help me with my python code"],
+)
+def test_off_topic_is_redirected_before_any_model_call(question):
+    # Live 2026-10-09: the model WROTE the poem despite the OFF_TOPIC rule.
+    llm = FakeLLM([])
+    out = cb.answer_question(question, llm=llm)
     assert out.outcome == cb.OUTCOME_OFF_TOPIC
     assert out.answer == cb.REPLY_OFF_TOPIC
+    assert llm.prompts == []
+
+
+def test_the_model_can_still_say_off_topic_itself():
+    llm = FakeLLM(["OFF_TOPIC", "OFF_TOPIC"])
+    out = cb.answer_question("tell me a joke about doctors", llm=llm)
+    assert out.outcome == cb.OUTCOME_OFF_TOPIC
 
 
 def test_an_empty_question_calls_nothing():
@@ -220,6 +260,32 @@ def test_the_route_answers_through_the_service(client):
 def test_the_route_refuses_an_overlong_question(client):
     res = client.post("/api/v1/chat", json={"question": "x" * 301})
     assert res.status_code == 422
+
+
+def test_openrouter_requests_ask_for_no_reasoning():
+    """Live 2026-10-09: every free model now reasons, and with reasoning on a
+    600-token budget came back as EMPTY content. Off, answers took 1-3 s."""
+    from app.config import Settings
+    from app.services.openrouter_text import build_openrouter_client, reset_cooldowns
+
+    reset_cooldowns()
+    sent = {}
+
+    class Response:
+        status_code = 200
+        text = '{"choices": [{"message": {"content": "HbA1c can reflect average glucose."}}]}'
+
+    class Http:
+        def post(self, url, json, headers):
+            sent.update(json)
+            return Response()
+
+    settings = Settings(_env_file=None, openrouter_api_key="k" * 40)
+    client = build_openrouter_client(settings, http_client=Http())
+    client.generate_text("q", system_instruction="s", temperature=0.2, max_output_tokens=600)
+    assert sent["reasoning"] == {"enabled": False}
+    assert sent["model"] == settings.openrouter_model_list[0]
+    assert "deepseek/deepseek-v4-flash-0731:free" not in settings.openrouter_model_list
 
 
 def test_chat_never_uses_gemini():

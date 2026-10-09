@@ -9,6 +9,12 @@ note -- a stale note is a wrong answer.
 Matching is deliberately plain: a note is chosen when the question shares its
 keywords. No embedding and no model call -- the same reason the knowledge
 retriever anchors free text to the catalogue first.
+
+KEYWORDS ARE APP WORDS ONLY (2026-10-09). A matched note is now served WORD
+FOR WORD (see `chatbot.answer_question`), so a health word here ("weight",
+"results", "doctor") would answer a health question with an app note.
+Hyphens are written as spaces ("re analyse"): the question is normalised to
+letters and digits before matching.
 """
 
 from __future__ import annotations
@@ -30,7 +36,7 @@ HELP_NOTES: Tuple[HelpNote, ...] = (
     HelpNote(
         "upload",
         "Uploading a report",
-        ("upload", "add report", "add a report", "pdf", "photo", "image", "file", "jpg", "png", "scan"),
+        ("upload", "uploading", "add report", "add a report", "pdf", "jpg", "png", "file size", "attach"),
         # Reports.jsx: accept=".pdf,.jpg,.jpeg,.png", "up to 10 MB".
         "Open the Reports page and use the 'Upload a report' box. Choose a PDF or "
         "a clear photo (JPG or PNG) of a blood test report, up to 10 MB. You can "
@@ -41,7 +47,8 @@ HELP_NOTES: Tuple[HelpNote, ...] = (
     HelpNote(
         "analyse",
         "Analysing a report",
-        ("analyse", "analyze", "analysis", "progress", "slow", "taking long", "stuck", "re-analyse", "reanalyse", "how long"),
+        ("analyse", "analyze", "analysis", "analysing", "progress bar", "slow", "taking long",
+         "taking so long", "stuck", "re analyse", "reanalyse", "how long"),
         # Reports.jsx STEP labels; the free hosting sleeps (MEMORY 6bu).
         "Press Analyse on a report in the Reports page. A progress bar walks "
         "through four steps: reading the report, checking the values, clinical rules and "
@@ -54,7 +61,7 @@ HELP_NOTES: Tuple[HelpNote, ...] = (
     HelpNote(
         "whose_report",
         "Whose report?",
-        ("whose", "someone else", "family", "mother", "father", "other person", "not mine"),
+        ("whose", "someone else", "family member", "my mother", "my father", "other person", "not mine"),
         "Each report can be marked as yours or as someone else's, with the "
         "'Whose report?' button. Your own details are used only for your own "
         "reports. For someone else's report you can type their age and sex "
@@ -63,7 +70,8 @@ HELP_NOTES: Tuple[HelpNote, ...] = (
     HelpNote(
         "profile",
         "Your details (profile)",
-        ("profile", "details", "age", "sex", "gender", "height", "weight", "bmi", "smoking", "blood pressure"),
+        ("profile", "your details", "my details", "personal details", "enter my age",
+         "change my age", "change my weight", "change my height", "update my details"),
         # Profile.jsx hints.
         "The 'Your details' page holds your age, sex, height, weight, smoking "
         "history, and whether you have high blood pressure or heart disease. "
@@ -75,7 +83,7 @@ HELP_NOTES: Tuple[HelpNote, ...] = (
     HelpNote(
         "dashboard",
         "The report dashboard",
-        ("dashboard", "result page", "overall", "risk gauge", "explanation", "view dashboard", "results"),
+        ("dashboard", "result page", "results page", "risk gauge", "overall status", "view dashboard"),
         "After an analysis, press 'View dashboard' on the report. It has an "
         "overall summary, the topics that were checked, each of your results "
         "with its usual range, and plain-language explanations that are "
@@ -95,7 +103,8 @@ HELP_NOTES: Tuple[HelpNote, ...] = (
     HelpNote(
         "timeline",
         "Timeline",
-        ("timeline", "trend", "over time", "compare reports", "history", "improved", "went up", "went down"),
+        ("timeline", "trend", "trends", "over time", "compare reports", "compare my reports",
+         "previous report", "went up", "went down", "arrows"),
         "The Timeline page compares your analysed reports over time, test by "
         "test. It needs at least two analysed reports. Arrows mark whether a "
         "result went up, went down or stayed the same, and whether that change "
@@ -104,7 +113,8 @@ HELP_NOTES: Tuple[HelpNote, ...] = (
     HelpNote(
         "population",
         "How your results compare (population context)",
-        ("population", "compare", "percentile", "others", "people my age", "nhanes", "how my results compare"),
+        ("population", "percentile", "people my age", "nhanes", "how my results compare",
+         "how your results compare", "compared with others", "compare with others"),
         "'How your results compare' places some of your results among people "
         "of the same age band and sex in a large public health survey from the "
         "United States (NHANES). It is general information only: it is not an "
@@ -113,7 +123,8 @@ HELP_NOTES: Tuple[HelpNote, ...] = (
     HelpNote(
         "doctor_summary",
         "Summary for a clinician",
-        ("doctor", "clinician", "summary", "print", "share with doctor", "handover"),
+        ("clinician", "summary for", "doctor summary", "share with my doctor", "show my doctor",
+         "print", "handover"),
         "'Summary for a clinician' is a short summary of one report that you "
         "can show your doctor. Open it from the report's dashboard.",
     ),
@@ -128,7 +139,8 @@ HELP_NOTES: Tuple[HelpNote, ...] = (
     HelpNote(
         "account",
         "Account, password and deleting data",
-        ("password", "account", "delete", "remove", "sign out", "logout", "privacy", "data"),
+        ("password", "account", "delete my", "delete a report", "remove a report", "sign out",
+         "log out", "logout", "privacy", "my data"),
         "On the 'Your details' page you can change your password or delete "
         "your account. Deleting the account removes your reports and their "
         "files. A single report can be removed with its Delete button on the "
@@ -137,7 +149,9 @@ HELP_NOTES: Tuple[HelpNote, ...] = (
     HelpNote(
         "about",
         "What VaidyaAI is",
-        ("what is vaidyaai", "what does this app", "about", "how does it work", "diagnosis", "is it accurate"),
+        # NOT the bare word "about": "write me a poem about cricket" matched it
+        # live (2026-10-09) and the model answered instead of redirecting.
+        ("what is vaidyaai", "about vaidyaai", "what does this app", "how does it work", "is it accurate"),
         "VaidyaAI reads a laboratory report, checks each value against "
         "published clinical limits and machine-learning models, and explains "
         "what it found in plain words. It is health education, not a "
@@ -146,7 +160,7 @@ HELP_NOTES: Tuple[HelpNote, ...] = (
     HelpNote(
         "no_results",
         "'No test results were found'",
-        ("no test results", "no results", "nothing found", "not a lab report", "failed"),
+        ("no test results", "no results", "nothing found", "not a lab report", "analysis failed", "failed"),
         "If no test results can be read from a file, the analysis stops and "
         "nothing is assessed. Check that the file is a lab report and that the "
         "photo or PDF is clear, then upload it again.",

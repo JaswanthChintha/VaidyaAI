@@ -251,6 +251,10 @@ class OpenRouterTextClient:
             "temperature": temperature,
             "max_tokens": max_output_tokens,
         }
+        # Every free model is a reasoning model now; left on, it can spend the
+        # whole budget thinking and return no content (config.py, 2026-10-09).
+        if self._settings.openrouter_disable_reasoning:
+            payload["reasoning"] = {"enabled": False}
         headers = {
             "Authorization": "Bearer "
             + self._settings.openrouter_api_key.get_secret_value(),

@@ -119,6 +119,22 @@ _MEDICATION = re.compile(
 OFF_TOPIC_TOKEN = "OFF_TOPIC"
 _DIGIT = re.compile(r"\d")
 
+#: Words that make a question plausibly about health, lab tests or a report.
+#: A question with NONE of these, and no help note or knowledge match, is
+#: redirected WITHOUT a model call: live (2026-10-09), "write me a poem about
+#: cricket" was answered with a poem despite the OFF_TOPIC instruction.
+_HEALTH_WORDS = re.compile(
+    r"\b(health\w*|blood|tests?|testing|lab|labs|laborator\w*|results?|reports?|"
+    r"range|levels?|values?|normal|high|low|sugar|glucose|hba1c|a1c|cholesterol|"
+    r"lipids?|ldl|hdl|triglycerides?|kidneys?|renal|liver|heart|thyroid|tsh|"
+    r"vitamins?|iron|ferritin|haemoglobin|hemoglobin|anaemi\w*|anemi\w*|"
+    r"diabet\w*|pressure|bmi|weight|diet\w*|foods?|eat\w*|exercis\w*|sleep\w*|"
+    r"water|hydrat\w*|doctors?|symptoms?|urine|creatinine|egfr|sgpt|sgot|alt|"
+    r"ast|bilirubin|platelets?|wbc|rbc|cbc|proteins?|fats?|salt|smok\w*|"
+    r"alcohol|stress|fasting|medical|body|diseases?|conditions?|infections?|"
+    r"immun\w*|nutrition\w*|calori\w*|fitness|lifestyle|wellness|vaidyaai)\b"
+)
+
 
 def classify(question: str) -> Optional[str]:
     """A fixed-reply category, or None to answer with the model."""
@@ -187,7 +203,13 @@ def _report_lines(report: ReportContext) -> List[str]:
         if r.value is not None:
             parts.append(f"= {r.value}{(' ' + r.unit) if r.unit else ''}")
         if r.reference:
-            parts.append(f"(usual range on the report: {r.reference})")
+            # The range carries the result's unit when it has none of its own:
+            # live (2026-10-09), "13.0 - 17.0" beside an HbA1c in % came back as
+            # "13.0 - 17.0%" for haemoglobin -- the model supplied a unit.
+            reference = r.reference
+            if r.unit and not re.search(r"[A-Za-z%]", reference):
+                reference = f"{reference} {r.unit}"
+            parts.append(f"(usual range on the report: {reference})")
         if r.flag:
             parts.append(f"[{r.flag}]")
         lines.append("Result: " + " ".join(parts))
@@ -218,10 +240,13 @@ SYSTEM_INSTRUCTION = (
     "sure and suggest the Reports or Your details page.\n"
     "- Never say the person has, or does not have, a disease. Never name a "
     "medicine, a dose or a treatment.\n"
-    "- Do not state any number unless it appears in the material given.\n"
-    "- Use careful wording such as 'can', 'may', 'is often used to'. Never "
-    "write that a result 'shows', 'proves' or 'means' something about the "
-    "person.\n"
+    "- Do not state any number unless it appears in the material given. Copy "
+    "each value's unit exactly as the report gives it.\n"
+    "- Use careful wording such as 'can', 'may', 'is often used to'. Do not "
+    "use the words 'shows', 'show', 'means', 'mean', 'indicates', 'proves' or "
+    "'confirms' at all -- not even about the app. Say 'has', 'lists', "
+    "'compares', 'is used for' or 'can suggest' instead. (Live 2026-10-09: "
+    "'the Timeline shows...' was refused by the safety check.)\n"
     "- For anything about their health, suggest discussing it with a doctor.\n"
     f"- If the question is not about health, lab tests or this app, reply with "
     f"exactly {OFF_TOPIC_TOKEN} and nothing else."
@@ -270,11 +295,30 @@ def answer_question(
     if kind is not None:
         return _fixed(kind, OUTCOME_REFUSED)
 
+    help_notes = match_help(q)
+    chunks = _knowledge(q)
+
+    # AN APP QUESTION IS ANSWERED WITH THE REVIEWED NOTE ITSELF (2026-10-09).
+    # Live, the model rephrased "What does population context mean?" as
+    # "Population context means..." on both attempts and Module 24 refused
+    # it both times. The note is already reviewed, already Module-24-approved
+    # (tests/test_chatbot.py), always correct, instant, and spends no quota.
+    if help_notes and not chunks:
+        note = help_notes[0]
+        logger.info("chat_answer %s", safe_meta(outcome=OUTCOME_ANSWERED, kind="app_help", model=False))
+        return ChatAnswer(
+            outcome=OUTCOME_ANSWERED,
+            answer=note.text,
+            sources=[ChatSource(kind="app_help", title=note.title)],
+        )
+
+    # Nothing about health, tests, a report or the app: redirect, no model.
+    if not help_notes and not chunks and not _HEALTH_WORDS.search(q.lower()):
+        return _fixed("off_topic", OUTCOME_OFF_TOPIC)
+
     if llm is None:
         return _fixed("unavailable", OUTCOME_UNAVAILABLE)
 
-    help_notes = match_help(q)
-    chunks = _knowledge(q)
     report_lines = _report_lines(report) if report else []
     grounding: Sequence[str] = tuple(
         [n.text for n in help_notes] + [c["text"] for c in chunks] + report_lines
