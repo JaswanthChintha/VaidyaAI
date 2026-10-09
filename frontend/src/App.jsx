@@ -32,7 +32,9 @@ function RequireAuth({ children }) {
 
 function Nav() {
   const { status, user, signOut } = useAuth();
-  if (status !== 'signedIn') return null;
+  const onLanding = useLocation().pathname === '/';
+  // The front page is the same page for everyone (owner, 2026-10-09).
+  if (status !== 'signedIn' || onLanding) return null;
   const who = user?.name || user?.email || '';
   return (
     // A sidebar from 900px up, a wrapping top bar below it -- one element,
@@ -98,23 +100,14 @@ export default function App() {
   const onLanding = useLocation().pathname === '/';
 
   return (
-    <div className={status === 'signedIn' ? 'app app--shell' : 'app'}>
+    <div className={status === 'signedIn' && !onLanding ? 'app app--shell' : 'app'}>
       <Nav />
       <Routes>
-        <Route
-          path="/"
-          element={
-            status === 'signedIn' ? (
-              <Navigate to="/reports" replace />
-            ) : status === 'checking' ? (
-              // A returning reader holds a session; do not flash the
-              // marketing page at them while it is confirmed.
-              <p className="loading">Checking your session…</p>
-            ) : (
-              <Landing />
-            )
-          }
-        />
+        {/* THE LINK ALWAYS OPENS ON THE FRONT PAGE (owner, 2026-10-09), signed
+            in or not -- it used to jump a signed-in visitor straight to
+            Reports, which hid the front page in every demo. A signed-in
+            reader gets "Go to my reports" there instead of "Sign in". */}
+        <Route path="/" element={<Landing />} />
         <Route
           path="/signin"
           element={status === 'signedIn' ? <Navigate to="/reports" replace /> : <SignIn />}
@@ -170,8 +163,8 @@ export default function App() {
         <Route path="*" element={<Navigate to={status === 'signedIn' ? '/reports' : '/'} replace />} />
       </Routes>
       {onLanding ? null : <Disclaimer />}
-      {/* The chatbot (2026-10-09): signed-in pages only. */}
-      {status === 'signedIn' ? <ChatBot /> : null}
+      {/* The chatbot (2026-10-09): signed-in pages only, not the front page. */}
+      {status === 'signedIn' && !onLanding ? <ChatBot /> : null}
     </div>
   );
 }

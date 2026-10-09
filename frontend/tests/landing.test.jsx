@@ -64,3 +64,47 @@ describe('the landing page', () => {
     expect(screen.getByRole('heading', { level: 1 }).textContent).toMatch(/Your lab report/);
   });
 });
+
+/**
+ * THE LINK ALWAYS OPENS ON THE FRONT PAGE (owner, 2026-10-09). A signed-in
+ * visitor used to be sent straight to Reports and never saw it.
+ */
+describe('the landing page while signed in', () => {
+  const ok = (data) => ({ ok: true, status: 200, json: async () => ({ success: true, data }) });
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    window.localStorage.setItem('vaidyaai.refresh', 'stored-refresh-token');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url) => {
+        if (url.endsWith('/auth/refresh')) return ok({ accessToken: 'a', refreshToken: 'r' });
+        if (url.endsWith('/auth/me')) return ok({ user: { id: 'u1', name: 'Asha', email: 'asha@example.com' } });
+        return ok({ reports: [], profile: null });
+      })
+    );
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    window.localStorage.clear();
+  });
+
+  it('stays on the front page, with "Go to my reports" and no sign-in buttons', async () => {
+    renderAt('/');
+    const goes = await screen.findAllByRole('link', { name: /Go to my reports/ });
+    expect(goes.length).toBeGreaterThanOrEqual(3);
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toMatch(/Your lab report, read carefully/);
+    expect(screen.queryByRole('link', { name: 'Sign in' })).toBeNull();
+    expect(screen.queryByRole('link', { name: /Create an account/ })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Get started' })).toBeNull();
+    // The app's side menu and chat bubble are not on the front page.
+    expect(screen.queryByRole('navigation', { name: 'Main' })).toBeNull();
+  });
+
+  it('"Go to my reports" opens the Reports page with the menu', async () => {
+    renderAt('/');
+    fireEvent.click((await screen.findAllByRole('link', { name: /Go to my reports/ }))[0]);
+    expect(await screen.findByRole('navigation', { name: 'Main' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { level: 1, name: /Your lab report, read carefully/ })).toBeNull();
+  });
+});

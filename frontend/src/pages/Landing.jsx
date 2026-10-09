@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useAuth } from '../lib/auth';
 import ThemeToggle from '../components/ThemeToggle';
 import Icon from '../components/Icon';
 import Logo from '../components/Logo';
 import Splash, { SPLASH_COVER_MS, shouldShow as splashWillShow } from '../components/Splash';
 
 /**
- * The public front page, shown only to someone who is not signed in.
+ * The public front page -- the first page for EVERYONE, signed in or not
+ * (owner, 2026-10-09). A signed-in reader sees "Go to my reports" wherever a
+ * signed-out one sees "Sign in" or "Create an account".
  *
  * EVERY CLAIM ON THIS PAGE IS ONE THE CODE MAKES TRUE. No user counts, no
  * accuracy figures, no testimonials: a medical tool that opens with numbers
@@ -144,6 +147,9 @@ export default function Landing() {
   // The hero's "reading" animation would play unseen under the intro, so it
   // waits for the intro to lift. Read once, before the splash marks itself seen.
   const [heroDelay] = useState(() => (splashWillShow() ? `${SPLASH_COVER_MS}ms` : '0ms'));
+  // While a stored session is still being checked, the signed-out buttons
+  // show: "Sign in" then lands on Reports anyway if the session holds.
+  const signedIn = useAuth().status === 'signedIn';
   return (
     <div className="landing" style={{ '--hero-delay': heroDelay }}>
       <Splash />
@@ -156,12 +162,20 @@ export default function Landing() {
         </nav>
         <span className="landing__spacer" />
         <ThemeToggle />
-        <Link to="/signin" className="landing__signin">
-          Sign in
-        </Link>
-        <Link to="/signin" state={{ mode: 'register' }} className="button-link landing__cta">
-          Get started
-        </Link>
+        {signedIn ? (
+          <Link to="/reports" className="button-link landing__cta">
+            Go to my reports
+          </Link>
+        ) : (
+          <>
+            <Link to="/signin" className="landing__signin">
+              Sign in
+            </Link>
+            <Link to="/signin" state={{ mode: 'register' }} className="button-link landing__cta">
+              Get started
+            </Link>
+          </>
+        )}
       </header>
 
       <main className="landing__main">
@@ -180,13 +194,22 @@ export default function Landing() {
               in plain words.
             </p>
             <div className="hero__actions">
-              <Link to="/signin" state={{ mode: 'register' }} className="button-link">
-                Create an account
-                <Icon name="arrow" size={18} />
-              </Link>
-              <Link to="/signin" className="button-link button-link--quiet">
-                Sign in
-              </Link>
+              {signedIn ? (
+                <Link to="/reports" className="button-link">
+                  Go to my reports
+                  <Icon name="arrow" size={18} />
+                </Link>
+              ) : (
+                <>
+                  <Link to="/signin" state={{ mode: 'register' }} className="button-link">
+                    Create an account
+                    <Icon name="arrow" size={18} />
+                  </Link>
+                  <Link to="/signin" className="button-link button-link--quiet">
+                    Sign in
+                  </Link>
+                </>
+              )}
             </div>
             <ul className="hero__ticks">
               <li>Not a diagnosis</li>
@@ -286,8 +309,12 @@ export default function Landing() {
             <h2 className="closing__title">Have a report to hand?</h2>
             <p className="closing__text">Reading one usually takes a few minutes.</p>
           </div>
-          <Link to="/signin" state={{ mode: 'register' }} className="button-link closing__button">
-            Create an account
+          <Link
+            to={signedIn ? '/reports' : '/signin'}
+            state={signedIn ? undefined : { mode: 'register' }}
+            className="button-link closing__button"
+          >
+            {signedIn ? 'Go to my reports' : 'Create an account'}
             <Icon name="arrow" size={18} />
           </Link>
         </div>
@@ -310,10 +337,16 @@ export default function Landing() {
         </div>
         <div className="foot__col">
           <h3>Account</h3>
-          <Link to="/signin">Sign in</Link>
-          <Link to="/signin" state={{ mode: 'register' }}>
-            Create an account
-          </Link>
+          {signedIn ? (
+            <Link to="/reports">Go to my reports</Link>
+          ) : (
+            <>
+              <Link to="/signin">Sign in</Link>
+              <Link to="/signin" state={{ mode: 'register' }}>
+                Create an account
+              </Link>
+            </>
+          )}
         </div>
       </footer>
     </div>

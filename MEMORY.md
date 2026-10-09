@@ -36,7 +36,49 @@
 
 ## 0. RESUME HERE (read this first in a new session)
 
-> **NEWEST: §6bs (2026-10-06) — LIVE at https://vaidyaai-bo0z.onrender.com
+> **NEWEST — HANDOVER 2026-10-09. Read this block, then §6bx (chatbot),
+> §6bw (local DNS), §6bv (résumé "Healthy" fix), §6bu (Render free plan),
+> §6bt (logo/hero), §6bs (live site + profile nudge), §6br (deploy).**
+>
+> **STATE:** everything committed and pushed; last code commit `bf22136`
+> ("the chatbot knows the whole app…"), plus this handover docs commit if
+> the owner approved it. `git status`: 45 `D` (review strip — NEVER commit),
+> `??` only `.claude/` and the owner's `cd d …txt` note (never commit).
+> **Tests (last full runs):** ai-service **5,584** + 7 skipped (junit),
+> backend **976** + 3 skipped, frontend **577** — all 0 failed.
+>
+> **LIVE:** website + backend **https://vaidyaai-bo0z.onrender.com**
+> (`vaidyaai.onrender.com` is SOMEONE ELSE'S — never use it), ai-service
+> **https://vaidyaai-ai.onrender.com**. Render free plan, Singapore,
+> Blueprint `render.yaml`; pushing `main` redeploys both. Secrets live only
+> in Render's Environment page and the gitignored `.env` files (owner types
+> them; never in chat). Free services sleep after 15 min; first visit ~1 min.
+>
+> **LOCAL RUN (owner's note file, 3 cmd windows, in order):** ai-service
+> (uvicorn :8000), backend (`npm start` :5000), frontend (`npm run dev`
+> :5173). `backend/.env` now has `DNS_SERVERS=8.8.8.8,1.1.1.1` (this Wi-Fi
+> refuses SRV lookups); `ai-service/.env` has a NEW `OPENROUTER_API_KEY`
+> (checked by format only). The owner's Atlas link has NO db name → data in
+> the default `test` db, shared by laptop and Render.
+>
+> **DONE 2026-10-06 → 10-09:** liver ML model (not shipped, loses to rules);
+> Render deploy (GridFS file storage, backend serves frontend); profile
+> nudge; drop+pulse logo + moving hero; free-plan fixes (model preload,
+> wake-wait, 2-min stages, plain-word errors); "no test results" stop +
+> no "Healthy" without a lab result; local DNS fix; **CHATBOT — working
+> live, confirmed by the owner 2026-10-09** (free OpenRouter models with
+> reasoning off; whole-app help notes + site map; safety-checked).
+>
+> **OPEN, in order:** (1) ~~Google sign-in~~ — **DROPPED by the owner
+> 2026-10-09** after it was built (all reverted, never committed; §6by). (2) Guide's calls: random-glucose 140 cut-off, kidney "High from
+> model alone", U/L = IU/L. (3) `qs` audit warning; module audit 19/23/27+;
+> 02-diabetes owner unknown. (4) Optional: hero's faint leaf watermark (old
+> logo leftover); chat free limit ~50/day (credit raises it). B and D
+> (EFLM RCV check, doctor PDF) are DROPPED. Title: "VaidyaAI: Hybrid
+> Rule-Based and Machine-Learning Analysis of Laboratory Reports with
+> Verifiable Evidence".
+>
+> **§6bs (2026-10-06) — LIVE at https://vaidyaai-bo0z.onrender.com
 > (NOT vaidyaai.onrender.com — someone else's); new users are nudged to fill
 > in their profile. Read §6bs, then §6br.**
 >
@@ -13635,7 +13677,79 @@ keywords share/send/email/icon/download; "download my results as pdf"
 matched the UPLOAD note via "pdf" and claimed the summary "creates a PDF" →
 "pdf" removed from upload, new `save_print` note (no download button; use
 the browser's Print → Save as PDF). Live after fixes: all 11 test questions
-correct. ai-service **5,584** + 7 skipped.
+correct. ai-service **5,584** + 7 skipped. Committed + pushed `bf22136`.
+**The owner confirmed on the live site that the chatbot works (2026-10-09).**
+
+---
+
+## 6by. GOOGLE SIGN-IN — BUILT, THEN DROPPED BY THE OWNER · 2026-10-09
+
+**DROPPED. Every change was reverted (git checkout + new files deleted +
+`npm prune`); nothing was ever committed. Do NOT offer it again.** Why: to
+let ANY Google user sign in, Google requires publishing the app, which needs
+a privacy-policy page and possibly an owned domain (`onrender.com` may be
+refused); "Testing" mode allows only listed test users. The owner did not
+want either. The record below is kept only in case it is ever revived.
+
+**Owner had chosen B + my two picks:** linking on the Sign-in page only; a
+Google-only account could NOT add a password.
+
+* **backend:** `google-auth-library@^10.9.1` (v9 pulled an old `uuid` with
+  an audit warning; v10 has none) + `validator` declared directly.
+  `config.google.clientId` from `GOOGLE_CLIENT_ID` (empty = OFF; a value not
+  ending `.apps.googleusercontent.com` stops startup — catches a pasted
+  secret). `utils/googleAuth.verifyGoogleCredential` (audience = our client
+  ID; `email_verified` must be true; email normalised like registration;
+  errors are 400 not 401 so the client never refresh-and-resends).
+  User: `googleId` (unique sparse; hidden from JSON), `passwordless`;
+  password required only if not passwordless; `comparePassword` → false
+  when there is no password; `toPublicJSON.signInMethods {password, google}`.
+  Routes: `GET /auth/config` → `{googleClientId|null}`; `POST /auth/google`
+  (linked → sign in; new email → Google-only account, 201 `created:true`;
+  email held by a password account → **409 GOOGLE_LINK_REQUIRED, never
+  auto-linked**); `POST /auth/google/link {credential,password}` (wrong
+  password = exactly login's 401; already linked elsewhere → 409
+  GOOGLE_ALREADY_LINKED). Both on the login limiter; 503 GOOGLE_SIGN_IN_OFF
+  when off. change-password → 400 NO_PASSWORD for Google-only; DELETE /me
+  for Google-only needs `credential` of the SAME Google id, ≤10 min old.
+  Page headers (frontend.js, page only — API keeps helmet defaults): CSP
+  script-src + frame-src + connect-src add `accounts.google.com/gsi/`, COOP
+  `same-origin-allow-popups`, Referrer-Policy `strict-origin-when-cross-origin`.
+  render.yaml + .env.example: `GOOGLE_CLIENT_ID` (sync: false).
+  Tests `googleSignIn.test.js` (25), `googleSignInOff.test.js` (4),
+  frontendServing +1. Real-network check: v10 fetched Google's keys and
+  refused a fake token (400 GOOGLE_TOKEN_INVALID).
+* **frontend:** `components/GoogleButton.jsx` (client ID from /auth/config;
+  none → renders NOTHING; loads gsi/client once), Sign-in page: button +
+  "or" line, `LinkGoogle` password step; auth.jsx `signInWithGoogle`,
+  `linkGoogle`, `deleteAccount(pw, {credential})`; AccountSettings:
+  Google-only → "How you sign in" note instead of Change password, delete
+  confirmed by Google. `tests/googleSignIn.test.jsx` (11).
+* **ai-service:** help notes `sign_in` (+ "google", "gmail"; button
+  described with "If… shows") and `account` reworded — Module 24 rejected
+  "confirmed" (CERTAINTY_CLAIM), now "sign in with Google once more".
+* **Tests:** backend **1,005** + 3 skipped, frontend **588**, ai-service
+  **5,584** + 7 skipped (junit) — all 0 failed.
+* **Owner still to do:** Google Cloud → OAuth client "Web application",
+  origins http://localhost:5173 + https://vaidyaai-bo0z.onrender.com; put the
+  Client ID in backend/.env and Render (backend service) as GOOGLE_CLIENT_ID.
+  Not yet tried with a real Google account (needs that ID).
+* **Known limit of B:** sign-up never verified emails, so if someone else
+  registered YOUR email first, Google cannot recover that account for you.
+
+---
+
+## 6bz. THE LINK ALWAYS OPENS ON THE FRONT PAGE · 2026-10-09 (NOT COMMITTED YET)
+
+Owner: opening the site while signed in jumped straight to Reports (`/` →
+`<Navigate to="/reports">` in App.jsx). Now `/` is always `<Landing />`. On
+the front page a signed-in reader gets "Go to my reports" (header, hero,
+closing band, footer) instead of Sign in / Get started / Create an account;
+the side menu (`Nav`), the `app--shell` layout and the chat bubble are hidden
+on `/`. While the session is still `checking`, the signed-out buttons show.
+The sidebar logo still goes to Reports (chatbot site map unchanged, still
+true). `/signin` still redirects a signed-in user to Reports. Tests:
+`landing.test.jsx` +2 (signed in via a stubbed fetch). Frontend **579**.
 
 ---
 
