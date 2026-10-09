@@ -183,6 +183,90 @@ describe('POST /chat', () => {
   });
 });
 
+// A question asked while the ai-service was waking (after a quiet spell, or a
+// deploy) failed at once with "Chat isn't available" -- seen live 2026-10-09.
+describe('POST /chat with a sleeping ai-service', () => {
+  const saved = {};
+  const badGateway = () => Object.assign(new Error('bad gateway'), { response: { status: 502, data: '' } });
+  const healthy = { status: 200, data: { success: true, data: { status: 'ok' } } };
+
+  beforeEach(() => {
+    saved.wait = config.aiService.chatWakeWaitMs;
+    saved.interval = config.aiService.wakeIntervalMs;
+    config.aiService.chatWakeWaitMs = 2000;
+    config.aiService.wakeIntervalMs = 1;
+    mockAxios.get.mockReset();
+  });
+  afterEach(() => {
+    config.aiService.chatWakeWaitMs = saved.wait;
+    config.aiService.wakeIntervalMs = saved.interval;
+  });
+
+  it('waits until it answers /health, and only THEN sends the question', async () => {
+    let probes = 0;
+    mockAxios.get.mockImplementation(async () => {
+      probes += 1;
+      if (probes < 3) throw badGateway();
+      return healthy;
+    });
+    const user = await makeUser('wake.ok@example.com');
+    const res = await ask(user.token, { question: 'What is HbA1c?' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.chat).toEqual(ANSWER);
+    expect(probes).toBe(3);
+    const lastProbe = Math.max(...mockAxios.get.mock.invocationCallOrder);
+    expect(lastProbe).toBeLessThan(mockAxios.post.mock.invocationCallOrder[0]);
+  });
+
+  it('still asleep at the deadline: says so plainly and does NOT send the question', async () => {
+    config.aiService.chatWakeWaitMs = 30;
+    config.aiService.wakeIntervalMs = 10;
+    mockAxios.get.mockRejectedValue(badGateway());
+    const user = await makeUser('wake.never@example.com');
+    const res = await ask(user.token, { question: 'What is HbA1c?' });
+
+    expect(res.status).toBe(503);
+    expect(res.body.error).toEqual({
+      code: 'ASSISTANT_WAKING',
+      message: 'The assistant is waking up. Please try again in a minute.',
+    });
+    expect(mockAxios.get.mock.calls.length).toBeGreaterThan(1);
+    expect(mockAxios.post).not.toHaveBeenCalled(); // no free-model request spent
+  });
+
+  it('waiting switched off (laptop, tests): no /health probe at all', async () => {
+    config.aiService.chatWakeWaitMs = 0;
+    const user = await makeUser('wake.off@example.com');
+    const res = await ask(user.token, { question: 'What is HbA1c?' });
+    expect(res.status).toBe(200);
+    expect(mockAxios.get).not.toHaveBeenCalled();
+  });
+});
+
+describe('chatWakeWaitMs', () => {
+  it('follows AI_SERVICE_WAKE_WAIT_MS but never waits more than 2 minutes', () => {
+    const load = (value) => {
+      let loaded;
+      jest.isolateModules(() => {
+        const before = process.env.AI_SERVICE_WAKE_WAIT_MS;
+        if (value === undefined) delete process.env.AI_SERVICE_WAKE_WAIT_MS;
+        else process.env.AI_SERVICE_WAKE_WAIT_MS = value;
+        try {
+          loaded = require('../src/config/env').aiService.chatWakeWaitMs;
+        } finally {
+          if (before === undefined) delete process.env.AI_SERVICE_WAKE_WAIT_MS;
+          else process.env.AI_SERVICE_WAKE_WAIT_MS = before;
+        }
+      });
+      return loaded;
+    };
+    expect(load('180000')).toBe(120000); // Render's analysis wait is 3 minutes
+    expect(load('60000')).toBe(60000);
+    expect(load('0')).toBe(0);
+  });
+});
+
 describe('reportContext', () => {
   it('returns null for a report with no clinical report, and nothing invented for an empty one', () => {
     expect(reportContext(undefined)).toBeNull();

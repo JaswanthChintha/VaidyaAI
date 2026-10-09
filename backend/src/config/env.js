@@ -467,6 +467,15 @@ const config = {
     // its OpenRouter timeout (120 s), before falling back -- so 150 s here.
     chatTimeoutMs: toInt(process.env.AI_SERVICE_CHAT_TIMEOUT_MS, 150000),
     wakeIntervalMs: toInt(process.env.AI_SERVICE_WAKE_INTERVAL_MS, 5000),
+    // THE CHAT WAITS FOR A SLEEPING ai-service TOO (2026-10-09). A question
+    // asked while it was waking (after a quiet spell, or a deploy) failed at
+    // once with "Chat isn't available". Same setting as the analysis wait,
+    // but never more than 2 minutes: a person is watching the chat box.
+    // 0 (laptop, tests) = do not wait.
+    chatWakeWaitMs: Math.min(
+      2 * 60 * 1000,
+      toInt(process.env.AI_SERVICE_WAKE_WAIT_MS, 0)
+    ),
 
     // How long a report may sit in `processing` before another analyze call is
     // allowed to take the lock over. Covers a crash mid-analysis; without it a

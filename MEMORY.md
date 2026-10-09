@@ -13753,6 +13753,34 @@ true). `/signin` still redirects a signed-in user to Reports. Tests:
 
 ---
 
+## 6ca. THE CHAT WAITS FOR A SLEEPING ai-service · 2026-10-09 (NOT COMMITTED YET)
+
+Seen live right after the 4f13fcf push: "Chat isn't available right now" —
+Render had restarted both services; the backend's health showed
+`aiService.reachable: false` and the ai-service took 83 s to answer.
+Chat had no wake-wait (only `runAnalysis` called `waitUntilReady`).
+
+* backend `config.aiService.chatWakeWaitMs` = min(2 min,
+  AI_SERVICE_WAKE_WAIT_MS) → Render 120000 (its value is 180000), laptop and
+  tests 0 = no wait. **No Render setting changed.** `chatController.ask`:
+  if > 0, `waitUntilReady({maxWaitMs})`; still asleep → 503
+  **ASSISTANT_WAKING** "The assistant is waking up. Please try again in a
+  minute." and the question is NOT sent (no free-model request spent).
+  `chat.test.js` +4 (wakes then answers; deadline → 503 + no POST,
+  mutation-checked; off → no /health; the 2-min cap).
+* frontend `ChatBot.jsx`: after `SLOW_AFTER_MS` (10 s) "Thinking…" becomes
+  "Still working… the assistant may be waking up, which can take up to two
+  minutes." (role=status); errors: ASSISTANT_WAKING → its words;
+  AI_SERVICE_ERROR/BUSY/TIMEOUT/UNAVAILABLE → "The assistant could not answer
+  just now. Please try again in a minute."; else unchanged. One old test
+  (AI_SERVICE_ERROR → "isn't available") changed deliberately to
+  INTERNAL_ERROR. `chatbot.test.jsx` +6.
+* **Tests:** backend **980** + 3 skipped, frontend **585**. Restarted local
+  backend started after the last edit (proved by time); /chat not called
+  live (needs the owner's sign-in).
+
+---
+
 ## 7. Module 1 → later modules: inherited obligations
 
 **RESOLVED by Module 2:** `ownership.js` is now wired up and enforced, `ownerScopedFilter` throws

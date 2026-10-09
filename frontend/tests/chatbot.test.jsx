@@ -1,7 +1,7 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import ChatBot, { GENERAL_SUGGESTIONS, REPORT_SUGGESTIONS } from '../src/components/ChatBot';
+import ChatBot, { GENERAL_SUGGESTIONS, REPORT_SUGGESTIONS, SLOW_AFTER_MS } from '../src/components/ChatBot';
 import App from '../src/App';
 import { AuthProvider } from '../src/lib/auth';
 import { api, ApiError } from '../src/lib/api';
@@ -94,12 +94,69 @@ describe('the chat bubble and panel', () => {
   });
 
   it('any other failure -> "not available right now"', async () => {
-    vi.spyOn(api, 'chat').mockRejectedValue(new ApiError(502, 'AI_SERVICE_ERROR', 'boom'));
+    // Was AI_SERVICE_ERROR until 2026-10-09; that code now has its own words
+    // (below), so an unrelated server error stands in for "anything else".
+    vi.spyOn(api, 'chat').mockRejectedValue(new ApiError(500, 'INTERNAL_ERROR', 'boom'));
     mountAt('/reports');
     fireEvent.click(screen.getByRole('button', { name: 'Open chat' }));
     fireEvent.click(screen.getByRole('button', { name: 'What is HbA1c?' }));
     expect(await screen.findByText(/isn't available right now/)).toBeInTheDocument();
     expect(screen.queryByText('boom')).not.toBeInTheDocument();
+  });
+
+  it('the assistant still waking at the deadline -> "waking up, try again in a minute"', async () => {
+    vi.spyOn(api, 'chat').mockRejectedValue(
+      new ApiError(503, 'ASSISTANT_WAKING', 'The assistant is waking up. Please try again in a minute.')
+    );
+    mountAt('/reports');
+    fireEvent.click(screen.getByRole('button', { name: 'Open chat' }));
+    fireEvent.click(screen.getByRole('button', { name: 'What is HbA1c?' }));
+    expect(await screen.findByText('The assistant is waking up. Please try again in a minute.')).toBeInTheDocument();
+  });
+
+  it.each(['AI_SERVICE_ERROR', 'AI_SERVICE_BUSY', 'AI_SERVICE_TIMEOUT', 'AI_SERVICE_UNAVAILABLE'])(
+    '%s -> "could not answer just now", never the server\'s own words',
+    async (code) => {
+      vi.spyOn(api, 'chat').mockRejectedValue(new ApiError(502, code, 'The analysis service failed'));
+      mountAt('/reports');
+      fireEvent.click(screen.getByRole('button', { name: 'Open chat' }));
+      fireEvent.click(screen.getByRole('button', { name: 'What is HbA1c?' }));
+      expect(
+        await screen.findByText('The assistant could not answer just now. Please try again in a minute.')
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/analysis service/)).not.toBeInTheDocument();
+    }
+  );
+
+  it('a long wait says the assistant may be waking up; the answer replaces it', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let answer;
+      vi.spyOn(api, 'chat').mockImplementation(() => new Promise((resolve) => { answer = resolve; }));
+      mountAt('/reports');
+      fireEvent.click(screen.getByRole('button', { name: 'Open chat' }));
+      fireEvent.click(screen.getByRole('button', { name: 'What is HbA1c?' }));
+
+      expect(screen.getByRole('status')).toHaveTextContent('Thinking…');
+      await act(async () => {
+        vi.advanceTimersByTime(SLOW_AFTER_MS - 100);
+      });
+      expect(screen.getByRole('status')).toHaveTextContent('Thinking…');
+      await act(async () => {
+        vi.advanceTimersByTime(200);
+      });
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'Still working… the assistant may be waking up, which can take up to two minutes.'
+      );
+
+      await act(async () => {
+        answer(ANSWER);
+      });
+      expect(await screen.findByText('Open the Reports page and press Upload.')).toBeInTheDocument();
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('closes with the close button and with Escape', () => {

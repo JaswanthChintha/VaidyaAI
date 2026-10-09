@@ -1,6 +1,8 @@
 'use strict';
 
 const Report = require('../models/Report');
+const config = require('../config/env');
+const ApiError = require('../utils/ApiError');
 const asyncHandler = require('../utils/asyncHandler');
 const { sendSuccess } = require('../utils/apiResponse');
 const { ownerScopedFilter, assertCanAccess, OWNER_ONLY } = require('../utils/ownership');
@@ -78,6 +80,22 @@ const ask = asyncHandler(async (req, res) => {
     if (doc) {
       assertCanAccess(req.user, doc, { ...OWNER_ONLY });
       report = reportContext(doc.clinicalReport) || undefined;
+    }
+  }
+
+  // A SLEEPING ai-service IS WAITED FOR, not failed on (2026-10-09) -- the
+  // same wake-up check an analysis makes. Still asleep at the deadline: the
+  // question is NOT sent (a free-model request is not spent on a service that
+  // cannot answer) and the reader is told plainly to try again.
+  const maxWaitMs = config.aiService.chatWakeWaitMs;
+  if (maxWaitMs > 0) {
+    const wake = await aiService.waitUntilReady({ maxWaitMs });
+    if (!wake.ready) {
+      throw new ApiError(
+        503,
+        'ASSISTANT_WAKING',
+        'The assistant is waking up. Please try again in a minute.'
+      );
     }
   }
 

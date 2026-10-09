@@ -41,8 +41,24 @@ function errorText(err) {
   if (err instanceof ApiError && err.status === 422) {
     return `Please type a question of up to ${MAX_QUESTION_CHARS} characters.`;
   }
+  // The backend waited for a sleeping ai-service and it did not wake in time.
+  if (err instanceof ApiError && err.code === 'ASSISTANT_WAKING') {
+    return 'The assistant is waking up. Please try again in a minute.';
+  }
+  // The ai-service was reached but failed, was busy, or took too long.
+  if (err instanceof ApiError && /^AI_SERVICE_(ERROR|BUSY|TIMEOUT|UNAVAILABLE)$/.test(err.code)) {
+    return 'The assistant could not answer just now. Please try again in a minute.';
+  }
   return "Chat isn't available right now. Please try again later.";
 }
+
+/**
+ * After this long, "Thinking…" says the assistant may be waking up: on the
+ * free plan a sleeping service takes up to two minutes, and the backend waits
+ * for it rather than failing (2026-10-09). Worded as "may", because the page
+ * cannot tell a waking service from a slow answer.
+ */
+export const SLOW_AFTER_MS = 10_000;
 
 export default function ChatBot() {
   // A report's own pages: /reports/:id, /reports/:id/doctor-summary, ...
@@ -53,6 +69,7 @@ export default function ChatBot() {
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
+  const [slow, setSlow] = useState(false);
   const inputRef = useRef(null);
   const listRef = useRef(null);
 
@@ -64,6 +81,13 @@ export default function ChatBot() {
   useEffect(() => {
     if (open) inputRef.current?.focus();
   }, [open]);
+
+  useEffect(() => {
+    setSlow(false);
+    if (!busy) return undefined;
+    const timer = setTimeout(() => setSlow(true), SLOW_AFTER_MS);
+    return () => clearTimeout(timer);
+  }, [busy]);
 
   useEffect(() => {
     const list = listRef.current;
@@ -148,7 +172,13 @@ export default function ChatBot() {
             </div>
           ))
         )}
-        {busy ? <p className="chatbot__thinking">Thinking…</p> : null}
+        {busy ? (
+          <p className="chatbot__thinking" role="status">
+            {slow
+              ? 'Still working… the assistant may be waking up, which can take up to two minutes.'
+              : 'Thinking…'}
+          </p>
+        ) : null}
       </div>
 
       <form
