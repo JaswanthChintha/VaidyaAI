@@ -97,6 +97,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api import (
+    routes_chat,
     routes_features,
     routes_health,
     routes_ml,
@@ -224,6 +225,7 @@ app.include_router(routes_safety.router)
 app.include_router(routes_knowledge.router)
 app.include_router(routes_repository.router)
 app.include_router(routes_explain.router)
+app.include_router(routes_chat.router)
 app.include_router(routes_timeline.router)
 app.include_router(routes_population.router)
 app.include_router(routes_comparison.router)

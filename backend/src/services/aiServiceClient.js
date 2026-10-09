@@ -135,6 +135,7 @@ const PATHS = Object.freeze({
   progress: '/api/v1/progress/score',
   doctorSummary: '/api/v1/doctor-summary/generate',
   population: '/api/v1/population/context',
+  chat: '/api/v1/chat',
   health: '/api/v1/health',
 });
 
@@ -187,6 +188,8 @@ const STAGES = Object.freeze({
   // same reason as every other name here - a drifting key is a silently missing
   // stage in a correlation log.
   POPULATION: 'population',
+  // The chatbot. OURS, like POPULATION: the chat endpoint tags no warnings.
+  CHAT: 'chat',
   HEALTH: 'health',
 });
 
@@ -1456,6 +1459,28 @@ async function health() {
 }
 
 /**
+ * POST /api/v1/chat - one chatbot question (2026-10-09).
+ *
+ * `report` is the compact context built from ONE owned report's stored
+ * analysis, or omitted for a general question. NO RETRY: a chat request spends
+ * a free-model request, and a timed-out one has usually already spent it.
+ *
+ * @returns {Promise<{outcome: string, answer: string, sources: object[]}>}
+ */
+async function chat({ question, report, requestId }) {
+  const payload = { question };
+  if (report) payload.report = report;
+  return postJson({
+    path: PATHS.chat,
+    stage: STAGES.CHAT,
+    payload,
+    requestId,
+    timeoutMs: config.aiService.chatTimeoutMs,
+    retries: 0,
+  });
+}
+
+/**
  * Ask /health until the ai-service answers, for at most `maxWaitMs`.
  *
  * For hosts that put an idle service to sleep: the first request after a
@@ -1518,6 +1543,7 @@ module.exports = {
   describeFindings,
   populationContext,
   health,
+  chat,
   waitUntilReady,
   resetClient,
   // exported for unit tests

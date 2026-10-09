@@ -137,6 +137,13 @@ const config = {
   port: toInt(process.env.PORT, 5000),
   apiPrefix: process.env.API_PREFIX || '/api/v1',
   mongoUri: process.env.MONGODB_URI,
+  // The chatbot's own budget, PER SIGNED-IN USER (2026-10-09): each question
+  // spends a free-model request, and free accounts get only a few dozen a day.
+  chat: {
+    rateLimitMax: toInt(process.env.CHAT_RATE_LIMIT_MAX, 20),
+    rateLimitWindowMs: toInt(process.env.CHAT_RATE_LIMIT_WINDOW_MS, 60 * 60 * 1000),
+  },
+
   // DNS servers for Node's own resolver; [] = the system's. See parseDnsServers.
   dnsServers: parseDnsServers(process.env.DNS_SERVERS),
 
@@ -456,6 +463,9 @@ const config = {
     // before sending the report. 0 (the default) = do not wait, which is
     // right for an always-on service and for the tests.
     wakeWaitMs: toInt(process.env.AI_SERVICE_WAKE_WAIT_MS, 0),
+    // The chatbot (2026-10-09). The ai-service may try two answers, each up to
+    // its OpenRouter timeout (120 s), before falling back -- so 150 s here.
+    chatTimeoutMs: toInt(process.env.AI_SERVICE_CHAT_TIMEOUT_MS, 150000),
     wakeIntervalMs: toInt(process.env.AI_SERVICE_WAKE_INTERVAL_MS, 5000),
 
     // How long a report may sit in `processing` before another analyze call is

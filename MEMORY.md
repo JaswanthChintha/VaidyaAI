@@ -13557,6 +13557,50 @@ note; OpenRouter key must be rotated first and is not set on Render).
 
 ---
 
+## 6bx. THE CHATBOT · 2026-10-09
+
+**Owner:** the guide was already told a bot would be added, so it is built
+even though the dashboard already explains results (I advised skipping it;
+owner insisted). Choices: FREE OpenRouter models (not Grok, not Gemini),
+suggestion buttons + typing, a bubble on EVERY signed-in page; answers app
+questions, general lab/health questions, and — on a report's pages — that
+report. Google sign-in still unanswered (B recommended).
+
+* ai-service `app/data/app_help.py`: 13 reviewed help notes (upload,
+  analyse, whose report, profile, dashboard, not assessed, timeline,
+  population, doctor summary, read aloud, account, about, no results),
+  keyword-matched (`match_help`). Each note passes Module 24 (test) — first
+  drafts used "shows"/"means" and were REJECTED (UNHEDGED_INTERPRETIVE_CLAIM).
+* `app/services/chatbot.py answer_question()`: fixed replies BEFORE any
+  model for emergency / diagnosis / medication (reworded until Module 24
+  itself approves them); grounding = help notes + `retrieve(text=…)` chunks +
+  the report lines; OpenRouter `generate_text` inside `guarded_generation`
+  (2 attempts; retry told why); `OFF_TOPIC` token → redirect; no grounding →
+  no digits allowed (Module 24's numeric check only runs with grounding);
+  app-only answers `require_referral=False`. Outcomes answered / refused /
+  off_topic / withheld / unavailable. `routes_chat.py` POST /api/v1/chat
+  (service key; `get_chat_llm` = OpenRouter or None — never Gemini).
+  `tests/test_chatbot.py` (56).
+* backend `POST /api/v1/chat` (`chatRoutes`, `chatController`,
+  `chatValidators`): protect → `chatLimiter` (PER USER, 20/hour,
+  CHAT_RATE_LIMIT_*) → validation (question 1–300, optional reportId).
+  Report context = owner-scoped, compact (name/value/unit/printed range/
+  flag, topic + plain status, overall label) — never the patient block or
+  file; another user's id → answered as general. `aiService.chat` (no
+  retry, 150 s). Nothing stored. `tests/chat.test.js` (14).
+* frontend `components/ChatBot.jsx` (bubble → panel, suggestions, sources,
+  privacy note, 429/other errors in plain words, Esc closes, cleared when
+  the report changes), `api.chat`, icons chat/close/send, CSS "THE
+  CHATBOT". `tests/chatbot.test.jsx` (9). Frontend **577**.
+* render.yaml + ai-service/.env.example: `OPENROUTER_API_KEY` (owner types
+  it; the old key is to be rotated). Not tested against the real OpenRouter
+  yet — needs the owner's new key. Not seen in a browser (needs sign-in).
+* **Tests:** ai-service **5,554** + 7 skipped, backend **976** + 3 skipped,
+  frontend **577** — all 0 failed. (`dnsServers.test.js` fixed to not read
+  the developer's own `.env`: it now holds DNS_SERVERS.)
+
+---
+
 ## 7. Module 1 → later modules: inherited obligations
 
 **RESOLVED by Module 2:** `ownership.js` is now wired up and enforced, `ownerScopedFilter` throws

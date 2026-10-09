@@ -318,6 +318,11 @@ export const api = {
   // is rejected outright as a type error.
   saveProfile: (payload) => request('PUT', '/profile/me', { body: payload }),
 
+  // The chatbot (2026-10-09). `reportId` only from a report's own pages; the
+  // backend checks it is the caller's before reading it.
+  chat: (question, reportId) =>
+    request('POST', '/chat', { body: reportId ? { question, reportId } : { question } }),
+
   listReports: () => request('GET', '/reports'),
   uploadReport: (formData) => request('POST', '/reports', { formData }),
   analyzeReport: (id) => request('POST', `/reports/${id}/analyze`),

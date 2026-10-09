@@ -7,6 +7,7 @@ const authRoutes = require('./authRoutes');
 const profileRoutes = require('./profileRoutes');
 const reportRoutes = require('./reportRoutes');
 const timelineRoutes = require('./timelineRoutes');
+const chatRoutes = require('./chatRoutes');
 const { sendSuccess, sendError } = require('../utils/apiResponse');
 const config = require('../config/env');
 const aiService = require('../services/aiServiceClient');
@@ -126,6 +127,8 @@ router.get('/health/ai', async (req, res) => {
 router.use('/auth', authRoutes);
 router.use('/profile', profileRoutes);
 router.use('/reports', reportRoutes);
+// The chatbot (2026-10-09): signed-in users, per-user limit. See chatRoutes.js.
+router.use('/chat', chatRoutes);
 
 /**
  * Modules 28-30. A SIBLING OF `/reports`, not a child of it: a trend is a

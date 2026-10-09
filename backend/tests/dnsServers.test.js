@@ -39,8 +39,10 @@ describe('applyDnsServers', () => {
 
   it('changes nothing when none are configured -- the system DNS stays', () => {
     const set = jest.spyOn(dns, 'setServers').mockImplementation(() => {});
+    // Explicit values only: `undefined` would fall back to config.dnsServers,
+    // which reads the developer's own backend/.env.
     expect(applyDnsServers([])).toBe(false);
-    expect(applyDnsServers(undefined)).toBe(false);
+    expect(applyDnsServers(null)).toBe(false);
     expect(set).not.toHaveBeenCalled();
   });
 });

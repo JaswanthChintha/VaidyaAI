@@ -3,6 +3,7 @@ import { useAuth } from './lib/auth';
 import ThemeToggle from './components/ThemeToggle';
 import Icon from './components/Icon';
 import Logo from './components/Logo';
+import ChatBot from './components/ChatBot';
 import Landing from './pages/Landing';
 import SignIn from './pages/SignIn';
 import Profile from './pages/Profile';
@@ -169,6 +170,8 @@ export default function App() {
         <Route path="*" element={<Navigate to={status === 'signedIn' ? '/reports' : '/'} replace />} />
       </Routes>
       {onLanding ? null : <Disclaimer />}
+      {/* The chatbot (2026-10-09): signed-in pages only. */}
+      {status === 'signedIn' ? <ChatBot /> : null}
     </div>
   );
 }

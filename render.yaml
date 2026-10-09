@@ -28,6 +28,11 @@ services:
         generateValue: true
       - key: GEMINI_API_KEY
         sync: false
+      # The chatbot's model (free OpenRouter models), and the backup writer
+      # when Gemini's daily quota is spent. Without it the chat answers
+      # "not available right now"; nothing else breaks. (2026-10-09)
+      - key: OPENROUTER_API_KEY
+        sync: false
       - key: GEMINI_MODEL
         value: gemini-3.6-flash
       # 120, not 45: at 45 a page of a real report was lost to a timeout and

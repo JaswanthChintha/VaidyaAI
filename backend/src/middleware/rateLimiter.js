@@ -117,6 +117,21 @@ const historyLimiter = rateLimit({
   max: config.history.rateLimitMax,
 });
 
+/**
+ * The chatbot (2026-10-09). Keyed on the SIGNED-IN USER, not `req.ip`, unlike
+ * every limiter above: the budget it protects (free-model requests) is spent
+ * per question, and on a shared network many users share one IP. Mounted after
+ * `protect`, so `req.user` is always set; the IP fallback is only a safety net.
+ */
+const chatStore = new MemoryStore();
+const chatLimiter = rateLimit({
+  ...baseOptions,
+  store: chatStore,
+  windowMs: config.chat.rateLimitWindowMs,
+  max: config.chat.rateLimitMax,
+  keyGenerator: (req) => (req.user && req.user._id ? `user:${req.user._id}` : `ip:${req.ip}`),
+});
+
 /** Test helper: clear all counters. */
 async function resetRateLimiters() {
   await Promise.all([
@@ -125,6 +140,7 @@ async function resetRateLimiters() {
     uploadStore.resetAll(),
     analysisStore.resetAll(),
     historyStore.resetAll(),
+    chatStore.resetAll(),
   ]);
 }
 
@@ -134,5 +150,6 @@ module.exports = {
   uploadLimiter,
   analysisLimiter,
   historyLimiter,
+  chatLimiter,
   resetRateLimiters,
 };
