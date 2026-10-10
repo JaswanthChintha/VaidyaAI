@@ -65,8 +65,11 @@ class _SlowClient:
                 self.active -= 1
 
 
-def _service(client):
-    return ExtractionService(Settings(_env_file=None), client)
+def _service(client, **overrides):
+    # No real pause before the one page retry (2026-10-10): what is under test
+    # here is concurrency and order, not the wait.
+    overrides.setdefault("page_retry_delay_seconds", 0)
+    return ExtractionService(Settings(_env_file=None, **overrides), client)
 
 
 def test_pages_are_read_at_the_same_time():

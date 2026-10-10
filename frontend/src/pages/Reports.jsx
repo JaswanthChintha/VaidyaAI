@@ -5,6 +5,7 @@ import { api, ApiError } from '../lib/api';
 import { joinDetails, missingKeyDetails } from '../lib/profileGaps';
 import { friendlyStatus } from '../lib/friendlyErrors';
 import { Absent } from '../components/Absent';
+import { pageList } from '../lib/absence';
 import { reportDateInfo, whyUploadDate } from '../lib/reportDates';
 
 /**
@@ -663,6 +664,17 @@ export default function Reports() {
               }}
             />
             <StatusNote statusMessage={report.statusMessage} />
+            {/* A PAGE THE ANALYSIS COULD NOT READ (2026-10-10). Test 3's page 2
+                was skipped while the reading service was down and nothing on
+                this list said so; the report simply looked short and clear. */}
+            {(report.status === 'processed' || report.status === 'partial') &&
+            report.pagesUnreadable?.length ? (
+              <p className="report__note report__unreadable" role="note">
+                {pageList(report.pagesUnreadable)} could not be read, so the tests on{' '}
+                {report.pagesUnreadable.length === 1 ? 'it' : 'them'} were not checked. Press
+                Re-analyse to try again.
+              </p>
+            ) : null}
             <div className="report__actions">
               {report.status === 'processed' || report.status === 'partial' ? (
                 <Link className="button-link" to={`/reports/${report.id}`}>

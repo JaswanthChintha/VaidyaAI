@@ -13798,6 +13798,42 @@ their Portfolio project (C:\Users\prajw\Portfolio) holds :5173.
 
 ---
 
+## 6cc. A SKIPPED PAGE: ONE MORE TRY, AND SAID AT THE TOP · 2026-10-10 (NOT COMMITTED YET)
+
+**Found (owner, Test 3 on a NEW account):** "only 14 parameters, nothing
+flagged". Read-only DB check: page 2 skipped as MODEL_UNAVAILABLE (Gemini
+outage ~17:54 IST; the explanation stage also got MODEL_UNAVAILABLE) → no
+glucose/creatinine/SGPT → "Healthy (partial assessment)". No anaemia was
+CORRECT: that account's profile is Female 27 (Hb 12.5 ≥ 12.0); the old
+"mild anaemia" was on the Male 20 account. The dashboard did say "Part of this
+document could not be read (page 2)" — one line, low in "In short".
+
+* **ai-service** `extractor.py`: `_retry_failed_pages` — after all pages,
+  pages whose outcome is in `PAGE_RETRY_CODES` (MODEL_UNAVAILABLE,
+  MODEL_RESPONSE_MALFORMED, MODEL_RESPONSE_EMPTY) or failed the PageExtraction
+  schema are read ONCE more after `Settings.page_retry_delay_seconds` (20 s,
+  one pause for all). NOT retried: RATE_LIMITED (daily cap), TIMEOUT (would
+  pass the backend deadline), BLOCKED, TRUNCATED. `worst_case_extraction_
+  seconds` now counts each page twice + the pause: **7475** (was 3637.5),
+  tuned 2025 (was 912.5) — two pinned tests updated deliberately.
+  `tests/test_page_retry.py` (13; mutation: retry off → 8 fail). conftest
+  `client_factory` and `test_extraction_concurrency._service` default the
+  pause to 0.
+* **backend** `Report.toPublicJSON().pagesUnreadable` (integers only; [] if
+  never analysed) — the plan said "no backend change"; the list did NOT carry
+  it. reports.test.js +1.
+* **frontend** `lib/absence.pageList` ("Page 2", "Pages 2, 3 and 5");
+  Dashboard `UnreadablePagesNotice` ABOVE the overall card (role=note,
+  `identity-warning` style): "Page 2 of this report could not be read this
+  time … not checked … press Re-analyse"; the old In-short line removed (said
+  once). Reports card: amber "Page 2 could not be read, so the tests on it
+  were not checked. Press Re-analyse to try again." (processed/partial only).
+  dashboard.test (1 changed deliberately + 2), reports.test +3.
+* **Tests:** ai-service **5,597** + 7 skipped (junit), backend **981** + 3
+  skipped, frontend **595** — all 0 failed.
+
+---
+
 ## 7. Module 1 → later modules: inherited obligations
 
 **RESOLVED by Module 2:** `ownership.js` is now wired up and enforced, `ownerScopedFilter` throws

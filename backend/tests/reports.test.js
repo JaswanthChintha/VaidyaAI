@@ -500,6 +500,22 @@ describe('Module 3 - Medical Report Upload and Management', () => {
       expect(res.body.data.pagination.total).toBe(4);
     });
 
+    // So the list can say "Page 2 could not be read -- Re-analyse" (2026-10-10).
+    it('carries the page numbers the stored analysis could not read, and nothing else of it', async () => {
+      const [first] = (await request(app).get(REPORTS).set(auth(user.token))).body.data.reports;
+      expect(first.pagesUnreadable).toEqual([]); // never analysed
+
+      await Report.updateOne(
+        { _id: first.id },
+        { $set: { status: 'processed', 'analysis.pagesUnreadable': [2, 3] } }
+      );
+      const res = await request(app).get(REPORTS).set(auth(user.token));
+      const again = res.body.data.reports.find((r) => r.id === first.id);
+      expect(again.pagesUnreadable).toEqual([2, 3]);
+      expect(again.analysis).toBeUndefined();
+      expect(again.extraction).toBeUndefined();
+    });
+
     it('orders oldest-first on request', async () => {
       const res = await request(app).get(`${REPORTS}?order=asc`).set(auth(user.token));
       expect(res.status).toBe(200);

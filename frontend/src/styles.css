@@ -751,6 +751,9 @@ button + button.link { margin-left: 16px; }
 
 .report__head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
 .report__meta, .report__note { color: var(--muted); font-size: 14px; }
+/* A page the analysis could not read (2026-10-10): amber, like the dashboard's
+   notice, because it qualifies the result -- not muted small print. */
+.report__note.report__unreadable { color: var(--amber-text); font-weight: 500; }
 /* The machine code after a plain-words failure note: for a problem report. */
 .report__code { font-family: var(--font-mono); font-size: 12px; }
 /* A typed date the document itself contradicts. Amber TEXT token: --amber is

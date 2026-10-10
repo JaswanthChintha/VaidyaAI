@@ -73,3 +73,14 @@ export function formatValue(value, unit) {
   }
   return unit ? `${value} ${unit}` : String(value);
 }
+
+/**
+ * "Page 2", "Pages 2 and 3", "Pages 2, 3 and 4" -- the pages an analysis could
+ * not read (2026-10-10), for the dashboard notice and the Reports list. Starts
+ * with a capital: both callers open a sentence with it.
+ */
+export function pageList(pages) {
+  const list = (pages || []).map(String);
+  if (list.length === 1) return `Page ${list[0]}`;
+  return `Pages ${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`;
+}

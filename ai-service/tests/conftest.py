@@ -313,6 +313,9 @@ def client_factory(_isolate_env: Any):
         **settings_overrides: Any,
     ) -> TestClient:
         fake = fake or FakeGeminiClient()
+        # No real 20 s pause before a failed page's one retry (2026-10-10);
+        # tests/test_page_retry.py is where that pause is tested.
+        settings_overrides.setdefault("page_retry_delay_seconds", 0)
         test_settings = Settings(_env_file=None, **settings_overrides)
 
         app.dependency_overrides[get_settings] = lambda: test_settings

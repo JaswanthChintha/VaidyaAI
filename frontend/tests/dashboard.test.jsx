@@ -1717,7 +1717,9 @@ describe('the closing "In short" summary', () => {
     );
   });
 
-  it('says when part of the document could not be read', async () => {
+  // MOVED 2026-10-10: this was one line near the end of "In short"; it is now
+  // a notice at the top, above the verdict it qualifies (owner, Test 3).
+  it('says when part of the document could not be read -- at the top, as not checked', async () => {
     withDashboard({
       overall: {
         statusLabel: 'Healthy',
@@ -1731,8 +1733,39 @@ describe('the closing "In short" summary', () => {
     renderDashboard();
 
     await screen.findByText(/In short/);
-    expect(summaryText()).toMatch(/Part of this document could not be read/);
-    expect(summaryText()).toMatch(/missing from the reading rather than absent/);
+    const notice = screen.getByRole('note', { name: 'Part of this report could not be read' });
+    expect(notice).toHaveTextContent('Pages 2 and 3 of this report could not be read this time');
+    expect(notice).toHaveTextContent('so they were not checked');
+    expect(notice).toHaveTextContent('press Re-analyse to try again');
+    // ABOVE the verdict it qualifies.
+    const verdict = screen.getByText('Healthy');
+    expect(notice.compareDocumentPosition(verdict) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Said once, not again inside the summary.
+    expect(summaryText()).not.toMatch(/could not be read/);
+  });
+
+  it('a partial document with no page numbers still says part could not be read', async () => {
+    withDashboard({
+      overall: { statusLabel: 'Healthy', risk: 'Low', anyAssessed: true, complete: true },
+      conditions: [clear('Anemia')],
+      document: { pagesUnreadable: [], partialDocument: true },
+    });
+    renderDashboard();
+    await screen.findByText(/In short/);
+    expect(screen.getByRole('note', { name: 'Part of this report could not be read' })).toHaveTextContent(
+      'Part of this report could not be read this time'
+    );
+  });
+
+  it('every page read: no notice', async () => {
+    withDashboard({
+      overall: { statusLabel: 'Healthy', risk: 'Low', anyAssessed: true, complete: true },
+      conditions: [clear('Anemia')],
+      document: { pagesUnreadable: [], partialDocument: false },
+    });
+    renderDashboard();
+    await screen.findByText(/In short/);
+    expect(screen.queryByRole('note', { name: 'Part of this report could not be read' })).toBeNull();
   });
 
   it('states what this is even when everything came back clear', async () => {

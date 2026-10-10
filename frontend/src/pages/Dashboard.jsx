@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import { Absent, Risk, Value, WarningList } from '../components/Absent';
-import { isPresent } from '../lib/absence';
+import { isPresent, pageList } from '../lib/absence';
 import RiskGauge from '../components/RiskGauge';
 import CoverageRadar from '../components/CoverageRadar';
 import ReadAloud from '../components/ReadAloud';
@@ -916,6 +916,39 @@ const andList = (names) => {
   return `${names.slice(0, -1).join(commaSafeSeparator(names))} and ${names[names.length - 1]}`;
 };
 
+/**
+ * A PAGE THAT COULD NOT BE READ, SAID AT THE TOP (owner, 2026-10-10).
+ *
+ * This was one line near the end of "In short", and the owner read Test 3 --
+ * page 2 skipped while the reading service was down, so no glucose, no
+ * creatinine, no SGPT -- as "only 14 tests and nothing flagged". It qualifies
+ * the verdict, so it sits ABOVE the verdict, says the tests on that page were
+ * NOT CHECKED (never that they were fine), and says what to do about it.
+ */
+function UnreadablePagesNotice({ document }) {
+  const pages = document?.pagesUnreadable || [];
+  if (!pages.length && document?.partialDocument !== true) return null;
+  return (
+    <section
+      className="card identity-warning unreadable-pages"
+      role="note"
+      aria-label="Part of this report could not be read"
+    >
+      <h2>
+        {pages.length ? pageList(pages) : 'Part'} of this report could not be read this time
+      </h2>
+      <p>
+        The tests on {pages.length === 1 ? 'that page' : pages.length ? 'those pages' : 'that part'} are
+        not in this analysis, so they were not checked, and the result below may change once they are.
+      </p>
+      <p>
+        Go to the <Link to="/reports">Reports</Link> page and press <strong>Re-analyse</strong> to try
+        again.
+      </p>
+    </section>
+  );
+}
+
 function InShort({
   dashboard,
   flaggedCards,
@@ -1189,8 +1222,6 @@ function InShort({
   // The skipped results the laboratory did NOT mark. Counted off the same
   // items list rather than from `unanalysed.count` alone, so the two
   // paragraphs about skipped tests can never overlap or double-count.
-  const unreadable = dashboard.document?.pagesUnreadable || [];
-
   // WHICH FLAGGED FINDINGS CAME FROM THE FORM RATHER THAN THE REPORT.
   // Obesity and Underweight rest entirely on BMI, which is computed from the
   // height and weight the patient entered. Without this, a report whose every
@@ -1350,19 +1381,9 @@ function InShort({
           does and does not do. The laboratory's own flagged results are still
           named above, which is the part a doctor is asked to look at. */}
 
-      {/* ABSENCE #3: the document itself. A test missing from the analysis
-          because its page could not be read is not a test that was absent
-          from the report, and only this says which. */}
-      {unreadable.length || dashboard.document?.partialDocument === true ? (
-        <p className="caveat">
-          <strong>Part of this document could not be read</strong>
-          {unreadable.length
-            ? ` (page${unreadable.length === 1 ? '' : 's'} ${unreadable.join(', ')})`
-            : ''}
-          . A test missing from this analysis may be missing from the reading
-          rather than absent from your report.
-        </p>
-      ) : null}
+      {/* ABSENCE #3, the document itself, is no longer said here: it moved
+          to the top of the page as `UnreadablePagesNotice` (2026-10-10),
+          above the verdict it qualifies. Saying it twice would be noise. */}
 
       {overall.sourcesFailed?.length ? (
         <p className="caveat">
@@ -2455,6 +2476,8 @@ export default function Dashboard() {
       {/* ABOVE THE VERDICT, because it qualifies it: a verdict judged with the
           wrong sex's thresholds is only as good as the profile it used. */}
       <ProfileIdentityNotice identity={identity} />
+
+      <UnreadablePagesNotice document={dashboard.document} />
 
       <OverallCard overall={dashboard.overall} />
 

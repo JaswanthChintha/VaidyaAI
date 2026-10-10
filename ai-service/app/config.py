@@ -55,6 +55,12 @@ class Settings(BaseSettings):
     gemini_timeout_seconds: float = 120.0
     gemini_max_retries: int = 3
     gemini_retry_base_delay_seconds: float = 1.0
+    # A PAGE THE WHOLE MODEL CHAIN COULD NOT READ GETS ONE MORE TRY, after this
+    # pause (2026-10-10). Test 3's page 2 was skipped as MODEL_UNAVAILABLE:
+    # every model's retries ran within seconds of one another, inside one
+    # provider outage, and the page -- glucose, creatinine, SGPT -- was lost.
+    # See `ExtractionService._retry_failed_pages`.
+    page_retry_delay_seconds: float = 20.0
     gemini_temperature: float = 0.0
     gemini_max_output_tokens: int = 32768
     # A fixed sampling seed for EXTRACTION (2026-10-03). Temperature 0 alone
@@ -262,12 +268,16 @@ class Settings(BaseSettings):
 
         The backend MUST set its HTTP client timeout above this value, or above
         whatever lower value it configures here.
+
+        A page that fails is read ONE more time after `page_retry_delay_seconds`
+        (2026-10-10), so each page is counted twice, plus that pause.
         """
         attempts = max(1, self.gemini_max_retries)
         base = self.gemini_retry_base_delay_seconds
         backoff = sum(base * (2 ** n) * 1.25 for n in range(attempts - 1))
         per_page = attempts * self.gemini_timeout_seconds + backoff
-        return per_page * max(1, self.max_page_count)
+        per_page_with_retry = 2 * per_page + max(0.0, self.page_retry_delay_seconds)
+        return per_page_with_retry * max(1, self.max_page_count)
 
 
 @lru_cache(maxsize=1)

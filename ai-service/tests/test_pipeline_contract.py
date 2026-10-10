@@ -491,10 +491,12 @@ def test_the_gemini_call_is_bounded(settings):
 def test_worst_case_duration_matches_the_documented_formula(settings):
     """Documented in README. The backend sets its timeout above this."""
     # 3 attempts x 120s, plus backoff 1s and 2s each with up to 25% jitter,
-    # per page, x 10 pages.
-    expected = (3 * 120.0 + (1.0 * 1.25 + 2.0 * 1.25)) * 10
+    # per page -- TWICE since 2026-10-10, because a failed page is read once
+    # more after a 20 s pause -- x 10 pages. (Was 3637.5 before that retry.)
+    per_page = 3 * 120.0 + (1.0 * 1.25 + 2.0 * 1.25)
+    expected = (2 * per_page + 20.0) * 10
     assert settings.worst_case_extraction_seconds == pytest.approx(expected)
-    assert settings.worst_case_extraction_seconds == pytest.approx(3637.5)
+    assert settings.worst_case_extraction_seconds == pytest.approx(7475.0)
 
 
 def test_worst_case_shrinks_with_a_tighter_configuration():
@@ -507,8 +509,9 @@ def test_worst_case_shrinks_with_a_tighter_configuration():
         gemini_retry_base_delay_seconds=1.0,
         max_page_count=10,
     )
-    # 2 x 45 + 1.25 backoff = 91.25 per page, x10.
-    assert tuned.worst_case_extraction_seconds == pytest.approx(912.5)
+    # 2 x 45 + 1.25 backoff = 91.25 per page; read twice + 20 s pause; x10.
+    # (Was 912.5 before the 2026-10-10 page retry.)
+    assert tuned.worst_case_extraction_seconds == pytest.approx(2025.0)
 
 
 # --------------------------------------------------------------------------

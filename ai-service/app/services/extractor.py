@@ -14,6 +14,7 @@ assembles only. Test-name normalisation is Module 5; validation is Module 6.
 from __future__ import annotations
 
 import contextvars
+import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, List, Optional, Union
 
@@ -46,6 +47,22 @@ MAX_PARAMETERS_PER_PAGE = 300
 # over the collected results. Three keeps a long report from tripping the
 # free tier's per-minute limit in one burst.
 MAX_CONCURRENT_PAGES = 3
+
+# WHICH FAILED PAGES GET ONE MORE TRY (2026-10-10). Only failures a later
+# moment can fix: the provider unavailable (5xx), and an answer that came back
+# empty or garbled -- plus a page whose answer did not fit the schema, checked
+# separately. NOT a rate limit: the free tier's cap is daily, and asking again
+# twenty seconds later only spends the time. NOT a timeout: one more full
+# attempt chain on a page that already timed out would run past the backend's
+# own extraction deadline. NOT a safety block or truncation: those are
+# answers, and the same page gets the same answer.
+PAGE_RETRY_CODES = frozenset(
+    {
+        ErrorCode.MODEL_UNAVAILABLE,
+        ErrorCode.MODEL_RESPONSE_MALFORMED,
+        ErrorCode.MODEL_RESPONSE_EMPTY,
+    }
+)
 
 
 def _mean(values: List[float]) -> Optional[float]:
@@ -85,6 +102,55 @@ class ExtractionService:
             ]
             return [future.result() for future in futures]
 
+    @staticmethod
+    def _worth_another_try(outcome: Union[dict, ModelError]) -> bool:
+        if isinstance(outcome, ModelError):
+            return outcome.code in PAGE_RETRY_CODES
+        try:
+            PageExtraction.model_validate(outcome)
+        except ValidationError:
+            return True
+        return False
+
+    def _retry_failed_pages(
+        self, pages: List[Any], outcomes: List[Union[dict, ModelError]], total: int
+    ) -> List[Union[dict, ModelError]]:
+        """Read each page that failed in a fixable way ONCE more, after a pause.
+
+        Every model in the chain already retries within seconds, so a provider
+        outage longer than that took the page with it (Test 3, 2026-10-10: page
+        2 -- glucose, creatinine, SGPT -- skipped as MODEL_UNAVAILABLE, and the
+        report read "Healthy (partial assessment)"). One pause, one more read
+        of just those pages, and then whatever happens is final: a page that
+        fails again is skipped and reported exactly as before.
+        """
+        retry_at = [i for i, outcome in enumerate(outcomes) if self._worth_another_try(outcome)]
+        if not retry_at:
+            return outcomes
+        delay = max(0.0, self._settings.page_retry_delay_seconds)
+        logger.warning(
+            "page_retry_scheduled %s",
+            safe_meta(
+                page_numbers=[pages[i].page_number for i in retry_at],
+                delay_seconds=delay,
+            ),
+        )
+        if delay:
+            time.sleep(delay)
+        again = self._read_pages([pages[i] for i in retry_at], total)
+        result = list(outcomes)
+        for i, outcome in zip(retry_at, again):
+            result[i] = outcome
+            logger.info(
+                "page_retry_finished %s",
+                safe_meta(
+                    page_number=pages[i].page_number,
+                    recovered=not self._worth_another_try(outcome)
+                    and not isinstance(outcome, ModelError),
+                ),
+            )
+        return result
+
     def extract(self, document: LoadedDocument) -> ExtractionData:
         warnings: List[str] = list(document.warnings)
         pages: List[PageText] = []
@@ -104,6 +170,7 @@ class ExtractionService:
         # the ModelError it raised -- the same two outcomes the old loop
         # branched on -- and nothing else is decided until every page is in.
         outcomes = self._read_pages(document.pages, total)
+        outcomes = self._retry_failed_pages(document.pages, outcomes, total)
 
         for page, outcome in zip(document.pages, outcomes):
             try:

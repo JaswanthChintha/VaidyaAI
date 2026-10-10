@@ -40,6 +40,36 @@ beforeEach(() => {
   vi.restoreAllMocks();
 });
 
+// Test 3's page 2 was skipped while the reading service was down, and this
+// list showed the report as simply short and clear (2026-10-10).
+describe('a page the analysis could not read', () => {
+  it('says so on the card, as not checked, and points at Re-analyse', async () => {
+    mount([{ ...REPORT, pagesUnreadable: [2] }]);
+    const note = await screen.findByRole('note');
+    expect(note).toHaveTextContent(
+      'Page 2 could not be read, so the tests on it were not checked. Press Re-analyse to try again.'
+    );
+    expect(screen.getByRole('button', { name: 'Re-analyse' })).toBeInTheDocument();
+  });
+
+  it('names several pages in plain words', async () => {
+    mount([{ ...REPORT, pagesUnreadable: [2, 3, 5] }]);
+    expect(await screen.findByRole('note')).toHaveTextContent(
+      'Pages 2, 3 and 5 could not be read, so the tests on them were not checked.'
+    );
+  });
+
+  it('says nothing when every page was read, or before any analysis', async () => {
+    mount([
+      { ...REPORT, id: 'a', pagesUnreadable: [] },
+      { ...REPORT, id: 'b', originalName: 'b.pdf' },
+      { ...REPORT, id: 'c', originalName: 'c.pdf', status: 'uploaded', pagesUnreadable: [2] },
+    ]);
+    await screen.findByText('b.pdf');
+    expect(screen.queryByText(/could not be read/)).not.toBeInTheDocument();
+  });
+});
+
 describe('Module 3 -- the report list', () => {
   it('offers Analyse for a report that has never been analysed', async () => {
     mount([{ ...REPORT, status: 'uploaded' }]);

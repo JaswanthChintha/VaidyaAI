@@ -791,6 +791,12 @@ reportSchema.methods.toPublicJSON = function toPublicJSON() {
         (this.analysis?.startedAt || this.analysis?.completedAt) &&
         this.subject.updatedAt > (this.analysis.startedAt || this.analysis.completedAt)
     ),
+    // Page numbers the stored analysis could not read (2026-10-10), so the
+    // Reports list can say "Page 2 could not be read -- Re-analyse" on the
+    // card. Numbers only, never text. Empty for a report not yet analysed.
+    pagesUnreadable: Array.isArray(this.analysis?.pagesUnreadable)
+      ? this.analysis.pagesUnreadable.filter((n) => Number.isInteger(n))
+      : [],
     createdAt: this.createdAt,
     updatedAt: this.updatedAt,
   };
