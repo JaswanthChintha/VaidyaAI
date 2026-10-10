@@ -79,12 +79,35 @@ export function hasSession() {
  * which would throw away the only useful thing in the response.
  */
 export class ApiError extends Error {
-  constructor(status, code, message) {
+  constructor(status, code, message, details) {
     super(message || 'The request failed.');
     this.name = 'ApiError';
     this.status = status;
     this.code = code || 'UNKNOWN';
+    this.details = Array.isArray(details) ? details : [];
   }
+}
+
+/**
+ * A form that failed the backend's checks comes back as VALIDATION_ERROR with
+ * the general message "Invalid request payload" -- and, in `details`, the
+ * actual reason for each field ("Password must be at least 8 characters and
+ * include..."). Only the general line used to be shown, so a person creating
+ * an account was never told WHICH box was wrong (owner, 2026-10-10).
+ *
+ * The reasons are the validators' own fixed sentences (middleware/
+ * *Validators.js); none of them repeats what was typed. Each distinct reason
+ * is shown once, in the order the backend gave them.
+ */
+function validationMessage(error) {
+  if (error?.code !== 'VALIDATION_ERROR' || !Array.isArray(error.details)) return null;
+  const reasons = [];
+  for (const detail of error.details) {
+    const text = typeof detail?.message === 'string' ? detail.message.trim() : '';
+    if (text && !reasons.includes(text)) reasons.push(text);
+  }
+  if (!reasons.length) return null;
+  return reasons.map((r) => (/[.!?]$/.test(r) ? r : `${r}.`)).join(' ');
 }
 
 async function parse(response) {
@@ -98,7 +121,8 @@ async function parse(response) {
     throw new ApiError(
       response.status,
       body?.error?.code,
-      body?.error?.message
+      validationMessage(body?.error) || body?.error?.message,
+      body?.error?.details
     );
   }
   return body?.data;

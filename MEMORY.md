@@ -13781,6 +13781,23 @@ Chat had no wake-wait (only `runAnalysis` called `waitUntilReady`).
 
 ---
 
+## 6cb. A REFUSED FORM SAYS WHICH BOX WAS WRONG · 2026-10-10 (NOT COMMITTED YET)
+
+Owner, creating an account locally: only "Invalid request payload" (the
+backend's general VALIDATION_ERROR line); the real reason sat unread in
+`error.details`. Frontend `lib/api.js`: `ApiError` keeps `details`;
+`validationMessage()` → for VALIDATION_ERROR the distinct detail messages,
+in order, each ending in a full stop, as the error's message (else the
+general line). Every form benefits (sign-up, sign-in, change password, Your
+details, upload). Checked: every validator message is a fixed sentence or
+built from fixed labels/limits — none echoes input. `tests/
+validationMessages.test.jsx` (5; mutation-checked: 3 fail on the old code).
+Frontend **590**. Live on the owner's own servers: weak password → 422 and
+the password rule shown. ⚠ The owner's VaidyaAI frontend was on **:5174** —
+their Portfolio project (C:\Users\prajw\Portfolio) holds :5173.
+
+---
+
 ## 7. Module 1 → later modules: inherited obligations
 
 **RESOLVED by Module 2:** `ownership.js` is now wired up and enforced, `ownerScopedFilter` throws
