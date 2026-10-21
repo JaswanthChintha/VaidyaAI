@@ -1,12 +1,3 @@
-"""Module 24 -- the HTTP contract, pydantic v2 enforced.
-
-Kept beside the validator rather than in `app/schemas/` because everything in
-this package has to be importable without FastAPI and because Module 24 owns
-its own vocabulary. The core objects (`SafetyVerdict`, `SafetyViolation`,
-`SafeFallback`) are already pydantic models, so the response models here just
-wrap them in the service's `{success, data}` envelope.
-"""
-
 from __future__ import annotations
 
 from typing import Dict, List, Optional, Tuple
@@ -18,12 +9,6 @@ from app.safety.validator import SafetyContext, SafetyVerdict
 
 
 class SafetyValidationRequest(BaseModel):
-    """One piece of text to validate, plus the policy that applies to it.
-
-    `extra="forbid"`: a caller who misspells `grounding_sources` would
-    otherwise silently get a validation with NO numeric grounding and a clean
-    verdict. In this module a typo must be a 422, not a weaker check.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -72,8 +57,6 @@ class SafetyValidationData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     verdict: SafetyVerdict
-    #: Populated exactly when the verdict is a rejection, so a caller that
-    #: renders the response has something honest to show without a second call.
     fallback: Optional[SafeFallback] = None
 
 

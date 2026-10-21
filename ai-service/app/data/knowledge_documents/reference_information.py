@@ -1,24 +1,3 @@
-"""Module 22 content -- REFERENCE INFORMATION.
-
-The published bands themselves, one document per feature that has them.
-
-WHY THESE ARE SEPARATE FROM `lab_tests.py`
-------------------------------------------
-A threshold changes when a guideline is revised. A description of what a test
-measures does not. Splitting them means a guideline update touches exactly one
-short document per analyte, and a reviewer comparing the corpus against
-`app/data/clinical_rules.py` has one place to look.
-
-THESE NUMBERS MUST MATCH THE RULE TABLE. If they drift, the platform will tell a
-reader one band and act on another -- a contradiction the reader cannot see and
-has no way to resolve. `tests/test_knowledge_base.py` asserts the correspondence
-for every threshold quoted here.
-
-A band is a population statistic. It says where a value sits relative to a
-published cut-off. It does not say what is happening in a person, and every
-document here says so rather than leaving it implied.
-"""
-
 from __future__ import annotations
 
 from typing import Tuple

@@ -1,139 +1,3 @@
-"""Train the Module 12 Kidney Disease model. RUN THIS BY HAND -- never at import.
-
-    python ml/train_kidney.py
-
-Nothing in `app/` imports this file. The service loads the persisted artifact
-and never fits a model; the test suite loads the same artifact. Same pattern as
-`ml/train_diabetes.py` and `ml/train_heart.py` -- one training pattern, not
-three.
-
-==========================================================================
-THE DATA
-==========================================================================
-
-`datasets/raw/chronic_kidney_disease_full.csv` -- the OFFICIAL UCI Chronic
-Kidney Disease archive (id 336), full 25-attribute version, converted from
-UCI's own ARFF with `?` preserved as an empty cell. 400 rows, 1,013 missing
-cells. `datasets/raw/ckd_uci_info.txt` ships UCI's attribute documentation
-verbatim; the units there (`sc` mg/dL, `bgr` mg/dL, `hemo` g/dL, `age` years)
-match `app/data/feature_catalog.py`'s canonical units exactly, so no unit
-conversion is applied or needed.
-
-REAL DATA ONLY. Nothing here generates, augments, resamples-with-synthesis (no
-SMOTE) or fabricates a row.
-
-==========================================================================
-THE FIVE MODELLING DECISIONS, AND WHY
-==========================================================================
-
-1. THE MALFORMED CLASS LABEL -> THE ROW IS DROPPED, NOT REPAIRED.
-
-   The class column holds `ckd` 250 / `notckd` 149 / `no` 1. The single `no`
-   row (source row 369) is not just a bad label -- the whole tail of the record
-   is shifted: `dm` is empty, `appet` holds `no` where its documented domain is
-   {good, poor}, and `pe` holds `good` where its domain is {no, yes}. So the
-   corruption is structural, and "repairing" the label would mean GUESSING
-   whether that patient had CKD.
-
-   Guessing a label is fabricating training data, which this project forbids
-   outright. The row is dropped: 1 of 400, 0.25% of the file, leaving 399 rows
-   (250 ckd / 149 notckd). The count and the reason are recorded in the
-   artifact so the choice is auditable rather than invisible.
-
-2. MISSINGNESS -> IMPUTED INSIDE THE PIPELINE. ROWS ARE NEVER DROPPED FOR IT.
-
-   1,013 cells are missing across 400 rows; among the five features used here,
-   `hemo` is missing 52 times, `bgr` 44, `sc` 17, `age` 9, `htn` 2. Dropping
-   incomplete rows would discard most of a 400-row dataset and would bias it
-   towards patients whose workup was complete -- which correlates with being
-   ill. So median imputation (numeric) and most-frequent imputation
-   (categorical) are fitted INSIDE the pipeline, per fold, exactly as spec
-   Module 12 describes.
-
-   Note the asymmetry with DECISION 4 below: imputing a missing MEASUREMENT in
-   the training data is a documented statistical choice. Imputing an unanswered
-   BOOLEAN QUESTION at prediction time is not, and is not done.
-
-3. ONLY THE FIVE SPEC FEATURES ARE USED, THOUGH 24 ARE AVAILABLE.
-
-   Spec Module 12 names creatinine, haemoglobin, blood glucose, age and
-   hypertension, and those five are exactly the ones VaidyaAI can supply at
-   prediction time: they are the only kidney-related columns present in
-   `app/data/feature_catalog.py`. The other 19 -- specific gravity, albumin,
-   blood urea, sodium, potassium, packed cell volume, cell counts and the rest
-   -- are real and useful, and adding them would very likely produce a better
-   model, but Module 4 does not extract them and Module 5 has no canonical name
-   for them. Training on a column that is absent for every real patient would
-   publish metrics for a model that never runs. Same principle as Module 11's
-   blood-pressure exclusion, and it is a REPORTED GAP: extending the feature
-   catalogue with blood urea and albumin is the obvious next improvement.
-
-   `bgr` is RANDOM blood glucose; VaidyaAI's `blood_glucose` prefers a fasting
-   sample where the report distinguishes them. That mismatch is recorded rather
-   than corrected -- it is a property of the source data, and `bgr` carries
-   only ~8% of this model's importance.
-
-4. `htn` IS yes/no BUT MODULE 2'S `hypertension` IS TRI-STATE.
-
-   Module 2 stores true / false / ABSENT-MEANS-UNKNOWN. Encoding an absent
-   answer as `no` would tell the forest "this patient does not have
-   hypertension" when nobody ever asked, and most-frequent imputation is the
-   same act with better manners (the majority value IS `no`).
-
-   So, following Module 10, TWO pipelines are fitted from the same real rows:
-
-       with_hypertension  |  without_hypertension
-
-   and the `without_hypertension` variant's ColumnTransformer has no
-   hypertension column at all. `app/ml/kidney.py` picks the variant matching
-   what the patient actually answered, so ABSENT NEVER BECOMES "no".
-   `tests/test_kidney_predictor.py` asserts this on the real feature frame.
-
-5. THRESHOLDS -> CHOSEN FROM OUT-OF-FOLD PREDICTIONS, NOT A HOLDOUT SLICE.
-
-   With 399 rows a validation slice would be ~60 patients and a threshold read
-   off it would be noise. Instead the training portion is scored out-of-fold
-   (5-fold stratified), so every training row contributes to the threshold
-   estimate and none is scored by a model that saw it. The test split is not
-   touched.
-
-   The CRITERIA are not Module 10's, and the reason is measured rather than
-   stylistic. Module 10 puts INDICATED at the first threshold reaching 0.90
-   cumulative precision; on this model that is threshold 0.11, which is where
-   the sensitivity-derived lower cut-off already sits, so the BORDERLINE band
-   would be empty and 79% of the cohort would be labelled INDICATED. Both
-   cut-offs are therefore stated as sensitivity guarantees -- INDICATED is the
-   most precise operating point still catching 98 of every 100 positives,
-   BORDERLINE the most selective one still catching 99 of 100 -- which is the
-   quantity that matters when a missed case is the dangerous failure. The
-   precision achieved at the chosen INDICATED cut-off is far above 0.90, so
-   Module 10's floor is honoured as well as superseded, and what its rule would
-   have produced is recorded in the artifact.
-
-==========================================================================
-THE HONEST CAVEAT ABOUT 400 ROWS
-==========================================================================
-
-Every metric below is measured on a 100-patient test split. A 95% binomial
-interval around an accuracy of 0.99 on n=100 still spans roughly 0.95-1.00, and
-a single misclassification moves recall by ~1.6 points. The cross-validated
-numbers over the training portion are the more trustworthy ones and are
-reported alongside. Read the near-perfect scores as "this dataset is easy and
-the model is not obviously broken", NOT as evidence of clinical-grade accuracy.
-Serum creatinine and haemoglobin separate CKD from not-CKD almost linearly in
-this cohort; a real screening population would be far harder.
-
-==========================================================================
-OUTPUTS
-==========================================================================
-
-    ml/artifacts/kidney_rf_v1.joblib        the WHOLE pipeline(s), one file
-    ml/artifacts/kidney_rf_v1.metrics.json  every number below, auditable
-
-The metrics file records the sha256 of the joblib it was produced from, so a
-test can prove the committed metrics describe the committed model.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -172,9 +36,6 @@ from sklearn.model_selection import (
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
 
-# --------------------------------------------------------------------------
-# Paths and constants
-# --------------------------------------------------------------------------
 
 HERE = Path(__file__).resolve().parent
 SERVICE_ROOT = HERE.parent
@@ -189,7 +50,6 @@ RANDOM_STATE = 42
 TEST_SIZE = 0.25
 CV_FOLDS = 5
 
-#: Dataset column -> VaidyaAI canonical feature name. Units already agree.
 COLUMN_RENAME: Dict[str, str] = {
     "sc": "creatinine",
     "hemo": "hemoglobin",
@@ -198,12 +58,9 @@ COLUMN_RENAME: Dict[str, str] = {
     "htn": "hypertension",
 }
 
-#: Without BOTH of these the predictor SKIPS. See `app/ml/kidney.py` and the
-#: `sufficiency_evidence` block this script writes into the metrics artifact.
 REQUIRED_FEATURES: Tuple[str, ...] = ("creatinine", "hemoglobin")
 OPTIONAL_NUMERIC: Tuple[str, ...] = ("blood_glucose", "age")
 
-#: The tri-state input, handled by variant selection rather than imputation.
 TRI_STATE_CATEGORICAL: str = "hypertension"
 
 VARIANTS: Dict[str, Tuple[str, ...]] = {
@@ -219,42 +76,12 @@ HYPERPARAMETERS: Dict[str, Any] = {
     "n_jobs": -1,
 }
 
-#: THRESHOLD CRITERIA -- and why they are NOT Module 10's.
-#:
-#: Module 10 puts the INDICATED cut-off at the smallest threshold reaching 0.90
-#: cumulative precision. That is right for a model whose maximum attainable
-#: precision is barely above 0.90. It is MEASURABLY WRONG here: this model
-#: reaches 0.90 precision at a threshold of 0.11, i.e. before it has committed
-#: to anything, which puts 79% of the cohort in the INDICATED band and collapses
-#: BORDERLINE to nothing (the sensitivity-derived lower cut-off lands at the
-#: same 0.11). A non-binding criterion is not a criterion.
-#:
-#: Both cut-offs are therefore stated as SENSITIVITY guarantees, which is the
-#: quantity that actually matters for a condition where a missed case is the
-#: dangerous failure:
-#:
-#:   INDICATED  = the MOST PRECISE operating point that still catches 98 of
-#:                every 100 positives on out-of-fold data.
-#:   BORDERLINE = the MOST SELECTIVE operating point that still catches 99 of
-#:                every 100.
-#:
-#: Neither is a round probability; both are read off the measured
-#: precision-recall curve. What Module 10's rule WOULD have produced is
-#: recorded alongside, and the precision achieved at the INDICATED cut-off is
-#: far above Module 10's 0.90 floor, so that floor is honoured as well as
-#: superseded.
 INDICATED_MINIMUM_RECALL = 0.98
 BORDERLINE_MINIMUM_RECALL = 0.99
 
-#: Module 10's rule, kept only to record what it would have given.
 MODULE_10_TARGET_PRECISION = 0.90
 
 VALID_CLASSES = ("ckd", "notckd")
-
-
-# --------------------------------------------------------------------------
-# Loading
-# --------------------------------------------------------------------------
 
 
 def sha256_of(path: Path) -> str:
@@ -275,7 +102,6 @@ def load_dataset() -> Tuple[pd.DataFrame, Dict[str, Any]]:
     raw = pd.read_csv(DATASET, skipinitialspace=True)
     rows_raw = len(raw)
 
-    # The ARFF carries trailing-whitespace artifacts in several columns.
     for column in raw.columns:
         if raw[column].dtype == object:
             raw[column] = raw[column].astype(str).str.strip().replace(
@@ -284,7 +110,6 @@ def load_dataset() -> Tuple[pd.DataFrame, Dict[str, Any]]:
 
     label_counts = raw["class"].value_counts(dropna=False).to_dict()
 
-    # DECISION 1: drop the structurally corrupt row rather than guess its label.
     malformed = ~raw["class"].isin(VALID_CLASSES)
     malformed_rows = int(malformed.sum())
     frame = raw[~malformed].reset_index(drop=True)
@@ -348,23 +173,7 @@ def load_dataset() -> Tuple[pd.DataFrame, Dict[str, Any]]:
     return frame, provenance
 
 
-# --------------------------------------------------------------------------
-# Pipeline construction
-# --------------------------------------------------------------------------
-
-
 def build_pipeline(numeric: List[str], categorical: List[str]) -> Pipeline:
-    """Spec Module 12's pipeline, as one object.
-
-    numeric:      median imputation
-    categorical:  most-frequent imputation -> one-hot (unknown -> all zeros)
-    model:        Random Forest
-
-    The categorical branch is OMITTED entirely when a variant has no
-    categorical column -- that is the whole point of the `without_hypertension`
-    variant, and an empty transformer would leave a vestigial encoder in the
-    persisted pipeline.
-    """
     transformers: List[Any] = [("numeric", SimpleImputer(strategy="median"), numeric)]
     if categorical:
         transformers.append(
@@ -392,11 +201,6 @@ def variant_columns(tri: Tuple[str, ...]) -> Tuple[List[str], List[str]]:
     return numeric, list(tri)
 
 
-# --------------------------------------------------------------------------
-# Threshold selection -- out-of-fold on the training portion
-# --------------------------------------------------------------------------
-
-
 def out_of_fold_scores(
     numeric: List[str], categorical: List[str], X: pd.DataFrame, y: pd.Series
 ) -> np.ndarray:
@@ -417,15 +221,12 @@ def choose_thresholds(y_true: np.ndarray, scores: np.ndarray) -> Dict[str, Any]:
     best = int(np.nanargmax(f1))
     prevalence = float(np.mean(y_true))
 
-    # INDICATED: most precise point still catching INDICATED_MINIMUM_RECALL of
-    # the positives. Ties resolved towards the SMALLER threshold, i.e. towards
-    # sensitivity.
     eligible = np.where(rec >= INDICATED_MINIMUM_RECALL)[0]
     if len(eligible):
         best_precision = float(np.max(prec[eligible]))
         chosen = eligible[np.argmax(prec[eligible] >= best_precision)]
         indicated = float(thresholds[chosen])
-    else:  # pragma: no cover - would mean the model cannot reach the floor
+    else:
         indicated = float(thresholds[0])
         best_precision = float(prec[0])
 
@@ -487,11 +288,6 @@ def choose_thresholds(y_true: np.ndarray, scores: np.ndarray) -> Dict[str, Any]:
             "rather than applied."
         ),
     }
-
-
-# --------------------------------------------------------------------------
-# Evaluation -- spec section 11
-# --------------------------------------------------------------------------
 
 
 def evaluate(y_true: np.ndarray, scores: np.ndarray, threshold: float) -> Dict[str, Any]:
@@ -591,7 +387,6 @@ def cross_validate_variant(
 def feature_importances(
     pipeline: Pipeline, numeric: List[str], categorical: List[str]
 ) -> Dict[str, float]:
-    """GLOBAL, MODEL-LEVEL importances. NOT a per-patient explanation."""
     names = list(numeric)
     if categorical:
         encoder = pipeline.named_steps["preprocess"].named_transformers_["categorical"]
@@ -609,16 +404,6 @@ def feature_importances(
 
 
 def sufficiency_evidence(X: pd.DataFrame, y: pd.Series) -> Dict[str, Any]:
-    """EVERY feature subset's cross-validated ROC-AUC. THE sufficiency basis.
-
-    Spec Module 12: a model trained on several parameters "should not
-    automatically be interpreted as equally reliable when only a small subset
-    of those parameters is available". This measures exactly that, subset by
-    subset, so `app/ml/kidney.py`'s required-feature rule can be justified from
-    numbers instead of intuition.
-
-    Cross-validated on the training portion; the test split is untouched.
-    """
     numeric_all = list(REQUIRED_FEATURES) + list(OPTIONAL_NUMERIC)
     all_features = numeric_all + [TRI_STATE_CATEGORICAL]
     cv = StratifiedKFold(n_splits=CV_FOLDS, shuffle=True, random_state=RANDOM_STATE)
@@ -628,7 +413,7 @@ def sufficiency_evidence(X: pd.DataFrame, y: pd.Series) -> Dict[str, Any]:
             numeric = [c for c in combo if c in numeric_all]
             categorical = [c for c in combo if c == TRI_STATE_CATEGORICAL]
             if not numeric:
-                continue  # a hypertension-only model is not a model
+                continue
             score = float(
                 np.mean(
                     cross_val_score(
@@ -667,14 +452,6 @@ def imputation_damage(
     X_test: pd.DataFrame,
     y_test: pd.Series,
 ) -> Dict[str, Any]:
-    """What the SHIPPED model scores when one input is missing at run time.
-
-    This is the honest measure of the harm the sufficiency gate prevents. The
-    ablation table above refits without a feature; that is not what happens in
-    production. In production the pipeline's median imputer substitutes a
-    population value and the forest is never told, so the resulting probability
-    is partly a statement about the training cohort rather than the patient.
-    """
     cols = numeric + categorical
     baseline = float(roc_auc_score(y_test, pipeline.predict_proba(X_test[cols])[:, 1]))
     out: Dict[str, Any] = {
@@ -690,11 +467,6 @@ def imputation_damage(
         )
         out["blanked"][name] = {"roc_auc": score, "delta": score - baseline}
     return out
-
-
-# --------------------------------------------------------------------------
-# main
-# --------------------------------------------------------------------------
 
 
 def main() -> int:

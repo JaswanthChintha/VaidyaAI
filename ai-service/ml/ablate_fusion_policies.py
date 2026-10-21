@@ -1,21 +1,3 @@
-"""Which fusion policy actually performs best?
-
-The deployed rule takes the maximum risk over contributing sources. That is a
-sensitivity-maximizing policy and it measurably trades away specificity. This
-script asks whether a different combination over the SAME decision objects
-does better, which is a question about the architecture rather than about any
-one model.
-
-⚠ POLICY SELECTION IS DONE ON A VALIDATION SPLIT, NEVER ON TEST.
-Choosing the best of several policies by looking at test scores would be
-selection on the evaluation set, and the winning number would not survive
-replication. The training portion is split again; every policy is scored on
-that validation slice; the policy that wins there is then reported once on the
-untouched test split.
-
-⚠ WRITES NOTHING INTO ml/artifacts/.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -75,21 +57,14 @@ def model_bands(prob: np.ndarray, t_high: float, t_low: float) -> np.ndarray:
     return out
 
 
-#: Each policy maps (rule band, model band) to a fused band.
 POLICIES: Dict[str, Callable[[np.ndarray, np.ndarray], np.ndarray]] = {
-    # The deployed rule: either source may escalate to high on its own.
     "maximum_risk": lambda r, m: np.maximum(r, m),
-    # The model decides; the rule may only escalate a case the model already
-    # considers plausible. Corroboration, rather than either-or.
     "corroborated_escalation": lambda r, m: np.where(
         (m == HIGH) | ((r == HIGH) & (m == MED)), HIGH, np.maximum(np.minimum(r, MED), m)
     ),
-    # High only where both agree; the disagreement becomes medium, which is
-    # what "not ruled out" is for.
     "unanimous_high": lambda r, m: np.where(
         (r == HIGH) & (m == HIGH), HIGH, np.where((r >= MED) | (m >= MED), MED, LOW)
     ),
-    # The model alone, for reference inside the same harness.
     "model_only": lambda r, m: m,
     "rule_only": lambda r, m: r,
 }

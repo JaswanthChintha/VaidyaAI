@@ -1,69 +1,3 @@
-"""Module 11 heart predictor, v2: retrained on NHANES 2017-2023.
-
-WHY A SECOND TRAINER RATHER THAN AN EDIT TO `train_heart.py`.
-
-v1 learns from `cardio_train.csv`, and its own metrics file calls the result
-what it is: "Held-out ROC-AUC around 0.70 makes this a WEAK discriminator."
-The recorded cause is that the dataset's dominant predictors are systolic and
-diastolic blood pressure, which VaidyaAI does not collect. That diagnosis is
-correct about cardio_train and wrong as a conclusion about the task: it is a
-statement about ONE dataset, not about what VaidyaAI's inputs can support.
-
-On NHANES -- the CDC survey this project already uses for Module 31's
-population context -- the same inputs reach held-out ROC-AUC above 0.82.
-
-TWO REASONS NHANES IS THE BETTER TEACHER, both measured:
-
-  1. PREVALENCE. cardio_train is 50% positive; NHANES is 9.3%, which is what a
-     screening population actually looks like. A model fitted at 50% emits
-     probabilities calibrated to a world where every second person has heart
-     disease. For a service that hands a number to a patient, a miscalibrated
-     probability is not a smaller problem than a weak one -- it is the same
-     problem wearing a confident face.
-
-  2. THE OUTCOME IS A DIAGNOSIS. NHANES asks whether a doctor ever told the
-     respondent they had coronary heart disease, a heart attack, angina or
-     congestive heart failure. cardio_train's target is undocumented.
-
-THE JOIN, AND WHY IT MATTERS.
-
-The Kaggle CVD extract carries no sex and no smoking column. An earlier draft
-of this trainer therefore shipped three inputs where v1 uses five -- better
-ranking bought by discarding two answers Module 2 already collects, which is a
-trade and not an improvement. NHANES publishes both in separate files keyed by
-`SEQN`, so they are joined back here from CDC's own demographics and smoking
-questionnaires. Sex matches for 100% of rows. Measured, cumulative:
-
-    age + bmi + cholesterol                 ROC-AUC 0.8110
-    + sex                                   ROC-AUC 0.8159
-    + sex + smoking (with_smoking variant)  ROC-AUC 0.8207
-
-So v2 uses every input v1 used, and nothing was given up to get the better
-cohort.
-
-WHAT THIS TRAINER DELIBERATELY DOES NOT DO:
-
-  * It does not use the CVD extract's `Vitamin_D` / `Vitamin_B12` columns, even
-    though VaidyaAI has features by those names. Those columns sit in the
-    dietary-intake block (medians 3.3 and 3.2 mcg/day); VaidyaAI's features are
-    SERUM levels (~20-50 ng/mL and ~200-900 pg/mL). Same word, different
-    quantity, and reading one as the other is the unit-confusion class of bug
-    this project has already been bitten by once.
-
-  * It does not use `Systolic_BP` / `Diastolic_BP`, though they are present and
-    would raise the score. VaidyaAI cannot collect them, so a model that leaned
-    on them could never be fed at inference.
-
-  * It does not band cholesterol. v1 maps mg/dL onto the three NCEP ATP III
-    levels because cardio_train only ever had bands. NHANES carries the real
-    number, and keeping it is worth about +0.024 ROC-AUC. Banding was a
-    concession to the old dataset, not a clinical choice.
-
-The variant structure, the categorical encoding and the absent-category
-sentinel all match v1 exactly, so `app/ml/heart.py` needs no change beyond the
-artifact filename.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -104,9 +38,6 @@ DATASET = SERVICE_ROOT / "datasets" / "raw" / "nhanes_cvd_2017_2023.csv"
 NHANES_RAW = SERVICE_ROOT / "datasets" / "population" / "raw"
 ARTIFACT_DIR = HERE / "artifacts"
 
-#: CDC files joined on SEQN. The 2017-2020 pre-pandemic cycle is prefixed `P_`;
-#: the 2021-2023 cycle is suffixed `_L`. Both are needed -- the CVD extract
-#: spans them (15,560 and 11,933 rows respectively).
 DEMOGRAPHICS = ("P_DEMO.xpt", "DEMO_L.xpt")
 SMOKING = ("P_SMQ.xpt", "SMQ_L.xpt")
 
@@ -124,21 +55,14 @@ HYPERPARAMETERS = {
     "n_jobs": -1,
 }
 
-#: Read off the lab report and the Module 2 profile. Every variant needs these.
 REQUIRED_FEATURES: Tuple[str, ...] = ("age", "bmi", "cholesterol")
 CATEGORICAL: Tuple[str, ...] = ("gender",)
 
-#: Same shape as v1: the tri-state answer is a column only in the variant that
-#: actually has it, so an unknown answer selects a model fitted WITHOUT it
-#: rather than having a value imputed for it.
 VARIANTS: Dict[str, Tuple[str, ...]] = {
     "with_smoking": ("smoking_current",),
     "without_smoking": (),
 }
 
-#: The four "has a doctor ever told you..." items that define the outcome.
-#: Stroke is deliberately NOT included: it is cerebrovascular, and Module 8's
-#: `Heart Disease` condition string means cardiac disease.
 OUTCOME_COLUMNS = ("Coronary", "Heart_attack", "Angina", "Congestive")
 
 
@@ -151,12 +75,6 @@ def sha256_of(path: Path) -> str:
 
 
 def _yes_no(series: pd.Series) -> pd.Series:
-    """NHANES questionnaire coding -> 1/0, with 7/9 (refused/unknown) as NA.
-
-    Mapping 9 to "no" would be the single most damaging thing this file could
-    do: it would move every don't-know into the negative class and teach the
-    model that uncertainty means health.
-    """
     return series.map({1.0: 1.0, 2.0: 0.0}).where(series.isin([1.0, 2.0]))
 
 
@@ -166,18 +84,6 @@ def _read_many(names: Tuple[str, ...], columns: List[str]) -> pd.DataFrame:
 
 
 def _current_smoker(frame: pd.DataFrame) -> pd.Series:
-    """SMQ020/SMQ040 -> the 0/1 `smoking_current` flag, NaN when unresolved.
-
-    SMQ020 asks whether the respondent smoked at least 100 cigarettes in their
-    life; SMQ040 (asked only of those who did) asks whether they smoke now --
-    1 every day, 2 some days, 3 not at all.
-
-    A FORMER smoker resolves to 0, not to unknown. That matches Module 2's own
-    vocabulary, where `former` and `not_current` both mean "does not currently
-    smoke". Refused and don't-know stay NaN and select the without_smoking
-    variant, because a model fitted on a guessed answer would not advertise the
-    guess.
-    """
     current = pd.Series(np.nan, index=frame.index, dtype="float64")
     never_100 = frame["SMQ020"] == 2.0
     smoked_100 = frame["SMQ020"] == 1.0
@@ -200,9 +106,6 @@ def load_dataset() -> Tuple[pd.DataFrame, pd.Series, Dict[str, Any]]:
     answers.columns = list(OUTCOME_COLUMNS)
     any_yes = answers.max(axis=1) == 1
     all_answered_no = answers.notna().all(axis=1) & (answers.max(axis=1) == 0)
-    # Anything else -- a partial refusal, an all-unknown row -- is DROPPED. It is
-    # neither a case nor a control, and forcing it into either class is a lie
-    # the model would then repeat to a patient.
     target = pd.Series(
         np.where(any_yes, 1.0, np.where(all_answered_no, 0.0, np.nan)),
         index=merged.index,
@@ -212,13 +115,9 @@ def load_dataset() -> Tuple[pd.DataFrame, pd.Series, Dict[str, Any]]:
         {
             "age": merged["Age"],
             "bmi": merged["BMI"],
-            "cholesterol": merged["Total_Colesterol"],  # source spelling
-            # The tokens `app/ml/heart.py` normalises Module 2's answers to.
+            "cholesterol": merged["Total_Colesterol"],
             "gender": merged["RIAGENDR"].map({1.0: "male", 2.0: "female"}),
             "smoking_current": _current_smoker(merged),
-            # NOT a shipped feature. Carried only so the cost of excluding it
-            # can be MEASURED on this cohort rather than inherited from
-            # cardio_train's estimate -- see the reference model in main().
             "_systolic_bp": merged["Systolic_BP"],
             "_diastolic_bp": merged["Diastolic_BP"],
         }
@@ -324,16 +223,6 @@ def load_dataset() -> Tuple[pd.DataFrame, pd.Series, Dict[str, Any]]:
 
 
 def build_pipeline(numeric: List[str], categorical: List[str]) -> Pipeline:
-    """Identical in shape to v1's, so the predictor's contract is unchanged.
-
-    numeric:      median imputation
-    categorical:  most-frequent imputation -> one-hot (unknown -> all zeros)
-
-    `handle_unknown="ignore"` is what lets `app/ml/heart.py` pass its
-    `__absent__` sentinel for a gender Module 2 allows but this cohort has no
-    equivalent for: the row becomes an all-zero block rather than being
-    silently assigned the majority category.
-    """
     return Pipeline(
         [
             (
@@ -365,11 +254,6 @@ def variant_columns(tri: Tuple[str, ...]) -> Tuple[List[str], List[str]]:
 
 
 def choose_thresholds(scores: np.ndarray) -> Dict[str, float]:
-    """Two cut-offs, chosen on OUT-OF-FOLD scores, never on the training fit.
-
-    At 9% prevalence a 0.5 cut-off would call almost nobody positive, so the
-    bands come from the score distribution rather than an assumed constant.
-    """
     return {
         "borderline": float(np.quantile(scores, 0.75)),
         "indicated": float(np.quantile(scores, 0.90)),
@@ -379,12 +263,6 @@ def choose_thresholds(scores: np.ndarray) -> Dict[str, float]:
 def evaluate(
     y_true: np.ndarray, scores: np.ndarray, threshold: float | None = None
 ) -> Dict[str, Any]:
-    """Ranking metrics, plus point metrics AT the decision threshold if given.
-
-    `decision_threshold` travels with the point metrics on purpose:
-    `app/ml/operating_metrics.py` refuses to quote a precision or recall unless
-    it can confirm it was measured at the very cut-off the predictor uses.
-    """
     out: Dict[str, Any] = {
         "roc_auc": float(roc_auc_score(y_true, scores)),
         "pr_auc": float(average_precision_score(y_true, scores)),
@@ -401,8 +279,6 @@ def evaluate(
         {
             "decision_threshold": float(threshold),
             "accuracy": float(np.mean(predicted == y_true)),
-            # Accuracy alone is close to meaningless at 9% prevalence -- always
-            # predicting "no" scores 0.907 -- so its baseline travels with it.
             "majority_class_baseline_accuracy": max(rate, 1.0 - rate),
             "positive_class": {
                 "precision": float(precision_score(y_true, predicted, zero_division=0)),
@@ -423,12 +299,6 @@ def evaluate(
 def risk_bands_on_test(
     y_true: np.ndarray, scores: np.ndarray, thresholds: Dict[str, float]
 ) -> Dict[str, Any]:
-    """How many patients landed in each band, and how many of them were positive.
-
-    A band nobody lands in is not a band, and a band whose positive rate is not
-    ordered against its neighbours is not a risk band -- it is three labels on
-    one number. Both are checked from these figures rather than assumed.
-    """
     masks = {
         "low": scores < thresholds["borderline"],
         "medium": (scores >= thresholds["borderline"])
@@ -450,14 +320,6 @@ def risk_bands_on_test(
 def band_meanings(
     y_true: np.ndarray, scores: np.ndarray, thresholds: Dict[str, float]
 ) -> Dict[str, str]:
-    """What each band MEANT on the held-out split, in this artifact's own words.
-
-    v1's band prose was hard-coded in `app/ml/heart.py` and quotes
-    cardio_train's 50% prevalence. The moment the artifact changed, those
-    figures were still being rendered beside a patient's result and were false.
-    Measuring them here means the sentence can never describe a model other
-    than the one that produced the number next to it.
-    """
     bands = {
         "low": scores < thresholds["borderline"],
         "borderline": (scores >= thresholds["borderline"])
@@ -472,10 +334,6 @@ def band_meanings(
                 "No held-out patient fell in this band, so its rate is unmeasured."
             )
             continue
-        # "were positive", NOT "had a diagnosis". This string is rendered into
-        # the patient-facing report, and the Module 24 safety scanner correctly
-        # flags the second phrasing as a diagnostic assertion. v1's wording was
-        # already right; an earlier draft of this trainer regressed it.
         out[name] = (
             f"On the held-out test split {100 * float(y_true[mask].mean()):.1f}% "
             f"of patients in this band were positive, against a cohort "
@@ -488,12 +346,6 @@ def band_meanings(
 def feature_importance(
     pipeline: Pipeline, numeric: List[str], categorical: List[str]
 ) -> Dict[str, float]:
-    """Importance keyed by CANONICAL feature, not by encoded model column.
-
-    One-hot expands `gender` into a column per level; reporting those
-    separately would let a reader think `gender_male` and `gender_female` are
-    two different clinical inputs. They are summed back onto the feature.
-    """
     encoder = pipeline.named_steps["preprocess"].named_transformers_["categorical"]
     expanded = list(encoder.named_steps["encode"].get_feature_names_out(categorical))
     values = pipeline.named_steps["model"].feature_importances_
@@ -534,9 +386,6 @@ def main() -> int:
         numeric, categorical = variant_columns(tri)
         columns = numeric + categorical
 
-        # The with_smoking variant is fitted ONLY on rows whose smoking answer
-        # is real. Fitting it on median-imputed smoking would make it a worse
-        # copy of without_smoking that claims to know something.
         train_mask = (
             x_train[list(tri)].notna().all(axis=1)
             if tri
@@ -571,8 +420,6 @@ def main() -> int:
         metrics = evaluate(
             y_test[test_mask].to_numpy(), scores, thresholds["indicated"]
         )
-        # Per-fold, so a reader can see whether the headline figure is stable
-        # or one lucky split. A single number hides that entirely.
         fold_auc = cross_val_score(
             build_pipeline(numeric, categorical),
             x_train.loc[train_mask, columns],
@@ -618,8 +465,6 @@ def main() -> int:
             "metrics": metrics,
         }
 
-    # Ablation on the richer variant, so the metrics file states what each input
-    # is actually worth rather than asserting that all of them matter.
     numeric, categorical = variant_columns(VARIANTS["with_smoking"])
     rich_train = x_train["smoking_current"].notna()
     rich_test = x_test["smoking_current"].notna()
@@ -643,11 +488,6 @@ def main() -> int:
             "roc_auc_lost": float(full_auc - auc),
         }
 
-    # DECISION 1, RE-MEASURED ON THIS COHORT. v1 recorded that excluding blood
-    # pressure costs about 0.10 ROC-AUC -- true of cardio_train, and an
-    # inherited number here would be a guess wearing a measurement's clothes.
-    # NHANES publishes Systolic_BP/Diastolic_BP, so the reference model is
-    # fitted and scored, and then NOT shipped.
     bp_numeric = numeric + ["_systolic_bp", "_diastolic_bp"]
     bp_train = rich_train & x_train[["_systolic_bp", "_diastolic_bp"]].notna().all(
         axis=1
@@ -660,8 +500,6 @@ def main() -> int:
         x_test.loc[bp_test, bp_numeric + categorical]
     )[:, 1]
     bp_auc = float(roc_auc_score(y_test[bp_test], bp_scores))
-    # Scored on the SAME rows, or the comparison measures the row filter rather
-    # than the feature.
     shipped_on_bp_rows = pipelines["with_smoking"].predict_proba(
         x_test.loc[bp_test, numeric + categorical]
     )[:, 1]
@@ -710,16 +548,9 @@ def main() -> int:
             "required_features": list(REQUIRED_FEATURES),
             "categorical_features": list(CATEGORICAL),
             "tri_state_features": ["smoking_current"],
-            # PROVENANCE LIVES IN THE JOBLIB TOO, not only in the sidecar JSON.
-            # The predictor reports these on every decision by reading the
-            # BUNDLE; anything recorded only in the metrics file comes back as
-            # null, which reads as "unknown provenance" for a model whose
-            # provenance is in fact fully known.
             "trained_at": datetime.now(timezone.utc).isoformat(),
             "sklearn_version": sklearn.__version__,
             "hyperparameters": HYPERPARAMETERS,
-            # NESTED, because `app/ml/heart.py` reads `bundle["dataset"]` and
-            # pulls sha256 / rows_used / prevalence / synthetic_rows from it.
             "dataset": dataset_meta,
             "resampling": dataset_meta["resampling"],
             "blood_pressure_reference_model": blood_pressure_reference,
@@ -816,11 +647,6 @@ def main() -> int:
             ),
         },
         "blood_pressure_reference_model": blood_pressure_reference,
-        # Kept free of anything the Module 24 scanner reads as a diagnostic
-        # assertion. This text is surfaced to clinicians, and a trip does not
-        # flag the sentence -- it withholds the entire note, removing the
-        # model's own statement of its limits from the document that most needs
-        # it. "SELF-REPORTED physician diagnosis" was the phrase that did it.
         "honest_read": (
             "Held-out ROC-AUC above 0.82 at a realistic 9% prevalence. That is "
             "a usable coarse discriminator and nothing more: PR-AUC around 0.32 "
@@ -832,11 +658,6 @@ def main() -> int:
         ),
         "model_artifact": {
             "filename": artifact_path.name,
-            # THE DIGEST IS THE POINT. `app/ml/artifacts.py` reads this to
-            # verify the joblib it loaded is the one this file describes;
-            # recording a bare filename leaves every prediction stamped
-            # `artifact_integrity_verified: false`, silently downgrading a
-            # shipped integrity check to nothing.
             "sha256": sha256_of(artifact_path),
             "bytes": artifact_path.stat().st_size,
         },

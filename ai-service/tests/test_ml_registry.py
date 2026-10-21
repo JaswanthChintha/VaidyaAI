@@ -1,13 +1,3 @@
-"""Module 9 / 13 -- the predictor interface, the registry, and the engine.
-
-These tests deliberately use FAKE predictors, not the diabetes one. The point
-of Modules 9 and 13 is that the engine works for predictors that do not exist
-yet, so the strongest evidence is a predictor invented inside a test file
-dropping in and coming out the other end untouched.
-
-NO TRAINING happens here and no artifact is loaded except where a test says so.
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -40,13 +30,7 @@ from app.schemas.decisions import (
 )
 
 
-# --------------------------------------------------------------------------
-# Fakes -- exactly what a Module 11/12 author will write
-# --------------------------------------------------------------------------
-
-
 class FakeHeartPredictor(Predictor):
-    """A predictor for a DIFFERENT condition, written the way Module 11 will be."""
 
     name = "fake_heart"
     condition = C.HEART_DISEASE
@@ -83,20 +67,10 @@ class ExplodingPredictor(Predictor):
         raise RuntimeError("the model blew up with value 1.9 mg/dl")
 
 
-# --------------------------------------------------------------------------
-# The interface refuses to be built wrong
-# --------------------------------------------------------------------------
-
-
 def test_a_predictor_cannot_be_built_with_a_non_canonical_condition():
-    """The single most valuable check in `base.py`.
-
-    A drifted condition string breaks Module 16 SILENTLY -- nothing raises, the
-    user just sees two unfused cards. So it must raise here.
-    """
 
     class Drifted(FakeHeartPredictor):
-        condition = "heart disease"  # lower case: not the canonical constant
+        condition = "heart disease"
 
     with pytest.raises(PredictorError, match="conditions.py"):
         Drifted()
@@ -129,12 +103,7 @@ def test_a_predictor_cannot_be_built_without_a_name():
 
 def test_predictor_is_abstract():
     with pytest.raises(TypeError):
-        Predictor()  # type: ignore[abstract]
-
-
-# --------------------------------------------------------------------------
-# Information sufficiency -- spec Module 12, inherited by every predictor
-# --------------------------------------------------------------------------
+        Predictor()
 
 
 def test_missing_required_feature_yields_insufficient_data_with_risk_none():
@@ -142,8 +111,6 @@ def test_missing_required_feature_yields_insufficient_data_with_risk_none():
     decision = predictor.predict({"age": 60})
 
     assert decision.status is DecisionStatus.INSUFFICIENT_DATA
-    # decisions.py REQUIRES this, and it is the whole safety property: a topic
-    # that was never assessed must not render as a reassuring "Low".
     assert decision.risk is None
     assert decision.confidence is None
     assert decision.was_assessed is False
@@ -151,7 +118,6 @@ def test_missing_required_feature_yields_insufficient_data_with_risk_none():
 
 
 def test_sufficiency_gate_cannot_be_bypassed_by_a_subclass_that_forgets_it():
-    """`_predict` is unreachable without its inputs, by construction."""
     predictor = FakeHeartPredictor()
     predictor.predict({})
     predictor.predict({"gender": "male"})
@@ -181,11 +147,6 @@ def test_insufficient_decision_recommends_only_catalogue_codes():
 
 
 def test_explicit_false_is_present_not_absent():
-    """`False` and `0` are ANSWERS. Only None/blank are absence.
-
-    Collapsing an explicit "no" into absence is the mirror image of the bug
-    this whole module exists to prevent.
-    """
     assert Predictor._is_present(False) is True
     assert Predictor._is_present(0) is True
     assert Predictor._is_present(0.0) is True
@@ -200,11 +161,6 @@ def test_sufficiency_report_records_optional_features_too():
     assert report.missing == ()
     assert report.optional_present == ("age",)
     assert report.optional_missing == ("gender",)
-
-
-# --------------------------------------------------------------------------
-# The output audit
-# --------------------------------------------------------------------------
 
 
 def test_a_predictor_emitting_the_wrong_condition_is_caught():
@@ -239,7 +195,6 @@ def test_a_predictor_returning_a_non_decision_is_caught():
 
 
 def test_decisions_py_itself_forbids_an_ml_decision_without_confidence():
-    """Belt and braces: the shared schema enforces this independently."""
     with pytest.raises(ValueError, match="must report confidence"):
         ClinicalDecision(
             condition=C.DIABETES,
@@ -249,11 +204,6 @@ def test_decisions_py_itself_forbids_an_ml_decision_without_confidence():
             source="Random Forest",
             source_kind=DecisionSourceKind.MACHINE_LEARNING,
         )
-
-
-# --------------------------------------------------------------------------
-# Registry -- register / look up / iterate
-# --------------------------------------------------------------------------
 
 
 def test_register_lookup_and_iterate():
@@ -305,7 +255,7 @@ def test_registry_rejects_a_non_predictor():
         condition = C.DIABETES
 
     with pytest.raises(PredictorError, match="Predictor"):
-        registry.register(NotAPredictor())  # type: ignore[arg-type]
+        registry.register(NotAPredictor())
 
 
 def test_unregister_removes():
@@ -317,17 +267,15 @@ def test_unregister_removes():
 
 def test_for_condition_and_conditions_use_canonical_order():
     registry = PredictorRegistry()
-    registry.register(ExplodingPredictor())  # Kidney Disease
-    heart = registry.register(FakeHeartPredictor())  # Heart Disease
+    registry.register(ExplodingPredictor())
+    heart = registry.register(FakeHeartPredictor())
 
     assert registry.for_condition(C.HEART_DISEASE) == [heart]
     assert registry.for_condition(C.DIABETES) == []
-    # Canonical order, not registration order: Heart Disease outranks Kidney.
     assert registry.conditions() == (C.HEART_DISEASE, C.KIDNEY_DISEASE)
 
 
 def test_iteration_is_a_snapshot():
-    """Registering mid-run must not mutate the sequence being walked."""
     registry = PredictorRegistry()
     registry.register(FakeHeartPredictor())
     seen = []
@@ -356,14 +304,6 @@ def test_describe_carries_no_values():
 
 
 def test_default_registry_is_a_singleton_and_carries_the_shipped_predictors():
-    """UPDATED for Modules 11 and 12.
-
-    This asserted `conditions() == (C.DIABETES,)` when Diabetes was the only
-    registered predictor. The assertion is STRENGTHENED rather than relaxed:
-    all three predictors must be present, each under its canonical condition,
-    and `conditions()` must still come back in canonical rank order -- which is
-    what makes the engine's output stable regardless of import order.
-    """
     assert default_registry() is default_registry()
     assert set(default_registry().names()) == {
         "diabetes_rf",
@@ -375,8 +315,6 @@ def test_default_registry_is_a_singleton_and_carries_the_shipped_predictors():
         C.HEART_DISEASE,
         C.KIDNEY_DISEASE,
     )
-    # Every registered predictor is registered under a FUSION condition, so a
-    # drifted condition string cannot slip through unnoticed.
     for predictor in default_registry():
         assert predictor.condition in C.FUSION_CONDITIONS
         assert C.is_canonical_condition(predictor.condition)
@@ -389,13 +327,7 @@ def test_build_default_registry_is_isolated_from_the_singleton():
     assert "fake_heart" not in default_registry().names()
 
 
-# --------------------------------------------------------------------------
-# The engine iterates the registry and knows nothing about any predictor
-# --------------------------------------------------------------------------
-
-
 def test_a_brand_new_predictor_drops_in_with_no_engine_change():
-    """The Module 11 / 12 acceptance test, written before those modules exist."""
     registry = PredictorRegistry()
     registry.register(FakeHeartPredictor(probability=0.77))
 
@@ -416,8 +348,8 @@ def test_a_brand_new_predictor_drops_in_with_no_engine_change():
 
 def test_decisions_are_ordered_by_canonical_condition():
     registry = PredictorRegistry()
-    registry.register(ExplodingPredictor())  # Kidney, registered FIRST
-    registry.register(FakeHeartPredictor())  # Heart
+    registry.register(ExplodingPredictor())
+    registry.register(FakeHeartPredictor())
 
     result = predict_all(
         {"valid": {"cholesterol": {"name": "cholesterol", "value": 260.0}}},
@@ -450,7 +382,6 @@ def test_one_broken_predictor_does_not_take_down_the_others():
 
 
 def test_a_model_exception_message_never_reaches_the_output():
-    """The exception text embeds a medical value; only its TYPE may survive."""
     registry = PredictorRegistry()
     registry.register(ExplodingPredictor())
     result = predict_all(
@@ -467,7 +398,6 @@ def test_empty_registry_warns_rather_than_returning_a_silent_empty_success():
     result = predict_all({"valid": {}}, registry=PredictorRegistry())
     assert result.decisions == []
     assert any("no ML predictors are registered" in w for w in result.warnings)
-    # "nothing assessed" must NOT become "Low".
     assert result.summary.highest_risk is None
 
 
@@ -510,7 +440,6 @@ def test_engine_metadata_and_warning_stage():
 
 
 def test_upstream_warnings_are_carried_through_untouched():
-    """Dropping upstream warnings has already been a real defect twice here."""
     registry = PredictorRegistry()
     registry.register(FakeHeartPredictor())
     result = predict_all(
@@ -549,11 +478,6 @@ def test_no_input_at_all_is_not_an_error():
     result = predict_all(registry=PredictorRegistry())
     assert result.summary.input_kind == "none"
     assert result.decisions == []
-
-
-# --------------------------------------------------------------------------
-# Safety: the fixed note fragments are user-facing
-# --------------------------------------------------------------------------
 
 
 def test_base_note_fragments_pass_the_recommendation_safety_scanner():

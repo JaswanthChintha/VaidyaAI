@@ -1,31 +1,5 @@
 'use strict';
 
-/**
- * Module 33 as it is reachable by a client.
- *
- *   POST /api/v1/reports/:id/summary-prose   { sentences, names }
- *
- * THIS SUITE EXISTS BECAUSE OF MEMORY.md section 6w. The parameter glossary
- * shipped returning a bare payload instead of the `{success, data}` envelope,
- * so the backend rejected every 200 as malformed and the feature was dead on
- * every call. Its fourteen unit tests were excellent and none of them went
- * through HTTP. Anything with a route needs one test that uses the route.
- *
- * In priority order:
- *
- *   1. OWNERSHIP. Another patient's report id must produce the same 404 a
- *      random id produces, and naming one is not permission to rewrite its
- *      summary.
- *   2. A REFUSAL IS NOT AN ERROR. No model, a safety rejection, a dropped
- *      fact, a transport failure -- all of them are 200 with no text, because
- *      the page renders the sentences it already has. A 500 here would turn a
- *      configuration state into a broken screen.
- *   3. THE CACHE IS KEYED ON THE SENTENCES, not only on the analysis version.
- *      The page can change what it composes without the analysis changing, and
- *      serving prose about different sentences is worse than serving none.
- *
- * axios is mocked at the transport layer, as `tests/timeline.test.js` does it.
- */
 
 const mongoose = require('mongoose');
 
@@ -70,13 +44,10 @@ async function seedReport(userId) {
   return doc._id.toString();
 }
 
-/** The ai-service's `{success, data}` envelope, carrying one outcome. */
 function serviceReplies(data) {
   mockAxios.post.mockResolvedValue({ status: 200, data: { success: true, data } });
 }
 
-/** Like `serviceReplies`, but the ai-service holds its answer for `ms`, so
- *  requests sent together are all in flight before the first one returns. */
 function serviceRepliesSlowly(data, ms = 400) {
   mockAxios.post.mockImplementation(
     () => new Promise((resolve) => {
@@ -106,10 +77,7 @@ describe('ownership', () => {
 
     expect(theirs.status).toBe(404);
     expect(random.status).toBe(404);
-    // NAMING A REPORT IS NOT PERMISSION, and the reply must not confirm the
-    // id exists by differing from the one for an id that does not.
     expect(theirs.body.error.code).toBe(random.body.error.code);
-    // And nothing was sent anywhere on a refused request.
     expect(mockAxios.post).not.toHaveBeenCalled();
   });
 
@@ -142,9 +110,6 @@ describe('the rewrite, through the route', () => {
     const [, body] = mockAxios.post.mock.calls[0];
     expect(body.sentences).toEqual(SENTENCES);
     expect(body.names).toEqual(NAMES);
-    // THE CONTRACT: this rewrites finished text. Anything that would let the
-    // service summarise a payload instead is the thing `InShort`'s comment
-    // refuses, so the request must carry no report and no analysis.
     expect(body.report).toBeUndefined();
     expect(body.analysis).toBeUndefined();
     expect(body.dashboard).toBeUndefined();
@@ -165,8 +130,6 @@ describe('a refusal is not an error', () => {
     const res = await post(id, owner.token);
     expect(res.status).toBe(200);
     expect(res.body.data.prose.text).toBeFalsy();
-    // The page renders the sentences it already had. A 500 would turn a
-    // configuration state into a broken screen.
   });
 
   it('answers 200 with no prose when the ai-service cannot be reached', async () => {
@@ -192,9 +155,6 @@ describe('the cache', () => {
   });
 
   it('DOES call again when the page composes different sentences', async () => {
-    // THE REASON THE KEY IS NOT THE ANALYSIS VERSION ALONE. The page can
-    // change what it composes without the analysis changing at all, and prose
-    // about last week's sentences is worse than none.
     const owner = await makeUser('prose.rekey@example.com');
     const id = await seedReport(owner.id);
     serviceReplies({ outcome: 'generated', text: 'first' });
@@ -218,8 +178,6 @@ describe('the cache', () => {
   });
 
   it('NEVER caches model_unavailable, which is a configuration state', async () => {
-    // Caching it would leave the page permanently without prose after a key
-    // outage, with nothing to trigger another attempt.
     const owner = await makeUser('prose.nokey@example.com');
     const id = await seedReport(owner.id);
     serviceReplies({ outcome: 'model_unavailable', text: null });
@@ -257,10 +215,6 @@ describe('Module 34 -- general context for out-of-range findings', () => {
   });
 
   it('SENDS NO VALUE, because the body is rebuilt and not forwarded', async () => {
-    // THE CONTRACT THIS ENDPOINT EXISTS UNDER. A client that attaches the
-    // reader's own number must not be able to get it to the model -- that is
-    // what would turn "generally associated with" into a statement about a
-    // named person.
     const owner = await makeUser('ctx.novalue@example.com');
     const id = await seedReport(owner.id);
     serviceReplies({ entries: [] });
@@ -326,13 +280,6 @@ describe('Module 34 -- general context for out-of-range findings', () => {
   });
 
   it('DOES cache a result that was entirely cache hits upstream', async () => {
-    // `generated_count: 0` HAS TWO MEANINGS NOW and only one of them is a
-    // refusal. The ai-service keys its own process cache on the test name and
-    // direction -- the whole prompt -- so a report whose findings were all
-    // described for an EARLIER report comes back complete, with every entry
-    // available and nothing generated. Treating that as "the model answered
-    // nothing" would decline to store a full result and re-request it on
-    // every page view, precisely when the answer was already free.
     const owner = await makeUser('ctx.allcached@example.com');
     const id = await seedReport(owner.id);
     serviceReplies({
@@ -348,16 +295,8 @@ describe('Module 34 -- general context for out-of-range findings', () => {
   });
 
   it('NEVER caches a result where nothing came back available', async () => {
-    // FOUND LIVE, and it would have hidden until the next day. When the Gemini
-    // quota is spent every model in the chain refuses, so nothing is available
-    // and nothing is cached upstream either. Caching that pins an empty result
-    // to this report and these findings forever: the quota resets, the cache
-    // key has not changed, and nothing ever asks again.
     const owner = await makeUser('ctx.quota@example.com');
     const id = await seedReport(owner.id);
-    // THE REAL PAYLOAD SHAPE, not an empty list: a quota outage still returns
-    // one entry per finding, each carrying no text. An empty `entries` would
-    // pass this test without exercising the rule at all.
     serviceReplies({
       entries: [
         { test_name: 'CRP', direction: 'raised', available: false, refused_by: 'safety' },
@@ -374,7 +313,6 @@ describe('Module 34 -- general context for out-of-range findings', () => {
   });
 
   it('DOES cache a partial result, because those refusals will recur', async () => {
-    // A gate refusal is an answer about this text, not about the service.
     const owner = await makeUser('ctx.partial2@example.com');
     const id = await seedReport(owner.id);
     serviceReplies({
@@ -406,9 +344,6 @@ describe('Module 34 -- general context for out-of-range findings', () => {
   });
 
   it('NEVER caches a partial result carrying an outage, so the gap is asked again', async () => {
-    // MEASURED 2026-09-24 on `Test 3.pdf`: four findings described, and
-    // NEUTROPHILS, ESR and CRP lost to Gemini `ServerError` on both attempts.
-    // Stored as a verdict, that outage outlived the outage.
     const owner = await makeUser('ctx.partialoutage@example.com');
     const id = await seedReport(owner.id);
     serviceReplies({
@@ -422,7 +357,6 @@ describe('Module 34 -- general context for out-of-range findings', () => {
 
     const first = await postCtx(id, owner.token);
     expect(first.status).toBe(200);
-    // The reader still gets what did come back.
     expect(first.body.data.context.entries).toHaveLength(2);
     await postCtx(id, owner.token);
     expect(mockAxios.post).toHaveBeenCalledTimes(2);
@@ -450,9 +384,6 @@ describe('Module 34 -- general context for out-of-range findings', () => {
   });
 
   it('NEVER caches a result with a description still being written', async () => {
-    // The ai-service answers within its deadline and marks slow findings
-    // `in_progress`; their jobs finish afterwards. Stored, they would be
-    // pinned as blanks until the report was re-analysed.
     const owner = await makeUser('ctx.inprogress@example.com');
     const id = await seedReport(owner.id);
     serviceReplies({
@@ -473,10 +404,6 @@ describe('Module 34 -- general context for out-of-range findings', () => {
   });
 
   describe('two identical requests in flight', () => {
-    // MEASURED 2026-09-24: `<React.StrictMode>` mounts the dashboard twice in
-    // development, so every page load sent this POST twice, milliseconds
-    // apart. Neither found a stored result, and each finding was generated
-    // twice -- Test 3's HbA1c cost two calls for one sentence.
     const DESCRIBED = {
       entries: [{ test_name: 'CRP', direction: 'raised', text: 'x', available: true }],
       generated_count: 1,
@@ -536,7 +463,6 @@ describe('Module 34 -- general context for out-of-range findings', () => {
     });
 
     it('do not let another patient share the answer', async () => {
-      // Ownership is checked per request, BEFORE the in-flight map is reached.
       const owner = await makeUser('ctx.twiceowner@example.com');
       const other = await makeUser('ctx.twiceother@example.com');
       const id = await seedReport(owner.id);

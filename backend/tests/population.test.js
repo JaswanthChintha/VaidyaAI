@@ -1,16 +1,5 @@
 'use strict';
 
-/**
- * GET /reports/:id/population-context -- WHOSE age and sex choose the cohort.
- *
- * 2026-10-02: since 2026-09-25 the analysis uses the sex and age printed on
- * the report (`report_details`) in place of the profile's. This endpoint kept
- * reading the profile, so a report printing "63 / male" on a "20 / male"
- * account was scored against 20-29-year-olds. It now sends what the analysis
- * used, field by field, and falls back to the profile otherwise.
- *
- * Offline: axios is mocked at the transport, as in the other suites.
- */
 
 const mongoose = require('mongoose');
 
@@ -61,7 +50,6 @@ async function seed(userId, features) {
   return doc._id.toString();
 }
 
-/** The body the backend sent to the population service. */
 const sentPayload = () => {
   expect(mockAxios.post).toHaveBeenCalledTimes(1);
   return mockAxios.post.mock.calls[0][1];
@@ -158,13 +146,6 @@ describe('the population cohort uses the sex and age the analysis used', () => {
   });
 });
 
-/*
- * 2026-10-02: THE TESTS THAT WERE NOT COMPARED, BY NAME.
- *
- * Tests with no canonical feature never reach Module 31, and Test 3's page
- * listed sixteen comparisons with no word about ESR, CRP, SGPT, TSH or the
- * average glucose printed on the same report.
- */
 describe('notCompared -- the names of the tests that never reach Module 31', () => {
   it('lists each unmapped test name once, in order, and nothing else', async () => {
     const alice = await makeUser('pop.unmapped@example.com');

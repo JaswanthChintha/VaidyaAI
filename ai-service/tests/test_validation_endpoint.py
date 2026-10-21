@@ -1,21 +1,3 @@
-"""POST /api/v1/features/validate -- the Module 6 HTTP contract.
-
-Response shapes must match the rest of the service: `{success, data}` on
-success and `{success, error: {code, message}}` on failure.
-
-MOUNTING NOTE: Module 6's router lives in its own file so that it can be
-mounted without editing `app/main.py` concurrently with another module. Until
-the coordinator adds
-
-    app.include_router(routes_validation.router)
-
-to `app/main.py`, this module mounts it itself, at import time, idempotently.
-Once the line is in `main.py` the guard below makes this a no-op, so nothing
-gets double-registered. Mounting at import time also means the route is present
-for `tests/test_auth.py::test_every_phi_route_declares_the_auth_dependency`,
-which is exactly the coverage we want.
-"""
-
 from __future__ import annotations
 
 from typing import Any, Dict
@@ -37,14 +19,6 @@ RULES_ENDPOINT = "/api/v1/features/validation-rules"
 
 
 def walk_routes(routes) -> list:
-    """Flatten the route tree.
-
-    NOTE for reviewers: this FastAPI version wraps an included router in an
-    `_IncludedRouter` object that has NO `.path` attribute, so a flat scan of
-    `app.routes` sees none of the `/api/v1` routes at all. See the report note
-    on `tests/test_auth.py::test_every_phi_route_declares_the_auth_dependency`,
-    which does exactly that flat scan and is therefore currently vacuous.
-    """
     flat = []
     for route in routes:
         included = getattr(route, "original_router", None)
@@ -67,8 +41,6 @@ _mount_once()
 
 @pytest.fixture()
 def api(client_factory) -> TestClient:
-    # The Module 6 route needs no Gemini client, but reusing the existing
-    # factory keeps env isolation identical across the suite.
     return client_factory()
 
 
@@ -102,11 +74,6 @@ def lab(name: str, value: Any, unit: str, **prov: Any) -> Dict[str, Any]:
         "source": "lab_report",
         "provenance": provenance,
     }
-
-
-# --------------------------------------------------------------------------
-# Envelope and shape
-# --------------------------------------------------------------------------
 
 
 def test_endpoint_returns_the_success_envelope(api):
@@ -170,7 +137,6 @@ def test_an_empty_body_is_accepted_as_an_empty_feature_set(api):
 
 
 def test_a_valid_entry_carries_the_module_5_field_names(api):
-    """Module 7 must be able to consume `valid` without re-deriving anything."""
     body = post(
         api,
         engineered(
@@ -202,11 +168,6 @@ def test_a_valid_entry_carries_the_module_5_field_names(api):
     }
     assert entry["provenance"]["original_test_name"] == "HbA1c"
     assert entry["provenance"]["page_number"] == 1
-
-
-# --------------------------------------------------------------------------
-# The plausible-vs-implausible line, over JSON
-# --------------------------------------------------------------------------
 
 
 def test_glucose_400_is_valid_and_extreme_over_json(api):
@@ -276,11 +237,6 @@ def test_a_censored_value_is_flagged_over_json(api):
     assert FlagCode.CENSORED_VALUE in flags
 
 
-# --------------------------------------------------------------------------
-# TRI-STATE over JSON -- all three states
-# --------------------------------------------------------------------------
-
-
 @pytest.mark.parametrize("name", ["hypertension", "heart_disease"])
 def test_tristate_true_over_json(api, name):
     profile_feature = {
@@ -312,14 +268,12 @@ def test_tristate_explicit_false_over_json(api, name):
 
 @pytest.mark.parametrize("name", ["hypertension", "heart_disease"])
 def test_tristate_unknown_stays_unknown_over_json(api, name):
-    """JSON is where a tri-state has historically been flattened to false."""
     body = post(api, engineered(missing_features=[name])).json()
     data = body["data"]
     assert name not in data["valid"]
     assert name not in data["questionable"]
     assert name not in data["rejected"]
     assert name in data["missing_features"]
-    # And nowhere in the serialised payload does it appear as a false value.
     assert data["valid"] == {}
 
 
@@ -336,11 +290,6 @@ def test_a_json_null_tristate_is_rejected_not_coerced(api, name):
     body = post(api, engineered(features={name: profile_feature})).json()
     assert body["data"]["rejected"][name]["reason_code"] == RejectionCode.NOT_A_BOOLEAN
     assert name not in body["data"]["valid"]
-
-
-# --------------------------------------------------------------------------
-# Warning propagation over the wire
-# --------------------------------------------------------------------------
 
 
 def test_warning_origins_survive_the_endpoint(api):
@@ -412,11 +361,6 @@ def test_upstream_context_survives_the_endpoint(api):
     assert data["summary"]["partial_document"] is True
 
 
-# --------------------------------------------------------------------------
-# Authentication
-# --------------------------------------------------------------------------
-
-
 def test_the_endpoint_requires_the_service_key(authed_client_factory):
     api = authed_client_factory()
     assert api.post(ENDPOINT, json={}).status_code == 401
@@ -448,18 +392,11 @@ def test_the_validation_route_declares_the_auth_dependency():
             d.dependency is require_service_key
             for d in getattr(route, "dependencies", [])
         )
-        # Depending on the FastAPI version the router-level dependency is
-        # either merged onto the route or resolved through the dependant tree.
         resolved = any(
             getattr(d, "call", None) is require_service_key
             for d in getattr(getattr(route, "dependant", None), "dependencies", [])
         )
         assert declared or resolved, f"{route.path} is not behind service auth"
-
-
-# --------------------------------------------------------------------------
-# The published rule table
-# --------------------------------------------------------------------------
 
 
 def test_the_rule_table_is_published_for_review(api):
@@ -469,11 +406,6 @@ def test_the_rule_table_is_published_for_review(api):
     assert features["blood_glucose"]["possible_high"] == 3000.0
     assert features["blood_glucose"]["extreme_high"] == 400.0
     assert body["data"]["policy"]
-
-
-# --------------------------------------------------------------------------
-# A realistic full payload, Module 4 -> 5 -> 6
-# --------------------------------------------------------------------------
 
 
 REALISTIC_EXTRACTION = {
@@ -555,7 +487,6 @@ REALISTIC_PROFILE = {
     "bmi": 27.4,
     "smokingHistory": "former",
     "heartDisease": False,
-    # `hypertension` deliberately absent -- it is UNKNOWN.
 }
 
 
@@ -565,7 +496,6 @@ def test_a_realistic_payload_end_to_end(api):
     assert response.status_code == 200
     data = response.json()["data"]
 
-    # Usable set.
     assert set(data["valid"]) == {
         "hba1c",
         "blood_glucose",
@@ -578,7 +508,6 @@ def test_a_realistic_payload_end_to_end(api):
     }
     assert data["valid"]["heart_disease"]["value"] is False
 
-    # Rejections, each with a reason.
     assert (
         data["rejected"]["cholesterol"]["reason_code"]
         == RejectionCode.IMPLAUSIBLE_VALUE_HIGH
@@ -589,18 +518,14 @@ def test_a_realistic_payload_end_to_end(api):
     )
     assert data["rejected"]["cholesterol"]["value"] == 19000.0
 
-    # Abnormal-but-real is kept and prioritised.
     assert "blood_glucose" in data["clinically_extreme"]
 
-    # Questionable, but usable.
     assert "vitamin_d" in data["questionable"]
 
-    # UNKNOWN stayed unknown.
     assert "hypertension" in data["missing_features"]
     assert "hypertension" not in data["valid"]
     assert "hypertension" not in data["rejected"]
 
-    # Nothing upstream was lost.
     assert data["unmapped"]
     assert data["upstream"]["pages_unreadable"] == [2]
     assert data["upstream"]["report_metadata"]["lab_name"] == (
@@ -615,7 +540,6 @@ def test_a_realistic_payload_end_to_end(api):
         if w["stage"] == STAGE_EXTRACTION
     )
 
-    # Counts are self-consistent.
     summary = data["summary"]
     assert summary["valid_count"] == len(data["valid"])
     assert summary["rejected_count"] == len(data["rejected"])

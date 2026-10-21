@@ -1,25 +1,7 @@
-"""Request payload builders shared by the Module 28 and Module 29 test files.
-
-NOT A TEST MODULE (the name deliberately does not start with `test_`, so pytest
-does not collect it). It lives here rather than in `tests/conftest.py` because
-other agents were writing tests in this directory at the same time and editing
-the shared conftest would have collided; nothing here is a fixture, only plain
-functions.
-
-EVERY VALUE BELOW IS INVENTED. No real patient data, no real laboratory, and
-no network or file access -- these builders assemble the same JSON-shaped dicts
-the Node backend POSTs, so the tests exercise the real parse boundary
-(`ValidatedFeatureSetInput` -> `build_snapshot`) rather than hand-constructing
-a `FeatureSnapshot` that could not occur in production.
-"""
-
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-#: The conversion Module 5 records when it carries a umol/L creatinine into
-#: mg/dL. Copied from `app/data/unit_conversions.py` so a test can build the
-#: provenance a converted reading really has.
 CREATININE_UMOL_CONVERSION: Dict[str, Any] = {
     "from_unit": "umol/l",
     "to_unit": "mg/dl",
@@ -40,12 +22,6 @@ def vf(
     flags: Optional[List[Dict[str, Any]]] = None,
     **provenance: Any,
 ) -> Dict[str, Any]:
-    """One entry of Module 6's `valid` map.
-
-    Keyword arguments other than the named ones are folded into the
-    provenance, which is where a printed reference interval, a printed flag and
-    a recorded unit conversion live.
-    """
     prov: Dict[str, Any] = {"source": "lab_report"}
     prov.update(provenance)
     return {
@@ -67,7 +43,6 @@ def rejection(
     reason_code: str = "IMPLAUSIBLE_VALUE_HIGH",
     reason: str = "Outside the physiologically possible range.",
 ) -> Dict[str, Any]:
-    """One entry of Module 6's `rejected` map. Carries NO value, by contract."""
     return {"name": name, "reason_code": reason_code, "reason": reason}
 
 
@@ -79,7 +54,6 @@ def report(
     rejected: Optional[Dict[str, Any]] = None,
     sequence: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """One `TimelineReportInput`, features supplied as Module 6's `data`."""
     body: Dict[str, Any] = {
         "report_id": report_id,
         "chrono_date": chrono_date,
@@ -96,7 +70,6 @@ def series_reports(
     unit: Optional[str],
     **provenance: Any,
 ) -> List[Dict[str, Any]]:
-    """One report per value, one month apart, oldest first."""
     return [
         report(
             f"r{index + 1}",

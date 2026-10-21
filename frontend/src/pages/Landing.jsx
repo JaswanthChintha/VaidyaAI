@@ -6,18 +6,6 @@ import Icon from '../components/Icon';
 import Logo from '../components/Logo';
 import Splash, { SPLASH_COVER_MS, shouldShow as splashWillShow } from '../components/Splash';
 
-/**
- * The public front page -- the first page for EVERYONE, signed in or not
- * (owner, 2026-10-09). A signed-in reader sees "Go to my reports" wherever a
- * signed-out one sees "Sign in" or "Create an account".
- *
- * EVERY CLAIM ON THIS PAGE IS ONE THE CODE MAKES TRUE. No user counts, no
- * accuracy figures, no testimonials: a medical tool that opens with numbers
- * nobody measured has told the reader how much to trust the rest of it.
- *
- * The example cards are labelled as examples and use the same categorical
- * colours the dashboard uses, meaning exactly what they mean there.
- */
 
 const STEPS = [
   {
@@ -51,9 +39,6 @@ const FEATURES = [
   {
     icon: 'timeline',
     title: 'A timeline across reports',
-    // Not "a real change told apart from variation": the per-test variation
-    // figures are published values none of which has yet been verified by a
-    // person (MEMORY.md section 0, item 1). Reworded 2026-10-02.
     text: 'How each value moved between your reports, compared against published figures for how much each test normally varies.',
   },
   {
@@ -125,7 +110,6 @@ function ExampleSheet() {
         </thead>
         <tbody>
           {EXAMPLE.map((row, i) => (
-            // `--i` staggers the row-by-row "reading" animation (styles.css).
             <tr key={row.name} style={{ '--i': i }}>
               <td>{row.name}</td>
               <td className="specimen__num">{row.value}</td>
@@ -136,19 +120,13 @@ function ExampleSheet() {
           ))}
         </tbody>
       </table>
-      {/* A soft line that sweeps down the rows once, as if reading them.
-          Invisible at rest, so with reduced motion there is simply nothing. */}
       <span className="specimen__scan" aria-hidden="true" />
     </figure>
   );
 }
 
 export default function Landing() {
-  // The hero's "reading" animation would play unseen under the intro, so it
-  // waits for the intro to lift. Read once, before the splash marks itself seen.
   const [heroDelay] = useState(() => (splashWillShow() ? `${SPLASH_COVER_MS}ms` : '0ms'));
-  // While a stored session is still being checked, the signed-out buttons
-  // show: "Sign in" then lands on Reports anyway if the session holds.
   const signedIn = useAuth().status === 'signedIn';
   return (
     <div className="landing" style={{ '--hero-delay': heroDelay }}>

@@ -1,21 +1,3 @@
-"""POST /api/v1/rules/evaluate -- the Module 8 HTTP contract.
-
-Response shapes must match the rest of the service: `{success, data}` on
-success and `{success, error: {code, message}}` on failure.
-
-MOUNTING NOTE: Module 8's router lives in its own file so it can be mounted
-without editing `app/main.py` concurrently with another module. Until the
-coordinator adds
-
-    app.include_router(routes_rules.router)
-
-to `app/main.py`, this module mounts it itself, at import time, idempotently.
-Once the line is in `main.py` the guard below makes this a no-op, so nothing
-gets double-registered. Mounting at import time also means the route is present
-for `tests/test_auth.py::test_every_phi_route_declares_the_auth_dependency`,
-which is exactly the coverage we want.
-"""
-
 from __future__ import annotations
 
 from typing import Any, Dict
@@ -88,11 +70,6 @@ def engineered_payload() -> Dict[str, Any]:
     }
 
 
-# --------------------------------------------------------------------------
-# Envelope and shape
-# --------------------------------------------------------------------------
-
-
 def test_endpoint_returns_the_success_envelope(api):
     response = post(api, {"validated": validated({})})
     assert response.status_code == 200
@@ -131,19 +108,12 @@ def test_decisions_carry_the_module_14_shape(api):
 
 
 def test_an_empty_body_is_accepted_and_accounts_for_every_topic(api):
-    """Nothing supplied means nothing was CHECKED -- not that nothing is there.
-
-    This used to assert that only the three fusion conditions came back. The
-    other ten were dropped in silence, so a caller could not tell a topic this
-    tool never looked at from one it has no opinion about.
-    """
     response = post(api, {})
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["summary"]["highest_risk"] is None
 
     conditions = {d["condition"] for d in data["decisions"]}
-    # Every topic that declares inputs is accounted for...
     expected = {
         name
         for name, definition in C.CONDITIONS.items()
@@ -152,21 +122,13 @@ def test_an_empty_body_is_accepted_and_accounts_for_every_topic(api):
     assert conditions == expected
     assert set(C.FUSION_CONDITIONS) <= conditions
 
-    # ...and a SECONDARY reading of a test another topic already reports is
-    # not a second line about the same absence.
     for name, definition in C.CONDITIONS.items():
         if not definition.always_assessed and not definition.report_when_unread:
             assert name not in conditions
 
-    # Not one of them carries a status or a risk that could read as a result.
     for decision in data["decisions"]:
         assert decision["status"] == "Insufficient Data"
         assert decision["risk"] is None
-
-
-# --------------------------------------------------------------------------
-# Request-form tolerance -- 422 on ambiguous, never a guess
-# --------------------------------------------------------------------------
 
 
 def test_a_bare_module_6_object_is_accepted(api):
@@ -231,11 +193,6 @@ def test_a_non_object_body_is_rejected(api):
     assert response.status_code == 422
 
 
-# --------------------------------------------------------------------------
-# Warning propagation over HTTP
-# --------------------------------------------------------------------------
-
-
 def test_upstream_warnings_survive_the_http_boundary(api):
     payload = validated(
         {"hba1c": vf("hba1c", 7.4)},
@@ -248,11 +205,6 @@ def test_upstream_warnings_survive_the_http_boundary(api):
     data = response.json()["data"]
     assert [w["stage"] for w in data["upstream_warnings"]] == ["extraction", "validation"]
     assert data["all_warnings"][0]["message"] == "page 2 was unreadable"
-
-
-# --------------------------------------------------------------------------
-# Review endpoints
-# --------------------------------------------------------------------------
 
 
 def test_the_rule_table_is_published_for_review(api):
@@ -276,11 +228,6 @@ def test_the_recommendation_catalogue_is_published(api):
     data = response.json()["data"]
     assert data["recommendations"]
     assert "medication_name" in data["forbidden_patterns"]
-
-
-# --------------------------------------------------------------------------
-# Auth -- identical treatment to every other PHI-bearing route
-# --------------------------------------------------------------------------
 
 
 def test_every_rules_route_is_registered_under_the_expected_prefix():

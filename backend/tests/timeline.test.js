@@ -1,40 +1,5 @@
 'use strict';
 
-/**
- * The backend longitudinal layer - Modules 28, 29, 30 and 32 as they are
- * reachable by a client.
- *
- *   GET /api/v1/timeline/trends
- *   GET /api/v1/timeline/comparison?baseline=&comparison=
- *   GET /api/v1/timeline/progress?baseline=&comparison=
- *   GET /api/v1/reports/:id/doctor-summary?baseline=&comparison=
- *
- * WHAT THIS SUITE IS FOR, in priority order:
- *
- *   1. OWNERSHIP. There is no patient id in the timeline URLs, so "another
- *      patient's data" can only arrive two ways: through a widened history
- *      filter, or through a report id a caller NAMED in the query string.
- *      Both are covered. A widened filter here leaks a patient's entire
- *      library, not one report, which is why these are the first tests in the
- *      file.
- *   2. `?baseline=` / `?comparison=` ARE NOT PERMISSION. Naming a report is
- *      not authorisation to read it: another patient's id must produce the
- *      identical 404 a random id produces, and no message may echo the id.
- *   3. VALIDATOR HARDENING. Every chain must start with `.isString().bail()`.
- *      MEMORY.md section 6 records that a missing one was a live
- *      authentication bypass on this project, so the guard is exercised
- *      against an app with NO `express-mongo-sanitize` and NO `hpp` in front
- *      of it - otherwise the test would prove those two middlewares work and
- *      say nothing about the chain.
- *   4. REFUSALS PASS THROUGH UNTOUCHED. A patient with zero or one analysed
- *      report gets the ai-service's own vocabulary, not a second "not enough
- *      history" invented here, and never a 500.
- *
- * axios is mocked at the transport layer, exactly as `tests/analysis.test.js`
- * does it and for the same reason: the outgoing request body is itself under
- * test (which report ids were sent, and which were not), and a client-level
- * mock would assert that against itself.
- */
 
 const express = require('express');
 const mongoose = require('mongoose');
@@ -67,7 +32,6 @@ const COMPARISON_PATH = '/api/v1/comparison/reports';
 const PROGRESS_PATH = '/api/v1/progress/score';
 const DOCTOR_SUMMARY_PATH = '/api/v1/doctor-summary/generate';
 
-// --- users ------------------------------------------------------------------
 
 async function makeUser(email) {
   const { res } = await registerUser({ email, name: 'Test User' });
@@ -82,7 +46,6 @@ async function makePrivilegedUser(role, email) {
   return { token: res.body.data.accessToken, id: user._id.toString() };
 }
 
-// --- fixtures ---------------------------------------------------------------
 
 const day = (n) => new Date(Date.UTC(2026, 0, n, 12, 0, 0));
 
@@ -96,7 +59,6 @@ function validatedFeatureSet(hba1c) {
   };
 }
 
-/** A minimal stored `ClinicalReport` - enough for `/doctor-summary` to proceed. */
 const clinicalReport = () => ({
   report_version: '1.0.0',
   overall: {
@@ -132,12 +94,6 @@ async function seedReport(
   return doc._id.toString();
 }
 
-// --- ai-service mock --------------------------------------------------------
-//
-// Every fixture below is a REFUSAL-CAPABLE shape: `outcome` is the field a
-// client branches on and it is carried verbatim. The defaults are the answers
-// the real service gives for a rich history; the tests that care about
-// refusals override them explicitly.
 
 const okResponse = (data) => ({ status: 200, data: { success: true, data } });
 
@@ -174,7 +130,6 @@ const doctorSummaryFixture = (body) => ({
   comparison: { present: (body.history || []).length >= 2, reason: 'SECTION_SINGLE_REPORT' },
 });
 
-/** Every outgoing ai-service call, in order. */
 let outgoing = [];
 
 function wireAiService(overrides = {}) {
@@ -204,9 +159,6 @@ beforeEach(() => {
   mockAxios.get.mockResolvedValue(okResponse({ status: 'ok' }));
 });
 
-// The four endpoints, described once. Every ownership, validator and refusal
-// test below runs over all of them rather than over a representative one -
-// section 6m's point is precisely that one of these paths was never exercised.
 const ROUTES = [
   { name: 'trends', url: () => `${TIMELINE}/trends`, pairs: false },
   { name: 'comparison', url: () => `${TIMELINE}/comparison`, pairs: true },
@@ -214,7 +166,6 @@ const ROUTES = [
 ];
 
 describe('Modules 28-30 + 32 - the longitudinal endpoints', () => {
-  // ============================================================== ownership ==
   describe('ownership - no route widens the history', () => {
     let alice;
     let bob;
@@ -236,7 +187,6 @@ describe('Modules 28-30 + 32 - the longitudinal endpoints', () => {
       expect(res.body.data.history.considered).toBe(0);
       expect(res.body.data.history.included).toBe(0);
       expect(res.body.data.history.reports).toEqual([]);
-      // Not one of Alice's ids reached the wire, let alone the response.
       const sent = JSON.stringify(outgoing.map((c) => c.body));
       for (const id of aliceIds) {
         expect(JSON.stringify(res.body)).not.toContain(id);
@@ -264,7 +214,6 @@ describe('Modules 28-30 + 32 - the longitudinal endpoints', () => {
     it.each(ROUTES)('$name: is 401 unauthenticated', async (route) => {
       const res = await request(app).get(route.url());
       expect(res.status).toBe(401);
-      // And nothing was asked of the ai-service on the way to that 401.
       expect(outgoing).toHaveLength(0);
     });
 
@@ -278,11 +227,6 @@ describe('Modules 28-30 + 32 - the longitudinal endpoints', () => {
     });
   });
 
-  // ============================== a named id is not permission to read it ====
-  //
-  // `?baseline=` and `?comparison=` are the only ids a caller may put in these
-  // URLs. Each is re-loaded owner-scoped and re-checked BEFORE it can reach a
-  // request body.
   describe('?baseline= / ?comparison= is not an authorisation', () => {
     let alice;
     let bob;
@@ -324,10 +268,7 @@ describe('Modules 28-30 + 32 - the longitudinal endpoints', () => {
         expect(named.body.error.code).toBe(random.body.error.code);
         expect(named.body.error.message).toBe(random.body.error.message);
         expect(JSON.stringify(named.body)).toBe(JSON.stringify(random.body));
-        // NO MESSAGE ECHOES THE SUBMITTED ID.
         expect(JSON.stringify(named.body)).not.toContain(aliceIds[0]);
-        // And nothing was sent to the ai-service - the check happens before
-        // the id can reach a request body.
         expect(outgoing).toHaveLength(0);
       }
     );
@@ -374,8 +315,6 @@ describe('Modules 28-30 + 32 - the longitudinal endpoints', () => {
           .query({ baseline: unanalysed, comparison: aliceIds[1] })
           .set(auth(alice.token));
 
-        // NOT 404: the report demonstrably exists and belongs to the caller.
-        // Answering 404 would tell an owner their own report does not exist.
         expect(res.status).toBe(422);
         expect(res.body.error.code).toBe('REPORT_NOT_IN_HISTORY');
         expect(JSON.stringify(res.body)).not.toContain(unanalysed);
@@ -392,8 +331,6 @@ describe('Modules 28-30 + 32 - the longitudinal endpoints', () => {
         .set(auth(alice.token));
 
       expect(res.status).toBe(200);
-      // The caller's naming is honoured EXACTLY, including a baseline that is
-      // the later report - swapping would invert every reported direction.
       expect(res.body.data.requestedPair).toEqual({
         baseline: aliceIds[1],
         comparison: aliceIds[0],
@@ -408,7 +345,6 @@ describe('Modules 28-30 + 32 - the longitudinal endpoints', () => {
       expect(res.status).toBe(200);
       expect(res.body.data.requestedPair).toBeNull();
       const [call] = outgoing;
-      // Absent, not null - the service chooses earliest-to-latest itself.
       expect(call.body.baseline_ref).toBeUndefined();
       expect(call.body.comparison_ref).toBeUndefined();
     });
@@ -432,7 +368,6 @@ describe('Modules 28-30 + 32 - the longitudinal endpoints', () => {
     });
   });
 
-  // ================================================ doctor-summary ownership ==
   describe('Module 32 - GET /reports/:id/doctor-summary ownership', () => {
     let alice;
     let aliceReportId;
@@ -453,8 +388,6 @@ describe('Modules 28-30 + 32 - the longitudinal endpoints', () => {
     it.each([
       ['another patient', () => makeUser('bob.ds@example.com')],
       ['an admin', () => makePrivilegedUser(ROLES.ADMIN, 'admin.ds@example.com')],
-      // THE FACT THAT THIS DOCUMENT IS MEANT FOR A CLINICIAN DOES NOT GIVE A
-      // CLINICIAN ACCOUNT ACCESS TO IT. The patient requests it and shares it.
       ['a clinician', () => makePrivilegedUser(ROLES.CLINICIAN, 'clin.ds@example.com')],
     ])('%s gets a 404 byte-identical to the 404 for an absent id', async (_label, makeCaller) => {
       const caller = await makeCaller();
@@ -498,16 +431,6 @@ describe('Modules 28-30 + 32 - the longitudinal endpoints', () => {
     });
   });
 
-  // ===================================================== validator hardening ==
-  //
-  // MEMORY.md section 9: "every validator chain starts with `.isString().bail()`
-  // before any sanitizer. This is not style - a missing one caused a live
-  // authentication bypass."
-  //
-  // The first block runs against the REAL app (which has express-mongo-sanitize
-  // and hpp in front); the second runs the same inputs against a bare express
-  // app that has NEITHER, which is the only way to show the chain is doing the
-  // work itself rather than leaning on a middleware ordering somewhere else.
   describe('validator hardening on ?baseline / ?comparison', () => {
     let alice;
     beforeEach(async () => {
@@ -533,16 +456,6 @@ describe('Modules 28-30 + 32 - the longitudinal endpoints', () => {
         .get(`${url}?baseline=${ABSENT_ID}&baseline=${'1'.repeat(24)}&comparison=${ABSENT_ID}`)
         .set(auth(alice.token));
 
-      // 404, NOT 422, and the difference is worth writing down. On the REAL app
-      // `hpp()` runs before the chain and collapses the duplicate to a single
-      // string, so what the validator sees is a well-formed id that simply does
-      // not belong to this caller - hence the ownership 404. MEMORY.md section
-      // 6m's "duplicated baseline -> 422" was measured against an app with no
-      // `hpp`, which is exactly the bare-chain block further down; both are
-      // true, of different apps.
-      //
-      // What matters either way is that NO ARRAY ever reaches a Mongo query and
-      // the answer is a refusal, never a 200 and never a 500.
       expect([404, 422]).toContain(res.status);
       expect(res.body.success).toBe(false);
       expect(outgoing).toHaveLength(0);
@@ -550,7 +463,6 @@ describe('Modules 28-30 + 32 - the longitudinal endpoints', () => {
 
     it.each(PAIR_URLS)('%s: a non-hex id is 422', async (url) => {
       for (const bad of ['not-an-id', 'zzzzzzzzzzzzzzzzzzzzzzzz', '0123456789abcdef0123456', '']) {
-        // eslint-disable-next-line no-await-in-loop
         const res = await request(app)
           .get(`${url}?baseline=${encodeURIComponent(bad)}&comparison=${ABSENT_ID}`)
           .set(auth(alice.token));
@@ -561,7 +473,6 @@ describe('Modules 28-30 + 32 - the longitudinal endpoints', () => {
 
     it.each(PAIR_URLS)('%s: one of the two alone is 422 (both-or-neither)', async (url) => {
       for (const query of [{ baseline: ABSENT_ID }, { comparison: ABSENT_ID }]) {
-        // eslint-disable-next-line no-await-in-loop
         const res = await request(app).get(url).query(query).set(auth(alice.token));
         expect(res.status).toBe(422);
         expect(res.body.error.code).toBe('VALIDATION_ERROR');
@@ -576,7 +487,6 @@ describe('Modules 28-30 + 32 - the longitudinal endpoints', () => {
         `baseline=${ABSENT_ID}`,
         `baseline=nope&comparison=${ABSENT_ID}`,
       ]) {
-        // eslint-disable-next-line no-await-in-loop
         const res = await request(app)
           .get(`${REPORTS}/${id}/doctor-summary?${query}`)
           .set(auth(alice.token));
@@ -585,12 +495,6 @@ describe('Modules 28-30 + 32 - the longitudinal endpoints', () => {
       expect(outgoing).toHaveLength(0);
     });
 
-    // ------------------------------------------------------------------------
-    // THE CHAIN, ALONE. No `protect`, no `express-mongo-sanitize`, no `hpp` -
-    // only `validate(comparisonPairValidator)` and the error handler. If the
-    // chain's own `.isString().bail()` were removed, every case below would
-    // reach the handler and be answered 200, and this block is the only place
-    // in the suite that could notice.
     describe('the chain alone, with no sanitiser in front of it', () => {
       let bare;
 
@@ -599,8 +503,6 @@ describe('Modules 28-30 + 32 - the longitudinal endpoints', () => {
         bare.get(
           '/pair',
           validate(comparisonPairValidator),
-          // Echoes what SURVIVED validation. Reaching this handler at all with
-          // a non-string is the defect.
           (req, res) => res.status(200).json({ reached: true, baseline: req.query.baseline })
         );
         bare.use(errorHandler);
@@ -628,9 +530,7 @@ describe('Modules 28-30 + 32 - the longitudinal endpoints', () => {
         const res = await request(bare).get(`/pair?${query}`);
         expect(res.status).toBe(422);
         expect(res.body.error.code).toBe('VALIDATION_ERROR');
-        // Never reached the handler, so a Mongo query could never have seen it.
         expect(res.body.reached).toBeUndefined();
-        // And the error never echoes the submitted value.
         expect(res.body.error.message).toBe('Invalid request payload');
       });
 
@@ -642,11 +542,6 @@ describe('Modules 28-30 + 32 - the longitudinal endpoints', () => {
     });
   });
 
-  // ================================================ refusals pass through =====
-  //
-  // "The ai-service is called even with 0 or 1 reports." Short-circuiting would
-  // create a SECOND definition of "not enough history" in this backend, in this
-  // backend's own words, free to drift from the one the service applies.
   describe('a patient with 0 or 1 analysed reports', () => {
     let alice;
     beforeEach(async () => {
@@ -656,11 +551,8 @@ describe('Modules 28-30 + 32 - the longitudinal endpoints', () => {
     it.each(ROUTES)('$name: 200 with an empty history, and the service IS called', async (route) => {
       const res = await request(app).get(route.url()).set(auth(alice.token));
 
-      // 200, NOT 404: a patient's timeline exists whether or not anything is on
-      // it yet, and the refusal IS the answer.
       expect(res.status).toBe(200);
       expect(res.body.data.history.included).toBe(0);
-      // The call was made with an empty report list rather than short-circuited.
       expect(outgoing).toHaveLength(1);
       expect(outgoing[0].body.reports).toEqual([]);
     });
@@ -670,9 +562,6 @@ describe('Modules 28-30 + 32 - the longitudinal endpoints', () => {
       const res = await request(app).get(`${TIMELINE}/trends`).set(auth(alice.token));
 
       expect(res.status).toBe(200);
-      // `outcome` is the field to branch on, never `trend`. Fewer than two
-      // usable readings is INSUFFICIENT_DATA with `trend: null` - never
-      // `stable`, which is a measured claim about a stability band.
       expect(res.body.data.trends.outcome).toBe('INSUFFICIENT_DATA');
       expect(res.body.data.trends.features[0].outcome).toBe('INSUFFICIENT_DATA');
       expect(res.body.data.trends.features[0].trend).toBeNull();
@@ -687,8 +576,6 @@ describe('Modules 28-30 + 32 - the longitudinal endpoints', () => {
       expect(res.body.data.progress.outcome).toBe('NO_PAIR');
       expect(res.body.data.progress.score).toBeNull();
       expect(res.body.data.progress.band).toBeNull();
-      // A band label standing in for a missing number would be the same lie in
-      // words rather than digits.
       expect(res.body.data.progress.score).not.toBe(0);
       expect(res.body.data.progress.score).not.toBe(50);
     });
@@ -709,8 +596,6 @@ describe('Modules 28-30 + 32 - the longitudinal endpoints', () => {
       await seedReport(alice.id, { chronoDate: day(1) });
       const res = await request(app).get(`${TIMELINE}/trends`).set(auth(alice.token));
       const body = JSON.stringify(res.body.data.trends);
-      // A backend-authored "not enough history" phrase would be a second
-      // vocabulary that could drift from the service's.
       for (const invented of ['NOT_ENOUGH_HISTORY', 'TOO_FEW_REPORTS', 'NO_HISTORY']) {
         expect(body).not.toContain(invented);
       }
@@ -735,7 +620,6 @@ describe('Modules 28-30 + 32 - the longitudinal endpoints', () => {
     });
   });
 
-  // =========================================================== the transport ==
   describe('aiServiceClient - the five new stages', () => {
     let alice;
     beforeEach(async () => {
@@ -753,9 +637,6 @@ describe('Modules 28-30 + 32 - the longitudinal endpoints', () => {
 
       const [call] = callsTo(path);
       expect(call).toBeDefined();
-      // Each stage carries its own configured timeout, never a shared default
-      // read at the call site - `config/env.js` gives each its own env var for
-      // exactly this reason.
       expect(call.options.timeout).toBe(config.aiService[key]);
       expect(typeof call.options.timeout).toBe('number');
     });
@@ -766,8 +647,6 @@ describe('Modules 28-30 + 32 - the longitudinal endpoints', () => {
 
       const [call] = callsTo(DOCTOR_SUMMARY_PATH);
       expect(call.options.timeout).toBe(config.aiService.doctorSummaryTimeoutMs);
-      // The five new timeouts are five DISTINCT configuration keys, so an
-      // operator can lengthen the slow one without lengthening the fast ones.
       const keys = [
         'timelineTimeoutMs',
         'comparisonTimeoutMs',
@@ -789,14 +668,6 @@ describe('Modules 28-30 + 32 - the longitudinal endpoints', () => {
       expect(call.options.headers['X-Request-Id']).toMatch(/^[A-Za-z0-9._:-]{1,128}$/);
     });
 
-    // --- section 6n: 400 joins the 422 branch -------------------------------
-    //
-    // `report_comparator._select_pair` raises HTTP 400
-    // (`COMPARISON_REPORT_NOT_FOUND`) for a named ref absent from the supplied
-    // set. Mapping that to a 502 "contract mismatch" describes a bug
-    // accurately and a caller-content refusal very badly: it reports a
-    // caller-fixable problem as a server fault, and tells an operator their two
-    // services disagree on the wire format when they agree perfectly.
     it.each([
       [400, 'a content refusal the service parsed and declined'],
       [422, 'a request-validation refusal'],
@@ -807,18 +678,13 @@ describe('Modules 28-30 + 32 - the longitudinal endpoints', () => {
 
       expect(mapped.error.statusCode).toBe(422);
       expect(mapped.error.code).toBe('AI_SERVICE_REJECTED_INPUT');
-      // NOT the contract-mismatch branch.
       expect(mapped.error.code).not.toBe('AI_SERVICE_REJECTED_REQUEST');
       expect(mapped.error.statusCode).not.toBe(502);
-      // Deterministic - retrying only burns the rate limit.
       expect(mapped.retryable).toBe(false);
-      // The service's body is never quoted back to the caller.
       expect(mapped.error.message).not.toContain('COMPARISON_REPORT_NOT_FOUND');
     });
 
     it('still calls an unclassified 4xx a contract mismatch', async () => {
-      // 400 and 422 were moved deliberately; the rest of the 4xx range was not,
-      // and a test that only checked 400 could not tell the two apart.
       const err = new Error('weird');
       err.response = { status: 418, data: {} };
       const mapped = aiServiceClient.mapAxiosError(err, 'comparison');
@@ -855,7 +721,6 @@ describe('Modules 28-30 + 32 - the longitudinal endpoints', () => {
     });
   });
 
-  // ================================================= what crosses the wire ====
   describe('the snapshot shape crossing the boundary', () => {
     it('sends `TimelineReportInput` and nothing else per report', async () => {
       const alice = await makeUser('alice.shape@example.com');
@@ -870,7 +735,6 @@ describe('Modules 28-30 + 32 - the longitudinal endpoints', () => {
       for (const report of call.body.reports) {
         expect(Object.keys(report).sort()).toEqual(['chrono_date', 'report_id', 'validated']);
       }
-      // The patient reference is the opaque user id - never a name or an email.
       expect(call.body.patient_ref).toBe(alice.id);
       expect(JSON.stringify(call.body)).not.toContain('alice.shape@example.com');
       expect(JSON.stringify(call.body)).not.toContain('labs.pdf');
@@ -878,17 +742,6 @@ describe('Modules 28-30 + 32 - the longitudinal endpoints', () => {
   });
 });
 
-// ===================================== the parameters this platform skips ==
-//
-// The clinician document listed the four values this platform ASSESSES under
-// the words "The reported values are", on a report where the laboratory had
-// printed twenty-one. The narrative states the count; these are the rows
-// behind it, so a clinician can read the values rather than be told how many
-// they cannot see.
-//
-// Built by the DASHBOARD'S assembler, deliberately: deriving them a second
-// time here would be a second implementation free to disagree with the
-// patient page about what was set aside.
 describe('Module 32 - the parameters the platform does not assess', () => {
   const UNMAPPED = [
     { test_name: 'CRP (C-REACTIVE PROTEIN)', value_raw: '12.1', unit: 'mg/L', reason: 'no_canonical_feature', page_number: 3 },
@@ -940,7 +793,6 @@ describe('Module 32 - the parameters the platform does not assess', () => {
     expect(items[0].labFlag).toBe('high');
     expect(items[0].labFlaggedAbnormal).toBe(true);
     expect(items[0].labReferenceHigh).toBe(6);
-    // `normal` is a flag and is NOT an abnormal one.
     expect(items[2].labFlag).toBe('normal');
     expect(items[2].labFlaggedAbnormal).toBe(false);
     expect(res.body.data.unassessed.labFlaggedCount).toBe(2);
@@ -959,8 +811,6 @@ describe('Module 32 - the parameters the platform does not assess', () => {
   });
 
   it('is an empty section, never absent, when every parameter mapped', async () => {
-    // A SECTION THAT VANISHES IS INDISTINGUISHABLE FROM ONE THAT FOUND
-    // NOTHING. `count: 0` is the honest answer and the renderer can branch.
     const other = await seedReport(owner.id);
     const res = await request(app)
       .get(`${REPORTS}/${other}/doctor-summary`)
@@ -973,12 +823,6 @@ describe('Module 32 - the parameters the platform does not assess', () => {
   });
 });
 
-// ============================== the cached note and the code that wrote it ==
-//
-// 2026-10-03: a fix to the note-writing code never reached a note already
-// written -- 02-diabetes-and-lipids kept giving BMI 25.25 and age 20 as reasons
-// for Heart Disease from its cache. The cache is now keyed on the ai-service's
-// code fingerprint as well as the analysis version.
 describe('Module 32 - the cached narrative follows the code fingerprint', () => {
   const CLINICIAN_PATH = '/api/v1/explain/clinician-summary';
   const FINGERPRINT_PATH = '/api/v1/explain/clinician-summary/fingerprint';
@@ -1002,7 +846,6 @@ describe('Module 32 - the cached narrative follows the code fingerprint', () => 
     owner = await makeUser(`doc.fp.${Date.now()}.${Math.random()}@example.com`);
     reportId = await seedReport(owner.id);
 
-    // The clinician route on top of the shared wiring.
     const shared = mockAxios.post.getMockImplementation();
     mockAxios.post.mockImplementation(async (url, body, options) => {
       if (url === CLINICIAN_PATH) {

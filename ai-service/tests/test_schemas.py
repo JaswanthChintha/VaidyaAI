@@ -1,13 +1,3 @@
-"""Contract enforcement: the pydantic v2 schema Module 5 will consume.
-
-The rules under test come straight from the Module 4 output contract:
-  * test_name / value_raw are required; everything else is nullable
-  * value_numeric is None for non-numeric results
-  * test names are NOT normalised (that is Module 5)
-  * flag is constrained to low|normal|high|critical|None
-  * missing information is None, never invented
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -26,16 +16,10 @@ from app.schemas.extraction import (
 )
 
 
-# --------------------------------------------------------------------------
-# Required vs nullable
-# --------------------------------------------------------------------------
-
-
 def test_minimal_parameter_needs_only_name_and_raw_value():
     p = ExtractedParameter(test_name="HbA1c", value_raw="6.8")
     assert p.test_name == "HbA1c"
     assert p.value_raw == "6.8"
-    # Everything else defaults to None -- never invented.
     assert p.unit is None
     assert p.reference_range_raw is None
     assert p.reference_low is None
@@ -49,9 +33,9 @@ def test_minimal_parameter_needs_only_name_and_raw_value():
 @pytest.mark.parametrize(
     "payload",
     [
-        {"value_raw": "6.8"},               # missing test_name
-        {"test_name": "HbA1c"},             # missing value_raw
-        {"test_name": "", "value_raw": "6"},  # empty test_name
+        {"value_raw": "6.8"},
+        {"test_name": "HbA1c"},
+        {"test_name": "", "value_raw": "6"},
         {"test_name": "HbA1c", "value_raw": ""},
         {"test_name": None, "value_raw": "6"},
         {"test_name": "HbA1c", "value_raw": None},
@@ -60,11 +44,6 @@ def test_minimal_parameter_needs_only_name_and_raw_value():
 def test_missing_required_fields_are_rejected(payload):
     with pytest.raises(ValidationError):
         ExtractedParameter(**payload)
-
-
-# --------------------------------------------------------------------------
-# Numeric coercion / null handling
-# --------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -110,7 +89,6 @@ def test_non_numeric_values_coerce_to_none(raw):
 
 
 def test_qualitative_result_keeps_raw_and_nulls_numeric():
-    """The contract's headline null-handling rule."""
     p = ExtractedParameter(
         test_name="Urine Ketones", value_raw="Negative", value_numeric=None
     )
@@ -119,7 +97,6 @@ def test_qualitative_result_keeps_raw_and_nulls_numeric():
 
 
 def test_model_supplied_number_for_a_qualitative_value_is_discarded():
-    """If the model hallucinates a number for 'Negative', we drop it."""
     p = ExtractedParameter(
         test_name="Urine Ketones",
         value_raw="Negative",
@@ -144,11 +121,6 @@ def test_numeric_value_raw_is_stringified_rather_than_rejected():
     assert p.value_raw == "112"
 
 
-# --------------------------------------------------------------------------
-# No normalisation of test names (Module 5's job)
-# --------------------------------------------------------------------------
-
-
 @pytest.mark.parametrize(
     "printed",
     [
@@ -162,18 +134,13 @@ def test_numeric_value_raw_is_stringified_rather_than_rejected():
 )
 def test_test_names_are_preserved_verbatim(printed):
     p = ExtractedParameter(test_name=printed, value_raw="1")
-    assert p.test_name == printed  # unchanged: no lowercasing, no canonicalising
+    assert p.test_name == printed
 
 
 def test_surrounding_whitespace_is_trimmed_but_content_is_not_altered():
     p = ExtractedParameter(test_name="  HbA1c (A1c)  ", value_raw=" 6.8 ")
     assert p.test_name == "HbA1c (A1c)"
     assert p.value_raw == "6.8"
-
-
-# --------------------------------------------------------------------------
-# Flags
-# --------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("flag", ["low", "normal", "high", "critical"])
@@ -189,7 +156,7 @@ def test_valid_flags_are_accepted(flag):
         ("HIGH", "high"),
         ("WNL", "normal"),
         ("Panic", "critical"),
-        ("abnormal", None),   # direction unknown -> never guessed
+        ("abnormal", None),
         ("elevated-ish", None),
         ("", None),
         ("n/a", None),
@@ -198,11 +165,6 @@ def test_valid_flags_are_accepted(flag):
 )
 def test_flag_aliases_normalise_or_fall_back_to_null(given, expected):
     assert ExtractedParameter(test_name="X", value_raw="1", flag=given).flag == expected
-
-
-# --------------------------------------------------------------------------
-# Bounds
-# --------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("value,expected", [(1.5, 1.0), (-0.4, 0.0), (0.5, 0.5)])
@@ -220,11 +182,6 @@ def test_invalid_page_numbers_become_null(page):
 def test_extraction_confidence_must_be_in_range():
     with pytest.raises(ValidationError):
         ExtractionData(source=SourceInfo(), extraction_confidence=1.4)
-
-
-# --------------------------------------------------------------------------
-# Page-level model responses
-# --------------------------------------------------------------------------
 
 
 def test_well_formed_page_response_validates(conftest_payload=None):
@@ -260,8 +217,8 @@ def test_page_response_ignores_unexpected_extra_keys():
 @pytest.mark.parametrize(
     "bad",
     [
-        {"raw_text": "t", "parameters": [{"value_raw": "6.8"}]},          # no name
-        {"raw_text": "t", "parameters": [{"test_name": "HbA1c"}]},        # no value
+        {"raw_text": "t", "parameters": [{"value_raw": "6.8"}]},
+        {"raw_text": "t", "parameters": [{"test_name": "HbA1c"}]},
         {"raw_text": "t", "parameters": "not-a-list"},
         {"raw_text": "t", "parameters": [["not", "an", "object"]]},
         "a bare string",
@@ -278,11 +235,6 @@ def test_string_warning_is_wrapped_into_a_list():
         {"raw_text": "t", "parameters": [], "warnings": "blurry region"}
     )
     assert page.warnings == ["blurry region"]
-
-
-# --------------------------------------------------------------------------
-# Full response shape -- the binding contract
-# --------------------------------------------------------------------------
 
 
 def test_response_serialises_with_every_contract_key_present():
@@ -343,7 +295,6 @@ def test_response_serialises_with_every_contract_key_present():
 
 
 def test_nulls_are_emitted_rather_than_omitted():
-    """Module 5 reads keys directly; absent keys would break it."""
     body = ExtractionResponse(
         data=ExtractionData(
             source=SourceInfo(),
@@ -356,11 +307,6 @@ def test_nulls_are_emitted_rather_than_omitted():
     assert param["value_numeric"] is None
     assert param["unit"] is None
     assert param["flag"] is None
-
-
-# --------------------------------------------------------------------------
-# The schema handed to Gemini
-# --------------------------------------------------------------------------
 
 
 def test_gemini_schema_is_a_restricted_openapi_object():
@@ -379,7 +325,6 @@ def test_gemini_schema_is_a_restricted_openapi_object():
 
 
 def test_gemini_schema_avoids_unsupported_json_schema_constructs():
-    """Gemini rejects $ref/$defs/anyOf; keep the schema in the safe subset."""
     import json
 
     text = json.dumps(gemini_response_schema())
@@ -390,19 +335,6 @@ def test_gemini_schema_avoids_unsupported_json_schema_constructs():
 def test_gemini_schema_fields_match_the_page_model():
     schema_keys = set(gemini_response_schema()["properties"])
     assert schema_keys <= set(PageExtraction.model_fields)
-
-
-# --------------------------------------------------------------------------
-# The printed range must be ONLY a range
-# --------------------------------------------------------------------------
-#
-# `reference_low`/`high` come from the MODEL; there is no parser. One report
-# prints "151 - 180 - Average Control" against average blood glucose -- a row
-# of an HbA1c interpretation table -- and the model returned 151/180 as this
-# patient's reference interval. Everything downstream judged the reading
-# against a target of 151-180, so a RISE in average glucose read as an
-# improvement, one page-read from telling a reader their diabetes had improved
-# while the HbA1c row beside it said worsening.
 
 
 def test_a_category_label_after_a_range_refuses_the_bounds():
@@ -416,14 +348,10 @@ def test_a_category_label_after_a_range_refuses_the_bounds():
 
     assert p.reference_low is None
     assert p.reference_high is None
-    # THE PRINTED TEXT IS KEPT. The reader's document is not wrong; only this
-    # service's reduction of it to two numbers was.
     assert p.reference_range_raw == "151 - 180 - Average Control"
 
 
 def test_the_same_defect_with_the_dash_omitted_is_also_refused():
-    # "151 - 180 Normal" would otherwise pass, because a single word fills the
-    # unit slot -- which is why a purely alphabetic remainder has a length cap.
     p = ExtractedParameter(
         test_name="X",
         value_raw="154",
@@ -437,9 +365,6 @@ def test_the_same_defect_with_the_dash_omitted_is_also_refused():
 @pytest.mark.parametrize(
     "raw,low,high",
     [
-        # EVERY SHAPE PRINTED ON THE REAL REPORTS. Gathered from the stored
-        # extractions rather than imagined, because a gate on printed text is
-        # only as good as the text it was checked against.
         ("0 - 20", 0, 20),
         ("0-2", 0, 2),
         ("0.27-5.0", 0.27, 5.0),
@@ -479,11 +404,8 @@ def test_a_plain_printed_range_keeps_its_bounds(raw, low, high):
         "151 - 180 Average",
         "5 - 40 Desirable",
         "0 - 20 Borderline",
-        # Sex-specific, which the model already refuses; the gate must agree
-        # rather than quietly disagree with it.
         "F: 36 - 46 M: 40 - 50",
         "F:11 - 15 M:12 - 16",
-        # The full interpretation tables, which the model also already refuses.
         "Normal : < 5.7 Diabetes Mellitus : > 6.5",
         "Non Diabetic : 4.5 -5.6\nPre Diabetic : 5.7 -6.4",
     ],
@@ -493,9 +415,6 @@ def test_text_that_says_more_than_an_interval_is_refused(raw):
 
 
 def test_the_gate_has_no_opinion_when_nothing_was_printed():
-    # A model that supplied bounds without text is not made wrong by this
-    # function: there is no evidence either way, and refusing would lose
-    # legitimate data to a rule that cannot see anything.
     assert printed_range_is_only_a_range(None) is True
     assert printed_range_is_only_a_range("") is True
 
@@ -505,30 +424,7 @@ def test_the_gate_has_no_opinion_when_nothing_was_printed():
     assert (p.reference_low, p.reference_high) == (3.0, 9.0)
 
 
-# --------------------------------------------------------------------------
-# AND A `normal` FLAG GOES WITH THE REFUSED BOUNDS. ONLY `normal`.
-# --------------------------------------------------------------------------
-#
-# `test_the_flag_is_left_alone_by_this_gate` STOOD HERE and asserted
-# `p.flag is not None` on exactly the payload below. It was not wrong when
-# written -- it pinned a question this gate deliberately left open -- but the
-# question was answered on 2026-09-18 BY READING THE REPORT:
-#
-#   `Test 3.pdf` prints no markings at all. Four columns -- name, value, unit,
-#   range -- and not one H, L or asterisk on either page, including beside
-#   NEUTROPHILS 82 against 40-70 and ESR 45 against 0-20. So every flag stored
-#   from it was inferred, and `AVERAGE BLOOD GLUCOSE 154 flag=normal` could
-#   only have been inferred from "151 - 180 - Average Control" -- the band
-#   this gate refuses. It rendered as an `In range` chip attributed to "your
-#   laboratory's own marking", and both halves of that were false.
-#
-# THE OLD TEST IS REPLACED, NOT WEAKENED. A test that pins a state the
-# producer can no longer reach is a test that will be satisfied by
-# reintroducing the defect.
-
-
 def test_an_inferred_normal_flag_goes_with_the_refused_bounds():
-    """The real row, and the reason this gate learned about flags at all."""
     p = ExtractedParameter(
         test_name="AVERAGE BLOOD GLUCOSE",
         value_raw="154",
@@ -540,8 +436,6 @@ def test_an_inferred_normal_flag_goes_with_the_refused_bounds():
     )
     assert (p.reference_low, p.reference_high) == (None, None)
     assert p.flag is None
-    # THE PRINTED TEXT, THE VALUE AND THE UNIT ARE UNTOUCHED. Only this
-    # service's conclusions about them are withdrawn.
     assert p.reference_range_raw == "151 - 180 - Average Control"
     assert p.value_raw == "154"
     assert p.unit == "mg/dL"
@@ -549,14 +443,6 @@ def test_an_inferred_normal_flag_goes_with_the_refused_bounds():
 
 @pytest.mark.parametrize("flag", ["high", "low", "critical"])
 def test_a_warning_flag_survives_a_refused_range(flag):
-    """THE ASYMMETRY IS THE WHOLE ARGUMENT, so it gets its own test.
-
-    This gate cannot tell an inferred flag from a printed one -- a laboratory
-    may print both a band table and an `H`. Dropping `normal` cannot
-    under-warn anyone, because a row with no flag renders as "not checked" and
-    never as reassurance. Dropping one of these would REMOVE A WARNING, which
-    is the one error this tool must not make.
-    """
     p = ExtractedParameter(
         test_name="AVERAGE BLOOD GLUCOSE",
         value_raw="240",
@@ -570,13 +456,6 @@ def test_a_warning_flag_survives_a_refused_range(flag):
 
 
 def test_a_normal_flag_is_dropped_even_when_the_model_supplied_no_bounds():
-    """The early return that used to stand here would have carried it through.
-
-    `if reference_low is None and reference_high is None: return self` was
-    correct while this validator only touched bounds. The bounds being absent
-    says nothing about the flag, and a model that answers `normal` against a
-    band without offering numbers reaches this exact shape.
-    """
     p = ExtractedParameter(
         test_name="AVERAGE BLOOD GLUCOSE",
         value_raw="154",
@@ -588,9 +467,6 @@ def test_a_normal_flag_is_dropped_even_when_the_model_supplied_no_bounds():
 
 @pytest.mark.parametrize("raw", ["70 - 140 mg/dl", "< 100", "UP TO 40", "0.27-5.0"])
 def test_a_normal_flag_survives_a_range_the_gate_accepts(raw):
-    # The gate must not over-reach. Against a plain printed interval a
-    # `normal` is exactly the unambiguous numeric comparison the contract
-    # permits, and it keeps its bounds to be checked against.
     p = ExtractedParameter(
         test_name="X", value_raw="1", reference_range_raw=raw, flag="normal"
     )
@@ -598,8 +474,5 @@ def test_a_normal_flag_survives_a_range_the_gate_accepts(raw):
 
 
 def test_a_normal_flag_survives_when_nothing_was_printed():
-    # Same principle as the bounds: with no printed text there is no evidence
-    # either way, so this gate has no opinion. A flag here is most likely the
-    # laboratory's own marking, which is the legitimate source.
     p = ExtractedParameter(test_name="X", value_raw="1", flag="normal")
     assert p.flag == "normal"

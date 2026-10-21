@@ -6,11 +6,6 @@ const path = require('path');
 const crypto = require('crypto');
 const mongoose = require('mongoose');
 
-// --- Environment MUST be set before src/config/env.js is first required ------
-// The suite writes real files, so it gets a throwaway directory under the OS
-// temp dir (never anywhere inside the repository) and removes it afterwards.
-// The size cap is lowered so the oversized-upload case does not have to push
-// 10 MB through supertest.
 const UPLOAD_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'vaidyaai-reports-test-'));
 process.env.UPLOAD_ROOT = UPLOAD_ROOT;
 process.env.UPLOAD_MAX_BYTES = String(64 * 1024);
@@ -31,14 +26,12 @@ const PASSWORD = 'Str0ng!Passw0rd';
 
 const auth = (token) => ({ Authorization: `Bearer ${token}` });
 
-/** Register a fresh user and return their access token + id. */
 async function makeUser(email) {
   const { res } = await registerUser({ email, name: 'Test User' });
   expect(res.status).toBe(201);
   return { token: res.body.data.accessToken, id: res.body.data.user.id, email };
 }
 
-/** Create a user with a privileged role and log in as them. */
 async function makePrivilegedUser(role, email) {
   const user = await createUserWithRole(role, { email, password: PASSWORD });
   const res = await login(email, PASSWORD);
@@ -46,10 +39,6 @@ async function makePrivilegedUser(role, email) {
   return { token: res.body.data.accessToken, id: user._id.toString(), email };
 }
 
-// --- Fixtures ---------------------------------------------------------------
-// Real magic bytes followed by filler. These are not valid documents in any
-// deep sense - the point is that the type check reads the leading bytes and
-// nothing else.
 
 const pdfBytes = (filler = 'lab report body') =>
   Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.from(filler), Buffer.from('\n%%EOF\n')]);
@@ -70,7 +59,6 @@ const jpegBytes = () =>
 
 const sha256 = (buffer) => crypto.createHash('sha256').update(buffer).digest('hex');
 
-/** POST a file. `filename` and `contentType` are what a client CLAIMS. */
 function uploadFile(token, buffer, filename, options = {}) {
   const req = request(app).post(REPORTS);
   if (token) req.set(auth(token));
@@ -81,7 +69,6 @@ function uploadFile(token, buffer, filename, options = {}) {
   });
 }
 
-/** Every file currently under the upload root, as absolute paths. */
 function listStoredFiles(dir = UPLOAD_ROOT) {
   if (!fs.existsSync(dir)) return [];
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -102,7 +89,6 @@ afterAll(() => {
 });
 
 describe('Module 3 - Medical Report Upload and Management', () => {
-  // ================================================================ upload ===
   describe('POST /reports - upload', () => {
     let user;
     beforeEach(async () => {
@@ -128,12 +114,10 @@ describe('Module 3 - Medical Report Upload and Management', () => {
       expect(report.status).toBe('uploaded');
       expect(report.storageDriver).toBe('local');
       expect(report.user).toBe(user.id);
-      // The internal locator is never exposed to the client.
       expect(report.storageKey).toBeUndefined();
 
       const stored = listStoredFiles();
       expect(stored).toHaveLength(1);
-      // Per-user subdirectory keyed by user id.
       expect(path.basename(path.dirname(stored[0]))).toBe(user.id);
       expect(fs.readFileSync(stored[0]).equals(buffer)).toBe(true);
     });
@@ -161,7 +145,6 @@ describe('Module 3 - Medical Report Upload and Management', () => {
       expect(res.status).toBe(201);
       const { report } = res.body.data;
       expect(new Date(report.reportDate).toISOString()).toBe('2024-03-14T00:00:00.000Z');
-      // chronoDate follows the report's own date, not the upload date.
       expect(report.chronoDate).toBe(report.reportDate);
       expect(new Date(report.uploadedAt).getTime()).toBeGreaterThan(
         new Date(report.reportDate).getTime()
@@ -242,7 +225,6 @@ describe('Module 3 - Medical Report Upload and Management', () => {
     });
   });
 
-  // ============================================== type / content security ===
   describe('file type is decided by magic bytes, never by the client', () => {
     let user;
     beforeEach(async () => {
@@ -317,12 +299,10 @@ describe('Module 3 - Medical Report Upload and Management', () => {
         contentType: 'text/plain',
       });
       expect(res.status).toBe(201);
-      // The DETECTED type is what gets stored, not the declared one.
       expect(res.body.data.report.mimeType).toBe('application/pdf');
     });
   });
 
-  // ================================================================== size ===
   describe('size limits', () => {
     let user;
     beforeEach(async () => {
@@ -339,7 +319,6 @@ describe('Module 3 - Medical Report Upload and Management', () => {
       expect(res.status).toBe(413);
       expect(res.body.success).toBe(false);
       expect(res.body.error.code).toBe('PAYLOAD_TOO_LARGE');
-      // No stack trace / filesystem path leakage (the Module 1 defect shape).
       expect(JSON.stringify(res.body)).not.toMatch(/node_modules|\.js:\d+|MulterError/);
       expect(listStoredFiles()).toHaveLength(0);
       expect(await Report.countDocuments({})).toBe(0);
@@ -356,7 +335,6 @@ describe('Module 3 - Medical Report Upload and Management', () => {
     });
   });
 
-  // ============================================================= filenames ===
   describe('client filenames are never trusted', () => {
     let user;
     beforeEach(async () => {
@@ -375,7 +353,6 @@ describe('Module 3 - Medical Report Upload and Management', () => {
       expect(res.status).toBe(201);
       expect(res.body.data.report.originalName).toBe(expectedDisplay);
 
-      // Exactly one file, inside the user's own directory under the root.
       const stored = listStoredFiles();
       expect(stored).toHaveLength(1);
       expect(path.resolve(stored[0]).startsWith(path.resolve(UPLOAD_ROOT) + path.sep)).toBe(
@@ -392,7 +369,6 @@ describe('Module 3 - Medical Report Upload and Management', () => {
       expect(after.filter((entry) => !before.has(entry))).toEqual([]);
     });
 
-    // Unit-level cases that a multipart header cannot legally carry.
     describe('sanitizeFilename', () => {
       it.each([
         ['../../etc/passwd', 'passwd'],
@@ -453,13 +429,7 @@ describe('Module 3 - Medical Report Upload and Management', () => {
     it('builds a Content-Disposition value that cannot inject headers', () => {
       const value = contentDispositionAttachment('re"port\r\nX-Evil: 1.pdf');
       expect(value.startsWith('attachment;')).toBe(true);
-      // The two things that would actually break out of the header field are a
-      // CR/LF pair (starting a new header line) and a bare double quote (ending
-      // the quoted filename early). Both are gone; the leftover text is inert
-      // filename characters, not a header.
       expect(value).not.toMatch(/[\r\n]/);
-      // The whole value parses as exactly one quoted filename plus the RFC 5987
-      // parameter - the attacker cannot add structure to the header.
       const parsed = /^attachment; filename="([^"\\]*)"; filename\*=UTF-8''(\S*)$/.exec(value);
       expect(parsed).not.toBeNull();
       expect(parsed[1]).toBe('re_portX-Evil_ 1.pdf');
@@ -472,7 +442,6 @@ describe('Module 3 - Medical Report Upload and Management', () => {
     });
   });
 
-  // ================================================== list / chronological ===
   describe('GET /reports - listing, ordering, pagination', () => {
     let user;
     const DATES = ['2023-01-15', '2024-06-01', '2022-09-30', '2025-02-20'];
@@ -480,9 +449,6 @@ describe('Module 3 - Medical Report Upload and Management', () => {
     beforeEach(async () => {
       user = await makeUser('lister@example.com');
       for (const reportDate of DATES) {
-        // Sequential so the upload order deliberately differs from the
-        // chronological order of the reports themselves.
-        // eslint-disable-next-line no-await-in-loop
         const res = await uploadFile(user.token, pdfBytes(reportDate), `labs-${reportDate}.pdf`, {
           reportDate,
         });
@@ -500,10 +466,9 @@ describe('Module 3 - Medical Report Upload and Management', () => {
       expect(res.body.data.pagination.total).toBe(4);
     });
 
-    // So the list can say "Page 2 could not be read -- Re-analyse" (2026-10-10).
     it('carries the page numbers the stored analysis could not read, and nothing else of it', async () => {
       const [first] = (await request(app).get(REPORTS).set(auth(user.token))).body.data.reports;
-      expect(first.pagesUnreadable).toEqual([]); // never analysed
+      expect(first.pagesUnreadable).toEqual([]);
 
       await Report.updateOne(
         { _id: first.id },
@@ -568,7 +533,6 @@ describe('Module 3 - Medical Report Upload and Management', () => {
 
     it('rejects out-of-range or non-numeric pagination input (422)', async () => {
       for (const qs of ['page=0', 'page=-1', 'limit=0', 'limit=1000', 'page=abc', 'limit=1.5']) {
-        // eslint-disable-next-line no-await-in-loop
         const res = await request(app).get(`${REPORTS}?${qs}`).set(auth(user.token));
         expect(res.status).toBe(422);
       }
@@ -599,7 +563,6 @@ describe('Module 3 - Medical Report Upload and Management', () => {
     });
   });
 
-  // ============================================================== ownership ===
   describe('ownership - a user sees only their own reports', () => {
     let alice;
     let bob;
@@ -690,7 +653,6 @@ describe('Module 3 - Medical Report Upload and Management', () => {
 
     it('rejects a malformed report id without reaching the database', async () => {
       for (const id of ['not-an-id', '../../etc/passwd', '%00', '{"$ne":null}']) {
-        // eslint-disable-next-line no-await-in-loop
         const res = await request(app)
           .get(`${REPORTS}/${encodeURIComponent(id)}`)
           .set(auth(alice.token));
@@ -707,7 +669,6 @@ describe('Module 3 - Medical Report Upload and Management', () => {
     });
   });
 
-  // =============================================================== download ===
   describe('GET /reports/:id/download', () => {
     let user;
     let reportId;
@@ -757,9 +718,6 @@ describe('Module 3 - Medical Report Upload and Management', () => {
     });
 
     it('cannot be steered outside the upload root by a tampered storage key', async () => {
-      // Worst case: a malicious key ALREADY in the database. `storageKey` is
-      // immutable at the model layer, so this writes through the raw driver to
-      // prove the adapter's own path check holds without that help.
       const secret = path.join(path.dirname(UPLOAD_ROOT), 'vaidyaai-outside-secret.txt');
       fs.writeFileSync(secret, 'TOP SECRET');
       const tamper = (key) =>
@@ -787,7 +745,6 @@ describe('Module 3 - Medical Report Upload and Management', () => {
     });
   });
 
-  // ================================================================= delete ===
   describe('DELETE /reports/:id', () => {
     let user;
     let reportId;
@@ -836,7 +793,6 @@ describe('Module 3 - Medical Report Upload and Management', () => {
     });
   });
 
-  // ======================================================= orphan handling ===
   describe('orphan handling', () => {
     let user;
     beforeEach(async () => {
@@ -852,7 +808,6 @@ describe('Module 3 - Medical Report Upload and Management', () => {
 
       expect(res.status).toBe(500);
       expect(await Report.countDocuments({})).toBe(0);
-      // The file written moments earlier has been rolled back.
       expect(listStoredFiles()).toHaveLength(0);
     });
 
@@ -882,7 +837,6 @@ describe('Module 3 - Medical Report Upload and Management', () => {
     });
   });
 
-  // ================================================== data for later modules ===
   describe('data required by later modules', () => {
     it('stores everything Module 4 needs to fetch and process the file', async () => {
       const user = await makeUser('module4@example.com');
@@ -898,7 +852,6 @@ describe('Module 3 - Medical Report Upload and Management', () => {
       expect(doc.checksumSha256).toBe(sha256(buffer));
       expect(doc.status).toBe('uploaded');
 
-      // Module 4 will move the status along; the enum accepts the transitions.
       doc.status = 'processing';
       await doc.save();
       doc.status = 'processed';
@@ -937,7 +890,6 @@ describe('Module 3 - Medical Report Upload and Management', () => {
     });
   });
 
-  // ============================================ whose report (2026-10-03) ===
   describe("whose report -- someone else's, on upload and after", () => {
     const uploadAs = (token, fields) => {
       const req = request(app).post(REPORTS).set(auth(token));
@@ -998,7 +950,6 @@ describe('Module 3 - Medical Report Upload and Management', () => {
 
       const back = await patchSubject(alice.token, id, { subjectOwner: 'self' });
       expect(back.status).toBe(200);
-      // Back to the owner's: the typed age and sex are dropped, not kept.
       expect(back.body.data.report.subject).toEqual({ owner: 'self' });
     });
 
@@ -1012,9 +963,6 @@ describe('Module 3 - Medical Report Upload and Management', () => {
       expect(res.body.data.report.subjectChangedSinceAnalysis).toBe(true);
     });
 
-    // FOUND LIVE 2026-10-04: Test 3 was switched to "mine" 30 s into a run
-    // that had started as someone else's, so the run used only the typed sex
-    // -- and the page said nothing, because the change preceded the run's END.
     it('says the analysis is out of date after a change made WHILE it was running', async () => {
       const alice = await makeUser('subject.midrun@example.com');
       const { body } = await uploadFile(alice.token, pdfBytes(), 'labs.pdf');
@@ -1022,7 +970,7 @@ describe('Module 3 - Medical Report Upload and Management', () => {
       await Report.updateOne({ _id: id }, {
         $set: {
           'analysis.startedAt': new Date(Date.now() - 60_000),
-          'analysis.completedAt': new Date(Date.now() + 60_000), // finishes after the change
+          'analysis.completedAt': new Date(Date.now() + 60_000),
           'analysis.version': 1,
         },
       });

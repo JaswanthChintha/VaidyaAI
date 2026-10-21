@@ -1,9 +1,3 @@
-"""The Module 5 engineering function, called directly (no HTTP, no network).
-
-`engineer_features` is the importable entry point Module 7 and the ML layer
-use, so it is tested on its own rather than only through the endpoint.
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -24,7 +18,6 @@ from app.services.feature_engineer import (
 
 
 def row(**kw):
-    """A Module 4 extracted_parameters[] row with sensible defaults."""
     base = {
         "test_name": "HbA1c",
         "value_raw": "6.8",
@@ -39,11 +32,6 @@ def row(**kw):
     }
     base.update(kw)
     return base
-
-
-# --------------------------------------------------------------------------
-# Empty / degenerate input
-# --------------------------------------------------------------------------
 
 
 def test_empty_input_returns_an_empty_but_valid_feature_set():
@@ -71,7 +59,7 @@ def test_accepts_dicts_and_pydantic_models_alike():
 
 def test_invalid_row_raises_the_module_4_contract_error():
     with pytest.raises(ValidationError):
-        engineer_features([{"value_raw": "6.8"}])  # no test_name
+        engineer_features([{"value_raw": "6.8"}])
 
 
 def test_engineer_from_extraction_accepts_module_4_data_object():
@@ -84,11 +72,6 @@ def test_engineer_from_extraction_accepts_module_4_data_object():
         }
     )
     assert data.features["hba1c"].value == pytest.approx(6.8)
-
-
-# --------------------------------------------------------------------------
-# Straightforward mapping
-# --------------------------------------------------------------------------
 
 
 def test_canonical_feature_carries_value_unit_source_and_provenance():
@@ -122,8 +105,6 @@ def test_canonical_feature_carries_value_unit_source_and_provenance():
     assert prov.original_value_numeric == pytest.approx(6.8)
     assert prov.original_unit == "%"
     assert prov.normalized_unit == "%"
-    # The synonym-table entry that matched. British and American spellings
-    # share one normalised key, so the table entry is the American one.
     assert prov.matched_synonym == "Glycated Hemoglobin"
     assert prov.parameter_index == 0
     assert prov.page_number == 2
@@ -146,11 +127,6 @@ def test_provenance_index_points_back_at_the_submitted_row():
     )
     assert data.features["creatinine"].provenance.parameter_index == 1
     assert data.unmapped[0].parameter_index == 0
-
-
-# --------------------------------------------------------------------------
-# Unit conversion through the engineering path
-# --------------------------------------------------------------------------
 
 
 def test_conversion_is_applied_and_recorded():
@@ -197,11 +173,6 @@ def test_hba1c_ifcc_conversion_end_to_end():
     assert data.features["hba1c"].unit == "%"
 
 
-# --------------------------------------------------------------------------
-# Missing and unrecognised units
-# --------------------------------------------------------------------------
-
-
 def test_missing_unit_assumes_canonical_and_warns():
     data = engineer_features(
         [row(test_name="Creatinine", value_raw="1.0", value_numeric=1.0, unit=None)]
@@ -219,7 +190,6 @@ def test_unrecognised_unit_is_flagged_never_assumed_canonical():
         [row(test_name="Creatinine", value_raw="1.0", value_numeric=1.0, unit="IU/mL")]
     )
     feature = data.features["creatinine"]
-    # Value is NOT converted and NOT relabelled as canonical.
     assert feature.value == pytest.approx(1.0)
     assert feature.unit == "IU/mL"
     assert feature.canonical_unit is False
@@ -231,17 +201,11 @@ def test_unrecognised_unit_is_flagged_never_assumed_canonical():
 
 
 def test_unit_valid_elsewhere_but_wrong_for_this_feature_is_flagged():
-    # pg/mL is a real unit, but not a creatinine unit.
     data = engineer_features(
         [row(test_name="Creatinine", value_raw="1.0", value_numeric=1.0, unit="pg/mL")]
     )
     assert data.features["creatinine"].canonical_unit is False
     assert data.features["creatinine"].unit == "pg/mL"
-
-
-# --------------------------------------------------------------------------
-# Non-numeric and censored values
-# --------------------------------------------------------------------------
 
 
 def test_qualitative_value_is_preserved_not_invented():
@@ -328,11 +292,6 @@ def test_module_4_numeric_value_wins_over_reparsing():
     assert data.features["creatinine"].value == pytest.approx(1.0)
 
 
-# --------------------------------------------------------------------------
-# Unmapped preservation
-# --------------------------------------------------------------------------
-
-
 def test_unmapped_tests_keep_their_original_names():
     data = engineer_features(
         [
@@ -358,11 +317,6 @@ def test_urine_creatinine_does_not_become_serum_creatinine():
     )
     assert "creatinine" not in data.features
     assert data.unmapped[0].reason == UnmappedReason.NON_BLOOD_SPECIMEN
-
-
-# --------------------------------------------------------------------------
-# Duplicate resolution
-# --------------------------------------------------------------------------
 
 
 def test_fasting_glucose_beats_postprandial_regardless_of_order():
@@ -492,11 +446,6 @@ def test_three_way_duplicate_keeps_all_losers():
     assert resolution.policy.startswith("deterministic_rank")
 
 
-# --------------------------------------------------------------------------
-# Missing / null fields throughout
-# --------------------------------------------------------------------------
-
-
 def test_all_optional_module_4_fields_null():
     data = engineer_features([{"test_name": "HbA1c", "value_raw": "6.8"}])
     feature = data.features["hba1c"]
@@ -519,11 +468,6 @@ def test_missing_features_lists_everything_not_produced():
     for name in ("blood_glucose", "bmi", "age", "hypertension", "heart_disease",
                  "smoking_history"):
         assert name in data.missing_features
-
-
-# --------------------------------------------------------------------------
-# Patient profile merge
-# --------------------------------------------------------------------------
 
 
 def test_profile_features_merge_into_the_same_feature_space():
@@ -574,7 +518,6 @@ def test_age_stays_an_integer_and_bmi_stays_a_float():
 
 def test_bmi_is_derived_from_height_and_weight_only_as_a_fallback():
     data = engineer_features([], {"heightCm": 170, "weightKg": 70})
-    # 70 / 1.7^2 = 70 / 2.89 = 24.2214... -> 24.22
     assert data.features["bmi"].value == pytest.approx(24.22)
     assert data.features["bmi"].provenance.derived is not None
     assert any("derived from heightCm" in w for w in data.warnings)
@@ -584,9 +527,6 @@ def test_supplied_bmi_wins_over_height_and_weight():
     data = engineer_features([], {"bmi": 30.0, "heightCm": 170, "weightKg": 70})
     assert data.features["bmi"].value == pytest.approx(30.0)
     assert data.features["bmi"].provenance.derived is None
-
-
-# --- TRI-STATE BOOLEAN PRESERVATION ---------------------------------------
 
 
 def test_absent_boolean_is_unknown_and_never_false():
@@ -616,9 +556,9 @@ def test_the_three_boolean_states_are_all_distinguishable():
     false = engineer_features([], {"hypertension": False})
     true = engineer_features([], {"hypertension": True})
 
-    assert "hypertension" not in absent.features         # unknown
-    assert false.features["hypertension"].value is False  # explicit negative
-    assert true.features["hypertension"].value is True    # explicit positive
+    assert "hypertension" not in absent.features
+    assert false.features["hypertension"].value is False
+    assert true.features["hypertension"].value is True
 
 
 def test_unrecognised_boolean_is_unknown_and_reported():
@@ -651,11 +591,6 @@ def test_profile_model_can_be_passed_directly():
     assert data.features["age"].value == 50
 
 
-# --------------------------------------------------------------------------
-# Determinism
-# --------------------------------------------------------------------------
-
-
 def test_repeated_runs_produce_identical_output():
     rows = [
         row(test_name="Fasting Blood Glucose", value_raw="112",
@@ -680,10 +615,6 @@ def test_feature_map_is_ordered_by_the_catalog_not_by_input_order():
     )
     assert list(data.features) == ["hba1c", "creatinine"]
 
-
-# --------------------------------------------------------------------------
-# The real, observed Module 4 live output -- cross-module integration check
-# --------------------------------------------------------------------------
 
 OBSERVED_MODULE_4_PARAMETERS = [
     {
@@ -797,28 +728,13 @@ def test_observed_module_4_output_produces_the_expected_feature_set():
     assert data.features["vitamin_d"].value == pytest.approx(35.0)
     assert data.features["vitamin_d"].unit == "ng/ml"
 
-    # Every feature is in its canonical unit, and none needed converting.
     assert all(f.canonical_unit for f in data.features.values())
     assert data.conversions_applied == []
     assert data.duplicates_resolved == []
 
-    # The one non-numeric row is preserved, not dropped and not guessed.
     assert [u.test_name for u in data.unmapped] == ["Urine Ketones"]
     assert data.unmapped[0].value_raw == "Negative"
 
-    # Profile features are absent because no profile was supplied.
-    #
-    # ⚠ AND SO IS THE WHOLE BLOOD COUNT, WHICH IS NEW AND IS CORRECT. This
-    # observed Module 4 payload is a metabolic panel: it prints no CBC at
-    # all, so every one of the twelve complete-blood-count features is
-    # genuinely absent from it. They appear here because the catalogue grew,
-    # not because anything stopped being extracted -- `data.features` is
-    # unchanged at the same six.
-    #
-    # CONSEQUENCE WORTH KNOWING: any report without a blood count now reports
-    # twelve more features as not present, which flows into
-    # `missing_count` in feature_repository.py and into `features_not_present`
-    # on the clinician summary.
     assert set(data.missing_features) == {
         "vitamin_b12",
         "triglycerides",
@@ -840,7 +756,6 @@ def test_observed_module_4_output_produces_the_expected_feature_set():
         "eosinophils",
         "basophils",
         "platelet_count",
-        # The liver panel (2026-10-04): not on this report, so missing.
         "alt",
         "ast",
         "bilirubin_total",
@@ -859,16 +774,11 @@ def test_observed_module_4_output_with_profile_context():
             "bmi": 27.4,
             "hypertension": True,
             "smokingHistory": "never",
-            # heartDisease deliberately absent -> UNKNOWN, not false.
         },
     )
     assert data.summary.feature_count == 11
     assert data.features["hypertension"].value is True
     assert "heart_disease" not in data.features
-    # CATALOGUE ORDER, and the twelve blood-count features sit between
-    # `triglycerides` and the profile features because that is where they are
-    # declared in feature_catalog.py. This payload prints no blood count, so
-    # all twelve are genuinely missing from it.
     assert data.missing_features == [
         "vitamin_b12",
         "triglycerides",
@@ -884,7 +794,6 @@ def test_observed_module_4_output_with_profile_context():
         "eosinophils",
         "basophils",
         "platelet_count",
-        # The liver panel follows the blood count in catalogue order.
         "alt",
         "ast",
         "bilirubin_total",

@@ -1,85 +1,3 @@
-"""Train the Liver Disease model AND compare it with the liver rules. RUN BY HAND.
-
-    python ml/train_liver.py
-
-Nothing in `app/` imports this file. Same training pattern as
-`ml/train_kidney.py`: Random Forest, imputation inside the pipeline, thresholds
-from out-of-fold predictions on the training portion, a held-out test split
-that nothing is tuned on.
-
-What is NEW here is the comparison. The liver topic already has three rules
-(`RULE_LIVER_ALT`, `RULE_LIVER_AST`, `RULE_LIVER_BILIRUBIN`, 2026-10-04). A
-model is only worth shipping if it does better than those rules on patients
-neither of them has seen, so the rules are run -- the REAL rule engine, through
-the real validator, not a copy of their cut-offs -- on the same held-out rows.
-
-==========================================================================
-THE DATA
-==========================================================================
-
-`datasets/raw/ilpd_uci.csv` -- the Indian Liver Patient Dataset (ILPD), UCI
-Machine Learning Repository id 225, downloaded 2026-10-06 from
-https://archive.ics.uci.edu/static/public/225/ilpd+indian+liver+patient+dataset.zip
-and copied byte for byte (no header row; UCI documents the column order).
-583 records from one hospital in Andhra Pradesh: 416 "liver patient", 167
-"non liver patient". Units: bilirubin mg/dL, ALT/AST/ALP IU/L, protein and
-albumin g/dL -- the same as `app/data/feature_catalog.py`, so no conversion.
-
-REAL DATA ONLY: nothing is generated, augmented or resampled with synthesis.
-
-==========================================================================
-CLEANING DECISIONS (every count is written into the metrics file)
-==========================================================================
-
-1. EXACT DUPLICATE ROWS -> the copies are dropped (13). Kept, a copy could sit
-   in both the training and the test portion and the model would be scored on
-   a patient it had already seen.
-2. DIRECT BILIRUBIN ABOVE TOTAL -> the row is dropped (3). Direct bilirubin is
-   a part of the total, so one of the two numbers is wrong, and we cannot tell
-   which. Keeping the row would mean trusting a total bilirubin that may be the
-   wrong one.
-3. UNDER 18 -> dropped (25 before de-duplication). The liver rules apply to
-   adults only (`min_age_years=18`), and children's reference values differ.
-   A comparison has to be on patients both sides are allowed to judge.
-4. THE LABEL IS WEAK, AND IT IS KEPT AS IT IS. "Non liver patient" means the
-   hospital did not record liver disease, not that the person is healthy.
-   Measured before training: about 43% of the non-patients have at least one
-   of ALT, AST, bilirubin above the usual adult limit, and about 27% of the
-   patients have all three normal. No relabelling is done -- that would be
-   inventing a diagnosis. This caps what ANY method can score here, rules
-   included, and the comparison is affected equally on both sides.
-
-==========================================================================
-THE COMPARISON, AND THE SHIP CRITERION -- FIXED BEFORE THE TEST SET WAS SCORED
-==========================================================================
-
-Rules: the fused Liver Disease decision (most severe of the three rules) is
-"flagged" when it is INDICATED. No report prints a limit here, so the rules
-use their own fallback limits (ALT 33 men / 25 women, AST 40, bilirubin 1.2).
-
-Model: its operating threshold is chosen on the TRAINING portion's out-of-fold
-scores as the threshold whose specificity matches the rules' specificity on
-that same training portion. (The rules need no training, so measuring them on
-the training rows is fair, and the test rows stay untouched.)
-
-On the held-out test rows, 2,000 paired bootstrap resamples. THE MODEL SHIPS
-ONLY IF the 95% interval of (model sensitivity - rules sensitivity) lies
-entirely above zero AND the model's specificity point estimate is not more
-than 5 points below the rules'. Otherwise it does not ship, and the comparison
-is reported either way.
-
-ROC-AUC is reported for both as a secondary figure (the rules' score is the
-fused risk: 0 not flagged, 1 medium/borderline, 2 high).
-
-A second model with ALP and albumin added is trained and compared the same
-way, FOR THE PAPER ONLY: the app does not read those two tests yet, so it
-could not run for a real patient.
-
-Finally, both comparisons are repeated over 100 different random splits
-(`repeated_splits`). That is a robustness check for the paper -- is the one
-split typical? -- and it does NOT change the ship decision above.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -106,11 +24,11 @@ HERE = Path(__file__).resolve().parent
 SERVICE_ROOT = HERE.parent
 sys.path.insert(0, str(SERVICE_ROOT))
 
-from app.data import conditions as C  # noqa: E402
-from app.data.feature_catalog import FEATURES  # noqa: E402
-from app.schemas.decisions import DecisionStatus, RiskLevel  # noqa: E402
-from app.services.decision_engine import merge_decision_set  # noqa: E402
-from app.services.rule_engine import evaluate_rules  # noqa: E402
+from app.data import conditions as C
+from app.data.feature_catalog import FEATURES
+from app.schemas.decisions import DecisionStatus, RiskLevel
+from app.services.decision_engine import merge_decision_set
+from app.services.rule_engine import evaluate_rules
 
 DATASET = SERVICE_ROOT / "datasets" / "raw" / "ilpd_uci.csv"
 ARTIFACT_DIR = HERE / "artifacts"
@@ -124,14 +42,13 @@ RANDOM_STATE = 42
 TEST_SIZE = 0.25
 CV_FOLDS = 5
 BOOTSTRAP_RESAMPLES = 2000
-SPECIFICITY_TOLERANCE = 0.05  # the ship criterion's second half, see above
-ROBUSTNESS_SPLITS = 100  # repeated_splits(): robustness only, not the ship decision
+SPECIFICITY_TOLERANCE = 0.05
+ROBUSTNESS_SPLITS = 100
 
 UCI_COLUMNS = [
     "age", "gender", "tb", "db", "alkphos", "sgpt", "sgot", "tp", "alb",
     "ag_ratio", "selector",
 ]
-#: Dataset column -> VaidyaAI canonical feature name. Units already agree.
 COLUMN_RENAME = {
     "tb": "bilirubin_total",
     "sgpt": "alt",
@@ -159,11 +76,6 @@ def sha256_of(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
-
-
-# --------------------------------------------------------------------------
-# Loading and cleaning
-# --------------------------------------------------------------------------
 
 
 def load_dataset() -> Tuple[pd.DataFrame, Dict[str, Any]]:
@@ -221,10 +133,6 @@ def load_dataset() -> Tuple[pd.DataFrame, Dict[str, Any]]:
     return frame, provenance
 
 
-# --------------------------------------------------------------------------
-# The rules, run through the real validator and rule engine
-# --------------------------------------------------------------------------
-
 _RISK_SCORE = {RiskLevel.LOW: 0, RiskLevel.MEDIUM: 1, RiskLevel.HIGH: 2}
 
 
@@ -241,7 +149,6 @@ def _feature(name: str, value: Any, unit: str | None) -> Dict[str, Any]:
 
 
 def rules_on_row(row: pd.Series) -> Tuple[int, int, Dict[str, bool]]:
-    """(flagged 0/1, fused risk score 0-2, which features the validator kept)."""
     features = {
         "alt": _feature("alt", float(row["alt"]), "u/l"),
         "ast": _feature("ast", float(row["ast"]), "u/l"),
@@ -273,11 +180,6 @@ def rules_on_frame(frame: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray, Dict[st
             if not applied:
                 not_applied[rule_id] = not_applied.get(rule_id, 0) + 1
     return np.array(flags), np.array(scores), not_applied
-
-
-# --------------------------------------------------------------------------
-# The model
-# --------------------------------------------------------------------------
 
 
 def build_pipeline(numeric: List[str], categorical: List[str]) -> Pipeline:
@@ -313,7 +215,6 @@ def sens_spec(y: np.ndarray, flagged: np.ndarray) -> Tuple[float, float]:
 
 
 def threshold_matching_specificity(y: np.ndarray, scores: np.ndarray, target: float) -> float:
-    """The LOWEST threshold whose specificity is still >= target (most sensitive)."""
     negatives = np.sort(scores[y == 0])
     candidates = np.unique(np.concatenate([scores, [1.0 + 1e-9]]))
     best = None
@@ -429,14 +330,6 @@ def compare(
 
 
 def repeated_splits(frame: pd.DataFrame, numeric: List[str], seeds: int) -> Dict[str, Any]:
-    """The same comparison over many different train/test splits.
-
-    ROBUSTNESS ONLY. It does not change the ship decision, which was fixed on
-    the one pre-declared split above. It answers a different question: is the
-    result on that split typical, or a fluke of which 136 patients landed in
-    the test portion? The rules are deterministic per row, so they are run once
-    for the whole frame and indexed per split.
-    """
     y_all = frame["liver"].to_numpy()
     rules_flag_all, rules_score_all, _ = rules_on_frame(frame)
     rows: List[Dict[str, float]] = []
@@ -496,11 +389,6 @@ def repeated_splits(frame: pd.DataFrame, numeric: List[str], seeds: int) -> Dict
         ),
         "per_split": rows,
     }
-
-
-# --------------------------------------------------------------------------
-# main
-# --------------------------------------------------------------------------
 
 
 def main() -> int:

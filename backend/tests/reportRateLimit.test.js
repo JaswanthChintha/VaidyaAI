@@ -1,8 +1,5 @@
 'use strict';
 
-// These env vars MUST be set before src/config/env.js is first required. Jest
-// gives every test file its own module registry, so this file gets a freshly
-// configured app with rate limiting switched ON and a tiny upload budget.
 process.env.ENABLE_RATE_LIMIT = 'true';
 process.env.UPLOAD_RATE_LIMIT_MAX = '3';
 process.env.RATE_LIMIT_MAX = '1000';
@@ -54,7 +51,6 @@ describe('Module 3 - upload rate limiting', () => {
   it('throttles uploads at their own, separate budget', async () => {
     const statuses = [];
     for (let i = 0; i < 5; i += 1) {
-      // eslint-disable-next-line no-await-in-loop
       const res = await request(app)
         .post(REPORTS)
         .set({ Authorization: `Bearer ${token}` })
@@ -68,7 +64,6 @@ describe('Module 3 - upload rate limiting', () => {
 
   it('returns the standard error envelope when throttled', async () => {
     for (let i = 0; i < 3; i += 1) {
-      // eslint-disable-next-line no-await-in-loop
       await request(app)
         .post(REPORTS)
         .set({ Authorization: `Bearer ${token}` })
@@ -91,21 +86,18 @@ describe('Module 3 - upload rate limiting', () => {
 
   it('does not consume the auth limiter budget, and reads are not throttled', async () => {
     for (let i = 0; i < 4; i += 1) {
-      // eslint-disable-next-line no-await-in-loop
       await request(app)
         .post(REPORTS)
         .set({ Authorization: `Bearer ${token}` })
         .attach('file', pdf(), { filename: 'labs.pdf' });
     }
 
-    // Uploads are exhausted...
     const blocked = await request(app)
       .post(REPORTS)
       .set({ Authorization: `Bearer ${token}` })
       .attach('file', pdf(), { filename: 'labs.pdf' });
     expect(blocked.status).toBe(429);
 
-    // ...but logging in and listing reports still work.
     const login = await request(app)
       .post(`${AUTH}/login`)
       .send({ email: user.email, password: user.password });

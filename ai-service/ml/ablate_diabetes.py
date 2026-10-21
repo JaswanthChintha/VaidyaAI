@@ -1,41 +1,3 @@
-"""Leakage ablation and calibration for the diabetes predictor.
-
-WHY THIS EXISTS
-===============
-
-A reviewer of the VaidyaAI manuscript raised the sharpest objection available
-against the diabetes model: its feature set contains `hba1c` and
-`blood_glucose`, and the platform's own clinical rule engine treats
-HbA1c >= 6.5 % as the diagnostic criterion for the same condition. If the
-dataset's labels were themselves derived from those analytes, then a held-out
-ROC-AUC of 0.9738 is not evidence of risk prediction -- it is the forest
-re-deriving the definition of its own target.
-
-That objection cannot be answered by argument. It is answered by removing the
-suspect inputs and re-measuring.
-
-WHAT THIS SCRIPT DOES NOT DO
-============================
-
-⚠ IT WRITES NOTHING INTO `ml/artifacts/`. The shipped model and its metrics
-are untouched; every output goes to the path given by --out. This is an
-experiment about the model, not a retraining of it.
-
-PROTOCOL
-========
-
-Identical to `train_diabetes.py` in every respect that could otherwise explain
-a difference: the same CSV, the same de-duplication before splitting, the same
-stratified 80/20 split at random_state 42, the same pipeline, the same
-hyperparameters, the same `both` tri-state variant. The ONLY thing that varies
-between arms is which columns are dropped.
-
-Metrics are reported at the conventional 0.5 cut-off rather than at a tuned
-threshold, because the question here is discrimination and calibration under
-feature removal, and a per-arm tuned threshold would confound that with a
-per-arm operating-point choice.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -80,7 +42,6 @@ HYPERPARAMETERS = {
     "n_jobs": -1,
 }
 
-#: The four arms. Each names the columns REMOVED from the full feature set.
 ARMS: Dict[str, Tuple[str, ...]] = {
     "full": (),
     "no_hba1c": ("hba1c",),
@@ -134,12 +95,6 @@ def build_pipeline(numeric: List[str], categorical: List[str]) -> Pipeline:
 
 
 def calibration_bins(y_true: np.ndarray, prob: np.ndarray, bins: int = 10) -> List[Dict]:
-    """Observed frequency against predicted probability, in equal-width bins.
-
-    Reported as a table rather than a plot so the figures can be read and
-    checked. A bin with no patients is emitted with a null observed rate --
-    never as zero, which would read as "no positives" rather than "nobody".
-    """
     edges = np.linspace(0.0, 1.0, bins + 1)
     out: List[Dict] = []
     for i in range(bins):

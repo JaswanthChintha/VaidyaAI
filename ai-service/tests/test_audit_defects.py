@@ -1,23 +1,3 @@
-"""Regression tests for the defects the independent integration audit found.
-
-One file, because these tests exist to be re-audited as a set. Each section
-names the defect it closes and, in its docstring, what the code did BEFORE the
-fix -- so that a future reader can tell a test that is guarding something from
-a test that is merely restating an implementation.
-
-    D1  the information-sufficiency gate accepted a non-numeric value as
-        "present", so all three models predicted on median-imputed inputs
-    D2  Module 12's skip reason never reached the report (key mismatch)
-    D3  the artifact<->metrics sha256 binding was never enforced at runtime
-    D4  `status_label` could not distinguish a complete from a partial report
-    D5  the safety inspector false-positived on the system's own boilerplate,
-        and did not walk every caller-controlled laboratory-value field
-    D6  `ClinicalDecision` allowed INSUFFICIENT_DATA to carry a confidence
-    D7  the scanner's diagnosis and drug patterns were thinner than claimed
-
-NO TRAINING, no network.
-"""
-
 from __future__ import annotations
 
 from typing import Any, Dict, Mapping, Optional
@@ -64,11 +44,6 @@ from app.services.report_builder import generate_report, report_text_violations
 from tests.conftest import TEST_SERVICE_KEY
 
 
-# --------------------------------------------------------------------------
-# Shared helpers
-# --------------------------------------------------------------------------
-
-
 def feature(
     name: str, value: Any, unit: Optional[str] = None, source: str = "lab_report"
 ) -> Dict[str, Any]:
@@ -108,23 +83,7 @@ def api() -> TestClient:
 HEADERS = {SERVICE_KEY_HEADER: TEST_SERVICE_KEY}
 
 
-#: The exact values the audit posted. Every one of them is a value that is not
-#: `None` and not blank -- which is all the old gate checked -- and none of them
-#: is a creatinine.
 NON_NUMERIC_CREATININE = ("Negative", "n/a", True, "1.2 mg/dL", float("nan"))
-
-
-# ==========================================================================
-# D1 -- the information-sufficiency gate is type-aware
-# ==========================================================================
-#
-# BEFORE: `_is_present` returned True for any value that was not None and not
-# a blank string, so `creatinine="Negative"` satisfied the gate, the sklearn
-# ColumnTransformer coerced it to NaN, the numeric imputer median-filled it
-# from the training cohort, and the kidney model returned
-# `Indicated / High / 0.9924899057873485`. The report ranked "Kidney Disease"
-# first under Critical Findings for a patient whose creatinine was never
-# measured.
 
 
 @pytest.mark.parametrize("bad", NON_NUMERIC_CREATININE)
@@ -160,11 +119,6 @@ def test_diabetes_refuses_non_numeric_hba1c_and_glucose():
 
 
 def test_the_gate_still_admits_the_values_it_should():
-    """The fix must not turn a usable value into a skip.
-
-    A numeric string IS a number and the pipeline consumes it as one, so it is
-    admitted; `False` and `0` remain explicit answers, not absences.
-    """
     decision = KidneyPredictor().predict({"creatinine": "3.1", "hemoglobin": 9.5})
     assert decision.status is not DecisionStatus.INSUFFICIENT_DATA
     assert decision.confidence is not None
@@ -185,8 +139,6 @@ def test_the_gate_rejects_by_declared_type_not_by_emptiness():
     assert Predictor._is_present("1.2 mg/dL", "creatinine") is False
     assert Predictor._is_present("sometimes", "smoking_history") is False
     assert Predictor._is_present("yes", "hypertension") is False
-    # ...and the same values are still "present" to a type-agnostic caller,
-    # so the loose form has not silently changed meaning.
     assert Predictor._is_present("Negative") is True
 
 
@@ -219,13 +171,6 @@ def test_the_exploit_is_closed_over_http(api, endpoint_features, condition):
 
 
 def test_report_generate_no_longer_flags_kidney_disease_from_a_word(api):
-    """The audit's headline reproduction, end to end.
-
-    Returned HTTP 200 with `Needs Medical Attention`, `overall_risk=High`,
-    `critical_conditions=["Kidney Disease"]` and Kidney Disease
-    `Indicated / High / 0.99` ranked first -- from a report in which
-    creatinine was never measured.
-    """
     payload = {
         "validated": {
             "valid": {
@@ -262,17 +207,7 @@ def test_report_generate_no_longer_flags_kidney_disease_from_a_word(api):
     assert kidney[0]["confidence"] is None
 
 
-# ---- the PredictorBase-level guarantee ------------------------------------
-
-
 class _LyingPredictor(Predictor):
-    """A predictor whose own trace admits a required input was imputed.
-
-    This is what a FUTURE predictor looks like when it reads a required feature
-    under a model column name the base class does not know, or adds a value
-    type the gate has not been taught. `predict()` must catch it from the trace
-    alone, without understanding anything about this subclass.
-    """
 
     name = "lying_predictor"
     condition = C.DIABETES
@@ -327,12 +262,6 @@ def test_a_required_input_excluded_from_the_matrix_is_caught_too():
 
 
 def test_an_imputed_OPTIONAL_input_is_not_a_reason_to_skip():
-    """The assertion must be about REQUIRED features only.
-
-    Every real predictor imputes optional inputs on almost every call -- that
-    is what makes them optional. A check that fired on those would turn the
-    whole ML layer off.
-    """
     predictor = _LyingPredictor(imputed=("age",))
     decision = predictor.predict({"hba1c": 6.9, "blood_glucose": 130.0})
     assert decision.status is DecisionStatus.INDICATED
@@ -340,24 +269,12 @@ def test_an_imputed_OPTIONAL_input_is_not_a_reason_to_skip():
 
 
 def test_the_shipped_predictors_still_impute_their_optional_inputs():
-    """Guards the test above against being vacuously true."""
     decision = KidneyPredictor().predict({"creatinine": 3.1, "hemoglobin": 9.5})
     assert decision.status is not DecisionStatus.INSUFFICIENT_DATA
     assert set(decision.metadata["features_imputed"]) == {"age", "blood_glucose"}
     assert not set(decision.metadata["features_imputed"]) & set(
         decision.metadata["sufficiency_rule"]["required_features"]
     )
-
-
-# ==========================================================================
-# D2 -- the skip reason reaches the report
-# ==========================================================================
-#
-# BEFORE: `_explain_ml` read `skip_reason` / `insufficiency_reason` /
-# `sufficiency_reason`; no producer in the service emits any of those three.
-# A genuine Module 12 skip rendered as `skip_reason=None`,
-# `features_missing=[]` -- "Random Forest -- skipped -- (no reason)", which a
-# reader cannot tell from "the model broke".
 
 
 def _ml_records(report):
@@ -423,16 +340,6 @@ def test_a_prediction_that_ran_carries_no_skip_reason():
         assert ml.skip_explanation is None
 
 
-# ==========================================================================
-# D3 -- the artifact <-> metrics sha256 binding is enforced at load time
-# ==========================================================================
-#
-# BEFORE: `sha256_of()` was defined, exported, and had zero callers in `app/`.
-# Verification existed only in the test suite, so a substituted joblib under an
-# overridden `ML_ARTIFACT_DIR` loaded silently and was served with the previous
-# model's thresholds, metrics and `global_feature_importance`.
-
-
 @pytest.mark.parametrize(
     "filename",
     ["kidney_rf_v1.joblib", "heart_rf_v1.joblib", "diabetes_rf_v1.joblib"],
@@ -461,12 +368,6 @@ def test_every_prediction_carries_the_integrity_flag(predictor_cls):
 
 
 def test_a_substituted_artifact_is_detected_and_flagged(tmp_path, monkeypatch):
-    """A retrained or swapped joblib served with the recorded metrics.
-
-    CHOSEN FAILURE MODE: the service keeps running and every affected decision
-    carries the flag. See the rationale in `app/ml/artifacts.py`. This test
-    pins BOTH halves -- detected, and not fatal.
-    """
     import shutil
 
     from app.ml import artifacts
@@ -474,8 +375,6 @@ def test_a_substituted_artifact_is_detected_and_flagged(tmp_path, monkeypatch):
     source = artifacts.DEFAULT_ARTIFACT_DIR
     for name in ("kidney_rf_v1.joblib", "kidney_rf_v1.metrics.json"):
         shutil.copy(source / name, tmp_path / name)
-    # Substitute the model file. The metrics document -- and therefore every
-    # threshold and every published number -- is left untouched.
     with (tmp_path / "kidney_rf_v1.joblib").open("ab") as handle:
         handle.write(b"\x00")
 
@@ -510,15 +409,6 @@ def test_a_missing_metrics_document_does_not_claim_verification(tmp_path, monkey
         artifacts.reset_cache()
 
 
-# ==========================================================================
-# D4 -- `status_label` distinguishes complete from partial
-# ==========================================================================
-#
-# BEFORE: a report with exactly one normal HbA1c returned status="Healthy",
-# status_label="Healthy", overall_risk="Low" -- byte-identical in those three
-# fields to a fully-assessed healthy report.
-
-
 def _complete_healthy():
     return engineered(
         hba1c=feature("hba1c", 5.1, "%"),
@@ -529,7 +419,6 @@ def _complete_healthy():
         triglycerides=feature("triglycerides", 110.0, "mg/dl"),
         vitamin_d=feature("vitamin_d", 42.0, "ng/ml"),
         vitamin_b12=feature("vitamin_b12", 480.0, "pg/ml"),
-        # The liver panel (2026-10-04) -- part of a COMPLETE panel now.
         alt=feature("alt", 18.0, "u/l"),
         ast=feature("ast", 21.0, "u/l"),
         bilirubin_total=feature("bilirubin_total", 0.6, "mg/dl"),
@@ -581,7 +470,6 @@ def test_case_3_needs_medical_attention():
 
 
 def test_case_4_nothing_assessed_must_not_regress():
-    """The Module 18 fourth case. Verified clean by the audit; pinned here."""
     overall = generate_report().overall
     assert overall.status is None
     assert overall.status_label == STATUS_NOT_ASSESSED
@@ -594,10 +482,6 @@ def test_case_4_nothing_assessed_must_not_regress():
 
 
 def test_case_6_profile_only_is_not_healthy():
-    """THE RÉSUMÉ (live site, 2026-10-06). No test result was read; BMI 24.97,
-    age 20, male, non-smoker, no hypertension or heart disease. The real rules
-    and models judged Obesity, Underweight and Heart Disease from those alone
-    and the report said "Healthy (partial assessment) -- Overall risk: Low"."""
     overall = generate_report(
         engineered=engineered(
             bmi=feature("bmi", 24.97, "kg/m2", "patient_profile"),
@@ -630,30 +514,22 @@ def test_case_7_one_real_test_result_restores_healthy():
 
 
 def test_case_5_partial_healthy_is_labelled_as_partial():
-    """THE DEFECT. One normal HbA1c is not a clean bill of health."""
     partial = generate_report(
         engineered=engineered(hba1c=feature("hba1c", 5.1, "%"))
     ).overall
     complete = generate_report(engineered=_complete_healthy()).overall
 
-    # `status` stays at its spec value, so a three-value consumer still works.
     assert partial.status == STATUS_HEALTHY
     assert partial.complete is False
     assert partial.caveat
     assert partial.unassessed_conditions
 
-    # ...but a LABEL-ONLY renderer can now tell the two apart.
     assert partial.status_label == STATUS_HEALTHY_PARTIAL
     assert partial.status_label != complete.status_label
     assert STATUS_HEALTHY_PARTIAL in OVERALL_STATUS_LABELS
 
 
 def test_case_6_partial_abnormal_keeps_its_finding_label():
-    """An abnormal finding IS a finding; incompleteness does not qualify it.
-
-    Only the falsely-reassuring CLEAN case is relabelled. The incompleteness is
-    still carried structurally here.
-    """
     partial = generate_report(
         engineered=engineered(hba1c=feature("hba1c", 8.4, "%"))
     ).overall
@@ -677,11 +553,6 @@ def test_every_label_the_builder_can_emit_is_declared():
         assert report.overall.status_label in OVERALL_STATUS_LABELS
 
 
-# ==========================================================================
-# D5 -- the safety inspector does not fire on the system's own output
-# ==========================================================================
-
-
 MODULE_6_BOILERPLATE = (
     "Feature 'bmi' is usable but flagged (DERIVED_VALUE); treat it with "
     "reduced confidence."
@@ -689,10 +560,6 @@ MODULE_6_BOILERPLATE = (
 
 
 def test_the_inspector_does_not_fire_on_module_6s_own_warning():
-    """BEFORE: this matched `treatment_instruction` on the verb "treat".
-
-    A checker that fires on its own boilerplate trains readers to ignore it.
-    """
     assert scan_text(MODULE_6_BOILERPLATE) == []
 
 
@@ -710,19 +577,10 @@ def test_the_inspector_does_not_fire_on_module_6s_own_warning():
     ],
 )
 def test_a_real_treatment_instruction_is_still_caught(text):
-    """The D5 fix must be a carve-out, not a weakening.
-
-    Every one of these still trips `treatment_instruction` ITSELF -- not merely
-    some other pattern that happens to co-fire -- so the carve-out cannot be
-    passing these by accident.
-    """
     assert "treatment_instruction" in scan_text(text)
 
 
 def test_the_inspector_walks_every_caller_controlled_lab_value_field():
-    """BEFORE: `unit`, `original_unit`, `original_test_name` and `feature` were
-    rendered but never scanned.
-    """
     from app.schemas.report import LaboratoryValue
 
     injected = (
@@ -745,11 +603,6 @@ def test_the_inspector_walks_every_caller_controlled_lab_value_field():
         violations = report_text_violations(tampered)
         assert violations, f"{field} is not covered by the inspector's walk"
         assert any(field in where for where, _, _ in violations)
-
-
-# ==========================================================================
-# D7 -- the diagnosis and drug patterns are not enumerations
-# ==========================================================================
 
 
 @pytest.mark.parametrize(
@@ -803,7 +656,6 @@ def test_the_platforms_own_disclaimer_is_not_a_diagnostic_assertion(text):
     ],
 )
 def test_unlisted_drugs_no_longer_pass(drug):
-    """BEFORE: the drug list was an enumeration, so anything unlisted passed."""
     assert scan_text(f"start {drug} today")
 
 
@@ -814,13 +666,7 @@ def test_the_catalogue_itself_is_still_clean_under_the_hardened_patterns():
         assert scan_text(entry.text) == [], code
 
 
-# ==========================================================================
-# D6 -- INSUFFICIENT_DATA may not carry a confidence
-# ==========================================================================
-
-
 def test_insufficient_data_may_not_carry_a_confidence():
-    """The same invariant as the risk one, one field over."""
     with pytest.raises(ValueError, match="confidence must be None"):
         ClinicalDecision(
             condition=C.DIABETES,
@@ -856,7 +702,6 @@ def test_the_risk_invariant_is_untouched():
 
 
 def test_no_shipped_producer_emits_a_confidence_carrying_abstention():
-    """Every real skip path, exercised, must satisfy the new constraint."""
     for predictor in (KidneyPredictor(), HeartPredictor(), DiabetesPredictor()):
         decision = predictor.predict({})
         assert decision.status is DecisionStatus.INSUFFICIENT_DATA

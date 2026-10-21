@@ -1,15 +1,3 @@
-"""Module 8 -- the Clinical Rule Engine, exercised through `evaluate_rules()`.
-
-The framework-independent entry point, which is what Module 15 will call.
-
-Covered here: every rule on both sides of, and EXACTLY ON, each of its
-thresholds; rules not firing on missing inputs; an absent tri-state never being
-read as a negative; rejected features never reaching a comparison; questionable
-inputs surfacing in the decision; evidence completeness; risk ordering;
-confidence=None; recommendation resolution; JSON round-tripping; warning
-propagation with origins; and a realistic end-to-end feature set.
-"""
-
 from __future__ import annotations
 
 import json
@@ -26,10 +14,6 @@ from app.schemas.rules import ValidatedFeaturesInput
 from app.services import rule_engine as engine
 from app.services.rule_engine import evaluate_rules
 
-# --------------------------------------------------------------------------
-# Builders
-# --------------------------------------------------------------------------
-
 
 def vf(
     name: str,
@@ -43,7 +27,6 @@ def vf(
     reference_low: Optional[float] = None,
     reference_high: Optional[float] = None,
 ) -> Dict[str, Any]:
-    """One entry of Module 6's `valid` map."""
     definition = FEATURES[name]
     stage = source or definition.source
     provenance: Dict[str, Any] = {"source": stage}
@@ -68,7 +51,6 @@ def vf(
 
 
 def validated(features: Optional[Dict[str, Any]] = None, **overrides: Any) -> Dict[str, Any]:
-    """Module 6's `data` object."""
     features = features or {}
     payload: Dict[str, Any] = {
         "valid": features,
@@ -98,7 +80,6 @@ def for_condition(data: Any, condition: str) -> List[ClinicalDecision]:
     return [d for d in data.decisions if d.condition == condition]
 
 
-#: Printed test names needed to satisfy each rule's sample-timing gate.
 RULE_TEST_NAME = {
     "RULE_DIABETES_GLUCOSE_FASTING": "Fasting Blood Sugar",
     "RULE_DIABETES_GLUCOSE_UNSPECIFIED": "Glucose",
@@ -117,19 +98,9 @@ def fire(rule: cr.ThresholdRule, value: float, sex: Optional[str] = None, age: f
     return for_rule(evaluate_rules(validated(features)), rule.id)
 
 
-# --------------------------------------------------------------------------
-# THRESHOLD BOUNDARIES -- every rule, every band, exactly on and either side
-# --------------------------------------------------------------------------
-
-
 def _boundary_cases():
     cases = []
     for rule in cr.THRESHOLD_RULES:
-        # A CALCULATED-value rule (eGFR) compares the calculation, not the
-        # value fed in, so "fire at the threshold" cannot be set up by passing
-        # the threshold as creatinine. Its bands get the same on / either-side
-        # treatment in `test_egfr.py`, by solving for the creatinine that
-        # produces each eGFR.
         if rule.derived is not None:
             continue
         contextual = any(
@@ -191,18 +162,9 @@ def test_the_ada_hba1c_thresholds_are_the_ones_the_brief_named():
     )
 
 
-# --------------------------------------------------------------------------
-# MISSING DATA MUST NEVER READ AS NORMAL
-# --------------------------------------------------------------------------
-
-
 def test_a_rule_with_no_input_does_not_fire_at_all():
     data = evaluate_rules(validated({"hba1c": vf("hba1c", 5.0)}))
-    # No vitamin D was measured, so the THRESHOLD RULE never fires...
     assert for_rule(data, "RULE_VITAMIN_D_DEFICIENCY") is None
-    # ...but the topic is still accounted for, as an absence and never as a
-    # finding. A rule that did not fire and a topic nobody looked at are two
-    # different things, and only the second one reaches the reader.
     decisions = for_condition(data, C.VITAMIN_D_DEFICIENCY)
     assert len(decisions) == 1
     assert decisions[0].status is DecisionStatus.INSUFFICIENT_DATA
@@ -236,11 +198,6 @@ def test_empty_input_raises_a_rules_stage_warning():
     assert any("no usable features" in w for w in data.warnings)
 
 
-# --------------------------------------------------------------------------
-# TRI-STATE BOOLEANS -- absent is never a stated negative
-# --------------------------------------------------------------------------
-
-
 def _cvd_features(**extra: Any) -> Dict[str, Any]:
     features = {
         "cholesterol": vf("cholesterol", 250.0),
@@ -262,37 +219,10 @@ def test_absent_hypertension_is_reported_as_missing_not_as_false():
     assert item.note == engine.NOTE_NOT_AVAILABLE
 
 
-# --------------------------------------------------------------------------
-# A POST-LOAD THRESHOLD ON A SAMPLE NOBODY ESTABLISHED AS FASTING
-# --------------------------------------------------------------------------
-#
-# The clinician page showed, for Test 3 on 2026-09-18:
-#
-#     RANDOM BLOOD GLUCOSE ( RBS ) was 168 mg/dl (>= 140, at or above the
-#     2-hour post-load impaired-glucose-tolerance boundary of 140 mg/dL)
-#
-# A clinician reading that would reasonably take it for a post-load draw. It
-# was a random sample, and the rule's own `basis` says the uncertainty "is
-# stated to the reader via DISCUSS_SAMPLE_TIMING".
-#
-# THAT CLAIM IS TRUE ON THE PATIENT PAGE -- the recommendation renders there,
-# checked live. The CLINICIAN page carries no recommendations at all, so the
-# qualification went in the BAND LABEL instead, where it reaches every reader.
-#
-# WHAT MAKES THE LABEL HONEST is `only_timing`: this rule fires ONLY for
-# unspecified, random and post-prandial samples, so "not established as
-# fasting" is true of every band on it. The first test below pins that
-# invariant, because the label becomes a lie the moment it stops holding.
-
 _NOT_FASTING_PHRASE = "not established as fasting"
 
 
 def test_the_unspecified_glucose_rule_never_sees_a_fasting_sample():
-    """THE INVARIANT THE BAND LABELS REST ON.
-
-    If `TIMING_FASTING` were ever added to this rule, every band would start
-    claiming a sample was not established as fasting when it was.
-    """
     rule = next(
         r for r in cr.THRESHOLD_RULES if r.id == "RULE_DIABETES_GLUCOSE_UNSPECIFIED"
     )
@@ -309,7 +239,6 @@ def test_every_band_of_that_rule_says_the_sample_was_not_established_as_fasting(
 
 
 def test_the_FASTING_glucose_rule_does_not_carry_the_phrase():
-    """No over-reach: on a fasting sample the qualification would be false."""
     rule = next(
         r for r in cr.THRESHOLD_RULES if r.id == "RULE_DIABETES_GLUCOSE_FASTING"
     )
@@ -318,14 +247,6 @@ def test_the_FASTING_glucose_rule_does_not_carry_the_phrase():
 
 
 def test_a_random_glucose_reaches_the_reader_with_the_timing_qualification():
-    """END TO END through the engine, not just the table.
-
-    The classification is what the clinician page and the narrative both
-    print, so this is the assertion that matches what a reader sees.
-    """
-    # THE TIMING IS DERIVED FROM THE PRINTED TEST NAME, not from a field --
-    # `sample_timing(original_test_name, matched_synonym)`. Driven the way the
-    # producer does it, with the name Test 3 actually prints.
     data = evaluate_rules(
         validated(
             {
@@ -345,26 +266,6 @@ def test_a_random_glucose_reaches_the_reader_with_the_timing_qualification():
     assert _NOT_FASTING_PHRASE in notes
 
 
-# --------------------------------------------------------------------------
-# A CRITERION THAT WAS NOT MET MUST NOT READ AS ONE THAT WAS
-# --------------------------------------------------------------------------
-#
-# FOUND IN STORED EVIDENCE ON A REAL REPORT, 2026-09-18. `factor.label` states
-# the TEST, not the result, and it was emitted bare whether or not the factor
-# held. Heart Disease on Test 3 carried three lines, all three false:
-#
-#     bmi 25.25       -> "body mass index at or above 30.0; present, but not
-#                         counted as a cardiovascular risk factor"
-#     age 20          -> "age at or above the sex-specific cardiovascular age
-#                         threshold; present, but not counted..."
-#     smoking never   -> "current or lifetime smoking recorded in the patient
-#                         profile; present, but not counted..."
-#
-# The patient is 20, has a BMI of 25.25 and has never smoked. None of it
-# reached a screen -- the dashboard was checked -- but it sits in the evidence
-# Module 32 builds from.
-
-
 def test_a_factor_that_was_not_met_says_so_instead_of_stating_its_threshold():
     data = evaluate_rules(
         validated(_cvd_features(bmi=vf("bmi", 25.25), age=vf("age", 20)))
@@ -373,12 +274,9 @@ def test_a_factor_that_was_not_met_says_so_instead_of_stating_its_threshold():
 
     item = next(e for e in heart.evidence if e.feature == "bmi")
     assert item.value == 25.25
-    # THE METADATA IS KEYED ON FACTOR ID, NOT FEATURE NAME -- BMI's factor is
-    # `obesity`. Read off the real payload after asserting the wrong key here.
     assert "obesity" in heart.metadata["factors_evaluable"]
     assert "obesity" not in heart.metadata["factors_counted"]
 
-    # THE DEFECT, DIRECTLY: the bare criterion must not stand as a statement.
     assert not item.note.startswith("body mass index at or above 30.0")
     assert item.note.startswith(engine.NOTE_FACTOR_NOT_MET)
     assert "body mass index at or above 30.0" in item.note
@@ -386,9 +284,7 @@ def test_a_factor_that_was_not_met_says_so_instead_of_stating_its_threshold():
 
 
 def test_a_factor_that_WAS_met_still_states_the_criterion_plainly():
-    """The ANSWERING branch. A criterion that holds IS a finding about the
-    patient, and prefixing it would make a true line read as a refusal."""
-    data = evaluate_rules(validated(_cvd_features()))  # bmi 31.0, age 60
+    data = evaluate_rules(validated(_cvd_features()))
     heart = for_rule(data, cr.HEART_DISEASE_RULE.id)
 
     item = next(e for e in heart.evidence if e.feature == "bmi")
@@ -399,29 +295,17 @@ def test_a_factor_that_WAS_met_still_states_the_criterion_plainly():
 
 
 def test_the_word_present_is_gone_from_the_not_counted_note():
-    """`present` meant "the value was available" and read as "the risk factor
-    is present" -- the same collapse one word smaller."""
     assert "present" not in engine.NOTE_FACTOR_NOT_COUNTED
 
 
 @pytest.mark.parametrize("factor", cr.HEART_DISEASE_RULE.factors, ids=lambda f: f.id)
 def test_no_factor_label_can_stand_alone_as_a_statement_when_unmet(factor):
-    """EVERY label, not the three that happened to be wrong on one report.
-
-    Gathered from the rule itself so a factor added later is covered without
-    anyone remembering to extend this test.
-    """
     unmet = f"{engine.NOTE_FACTOR_NOT_MET}{factor.label}"
     assert unmet.startswith(engine.NOTE_FACTOR_NOT_MET)
     assert not unmet.startswith(factor.label)
 
 
 def test_an_absent_feature_still_uses_the_ABSENT_note_and_not_this_one():
-    """The two are different claims and must stay different branches.
-
-    "not supplied" and "supplied and did not meet the threshold" are the
-    tri-state distinction this rule's own docstring promises to keep.
-    """
     data = evaluate_rules(validated(_cvd_features()))
     heart = for_rule(data, cr.HEART_DISEASE_RULE.id)
     item = next(e for e in heart.evidence if e.feature == "hypertension")
@@ -442,7 +326,6 @@ def test_explicit_false_hypertension_is_evaluable_but_not_counted():
 
 
 def test_absent_and_false_tri_states_produce_the_same_factor_count():
-    """Neither may be read as evidence for the other."""
     absent = for_rule(
         evaluate_rules(validated(_cvd_features())), cr.HEART_DISEASE_RULE.id
     )
@@ -506,13 +389,7 @@ def test_too_few_inputs_gives_insufficient_data_rather_than_a_low_count():
     assert heart.metadata["skipped_reason"] == "insufficient_inputs"
 
 
-# --------------------------------------------------------------------------
-# REJECTED FEATURES ARE NEVER CONSUMED
-# --------------------------------------------------------------------------
-
-
 def test_the_input_schema_has_no_rejected_field():
-    """The guarantee is structural: there is no attribute to read."""
     assert "rejected" not in ValidatedFeaturesInput.model_fields
 
 
@@ -550,11 +427,6 @@ def test_a_valid_feature_is_used_even_when_another_was_rejected():
     assert kidney.status is DecisionStatus.INSUFFICIENT_DATA
 
 
-# --------------------------------------------------------------------------
-# QUESTIONABLE AND CLINICALLY EXTREME
-# --------------------------------------------------------------------------
-
-
 def test_a_questionable_input_is_surfaced_in_the_decision():
     data = evaluate_rules(validated({"hba1c": vf("hba1c", 7.2, questionable=True)}))
     decision = for_rule(data, "RULE_DIABETES_HBA1C")
@@ -579,19 +451,12 @@ def test_clinically_extreme_is_a_priority_signal_and_never_a_doubt():
     }
     data = evaluate_rules(validated(features))
     decision = for_rule(data, "RULE_DIABETES_GLUCOSE_UNSPECIFIED")
-    # The value is used at full strength: still INDICATED, still HIGH risk.
     assert decision.status is DecisionStatus.INDICATED
     assert decision.risk is RiskLevel.HIGH
     assert decision.metadata["clinically_extreme_inputs"] == ["blood_glucose"]
     assert engine.NOTE_EXTREME_HIGH in decision.evidence[0].note
     assert data.summary.clinically_extreme_features_used == ["blood_glucose"]
-    # And it is NOT treated as a questionable input.
     assert rcat.INPUT_QUALITY_CAVEAT not in [r.code for r in decision.recommendations]
-
-
-# --------------------------------------------------------------------------
-# SAMPLE TIMING
-# --------------------------------------------------------------------------
 
 
 def test_fasting_cutoffs_are_applied_only_to_a_fasting_sample():
@@ -622,11 +487,6 @@ def test_hypoglycemia_applies_whatever_the_timing():
         decision = for_rule(data, "RULE_HYPOGLYCEMIA_GLUCOSE")
         assert decision.status is DecisionStatus.INDICATED, name
         assert decision.risk is RiskLevel.HIGH
-
-
-# --------------------------------------------------------------------------
-# SEX- AND AGE-SPECIFIC THRESHOLDS
-# --------------------------------------------------------------------------
 
 
 def test_haemoglobin_uses_the_sex_specific_who_cutoff():
@@ -674,13 +534,10 @@ def _anemia_for_age(value: float, age: int, sex: str = "male"):
 
 
 def test_paediatric_haemoglobin_cutoffs_are_applied():
-    # 11.6 is above the WHO 5-11 year cut-off of 11.5, but below the adult
-    # male cut-off of 13.0 -- so the age band, not the sex band, must decide.
     assert _anemia_for_age(11.6, 8).status is DecisionStatus.NOT_INDICATED
     flagged = _anemia_for_age(11.4, 8)
     assert flagged.status is DecisionStatus.INDICATED
     assert flagged.metadata["threshold"] == 11.5
-    # The same value in a 15-year-old is judged against the adult male cut-off.
     assert _anemia_for_age(11.6, 15).metadata["threshold"] == 13.0
 
 
@@ -698,11 +555,6 @@ def test_adult_thresholds_are_used_when_age_is_absent():
     data = evaluate_rules(validated({"creatinine": vf("creatinine", 1.8)}))
     decision = for_rule(data, "RULE_KIDNEY_CREATININE")
     assert decision.status is DecisionStatus.INDICATED
-
-
-# --------------------------------------------------------------------------
-# EVIDENCE COMPLETENESS
-# --------------------------------------------------------------------------
 
 
 def test_evidence_names_feature_value_unit_threshold_and_comparator():
@@ -741,18 +593,12 @@ def test_evidence_dedup_key_is_stable_for_module_16():
     assert item.dedup_key() == ("hba1c", "7.4", "%", "6.5")
 
 
-# --------------------------------------------------------------------------
-# THE DECISION CONTRACT
-# --------------------------------------------------------------------------
-
-
 def test_every_decision_is_a_clinical_rule_decision_with_no_confidence():
     data = evaluate_rules(validated(REALISTIC_FEATURES()))
     assert data.decisions
     for decision in data.decisions:
         assert decision.source == cr.RULE_ENGINE_SOURCE
         assert decision.source_kind is DecisionSourceKind.CLINICAL_RULE
-        # None means "produces no probability". NOT 0.0.
         assert decision.confidence is None
         assert decision.confidence != 0.0
 
@@ -804,17 +650,10 @@ def test_metadata_never_contains_a_measured_value_or_report_text():
         payload = json.loads(blob)
         thresholds = {decision.metadata.get("threshold")}
         for value in measured:
-            # A threshold may legitimately coincide with a value; a value must
-            # never appear anywhere else in metadata.
             if value in thresholds:
                 continue
             assert f": {value}" not in blob, (decision.condition, value)
         assert "original_test_name" not in payload
-
-
-# --------------------------------------------------------------------------
-# RISK ORDERING
-# --------------------------------------------------------------------------
 
 
 def test_highest_risk_uses_the_types_own_ordering():
@@ -826,17 +665,11 @@ def test_highest_risk_uses_the_types_own_ordering():
 
 def test_highest_risk_is_none_when_nothing_could_be_assessed():
     data = evaluate_rules(validated({}))
-    # NOT RiskLevel.LOW: "nothing assessed" must never look reassuring.
     assert data.summary.highest_risk is None
 
 
 def test_risk_levels_compare_as_ordered():
     assert RiskLevel.LOW < RiskLevel.MEDIUM < RiskLevel.HIGH
-
-
-# --------------------------------------------------------------------------
-# WARNING PROPAGATION
-# --------------------------------------------------------------------------
 
 
 UPSTREAM_WARNINGS = [
@@ -890,11 +723,6 @@ def test_upstream_extraction_context_is_preserved():
     assert data.upstream.extraction_confidence == 0.91
 
 
-# --------------------------------------------------------------------------
-# PARTIALLY UNREADABLE DOCUMENTS
-# --------------------------------------------------------------------------
-
-
 def test_an_unread_page_turns_absence_into_insufficient_data():
     data = evaluate_rules(
         validated(
@@ -912,29 +740,14 @@ def test_an_unread_page_turns_absence_into_insufficient_data():
 
 
 def test_a_fully_read_report_still_reports_the_tests_it_did_not_contain():
-    """The defect this replaced a test for.
-
-    This used to assert SILENCE -- a fully-read report lacking vitamin D
-    produced no vitamin D decision at all, on the reading that the laboratory
-    simply had not ordered it. True about the cause, wrong about the reader: a
-    real report produced eight of thirteen topics, `unassessed_condition_count`
-    then said 0, and the dashboard offered the eight as though they were the
-    whole of what this tool checks.
-
-    An unordered test and an unremarkable one are not the same thing, and the
-    difference is the entire subject of this platform.
-    """
     data = evaluate_rules(validated({"hba1c": vf("hba1c", 5.0)}))
     assert data.summary.partial_document is False
 
     decisions = for_condition(data, C.VITAMIN_D_DEFICIENCY)
     assert len(decisions) == 1
     assert decisions[0].status is DecisionStatus.INSUFFICIENT_DATA
-    # NEVER a risk level: a topic nobody looked at has no risk to report.
     assert decisions[0].risk is None
 
-    # And still ONE line per missing test -- the secondary reading of the same
-    # absent vitamin D stays suppressed even now that the primary is reported.
     assert for_condition(data, C.ELEVATED_VITAMIN_D) == []
 
 
@@ -942,14 +755,8 @@ def test_secondary_readings_are_not_duplicated_when_unread():
     data = evaluate_rules(
         validated({}, upstream={"provided": True, "pages_unreadable": [1]})
     )
-    # One "could not assess" card per missing test, not two.
     assert for_condition(data, C.ELEVATED_VITAMIN_D) == []
     assert len(for_condition(data, C.VITAMIN_D_DEFICIENCY)) == 1
-
-
-# --------------------------------------------------------------------------
-# JSON ROUND TRIP
-# --------------------------------------------------------------------------
 
 
 def test_decisions_survive_a_json_round_trip():
@@ -966,11 +773,6 @@ def test_the_whole_result_serialises_to_json():
     parsed = json.loads(blob)
     assert len(parsed["decisions"]) == len(data.decisions)
     assert parsed["decisions"][0]["confidence"] is None
-
-
-# --------------------------------------------------------------------------
-# INPUT FORMS
-# --------------------------------------------------------------------------
 
 
 def test_a_raw_module_5_feature_set_is_validated_in_process_first():
@@ -996,7 +798,7 @@ def test_an_implausible_raw_value_is_rejected_before_any_rule_sees_it():
         "features": {
             "hba1c": {
                 "name": "hba1c",
-                "value": 400.0,  # outside Module 6's possible band
+                "value": 400.0,
                 "unit": "%",
                 "canonical_unit": True,
                 "source": "lab_report",
@@ -1055,13 +857,7 @@ def test_a_non_canonical_feature_key_is_ignored_with_a_warning():
     assert any("unicorn_count" in w for w in data.warnings)
 
 
-# --------------------------------------------------------------------------
-# END TO END
-# --------------------------------------------------------------------------
-
-
 def REALISTIC_FEATURES() -> Dict[str, Any]:
-    """A plausible middle-aged patient with several real findings."""
     return {
         "hba1c": vf("hba1c", 7.8, test_name="HbA1c", reference_low=4.0, reference_high=5.6),
         "blood_glucose": vf(
@@ -1074,7 +870,6 @@ def REALISTIC_FEATURES() -> Dict[str, Any]:
         "creatinine": vf("creatinine", 1.6, test_name="Serum Creatinine"),
         "cholesterol": vf("cholesterol", 232.0, test_name="Total Cholesterol"),
         "triglycerides": vf("triglycerides", 260.0, test_name="Triglycerides"),
-        # The liver panel (2026-10-04): a raised ALT against its printed limit.
         "alt": vf("alt", 62.0, test_name="SGPT", reference_high=45.0),
         "ast": vf("ast", 38.0, test_name="SGOT", reference_high=40.0),
         "bilirubin_total": vf("bilirubin_total", 0.9, test_name="Total Bilirubin"),

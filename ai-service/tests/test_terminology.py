@@ -1,17 +1,3 @@
-"""Module 25 -- Medical Terminology Explainer.
-
-The headline test in this file is `test_uncovered_terms_are_refused_not_
-answered`, and it is parametrised over the six terms the Module 21/22 build
-MEASURED as indistinguishable from covered ones under TF-IDF: TSH, ferritin,
-WBC, ALT, PSA, CRP. Their similarity scores (0.141-0.271) sit inside the range
-for covered terms (0.121-0.27), so no floor separates them and `"what does my
-TSH mean"` retrieves triglyceride content.
-
-If a future change replaces exact mapping with retrieval, those tests fail --
-which is the point. They are the regression guard on the one design decision
-that stops this module confidently explaining the wrong organ.
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -26,41 +12,6 @@ def offline_settings():
     return Settings(_env_file=None)
 
 
-# --------------------------------------------------------------------------
-# THE HAZARD: terms the corpus does not cover
-# --------------------------------------------------------------------------
-
-#: Measured by the Modules 21/22 build as scoring inside the covered range.
-#:
-#: ⚠ `WBC` WAS THE SIXTH ENTRY HERE AND WAS REMOVED, NOT WEAKENED. It is now a
-#: CANONICAL FEATURE with its own knowledge document, shipped alongside the
-#: complete blood count population tables. The test asserted that WBC is
-#: refused rather than answered; leaving it here would mean the only way to
-#: pass would be to un-cover the white cell count, which is the defect this
-#: file's own header warns about -- a test pinning a state the producer can no
-#: longer reach.
-#:
-#: THE TEST'S INTENT IS UNCHANGED and the hazard it guards is undiminished:
-#: five terms remain that TF-IDF cannot separate from covered content, so
-#: exact mapping is still the thing standing between a reader and an
-#: explanation of the wrong organ.
-#:
-#: ⚠ `TSH`, `ALT` AND `CRP` ARE NEXT. All three are Phase 2 candidates with
-#: NHANES distributions available, and each will leave this list the day it
-#: becomes a canonical feature. Whoever does that must move the term out of
-#: here DELIBERATELY and say so, exactly as this note does -- not discover it
-#: as a failing test and quietly delete the row.
-#:
-#: ⚠ `ALT` LEFT ON 2026-10-04, DELIBERATELY. It now maps by exact alias onto
-#: the reviewed `term_alt_sgpt` document (owner's request), and the tests for
-#: that are in `test_liver_enzymes.py`. `bilirubin` takes its place: another
-#: liver test, and one the corpus still does not cover -- so this list keeps
-#: guarding exactly the neighbourhood where a nearby document could be served
-#: for the wrong test.
-#:
-#: ⚠ AND `bilirubin` LEFT LATER THE SAME DAY, when total bilirubin became a
-#: feature of the Liver Disease topic. `GGT` -- a liver enzyme with no
-#: document -- now holds the place.
 UNCOVERED_TERMS = ["TSH", "ferritin", "GGT", "PSA", "CRP"]
 
 
@@ -79,11 +30,7 @@ def test_uncovered_terms_are_refused_not_answered(term):
 
 @pytest.mark.parametrize("term", UNCOVERED_TERMS)
 def test_an_uncovered_term_never_returns_a_different_topics_content(term):
-    """The specific failure: explaining triglycerides to a thyroid question."""
     answer = explain_term_or_fail(term)
-    # `covered_terms` is deliberately in the payload -- it tells the reader
-    # what this service CAN explain. What must not be there is content: an
-    # explanation, or a cited document about some other test.
     assert answer.explanation is None
     assert answer.sources == ()
     haystack = (answer.notice or "").lower()
@@ -110,7 +57,6 @@ def test_an_uncovered_term_never_reaches_the_model(term, offline_settings):
 
 @pytest.mark.parametrize("term", UNCOVERED_TERMS)
 def test_an_uncovered_term_never_reaches_the_retriever(term, monkeypatch):
-    """No search runs on an unmapped string. Not a filtered one -- none."""
     import app.rag.retriever as retriever
     import app.services.explanation as explanation
 
@@ -126,9 +72,6 @@ def test_an_uncovered_term_never_reaches_the_retriever(term, monkeypatch):
 
 
 def test_sgpt_is_answered_from_the_reviewed_liver_document():
-    """The spec names SGPT. It was refused while the corpus had no liver
-    document (the honest answer to a content gap); since 2026-10-04 it is
-    served from the reviewed one, and is no longer listed as a gap."""
     from app.services.terminology import (
         KNOWN_GAPS,
         OUTCOME_SERVED_FROM_KNOWLEDGE_BASE,
@@ -150,11 +93,6 @@ def test_the_gap_is_published_rather_than_hidden():
     assert document["free_text_retrieval"] is False
     assert "0.141-0.271" in document["free_text_retrieval_note"]
     assert document["known_gaps"]
-
-
-# --------------------------------------------------------------------------
-# Covered terms
-# --------------------------------------------------------------------------
 
 
 COVERED_CASES = [
@@ -225,7 +163,6 @@ def test_the_served_answer_is_still_put_through_module_24():
 
 
 def test_every_advertised_term_actually_resolves_and_serves():
-    """A published vocabulary that then refuses is worse than none."""
     from app.services.terminology import covered_terms, explain_term
 
     for term in covered_terms():
@@ -244,11 +181,6 @@ def test_citations_carry_provenance():
     assert {s.doc_id for s in answer.sources} == {"term_egfr"}
 
 
-# --------------------------------------------------------------------------
-# Resolution is exact, never fuzzy
-# --------------------------------------------------------------------------
-
-
 @pytest.mark.parametrize(
     "term",
     [
@@ -259,7 +191,6 @@ def test_citations_carry_provenance():
     ],
 )
 def test_a_sentence_is_not_a_term(term):
-    """Accepting a sentence would be accepting a query. It is not one."""
     from app.services.terminology import explain_term
 
     assert explain_term(term).covered is False
@@ -298,11 +229,6 @@ def test_every_alias_names_a_document_that_exists():
             assert doc_id in DOCUMENTS, doc_id
 
 
-# --------------------------------------------------------------------------
-# The refusal message is the one place user text reaches patient-facing output
-# --------------------------------------------------------------------------
-
-
 def test_the_refusal_echoes_the_term_so_the_reader_knows_what_was_asked():
     from app.services.terminology import explain_term
 
@@ -318,7 +244,6 @@ def test_an_injected_instruction_is_stripped_from_the_echo():
 
 
 def test_an_injected_unsafe_sentence_falls_back_to_the_anonymous_refusal():
-    """A term field carrying 'you have diabetes' must not be echoed back."""
     from app.services.terminology import (
         _not_covered_notice_anonymous,
         explain_term,
@@ -343,11 +268,6 @@ def test_the_refusal_lists_what_is_covered_so_the_reader_is_not_stuck():
     answer = explain_term("TSH")
     assert "hba1c" in answer.covered_terms
     assert "eGFR" in answer.covered_terms
-
-
-# --------------------------------------------------------------------------
-# The opt-in generated path is gated identically
-# --------------------------------------------------------------------------
 
 
 def test_the_simplify_path_goes_through_guarded_generation(
@@ -428,11 +348,6 @@ def test_the_simplify_prompt_carries_only_curated_extracts(offline_settings):
     assert "[term_egfr]" in prompt
     assert "PERMITTED NUMBERS" in prompt
     assert "NONE. Write no digits" in prompt
-
-
-# --------------------------------------------------------------------------
-# Logging
-# --------------------------------------------------------------------------
 
 
 def test_the_submitted_term_is_never_logged(caplog):

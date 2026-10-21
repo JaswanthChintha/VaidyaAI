@@ -1,9 +1,3 @@
-"""POST /api/v1/features/engineer -- the Module 5 HTTP contract.
-
-Response shapes must match the rest of the service: `{success, data}` on
-success and `{success, error: {code, message}}` on failure.
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -16,18 +10,11 @@ ENDPOINT = "/api/v1/features/engineer"
 
 @pytest.fixture()
 def api(client_factory) -> TestClient:
-    # The Module 5 route needs no Gemini client, but reusing the existing
-    # factory keeps env isolation identical across the suite.
     return client_factory()
 
 
 def post(api: TestClient, payload: dict):
     return api.post(ENDPOINT, json=payload)
-
-
-# --------------------------------------------------------------------------
-# Happy path
-# --------------------------------------------------------------------------
 
 
 def test_endpoint_returns_the_success_envelope(api):
@@ -132,7 +119,6 @@ def test_endpoint_merges_profile_context(api):
 
 
 def test_endpoint_preserves_the_tri_state_over_json(api):
-    """JSON round-trip must not turn an absent boolean into false."""
     body = post(
         api,
         {
@@ -199,11 +185,6 @@ def test_endpoint_defaults_to_an_empty_extraction(api):
     assert body["data"]["features"] == {}
 
 
-# --------------------------------------------------------------------------
-# Failure paths use the service-wide error envelope
-# --------------------------------------------------------------------------
-
-
 def test_invalid_row_returns_the_error_envelope(api):
     response = post(
         api, {"extraction": {"extracted_parameters": [{"value_raw": "6.8"}]}}
@@ -241,11 +222,6 @@ def test_get_is_not_allowed(api):
     assert response.json()["success"] is False
 
 
-# --------------------------------------------------------------------------
-# Catalog endpoint
-# --------------------------------------------------------------------------
-
-
 def test_catalog_publishes_the_canonical_feature_space(api):
     body = api.get("/api/v1/features/catalog").json()
     assert body["success"] is True
@@ -259,7 +235,6 @@ def test_catalog_publishes_the_canonical_feature_space(api):
         "creatinine",
         "cholesterol",
         "triglycerides",
-        # ---- the complete blood count ----
         "hematocrit",
         "rbc_count",
         "mcv",
@@ -272,15 +247,10 @@ def test_catalog_publishes_the_canonical_feature_space(api):
         "eosinophils",
         "basophils",
         "platelet_count",
-        # ---- the liver panel (2026-10-04) ----
         "alt",
         "ast",
         "bilirubin_total",
     }
-    # The differentials are PERCENTAGES of the white cell count and accept no
-    # other unit, which the published catalogue has to say out loud: a caller
-    # sending an absolute count in 10^3/uL is sending a different quantity,
-    # not the same one in another unit.
     assert data["features"]["neutrophils"]["canonical_unit"] == "%"
     assert list(data["features"]["neutrophils"]["accepted_units"]) == ["%"]
     assert data["features"]["creatinine"]["canonical_unit"] == "mg/dl"

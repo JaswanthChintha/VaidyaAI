@@ -1,9 +1,3 @@
-"""GeminiClient: response parsing, error classification, retry/backoff.
-
-Nothing here touches the network. A stub `models.generate_content` stands in
-for the SDK, and `time.sleep` is patched so backoff does not slow the suite.
-"""
-
 from __future__ import annotations
 
 import json
@@ -24,18 +18,12 @@ from app.core.errors import (
 from app.services.gemini_client import GeminiClient
 
 
-# --------------------------------------------------------------------------
-# SDK stubs
-# --------------------------------------------------------------------------
-
-
 def make_response(
     text: Optional[str] = None,
     finish_reason: str = "STOP",
     candidates: Optional[List[Any]] = None,
     block_reason: Optional[str] = None,
 ) -> Any:
-    """Build an object shaped like a GenerateContentResponse."""
     if candidates is None:
         part = SimpleNamespace(text=text)
         content = SimpleNamespace(parts=[part])
@@ -74,7 +62,6 @@ class StubSDKClient:
 
 
 class FakeAPIError(Exception):
-    """Mimics google.genai errors that carry a `code` attribute."""
 
     def __init__(self, code: int) -> None:
         super().__init__(f"api error {code}")
@@ -82,7 +69,6 @@ class FakeAPIError(Exception):
 
 
 class FakeReadTimeout(Exception):
-    """Matched by name, the way httpx timeouts are classified."""
 
     pass
 
@@ -118,18 +104,6 @@ def _no_sleep(monkeypatch: Any) -> None:
 
 @pytest.fixture(autouse=True)
 def _clear_model_cooldown() -> Any:
-    """THE COOLDOWN IS A MODULE-LEVEL GLOBAL, so it leaks between tests.
-
-    `_mark_exhausted` records a 429 in `_MODEL_COOLDOWN` so later calls skip
-    that model -- correct in production, and in a test process it means every
-    429 test permanently shrinks the chain for everything that runs after it.
-    Tests here passed only because of the order they happened to run in, and
-    a new one asserting a call count against the FULL chain failed while
-    passing in isolation.
-
-    Cleared before and after, so this file cannot depend on its own ordering
-    and cannot poison another file.
-    """
     from app.services import gemini_client
 
     gemini_client._MODEL_COOLDOWN.clear()
@@ -144,11 +118,6 @@ def build(settings: Settings, results: List[Any]) -> tuple:
 
 def call(client: GeminiClient) -> dict:
     return client.extract_page(b"\x89PNG-bytes", "image/png", "prompt")
-
-
-# --------------------------------------------------------------------------
-# Happy path
-# --------------------------------------------------------------------------
 
 
 def test_well_formed_json_is_parsed(settings):
@@ -182,23 +151,13 @@ def test_json_with_surrounding_prose_is_recovered(settings):
     assert call(client)["parameters"][0]["test_name"] == "HbA1c"
 
 
-# --------------------------------------------------------------------------
-# Configuration
-# --------------------------------------------------------------------------
-
-
 def test_missing_api_key_raises_not_configured():
     unconfigured = Settings(_env_file=None, gemini_api_key="")
-    client = GeminiClient(unconfigured)  # no injected SDK client
+    client = GeminiClient(unconfigured)
     with pytest.raises(ModelNotConfiguredError) as exc:
         call(client)
     assert exc.value.code == ErrorCode.MODEL_NOT_CONFIGURED
     assert exc.value.status_code == 503
-
-
-# --------------------------------------------------------------------------
-# Malformed / unusable responses
-# --------------------------------------------------------------------------
 
 
 def test_malformed_json_is_retried_then_reported(settings):
@@ -207,7 +166,7 @@ def test_malformed_json_is_retried_then_reported(settings):
         call(client)
     assert exc.value.code == ErrorCode.MODEL_RESPONSE_MALFORMED
     assert exc.value.status_code == 502
-    assert sdk.models.calls == settings.gemini_max_retries  # retried
+    assert sdk.models.calls == settings.gemini_max_retries
 
 
 def test_malformed_then_valid_response_succeeds(settings):
@@ -239,8 +198,6 @@ def test_max_tokens_finish_reason_is_reported_as_truncated(settings):
     with pytest.raises(ModelError) as exc:
         call(client)
     assert exc.value.code == ErrorCode.MODEL_RESPONSE_TRUNCATED
-    # Truncation is deterministic -- retrying the same page would just burn
-    # quota, so it must NOT be retried.
     assert sdk.models.calls == 1
 
 
@@ -276,16 +233,10 @@ def test_empty_text_is_reported_as_empty(settings):
 
 
 def test_text_is_recovered_from_parts_when_the_shortcut_is_absent(settings):
-    """Some SDK responses expose text only via candidate parts."""
     response = make_response(GOOD_JSON)
-    response.text = None  # force the parts fallback
+    response.text = None
     client, _ = build(settings, [response])
     assert call(client)["parameters"][0]["test_name"] == "HbA1c"
-
-
-# --------------------------------------------------------------------------
-# Transport / API errors
-# --------------------------------------------------------------------------
 
 
 def test_timeout_is_classified_and_retried(settings):
@@ -304,16 +255,6 @@ def test_builtin_timeout_error_is_classified(settings):
 
 
 def test_rate_limit_walks_the_model_chain_then_reports(settings):
-    """A 429 everywhere still raises 429 -- after trying every model once.
-
-    REPLACES an older assertion that a 429 cost exactly `gemini_max_retries`
-    requests against the ONE configured model. That is no longer the policy:
-    Google meters the free tier per model per day, so a sibling model is the
-    only thing that can actually clear a 429, and retrying the exhausted one
-    just spends another of the twenty requests the key gets. So each model in
-    the chain is tried ONCE and abandoned, and only the LAST one -- where a
-    short per-minute limit is the only remaining hope -- gets the retries.
-    """
     client, sdk = build(settings, [FakeAPIError(429)])
     with pytest.raises(ModelRateLimitedError) as exc:
         call(client)
@@ -321,24 +262,16 @@ def test_rate_limit_walks_the_model_chain_then_reports(settings):
     assert exc.value.status_code == 429
 
     fallbacks = len(settings.fallback_model_list)
-    # One doomed request per fallback, plus the full retry budget on the last.
     assert sdk.models.calls == fallbacks + settings.gemini_max_retries
 
 
 def test_rate_limited_primary_falls_back_to_a_working_model(settings):
-    """The point of the chain: an exhausted primary must not fail the request."""
     client, sdk = build(settings, [FakeAPIError(429), make_response(GOOD_JSON)])
     assert call(client)["parameters"][0]["test_name"] == "HbA1c"
-    # Exactly two: the primary's single 429, then the fallback's success.
     assert sdk.models.calls == 2
 
 
 def test_a_deterministic_4xx_does_not_shop_around_the_chain(settings):
-    """Only quota exhaustion may cross models.
-
-    A 400 fails identically on every model, so walking the chain would spend
-    a request per model to reach the same answer.
-    """
     client, sdk = build(settings, [FakeAPIError(400)])
     with pytest.raises(ServiceError):
         call(client)
@@ -365,7 +298,7 @@ def test_auth_errors_are_reported_as_not_configured(settings, status):
     client, sdk = build(settings, [FakeAPIError(status)])
     with pytest.raises(ModelNotConfiguredError):
         call(client)
-    assert sdk.models.calls == 1  # never retried: a bad key stays bad
+    assert sdk.models.calls == 1
 
 
 def test_bad_request_is_not_retried(settings):
@@ -383,13 +316,7 @@ def test_unknown_exception_is_wrapped_not_leaked(settings):
     assert exc.value.status_code == 502
 
 
-# --------------------------------------------------------------------------
-# Never leak internals to the caller
-# --------------------------------------------------------------------------
-
-
 def test_upstream_error_text_is_not_echoed_to_the_caller(settings):
-    """Upstream messages can embed request fragments -- keep them internal."""
     secret = "PATIENT-JORDAN-SAMPLE-HBA1C-6.8"
     client, _ = build(settings, [FakeAPIError(500)])
     try:
@@ -411,31 +338,11 @@ def test_api_key_is_redacted_in_settings_repr(settings):
     assert "test-key-not-real" not in str(settings)
 
 
-# --------------------------------------------------------------------------
-# A 5xx crosses the model chain; a safety block still does not
-# --------------------------------------------------------------------------
-#
-# THE CHAIN ORIGINALLY ADVANCED ONLY ON 429, and a server error aborted it
-# outright -- so a flaky primary failed the whole request while three healthy
-# siblings sat unused. It showed up the first time the provider had a bad
-# afternoon: two extractions of the same one-page document failed ninety
-# seconds apart, with a third succeeding between them, on the same model.
-#
-# A 503 from one endpoint says nothing about whether another is healthy. That
-# is what separates it from a deterministic 4xx, which fails identically
-# everywhere and must NOT be shopped around.
-
-
 def test_an_unavailable_primary_falls_back_to_a_working_model(settings):
-    # The primary must exhaust its OWN retry budget first -- a single 503
-    # followed by success is handled on the same model, which is what
-    # `test_transient_error_then_success` already covers. The fallback is for
-    # an endpoint that is down rather than momentarily hiccuping.
     responses = [FakeAPIError(503)] * settings.gemini_max_retries
     responses.append(make_response(GOOD_JSON))
     client, sdk = build(settings, responses)
     assert call(client)["parameters"][0]["test_name"] == "HbA1c"
-    # The primary's full budget, then the fallback answers first time.
     assert sdk.models.calls == settings.gemini_max_retries + 1
 
 
@@ -448,13 +355,6 @@ def test_unavailable_everywhere_still_reports_unavailable(settings):
 
 
 def test_a_rate_limit_is_reported_ahead_of_an_unavailability(settings):
-    """Which reason surfaces when the chain fails for two different reasons.
-
-    "Out of quota" is actionable by waiting; "temporarily unavailable" only by
-    retrying, and a caller told the weaker of the two retries into a wall.
-    """
-    # The primary is out of quota and hands straight on; every remaining
-    # model is unavailable and burns its budget.
     budget = (len(settings.fallback_model_list) + 1) * settings.gemini_max_retries
     responses = [FakeAPIError(429)] + [FakeAPIError(503)] * (budget + 4)
     client, _ = build(settings, responses)
@@ -463,7 +363,6 @@ def test_a_rate_limit_is_reported_ahead_of_an_unavailability(settings):
 
 
 def test_a_deterministic_4xx_still_does_not_shop_around(settings):
-    """Unchanged by the 5xx fallback, and the reason they differ."""
     client, sdk = build(settings, [FakeAPIError(400)])
     with pytest.raises(ServiceError):
         call(client)

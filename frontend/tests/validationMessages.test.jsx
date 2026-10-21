@@ -5,14 +5,6 @@ import App from '../src/App';
 import { AuthProvider } from '../src/lib/auth';
 import { api, ApiError } from '../src/lib/api';
 
-/**
- * A form the backend refuses says WHICH box was wrong (owner, 2026-10-10).
- *
- * Creating an account with a weak password showed only "Invalid request
- * payload" -- the backend's general line -- while the actual reason sat
- * unread in `error.details`. The body below is the backend's real shape
- * (middleware/validate.js).
- */
 
 const PASSWORD_RULE =
   'Password must be at least 8 characters and include an uppercase letter, a lowercase letter, a number and a special character';

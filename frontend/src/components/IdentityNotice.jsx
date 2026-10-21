@@ -1,27 +1,3 @@
-/**
- * WHOSE REPORT IS THIS? -- said on the page, from the sex and age it prints.
- *
- * Found 2026-09-24. Every analysis takes sex and age from the account profile,
- * never from the report; and the comparison card compares any two reports as
- * one person's history. So a report printing "34 Years / Female" on a
- * "20, male" account was judged with male thresholds, and compared with a
- * report printing "63 Years / Male" as haemoglobin 9.2 -> 13.6 "in 2 days" --
- * with nothing on screen to say either.
- *
- * The backend decides (`utils/printedIdentity`); these components only say
- * what it decided, in four states:
- *
- *   conflict     said plainly, as a warning
- *   incomplete   said quietly: something was not printed, which is NOT
- *                agreement
- *   not_checked  said quietly: the report predates the check -- "we did not
- *                look" must never render as "we looked and found nothing"
- *   consistent   nothing to say
- *
- * No name is ever read, so two people of one sex and similar age are NOT told
- * apart. The notices do not claim otherwise.
- */
-
 const sexWord = (sex) => (sex === 'male' || sex === 'female' ? sex : null);
 const ageWords = (years) => {
   if (typeof years !== 'number') return null;
@@ -32,12 +8,9 @@ const ageWords = (years) => {
 const describe = (sex, years) =>
   [sexWord(sex), ageWords(years)].filter(Boolean).join(', ') || 'no sex or age';
 
-/** On a report's dashboard: the report against the profile the analysis used. */
 export function ProfileIdentityNotice({ identity }) {
   if (!identity || identity.status === 'consistent') return null;
 
-  // MARKED AS SOMEONE ELSE's (2026-10-03). Nothing was compared with the
-  // profile, because the profile was not used; this says what that meant.
   if (identity.status === 'other_person') {
     return (
       <p className="hint identity-note">
@@ -71,9 +44,6 @@ export function ProfileIdentityNotice({ identity }) {
   const printed = identity.printed || {};
   const profile = identity.profile || {};
   const used = identity.used || {};
-  // WHICH VALUES THE ANALYSIS TOOK, for the fields that disagree. Since
-  // 2026-09-25 the report's own are used; an analysis from before that used
-  // the profile's, and the page must not claim otherwise.
   const conflicting = (identity.conflicts || []).map((c) => c.field);
   const sourceOf = (field) => used[field === 'sex' ? 'sexSource' : 'ageSource'];
   const usedReport = conflicting.length > 0
@@ -112,7 +82,6 @@ export function ProfileIdentityNotice({ identity }) {
   );
 }
 
-/** On the comparison card: could the two reports be one person's? */
 export function PairIdentityNotice({ identity }) {
   if (!identity || identity.status === 'consistent') return null;
 

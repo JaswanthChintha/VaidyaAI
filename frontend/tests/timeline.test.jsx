@@ -4,16 +4,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Timeline from '../src/pages/Timeline';
 import { api } from '../src/lib/api';
 
-/**
- * Modules 28/29/30 at the rendering layer.
- *
- * THE WORD THIS SCREEN MUST NEVER PRINT WITHOUT EARNING IS "stable". Module
- * 28 reserves it for a change measured against a declared stability band;
- * fewer than two usable readings is `INSUFFICIENT_DATA` with `trend: null`.
- * A timeline with nothing on it looks exactly like a timeline that did not
- * move, which is why this is the easiest place in the whole product to state
- * something nobody measured.
- */
 
 function mount({ trends, comparison, progress, reports } = {}) {
   vi.spyOn(api, 'getTrends').mockResolvedValue(trends ?? { trends: {}, history: {} });
@@ -44,12 +34,6 @@ describe('trends', () => {
               trend: null,
               usable_point_count: 1,
               canonical_unit: '%',
-              // THE READING IS CARRIED, because the real payload carries it.
-              // A feature with one usable reading arrives with one point --
-              // the single-reading test below is driven by exactly that shape
-              // off the live service. The fixture said `usable_point_count: 1`
-              // and then supplied no point, which is a shape Module 28 does
-              // not produce.
               points: [{ date: '2026-01-10T00:00:00Z', value: 6.1, unit: '%' }],
               gaps: [],
               reason:
@@ -61,19 +45,10 @@ describe('trends', () => {
       },
     });
 
-    // ON THE CHART, which is where the refusal is now stated. The table that
-    // used to carry it under the word "No trend" is gone; the sentence itself
-    // never moved, and it is the sentence that matters.
     expect(await screen.findByText('one report only')).toBeInTheDocument();
-    // SCOPED TO THE CHART'S OWN "WHY" LINE. The chart states this three times
-    // -- in that paragraph, in its accessible title, and in its no-line
-    // notice -- so an unscoped match finds all three and fails on the
-    // multiple. What this test needs is that the service's sentence reaches
-    // the reader; where else the chart repeats it is the chart's own business.
     expect(document.querySelector('.trend-chart__why').textContent).toMatch(
       /not the same as no change having occurred/
     );
-    // The dangerous word must not appear as this feature's answer.
     expect(screen.queryByText('stable')).not.toBeInTheDocument();
   });
 
@@ -105,22 +80,14 @@ describe('trends', () => {
     });
 
     expect(await screen.findByText('worsening')).toBeInTheDocument();
-    // THE PAIR, ON THE SHUT ROW. This is the deleted table's
-    // `First -> latest` column, the one part of it that came back -- a reader
-    // scanning closed panels should not have to open one to learn from what
-    // to what.
     const pair = document.querySelector('.disclosure__pair');
     expect(pair.textContent).toBe('6.1 → 6.8 %');
-    // THE UNIT ONCE, AT THE END. On both ends it wrapped the longest rows.
     expect(pair.textContent.match(/%/g)).toHaveLength(1);
-    // The middle reading is NOT in the pair -- first and latest, not every one.
     expect(pair.textContent).not.toContain('6.4');
     expect(document.querySelectorAll('.trend-chart__point')).toHaveLength(3);
   });
 
   it('prints no pair for a feature with one reading and no change', async () => {
-    // INSUFFICIENT_DATA carries no `change`, so there is nothing to pair. An
-    // arrow with one end missing would be the row inventing the other end.
     mount({
       trends: {
         history: { included: 1, considered: 1 },
@@ -150,8 +117,6 @@ describe('trends', () => {
   });
 
   it('shows CLINICAL_DIRECTION_UNKNOWN as a refusal, not a direction', async () => {
-    // A feature whose polarity is undeclared reports direction only. Calling
-    // that "improving" would be a guess about what is better.
     mount({
       trends: {
         history: { included: 2, considered: 2 },
@@ -163,7 +128,6 @@ describe('trends', () => {
               trend: null,
               usable_point_count: 2,
               canonical_unit: 'g/dl',
-              // Two usable readings means two points in the real payload.
               points: [
                 { date: '2026-09-09T00:00:00Z', value: 9.2, unit: 'g/dl' },
                 { date: '2026-09-13T00:00:00Z', value: 12.5, unit: 'g/dl' },
@@ -177,7 +141,6 @@ describe('trends', () => {
       },
     });
 
-    // The refusal, and the service's own sentence for it, both on the chart.
     expect(await screen.findByText('no direction')).toBeInTheDocument();
     expect(
       screen.getByText(/No direction of benefit is declared/)
@@ -186,8 +149,6 @@ describe('trends', () => {
   });
 
   it('says "fasting vs random" when the two samples were not comparable (2026-10-02)', async () => {
-    // 88 fasting -> 168 random read "no direction" on the shut row, hiding the
-    // reason the service had already given.
     mount({
       trends: {
         trends: {
@@ -215,14 +176,6 @@ describe('trends', () => {
     expect(screen.queryByText('no direction')).not.toBeInTheDocument();
   });
 
-  /**
-   * THE CHART, DRIVEN THROUGH THE PAGE with Module 28's own field names --
-   * `points[].date/value`, `gaps[].availability`, `polarity.optimal_*` --
-   * rather than the chart's props. A fixture written against the consumer's
-   * assumption instead of the producer's output cannot catch the consumer's
-   * assumption being wrong, and on this project that has already happened
-   * (MEMORY.md 6w: `basis.limitations`).
-   */
   it('plots a classified trend and breaks the line across a gap', async () => {
     mount({
       trends: {
@@ -259,7 +212,6 @@ describe('trends', () => {
     const chart = await screen.findByRole('img');
     expect(chart.getAttribute('aria-label')).toMatch(/worsening/);
     expect(chart.getAttribute('aria-label')).toMatch(/1 report carried no usable reading/);
-    // The middle report is a gap, so the two readings are never joined.
     expect(document.querySelectorAll('.trend-chart__line')).toHaveLength(0);
     expect(document.querySelectorAll('.trend-chart__point')).toHaveLength(2);
     expect(
@@ -292,8 +244,6 @@ describe('trends', () => {
     await screen.findByText('one report only');
     expect(document.querySelectorAll('.trend-chart__line')).toHaveLength(0);
     expect(document.querySelectorAll('.trend-chart__point')).toHaveLength(1);
-    // The whole hazard, in one assertion -- scoped to the chart, because the
-    // page's own summary line legitimately counts "0 stable".
     expect(
       document.querySelector('.trend-chart').textContent.toLowerCase()
     ).not.toContain('stable');
@@ -307,15 +257,10 @@ describe('trends', () => {
           features: {
             total_cholesterol: {
               feature: 'total_cholesterol',
-              // Two real readings, no classification: the service could not
-              // place this change against its stability band.
               outcome: 'CHANGE_WITHIN_REFERENCE_INTERVAL',
               trend: null,
               usable_point_count: 2,
               canonical_unit: 'mg/dl',
-              // A declared FLOOR and no declared ceiling. Drawn as a band it
-              // would run to the top of the frame and assert a ceiling nobody
-              // declared.
               polarity: { kind: 'lower_is_better', optimal_low: 200, optimal_high: null },
               points: [
                 { date: '2026-01-10T00:00:00Z', value: 210, unit: 'mg/dl' },
@@ -339,10 +284,6 @@ describe('trends', () => {
   });
 
   it('takes the direction from the OUTCOME, not from a stray trend word', async () => {
-    // The contradictory payload Module 28's model validator forbids: an
-    // outcome that is not TREND_CLASSIFIED carrying a trend anyway. The page
-    // derives `classified` from the outcome, so the word never becomes a
-    // colour -- and this is the only shape that tells the two apart.
     mount({
       trends: {
         history: { included: 2, considered: 2 },
@@ -375,10 +316,6 @@ describe('trends', () => {
   });
 
   it('draws no trend line for a parameter the service says has no trajectory', async () => {
-    // Straight from a real payload: `age` arrives NOT_TRENDABLE with two
-    // perfectly good points, and on the live data those points are 58 and 34
-    // -- two different synthetic patients. Charted, that is a person getting
-    // 24 years younger, drawn beside a sentence refusing to describe a trend.
     mount({
       trends: {
         history: { included: 2, considered: 2 },
@@ -403,10 +340,6 @@ describe('trends', () => {
       },
     });
 
-    // THE CARD, THEN THE ABSENCE. `age` is NOT_TRENDABLE, so it draws no
-    // chart -- and with the table gone it has no row either, so the parameter
-    // is not on this card at all. The line this test exists to prevent, a
-    // person getting 24 years younger, cannot be drawn when nothing is.
     await screen.findByText(/Trends over time/);
     expect(screen.queryByRole('img')).not.toBeInTheDocument();
     expect(document.querySelectorAll('.trend-chart__line')).toHaveLength(0);
@@ -414,8 +347,6 @@ describe('trends', () => {
   });
 
   it('renders no chart for a feature with gaps but no reading at all', async () => {
-    // `gender`, live: NOT_NUMERIC, no points, two gaps. An axis with nothing
-    // on it is not a chart, and the row below already says why.
     mount({
       trends: {
         history: { included: 2, considered: 2 },
@@ -470,15 +401,11 @@ describe('trends', () => {
     });
 
     await screen.findByText(/Trends over time/);
-    // An empty frame adds nothing, and there is no longer a row beside it to
-    // add anything to either.
     expect(screen.queryByRole('img')).not.toBeInTheDocument();
     expect(document.querySelectorAll('.trend-chart__block')).toHaveLength(0);
   });
 
   it('shows the history accounting, including reports dropped by the cap', async () => {
-    // A timeline built from 50 of 55 reports and one built from a patient's
-    // only 50 look identical without this.
     mount({
       trends: {
         history: {
@@ -493,9 +420,6 @@ describe('trends', () => {
       },
     });
 
-    // Asserted on the sentence, not on the bare number: "50" appears twice
-    // (the included count and the cap), so matching it alone is ambiguous and
-    // would pass for the wrong reason.
     expect(
       await screen.findByText(/5 older report\(s\) fell outside the most recent/)
     ).toBeInTheDocument();
@@ -546,20 +470,10 @@ describe('choosing which two reports to compare', () => {
 
     const selects = document.querySelectorAll('.pair-picker select');
     expect(selects).toHaveLength(2);
-    // The filename, not just a date -- an account with four reports from the
-    // same week is four identical options otherwise.
     expect(screen.getAllByText(/06-lab-flagged\.pdf/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/02-diabetes\.pdf/).length).toBeGreaterThan(0);
   });
 
-  // THE LABEL SAYS WHICH DATE IT IS.
-  //
-  // `chronoDate` is `reportDate ?? uploadedAt`, so printing it bare showed the
-  // upload clock as the date on the document. On the real page a report
-  // printed 13 September, uploaded on the 19th with the optional field blank,
-  // read `9/19/2026 - Test 3.pdf` in this picker. A reader choosing two
-  // reports is choosing two moments in their own history, and "the day I sent
-  // it in" is not one of them unless it is labelled.
 
   it('labels an option with the date the reader gave for the report', async () => {
     const dated = {
@@ -583,8 +497,6 @@ describe('choosing which two reports to compare', () => {
   });
 
   it('says UPLOADED on an option whose report carried no date', async () => {
-    // THE CASE THAT WAS WRONG. `reportDate` is null exactly when the person
-    // left the field blank; `chronoDate` is then the upload time.
     const undated = {
       reports: [
         { reportId: A, chronoDate: '2026-09-19T04:22:13Z', reportDate: null, status: 'processed' },
@@ -601,16 +513,12 @@ describe('choosing which two reports to compare', () => {
       o.textContent.includes('06-lab-flagged.pdf')
     );
     expect(option.textContent).toMatch(/uploaded/i);
-    // The day is still there -- it is what the ordering uses -- just labelled.
     expect(option.textContent).toContain(
       new Date('2026-09-19T04:22:13Z').toLocaleDateString()
     );
   });
 
   it('marks an option whose typed date the document contradicts', async () => {
-    // 2026-09-24: 03-renal and 01-all-normal both PRINT 05-Sep-2026 and were
-    // typed as the 9th and the 11th -- offered here as two moments two days
-    // apart, with nothing to say otherwise.
     const conflicting = {
       reports: [
         { reportId: A, chronoDate: '2026-09-09T00:00:00Z', reportDate: '2026-09-09T00:00:00Z', printedDate: '2026-09-05T00:00:00Z', printedDateStatus: 'read', status: 'processed' },
@@ -628,16 +536,12 @@ describe('choosing which two reports to compare', () => {
     expect(typed).toContain(utcDay('2026-09-09T00:00:00Z'));
     expect(typed).toContain(`report prints ${utcDay('2026-09-05T00:00:00Z')}`);
 
-    // No date typed: the printed one is used, unlabelled as an upload.
     const printed = optionFor('01-all-normal.pdf').textContent;
     expect(printed).toContain(utcDay('2026-09-05T00:00:00Z'));
     expect(printed).not.toMatch(/uploaded|report prints/i);
   });
 
   it('shows the pair ACTUALLY on screen, not a guess', async () => {
-    // With no explicit choice the service picks first-vs-latest. Seeding the
-    // selects from its answer is what stops the control naming a comparison
-    // the table below is not showing.
     mount({ comparison: comparisonFor(A, B), reports: REPORTS });
     await screen.findByText('Comparing two reports');
 
@@ -657,8 +561,6 @@ describe('choosing which two reports to compare', () => {
   });
 
   it('re-asks BOTH sections about the new pair', async () => {
-    // A table describing one pair beside a score computed from another is two
-    // answers to different questions presented as one screen.
     mount({ comparison: comparisonFor(A, B), reports: REPORTS });
     await screen.findByText('Comparing two reports');
 
@@ -686,8 +588,6 @@ describe('choosing which two reports to compare', () => {
   });
 
   it('clears the old table before the new one arrives', async () => {
-    // Leaving the previous numbers under a changed picker states that they
-    // are the comparison the control now names, which they are not.
     let release;
     mount({ comparison: comparisonFor(A, B), reports: REPORTS });
     await screen.findByText('Comparing two reports');
@@ -705,19 +605,12 @@ describe('choosing which two reports to compare', () => {
   });
 
   it('keeps the LATEST choice when an earlier answer arrives last', async () => {
-    // THE RACE (2026-09-25). Two quick choices send two pairs of requests and
-    // nothing orders their answers. The first choice's answer is held back
-    // here until after the second's: written as it lands, it would put the
-    // abandoned pair's numbers under a picker naming the other one.
     const withRow = (baseline, comparison, current, category) => {
       const response = comparisonFor(baseline, comparison);
       response.comparison.table = [{ feature: 'hba1c', previous: 8.4, current, unit: '%', category }];
       return response;
     };
     let releaseFirst;
-    // Trends carry the history too, as the real endpoint does: while a new
-    // comparison is pending the picker is fed from them, and without it the
-    // picker would vanish mid-test.
     mount({ comparison: comparisonFor(A, B), trends: { trends: {}, history: HISTORY }, reports: REPORTS });
     await screen.findByText('Comparing two reports');
     api.getComparison.mockImplementation((pair) =>
@@ -727,12 +620,12 @@ describe('choosing which two reports to compare', () => {
     );
 
     const select = () => document.querySelectorAll('.pair-picker select')[1];
-    fireEvent.change(select(), { target: { value: C } }); // slow
+    fireEvent.change(select(), { target: { value: C } });
     await waitFor(() => expect(api.getComparison).toHaveBeenCalledWith({ baseline: A, comparison: C }));
-    fireEvent.change(select(), { target: { value: B } }); // fast, and the latest
+    fireEvent.change(select(), { target: { value: B } });
     await screen.findByText(/7\.7/);
 
-    releaseFirst(); // the abandoned choice answers last
+    releaseFirst();
     await new Promise((r) => setTimeout(r, 20));
 
     expect(select().value).toBe(B);
@@ -742,12 +635,6 @@ describe('choosing which two reports to compare', () => {
   });
 
   it('swaps rather than doing nothing when the two sides would collide', async () => {
-    // ON AN ACCOUNT WITH TWO REPORTS this is the ONLY change available, and
-    // the first version refused it: choosing the other report as the baseline
-    // necessarily equals the current comparison, so the control visibly did
-    // nothing when clicked. A reader naming the later report as the baseline
-    // is asking for the comparison the other way round, which Module 29
-    // supports and reports as `chronological: false`.
     mount({ comparison: comparisonFor(A, B), reports: REPORTS });
     await screen.findByText('Comparing two reports');
     api.getComparison.mockClear();
@@ -760,9 +647,6 @@ describe('choosing which two reports to compare', () => {
   });
 
   it('does not end the out-of-order sentence with two full stops', async () => {
-    // Invisible until the picker made an out-of-order comparison reachable:
-    // the conditional clause carried its own full stop and another was
-    // printed after it regardless.
     mount({
       comparison: {
         history: HISTORY,
@@ -798,8 +682,6 @@ describe('choosing which two reports to compare', () => {
   });
 
   it('falls back to dates when the report names could not be loaded', async () => {
-    // The names are a nicety; the picker is not. A failed list must cost the
-    // labels and nothing else.
     vi.spyOn(api, 'listReports').mockRejectedValue(new Error('nope'));
     mount({ comparison: comparisonFor(A, B) });
     await screen.findByText('Comparing two reports');
@@ -808,12 +690,6 @@ describe('choosing which two reports to compare', () => {
 });
 
 describe('comparison -- the rest of the report', () => {
-  // Module 29 compares the features this platform assesses. The two real
-  // reports carry 28 parameters between them and the card showed twelve, so
-  // the reader counted them and asked where the others were -- the same
-  // question, and the same answer, as the timeline.
-  // Fixture names are printed-style capitals; the page shows them through
-  // `readableName` (2026-10-02), so the assertions below look for 'Zorblex'.
   const labRow = (over = {}) => ({
     key: 'zbx',
     name: 'ZORBLEX',
@@ -840,7 +716,6 @@ describe('comparison -- the rest of the report', () => {
     ]);
 
     expect(await screen.findByText('Zorblex')).toBeInTheDocument();
-    // One table on the card, carrying both kinds of row.
     expect(document.querySelectorAll('table.lab-table')).toHaveLength(1);
     const headings = [...document.querySelectorAll('table tbody th')].map((th) =>
       th.textContent.trim()
@@ -859,8 +734,6 @@ describe('comparison -- the rest of the report', () => {
   });
 
   it('shows BOTH units when the two reports disagree about them', async () => {
-    // 101.9 U/L against 13 IU/L is the reason the row cannot be classified.
-    // Hiding one unit would hide the reason.
     mountPair([
       labRow({
         previous: 101.9,
@@ -882,17 +755,6 @@ describe('comparison -- the rest of the report', () => {
     ).toBeInTheDocument();
   });
 
-  /*
-   * A `unit_missing` TEST STOOD HERE AND IS DELETED WITH THE REASON CODE.
-   *
-   * It pinned a sentence for a row the backend can no longer produce: a
-   * reading printing no unit is now taken to be in the one unit the series
-   * does print, so it is not blocked. A fixture asserting a payload the
-   * producer has stopped emitting is the `basis.limitations` trap from 6w in
-   * reverse, and it would keep passing forever while describing nothing.
-   *
-   * What replaced it is pinned on the backend, where the decision is made.
-   */
 
   it('still says different units when they really do differ', async () => {
     mountPair([
@@ -919,7 +781,6 @@ describe('comparison -- the rest of the report', () => {
     await screen.findByText('Zorblex');
     expect(screen.getByText('12.1 mg/L')).toBeInTheDocument();
     expect(screen.getByText('This parameter was not on that report.')).toBeInTheDocument();
-    // NOT rendered as zero. The whole point of the Absent component.
     expect(screen.queryByText('0 mg/L')).not.toBeInTheDocument();
   });
 
@@ -930,9 +791,6 @@ describe('comparison -- the rest of the report', () => {
         current: null,
         previousRaw: 'Negative',
         currentRaw: 'Negative',
-        // A NON-NUMERIC RESULT CARRIES NO UNIT, and the first version of this
-        // fixture left `mg/L` on it, so the cell read "Negative mg/L". The
-        // fixture was wrong about the data, not the component about the text.
         previousUnit: null,
         currentUnit: null,
         unit: null,
@@ -946,8 +804,6 @@ describe('comparison -- the rest of the report', () => {
   });
 
   it("uses Module 29's own category words for these rows too", async () => {
-    // One vocabulary per table. `worsening` on the timeline is `worsened`
-    // here, and these rows must not introduce a third set of words.
     mountPair([labRow({ category: 'worsened', symbol: '↑' })]);
 
     await screen.findByText('Zorblex');
@@ -967,19 +823,11 @@ describe('comparison -- the rest of the report', () => {
   });
 
   it('never prints "unchanged" beside an arrow and two different numbers', async () => {
-    // THE ROW WAS CONTRADICTING ITSELF ON SCREEN:
-    //     EOSINOPHILS  5 %  ->  2 %   ↓ unchanged
-    // The arrow says it moved, the numbers say it moved, the word says it did
-    // not. What the category means is "it moved less than this test's own
-    // variation", which is a much weaker claim, so it is said in words that
-    // make that claim instead.
     mountPair([
       labRow({ name: 'EOSINOPHILS', previous: 5, current: 2, unit: '%', previousUnit: '%', currentUnit: '%', category: 'unchanged', symbol: '↓' }),
     ]);
 
     await screen.findByText('Eosinophils');
-    // 2026-10-04: the arrow's half is said in words too, so it cannot be read
-    // as the verdict ("↓ improved" beside "↑ no real change" looked wrong).
     expect(screen.getByText('↓ went down · within normal variation')).toBeInTheDocument();
     expect(screen.queryByText(/unchanged/)).not.toBeInTheDocument();
     expect(screen.queryByText(/no real change/)).not.toBeInTheDocument();
@@ -994,16 +842,12 @@ describe('comparison -- the rest of the report', () => {
     await screen.findByText('Glucose');
     expect(screen.getByText('↓ went down · improved')).toBeInTheDocument();
     expect(screen.getByText('↑ went up · within normal variation')).toBeInTheDocument();
-    // The key above the table names the two halves.
     expect(
       screen.getByText(/the arrow shows which way the number moved; the\s+words after the dot say whether that move counts/)
     ).toBeInTheDocument();
   });
 
   it('leaves age, sex and smoking out of the table (2026-10-02)', async () => {
-    // They read as measurements -- "Age 34 -> 20" between two people -- and
-    // as "Not measured" for a sex the report PRINTS (Module 29 carries no
-    // value for a word). Who the reports are about is said above the table.
     mountPair([labRow()], [
       { feature: 'hba1c', description: 'HbA1c', unit: '%', previous: 5.4, current: 7, category: 'worsened' },
       { feature: 'age', description: 'Age in whole years', unit: 'years', previous: 34, current: 20, category: 'not_classifiable' },
@@ -1014,28 +858,20 @@ describe('comparison -- the rest of the report', () => {
     await screen.findByText('Zorblex');
     const headings = [...document.querySelectorAll('table tbody th')].map((th) => th.textContent);
     expect(headings.some((h) => /Age in whole years|gender|Smoking/.test(h))).toBe(false);
-    // ...and the count is of what is shown: HbA1c + Zorblex.
     expect(screen.getByText(/2 parameters across these two reports/)).toBeInTheDocument();
   });
 
   it("uses the same words for Module 29's own rows", async () => {
-    // One table must not say "unchanged" for the assessed half and something
-    // else for the rest.
     mountPair([], [
       { feature: 'bmi', description: 'Body mass index', unit: 'kg/m2', previous: 25.25, current: 25.25, category: 'unchanged', symbol: '→' },
     ]);
 
     await screen.findByText('Body mass index');
-    // Truly the same value: no movement words, and no "variation" claim.
     expect(screen.getByText('→ no change')).toBeInTheDocument();
     expect(screen.queryByText(/unchanged|within normal variation/)).not.toBeInTheDocument();
   });
 
   it('never prints "changed direction only", which reads as its opposite', async () => {
-    // SEEN ON SCREEN 2026-09-24:
-    //     Haemoglobin  9.2 g/dL  ->  13.6 g/dL   ↑ changed direction only
-    // Module 29 found a REAL change (+47.8 %, past the 9 % band) and declined
-    // only to call it better or worse. The words must say that.
     mountPair([], [
       { feature: 'hemoglobin', description: 'Haemoglobin concentration', unit: 'g/dl', previous: 9.2, current: 13.6, category: 'changed_direction_only', symbol: '↑' },
     ]);
@@ -1045,7 +881,6 @@ describe('comparison -- the rest of the report', () => {
       screen.getByText('↑ went up · real change, not rated better or worse')
     ).toBeInTheDocument();
     expect(screen.queryByText(/direction only/)).not.toBeInTheDocument();
-    // Not mistaken for its counterpart.
     expect(screen.queryByText(/within normal variation/)).not.toBeInTheDocument();
   });
 
@@ -1118,8 +953,6 @@ describe('comparison', () => {
 
 describe('progress score', () => {
   it('renders a refusal as "no score", never as 50 or 0', async () => {
-    // Below the coverage floor the service returns `score: null`. A midpoint
-    // would read as "average progress", which nobody measured.
     mount({
       progress: {
         progress: {
@@ -1187,19 +1020,10 @@ describe('progress score', () => {
     );
 
     expect(await screen.findByText('trends unavailable')).toBeInTheDocument();
-    // The other two still rendered.
     expect(screen.getByText('70')).toBeInTheDocument();
   });
 });
 
-/**
- * THE PROGRESS CARD, AFTER THE PROSE WAS CUT.
- *
- * Everything removed from this card was removed because it repeated something
- * already on screen, or described this platform's own configuration. What was
- * NOT removed is the caveat and the coverage line, and these tests are what
- * stops the next tidy-up taking them.
- */
 describe('the progress score card', () => {
   const progress = (extra = {}) => ({
     outcome: 'SCORE_COMPUTED',
@@ -1227,16 +1051,6 @@ describe('the progress score card', () => {
   });
 
   it("prints the service's sentence and adds NOTHING in front of it", async () => {
-    // The card printed the literal "Higher is better." immediately in front of
-    // `direction_text`, which itself opened "The scale runs from 0 to 100 and
-    // HIGHER IS BETTER" -- the card said it twice in one breath.
-    //
-    // MUTATION-FOUND WEAKNESS: the first version of this test counted
-    // occurrences of "higher is better" and allowed one. Putting the literal
-    // back SURVIVED it, because the rewritten service sentence does not
-    // contain that phrase, so the prefix was the only copy and the count was
-    // still 1. Counting a phrase cannot catch a page prepending its own
-    // wording to an author's sentence; equality can.
     const data = progress();
     mount({ progress: { progress: data } });
 
@@ -1255,8 +1069,6 @@ describe('the progress score card', () => {
   });
 
   it('KEEPS the caveat', async () => {
-    // Section 6ag: shortening is not the same decision as dropping. This
-    // platform has found this class of sentence missing three times.
     mount({ progress: { progress: progress() } });
 
     expect(
@@ -1265,17 +1077,12 @@ describe('the progress score card', () => {
   });
 
   it('KEEPS the coverage line, without a total that disagrees with the page', async () => {
-    // An absence: four results are not in the number, and the card says so.
-    // "of your 12" WAS DROPPED (2026-10-02): the service's total counts age,
-    // sex and smoking and none of the unassessed tests, so it disagreed with
-    // the parameter count on the two cards above it.
     mount({ progress: { progress: progress() } });
 
     const said = await screen.findByText(/Worked out from 8 results/);
     expect(said.textContent).toMatch(/could be judged/);
     expect(said.textContent).toMatch(/Everything else above is not in the number/);
     expect(said.textContent).not.toMatch(/of your 12/);
-    // The placeholder plural is gone from this card.
     expect(said.textContent).not.toMatch(/\(s\)/);
   });
 
@@ -1294,23 +1101,18 @@ describe('the progress score card', () => {
   });
 
   it('mentions the minimum only when it is the reason there is no score', async () => {
-    // "At least 3 are needed" under a score built from 8 answers a question
-    // nobody asked. Under a refusal it is the whole explanation.
     mount({ progress: { progress: progress() } });
     await screen.findByText(/Worked out from 8 results/);
     expect(screen.queryByText(/At least 3 are needed/)).not.toBeInTheDocument();
   });
 
   it('places the score on the scale, and never in a risk colour', async () => {
-    // The card's own text says this is not a risk score. A green marker at 80
-    // and a rust one at 20 would contradict that from two inches away.
     mount({ progress: { progress: progress() } });
 
     await screen.findByText(/Progress score/);
     const mark = document.querySelector('.scorescale__mark');
     expect(mark).not.toBeNull();
     expect(mark.getAttribute('fill')).toBe('var(--brand)');
-    // 62.5 on a 10..250 track.
     expect(Number(mark.getAttribute('cx'))).toBeCloseTo(160, 0);
   });
 
@@ -1321,8 +1123,6 @@ describe('the progress score card', () => {
   });
 
   it('does not repeat a warning the comparison card already showed', async () => {
-    // Module 30 inherits Module 29's warnings, so the intermediate-report
-    // sentence arrived on both cards and printed twice on one screen.
     const shared = 'This comparison uses two of your reports.';
     mount({
       comparison: { comparison: { warnings: [shared], parameters: {} } },
@@ -1334,7 +1134,6 @@ describe('the progress score card', () => {
   });
 
   it('still shows a warning that ONLY the progress payload carries', async () => {
-    // The filter must not swallow this card's own warnings.
     mount({
       comparison: {
         comparison: {
@@ -1356,35 +1155,12 @@ describe('the progress score card', () => {
   });
 });
 
-/**
- * NO INTERNAL NAME REACHES THE TRENDS TABLE.
- *
- * `PATIENT_LABEL` was imported on this page and used for the chart headings,
- * while the table below them printed `trend.feature` raw -- so one screen
- * carried "HbA1c (average blood sugar)" as a title and `hba1c`,
- * `blood_glucose`, `vitamin_b12`, `smoking_history` as row headings.
- *
- * Found while auditing the comparison table one row down, which was showing
- * "Self-described gender as stored by Module 2." That makes this the FIFTH
- * surface where this platform's own vocabulary has reached a reader
- * (MEMORY.md 6u, 6w, 6af, 6an-e). The standing rule from 6af is that it is
- * never one surface; the corollary this adds is that finding one is a reason
- * to sweep the screen it is on.
- */
 describe('the trends card names parameters for a reader', () => {
   const trends = (features) => ({
     trends: { features },
     history: { included: 3, considered: 3 },
   });
 
-  // POINTS, BECAUSE A NAME NEEDS SOMETHING TO SIT ON.
-  //
-  // These fixtures used to carry no readings, because the table they were
-  // written for printed a row per feature whether or not there was anything
-  // to plot. The table is gone and the chart heading is the only name on this
-  // card, so a feature with no point has no name to check. A real
-  // TREND_CLASSIFIED feature always arrives with its points anyway -- this is
-  // the producer's shape, not a convenience.
   const row = (feature) => ({
     feature,
     outcome: 'TREND_CLASSIFIED',
@@ -1404,11 +1180,6 @@ describe('the trends card names parameters for a reader', () => {
     );
 
   it('shows the reader-facing name, not the feature key', async () => {
-    // `smoking_history` WAS CHECKED HERE AND IS NOT ANY MORE, because it is
-    // no longer on this card: it is a profile answer, it arrives NOT_NUMERIC,
-    // and a feature with no trajectory now draws nothing rather than taking a
-    // table row. It is still named for a reader in the comparison table
-    // further down the page, which has its own test.
     mount({
       trends: trends({
         hba1c: row('hba1c'),
@@ -1422,19 +1193,10 @@ describe('the trends card names parameters for a reader', () => {
     for (const raw of ['hba1c', 'vitamin_b12']) {
       expect(titles()).not.toContain(raw);
     }
-    // THE LEAK CLASS, NOT ONE OF ITS INSTANCES. This platform's keys are
-    // snake_case and a reader's words never are, so an underscore anywhere in
-    // the rendered card is this vocabulary escaping again -- the failure
-    // MEMORY.md records on five separate surfaces.
     expect(document.body.textContent).not.toMatch(/\b[a-z]+_[a-z0-9_]+\b/);
   });
 
   it('falls back to the key rather than printing nothing', async () => {
-    // A feature the label table has never heard of must still be nameable:
-    // a blank heading is worse than an ugly one, because a reader cannot tell
-    // which parameter the chart is about. The key is printed as it stands --
-    // the capitalisation the deleted table applied went with it, and an
-    // unlovely name a reader can match to their report beats no name.
     mount({ trends: trends({ some_new_marker: row('some_new_marker') }) });
 
     await screen.findByText(/Trends over time/);
@@ -1442,17 +1204,6 @@ describe('the trends card names parameters for a reader', () => {
   });
 
   it('counts the panels it actually renders, and the parts add up', async () => {
-    // THE DEFECT THIS EXISTS FOR, and the reader spotted it on the screen.
-    //
-    // The line read `3 improving · 1 worsening · 3 stable · 5 not
-    // determinable` -- Module 28's tally of its twelve ASSESSED features --
-    // over a card showing twenty-six panels. It counted fourteen laboratory
-    // panels not at all, and it counted `age`, `sex` and `smoking_history`,
-    // which are no longer rendered anywhere on the card.
-    //
-    // A COUNT THAT CANNOT BE RECONCILED WITH THE ROWS UNDER IT is worse than
-    // no count, because a reader who checks it stops trusting the ones that
-    // are right. So the four parts must sum to the stated total.
     mount({
       trends: {
         history: { included: 2, considered: 2 },
@@ -1469,7 +1220,6 @@ describe('the trends card names parameters for a reader', () => {
               ],
               gaps: [],
             },
-            // NOT_TRENDABLE: no chart, no row, and it must not be counted.
             age: {
               feature: 'age',
               outcome: 'NOT_TRENDABLE',
@@ -1481,8 +1231,6 @@ describe('the trends card names parameters for a reader', () => {
               gaps: [],
             },
           },
-          // DELIBERATELY DISAGREEING with what is on the card, because this is
-          // the payload field the old line trusted.
           summary: { improving: 9, worsening: 9, stable: 9, not_determinable: 9 },
         },
         labSeries: {
@@ -1521,25 +1269,15 @@ describe('the trends card names parameters for a reader', () => {
       .map((e) => e.textContent.replace(/\s+/g, ' ').trim())
       .find((t) => /improving/.test(t));
 
-    // One assessed chart (hba1c, worsening), one lab series (stable), one lab
-    // reading (no direction). `age` draws nothing and is not counted.
     expect(line).toMatch(/^3 parameters/);
     expect(line).toContain('0 improving');
     expect(line).toContain('1 worsening');
     expect(line).toContain('1 stable');
     expect(line).toContain('1 with no direction stated');
-    // The payload's own summary said 9 of everything. It is not this line.
     expect(line).not.toContain('9');
   });
 
   it('does NOT repeat every chart in a table beneath it', async () => {
-    // THE REMOVAL, PINNED. The card carried a
-    // `Parameter / Direction / First -> latest / Readings` table under the
-    // charts, and every row of it restated the direction word and the refusal
-    // sentence already on the chart above. A test that asserts the old
-    // wording is a test that will be satisfied by putting the table back, so
-    // the four column headings and the row's own phrasing are listed here as
-    // things that must not reappear on this card.
     mount({
       trends: trends({
         hba1c: row('hba1c'),
@@ -1552,20 +1290,10 @@ describe('the trends card names parameters for a reader', () => {
     for (const gone of ['Direction', 'First → latest', 'usable reading(s)', 'No trend']) {
       expect(screen.queryByText(gone)).not.toBeInTheDocument();
     }
-    // The trends card holds no table at all now. The comparison table lower
-    // down the page is a different section and is not mounted here.
     expect(document.querySelectorAll('table.lab-table')).toHaveLength(0);
   });
 });
 
-/**
- * THE TREND CHARTS, COLLAPSED.
- *
- * Nine charts at ~200px each were most of this page. The condition that makes
- * closing them safe is the same one the profile questions have: THE SUMMARY
- * STATES THE FINDING. A shut list that hid its own directions would make a
- * reader open nine boxes to learn what the open list told them at a glance.
- */
 describe('the trend charts collapse', () => {
   const chartable = (feature, trend, outcome = 'TREND_CLASSIFIED') => ({
     feature,
@@ -1599,9 +1327,6 @@ describe('the trend charts collapse', () => {
   });
 
   it('never summarises a direction the service did not classify', async () => {
-    // MEMORY 6z: a payload carrying `trend` without a classification printed
-    // the string "null" as a direction once already. The summary reads the
-    // same two-part predicate the table does, and absence wins.
     mount({
       trends: {
         trends: {
@@ -1635,25 +1360,6 @@ describe('the trend charts collapse', () => {
 });
 
 
-/**
- * WHY A CHART HAS NO DIRECTION, ON THE CHART.
- *
- * Found by a reader looking at their own blood-sugar chart: a line climbing
- * from 88 to 168 under the words "no direction". The service had already
- * explained itself -- Module 28 returned
- *
- *   NOT_COMPARABLE_SAMPLE_TIMING
- *   "Blood glucose readings were taken under different sample timings
- *    (fasting, random). Those are not comparable quantities, so no trend is
- *    reported."
- *
- * -- and the page was already rendering that sentence, in the TABLE further
- * down. Which is no use at all to someone looking at the picture.
- *
- * The refusal itself is correct: on that account the first two readings are
- * fasting and the last two random, so most of the climb is the change of
- * test rather than a change in the reader.
- */
 describe('Module 28 -- the chart says why it has no direction', () => {
   const noDirection = (feature, outcome, reason) => ({
     feature,
@@ -1696,7 +1402,6 @@ describe('Module 28 -- the chart says why it has no direction', () => {
   });
 
   it('says nothing extra when the direction WAS classified', async () => {
-    // A panel that explains itself when there is nothing to explain is noise.
     mount({
       trends: {
         trends: {
@@ -1724,8 +1429,6 @@ describe('Module 28 -- the chart says why it has no direction', () => {
   });
 
   it('adds nothing when the service gave no sentence', async () => {
-    // The fallback wording belongs to the table row, which has a column to
-    // fill. A panel invents nothing.
     mount({
       trends: {
         trends: {
@@ -1743,14 +1446,6 @@ describe('Module 28 -- the chart says why it has no direction', () => {
   });
 });
 
-/**
- * "STABLE" IS THE OTHER CASE WHERE THE WORDS AND THE PICTURE DISAGREE.
- *
- * It does not mean the line is flat. It means the movement is inside the band
- * where this test's own variation lives: cholesterol 186 -> 172 is -7.53 %
- * against a 17 % band -- a real fall, and smaller than the noise. The reader
- * saw a steep line labelled "stable" with nothing to reconcile them.
- */
 describe('Module 28 -- a stable panel says what stable means', () => {
   const REASON =
     'TOTAL cholesterol went from 186 to 172 mg/dl between 2026-09-09 and '
@@ -1789,7 +1484,6 @@ describe('Module 28 -- a stable panel says what stable means', () => {
   });
 
   it('still calls it stable in the summary', async () => {
-    // The explanation qualifies the word; it does not replace it.
     mount({
       trends: {
         trends: { features: { cholesterol: stable(REASON) } },
@@ -1817,17 +1511,6 @@ describe('Module 28 -- a stable panel says what stable means', () => {
   });
 });
 
-/**
- * THE LABORATORY'S OWN REPEATED PARAMETERS, ON THE TIMELINE.
- *
- * Module 28 trends canonical features, so everything this platform does not
- * assess was absent from the page entirely -- a reader with reports full of
- * such parameters asked why none of them appeared.
- *
- * EVERY NAME BELOW IS INVENTED. The feature must work for any report carrying
- * any unknown parameter; a fixture drawn from this project's own reports
- * would let the suite pass by recognising them.
- */
 describe('Timeline -- the laboratory\'s own repeated parameters', () => {
   const series = (name, points, blocked = null, unit = 'mg/L', overrides = {}) => {
     const mapped = points.map(([date, value]) => ({
@@ -1843,17 +1526,8 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
       unit: blocked ? null : unit,
       blocked,
       points: mapped,
-      // THE PRODUCER SETS THESE ON EVERY NON-BLOCKED SERIES WITH TWO USABLE
-      // READINGS, so the fixture does too -- and withholds them from a
-      // blocked one exactly as `labSeriesService` does. A fixture that simply
-      // omitted them would exercise a no-pair path the backend never returns,
-      // which is the `basis.limitations` failure MEMORY.md 6w records: a
-      // fixture written to the consumer's assumption cannot catch that
-      // assumption being wrong.
       movementFrom: paired ? numeric[0] : null,
       movementTo: paired ? numeric[numeric.length - 1] : null,
-      // DEFAULTED TO ABSENT, so every test that does not opt in exercises the
-      // no-scale path -- which is what an older backend still returns.
       ...overrides,
     };
   };
@@ -1884,12 +1558,9 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
   const mountLab = (data) =>
     mount({ trends: { trends: { features: {} }, history: { included: 2 }, labSeries: data } });
 
-  /** The one card these now live in, alongside the assessed parameters. */
   const card = () => screen.getByText(/Trends over time/).closest('section');
 
   it('appears in the SAME card as the assessed parameters', async () => {
-    // Not a section of its own. The reader asked for these to sit with the
-    // rest rather than under a heading setting them apart.
     mountLab(
       labSeries({
         series: [series('ZORBLEX FACTOR(ZBX)', [['2026-01-01', 12.1], ['2026-02-01', 38.9]])],
@@ -1903,9 +1574,6 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
   });
 
   it('prints the two readings on the shut row', async () => {
-    // The pair a reader gets without opening anything. `12.1 -> 38.9` is
-    // arithmetic on their own first and latest readings and says nothing
-    // about meaning -- which is why it is uncoloured, like the movement word.
     mountLab(
       labSeries({
         series: [series('ZORBLEX FACTOR(ZBX)', [['2026-01-01', 12.1], ['2026-02-01', 38.9]])],
@@ -1917,19 +1585,11 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
     const pair = document.querySelector('.disclosure__pair');
     expect(pair).not.toBeNull();
     expect(pair.textContent).toBe('12.1 → 38.9 mg/L');
-    // THE UNIT ONCE. Safe to state once only because `blocked` is exactly the
-    // test that the two readings share a unit, and a blocked series gets no
-    // pair -- the test below pins that half.
     expect(pair.textContent.match(/mg\/L/g)).toHaveLength(1);
-    // NOT COLOURED LIKE A VERDICT. Green and rust mean better and worse on
-    // this page, and two readings mean neither.
     expect(pair.className).not.toMatch(/improving|worsening|trend--/);
   });
 
   it('prints NO pair for a blocked series, only its numbers on opening', async () => {
-    // 101.9 U/L and 13 IU/L with an arrow between them would assert the
-    // comparison this feature refused to draw a line through. The word is
-    // already withheld; the numbers must not claim it either.
     mountLab(
       labSeries({
         series: [
@@ -1951,11 +1611,6 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
   });
 
   it('does not let the chart contradict the row above it', async () => {
-    // FOUND ON SCREEN, NOT BY A TEST. NEUTROPHILS read `stable` on its row
-    // while the chart inside the same panel said "No direction was classified
-    // for them" -- because `classified` and `trend` were never passed down.
-    // They were right to be absent before Module 35 existed and wrong the
-    // moment it did.
     mountLab(
       labSeries({
         series: [
@@ -1976,8 +1631,6 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
   });
 
   it('still says no direction was classified when there is no verdict', async () => {
-    // The other half. A panel Module 35 refused, or one reached with a spent
-    // quota, must keep saying so -- this is the state the page degrades to.
     mountLab(
       labSeries({
         series: [series('Frimbulin', [['2026-01-01', 77], ['2026-02-01', 82]])],
@@ -1990,18 +1643,6 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
     expect(chart.getAttribute('aria-label')).toMatch(/No direction was classified/);
   });
 
-  // ------------------------------------------------------------------
-  // WHERE THE THRESHOLD CAME FROM -- SAID ONCE, NOT ON EVERY PANEL
-  // ------------------------------------------------------------------
-  //
-  // The reader circled the provenance sentence on an ESR panel and asked for
-  // it gone: it ran to two lines beside every one of 26 thresholds, and it
-  // buried the number it was qualifying. It now appears once on the card.
-  //
-  // NOT ONE OF THESE SENTENCES HAD A TEST BEFORE THIS BLOCK. Removing all
-  // three reader-facing provenance wordings left the suite fully green --
-  // 384 passed, nothing failed. That is this project's own failure mode
-  // arriving in the harmless direction for once, and the reason these exist.
 
   it('states the threshold on the panel, without the provenance clause', async () => {
     mountLab(
@@ -2021,8 +1662,6 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
 
     await screen.findByText(/Trends over time/);
     const panel = document.querySelector('.trend-chart__threshold');
-    // THE USEFUL HALF STAYS. It is the answer to "why does 35 -> 45 read
-    // stable", which is the question that put this line on the page.
     expect(panel.textContent).toMatch(/Counted as a change only past 62%/);
     expect(panel.textContent).not.toMatch(/variation table/);
     expect(panel.textContent).not.toMatch(/checked against/);
@@ -2051,9 +1690,6 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
   });
 
   it('says it ONCE even with many panels -- the whole point of the change', async () => {
-    // A caveat repeated per panel does not read as many caveats; it reads as
-    // boilerplate. If this ever regresses to a per-panel sentence, this is
-    // the test that notices.
     mountLab(
       labSeries({
         series: [1, 2, 3, 4, 5].map((n) =>
@@ -2072,14 +1708,8 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
     await screen.findByText(/Trends over time/);
     const hits = card().textContent.match(/have not been checked against a published source/g);
     expect(hits).toHaveLength(1);
-    // ...while every panel still carries its own threshold.
     expect(document.querySelectorAll('.trend-chart__threshold')).toHaveLength(5);
 
-    // ASSERTED ON STRUCTURE, NOT ON THE SENTENCE. The phrase count above was
-    // the whole test until a mutant put a per-panel caveat back with "has"
-    // where the card says "have" -- and slipped straight past it. A
-    // regression here will not reuse the card's exact wording, so what must
-    // be pinned is that NO PANEL talks about checking at all.
     document
       .querySelectorAll('.trend-chart__threshold, .trend-chart__joined')
       .forEach((el) => {
@@ -2088,9 +1718,6 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
   });
 
   it('says nothing at all when every figure has been reviewed', async () => {
-    // THE SENTENCE MUST DISAPPEAR BY ITSELF once the variation table is
-    // verified. A blanket caveat hard-coded into the card would still be
-    // claiming the figures are unchecked after somebody had checked them.
     mountLab(
       labSeries({
         series: [
@@ -2111,9 +1738,6 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
   });
 
   it('keeps the stronger wording when a model invented the figure', async () => {
-    // A figure with no reviewable source is weaker than a literature-typical
-    // table row, and collapsing the two would hide that. Absent provenance
-    // counts as the model: an unknown source is not a checked one.
     mountLab(
       labSeries({
         series: [
@@ -2146,19 +1770,13 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
     );
 
     await screen.findByText(/Trends over time/);
-    // WHICH two labels were joined is specific to the panel and stays there.
     expect(card().textContent).toMatch(/both meaning grams per decilitre/);
-    // Whether anyone reviewed that convention is one fact about the card.
     expect(card().textContent).toMatch(/unit equivalences used here have not been checked/i);
     const panel = document.querySelector('.trend-chart__joined');
     expect(panel.textContent).not.toMatch(/checked against/);
   });
 
   it('names the printed spellings it treated as one test', async () => {
-    // MODULE 36'S JOIN, MADE VISIBLE. The reader's report says one of these
-    // and the panel is headed with the other, so without this line it reads
-    // as a parameter they never had -- and a join nobody can see is the page
-    // rewriting their report rather than regrouping it.
     mountLab(
       labSeries({
         series: [
@@ -2178,8 +1796,6 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
   });
 
   it('says nothing about names when nothing was joined', async () => {
-    // The commonest case by far, and it must stay silent -- a note on every
-    // panel is the commentary the reader already asked to have removed.
     mountLab(
       labSeries({
         series: [series('Frimbulin', [['2026-01-01', 12.1], ['2026-02-01', 38.9]])],
@@ -2192,7 +1808,6 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
   });
 
   it('prints no pair for a parameter on only one report', async () => {
-    // One reading is not a change. Its value is shown in full when opened.
     mountLab(
       labSeries({
         readings: [reading('ZORBLEX FACTOR(ZBX)', [['2026-01-01', '82', '%']])],
@@ -2204,16 +1819,6 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
     expect(document.querySelectorAll('.disclosure__pair')).toHaveLength(0);
   });
 
-  // ================== the commentary that was removed ======================
-  //
-  // These sat above the panels: a heading naming them as tests this tool does
-  // not assess, and three paragraphs about interpretation, the scale and the
-  // reference range. The reader asked for all of it to go.
-  //
-  // PINNED SO IT CANNOT CREEP BACK. Every control those paragraphs described
-  // is still enforced -- in labSeriesService, which emits no direction, and in
-  // TrendChart, which draws no band. What was removed was the description, not
-  // the guarantee, and the tests below are what keep that distinction honest.
   it('says nothing about assessing, interpreting, or the scale', async () => {
     mountLab(
       labSeries({
@@ -2248,17 +1853,6 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
     }
   });
 
-  // =========================== the status these may carry ==================
-  //
-  // A reader asked why these showed no status when the assessed panels say
-  // improving / worsening / stable. Those three need a polarity and a
-  // stability band, and MODULE 35 NOW SUPPLIES BOTH -- from the test name
-  // alone -- so a classified panel carries the clinical word like any other.
-  //
-  // WHAT THESE TESTS STILL PIN is the panel that was NOT classified: a spent
-  // quota, a refused polarity and a variation figure outside the permitted
-  // set all land there, and such a panel must show only what is true of it --
-  // which way the numbers went, and the laboratory's own marking.
 
   it('shows which way the numbers went, without a clinical word', async () => {
     mountLab(
@@ -2275,15 +1869,6 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
     );
 
     await screen.findByText(/Trends over time/);
-    // SCOPED TO THE PANEL, NOT THE CARD, and the rescoping is the point.
-    //
-    // This asserted over the whole card and broke when the card gained its
-    // own tally line -- `26 parameters · 4 improving · 2 worsening · 13
-    // stable · 7 with no direction stated` -- which contains all three words
-    // as LABELS FOR COUNTS. That is not a clinical claim about any parameter.
-    //
-    // What must never happen is one of those words appearing as THIS panel's
-    // status when nothing classified it, so the panel is what is asserted on.
     const panel = document.querySelector('.trend-chart__block > summary');
     expect(panel.textContent).toMatch(/rose/);
     expect(panel.textContent).not.toMatch(/improving|worsening|stable/i);
@@ -2306,13 +1891,10 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
     await screen.findByText(/Trends over time/);
     const chip = card().querySelector('.lab-status__flag');
     expect(chip.textContent).toBe('High');
-    // WHOSE JUDGEMENT IT IS, in the markup rather than only in a comment.
     expect(chip.getAttribute('title')).toMatch(/laboratory/i);
   });
 
   it('does NOT colour the movement word like a trend', async () => {
-    // Green and rust mean better and worse on this page. "rose" is arithmetic
-    // and must not borrow their ink.
     mountLab(
       labSeries({
         series: [
@@ -2334,8 +1916,6 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
   });
 
   it('shows NO marking chip when the laboratory marked nothing', async () => {
-    // Null is "not checked". Rendering it as "In range" would be a laboratory
-    // verdict nobody gave -- an absence becoming a reassurance.
     mountLab(
       labSeries({
         series: [
@@ -2396,8 +1976,6 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
   });
 
   it('REPLACES the movement word rather than showing both', async () => {
-    // "rose" and "worsening" in one row are two answers to one question, and
-    // a reader would reasonably read them as two findings.
     mountLab(
       labSeries({
         series: [
@@ -2419,8 +1997,6 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
   });
 
   it('branches on `classified`, never on the trend word alone', async () => {
-    // §6z rendered the string "null" as a direction on exactly this mistake.
-    // A trend word without a classification loses to the movement word.
     mountLab(
       labSeries({
         series: [
@@ -2442,8 +2018,6 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
   });
 
   it('falls back to the movement word when no classification arrives', async () => {
-    // A spent quota, an unconfigured key and a service that is down all land
-    // here. The panel keeps what it had before Module 35 existed.
     mountLab(
       labSeries({
         series: [
@@ -2464,9 +2038,6 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
   });
 
   it('gives it NO direction word, because there is no polarity for it', async () => {
-    // THE PROPERTY IS THE BADGE, NOT THE WORDS. The removed paragraph used to
-    // say "no direction is given"; what makes it true is that the service
-    // emits none and this panel renders none.
     mountLab(
       labSeries({
         series: [series('ZORBLEX FACTOR(ZBX)', [['2026-01-01', 1], ['2026-02-01', 99]])],
@@ -2485,8 +2056,6 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
   });
 
   it('shows the readings when the units disagree, and draws no line', async () => {
-    // Two scales on one axis is the failure 6z caught once. No chart -- and
-    // the values are still the reader's, so they are listed.
     mountLab(
       labSeries({
         series: [
@@ -2502,8 +2071,6 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
 
     await screen.findByText(/Trends over time/);
     const section = card();
-    // Readable name (2026-10-02), and the shut row says WHY there is no line
-    // in the same kind of chip the other rows use (2026-10-03).
     expect(section.textContent).toMatch(/Frimbulator/);
     expect(section.querySelector('.trend-chart__nodirection')?.textContent).toBe('units differ');
     expect(section.textContent).toMatch(/101\.9/);
@@ -2511,9 +2078,6 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
     expect(section.querySelectorAll('svg')).toHaveLength(0);
   });
 
-  // 2026-10-03, the owner: these rows showed "High" / "In range" while every
-  // other row showed how the value MOVED. A single reading now says why it has
-  // no movement, and its printed-range position moved inside the panel.
   it('a single reading says "one report only", not its flag', async () => {
     mountLab(
       labSeries({
@@ -2529,7 +2093,6 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
     expect(row.querySelector('.trend-chart__nodirection').textContent).toBe('one report only');
     expect(row.textContent).not.toMatch(/High|In range/);
     expect(row.querySelector('.lab-status__flag')).toBeNull();
-    // The readable name, as on the other pages.
     expect(row.textContent).toMatch(/C-reactive protein \(CRP\)/);
   });
 
@@ -2550,7 +2113,6 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
     const bodies = [...card().querySelectorAll('details.trend-chart__block')].map((d) => d.textContent);
     expect(bodies[0]).toMatch(/Above the range printed on the report\./);
     expect(bodies[1]).toMatch(/Within the range printed on the report\./);
-    // No flag is "not checked" -- never rendered as in range.
     expect(bodies[2]).not.toMatch(/range printed on the report/);
     for (const text of bodies) expect(text).not.toMatch(/laboratory's own/i);
   });
@@ -2576,8 +2138,6 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
   });
 
   it('never prints the reference range itself, or draws a band for it', async () => {
-    // The interval is a scale, not a finding. Printing 20-45 beside a reading
-    // would state one laboratory's range as though it were the test's.
     mountLab(
       labSeries({
         series: [
@@ -2637,8 +2197,6 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
   });
 
   it('draws NO chart for a listed reading', async () => {
-    // One reading is not a trend. Nothing here may acquire a line by being
-    // rendered beside things that have one.
     mountLab(
       labSeries({
         readings: [reading('TSH', [['2026-09-12', '1.81', 'uIU/mL']])],
@@ -2654,8 +2212,6 @@ describe('Timeline -- the laboratory\'s own repeated parameters', () => {
   });
 
   it('does NOT claim nothing could be followed when these are the only panels', async () => {
-    // The card's empty state sat beside ten panels once the assessed features
-    // were absent -- the page contradicting itself in two adjacent elements.
     mountLab(
       labSeries({
         series: [series('ZORBLEX', [['2026-01-01', 1], ['2026-02-01', 2]])],

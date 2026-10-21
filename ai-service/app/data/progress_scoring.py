@@ -1,155 +1,3 @@
-"""Module 30 Health Progress Score -- the REVIEWABLE data file.
-
-`app/services/progress_analyzer.py` contains the logic; this file contains the
-judgements. It follows `app/data/trend_polarity.py` and
-`app/data/clinical_rules.py` exactly: plain tables, no control flow beyond a
-lookup, every entry citing its basis, and a `_self_check()` that fails at
-IMPORT time if this table and `app/data/feature_catalog.py` disagree.
-
-==========================================================================
-WHAT THIS FILE IS **NOT**
-==========================================================================
-
-It is **not a third clinical table**. It contains:
-
-* no polarity declaration -- whether a rise in creatinine is better or worse
-  is read from `app/data/trend_polarity.py`, and Module 30 never asks that
-  question itself;
-* no stability threshold -- whether a change is real is the reference change
-  value in that same file, applied by Module 28 and re-used by Module 29;
-* no notion of "improved" of its own -- Module 29 already produced the label,
-  and this file maps that finished label onto a number.
-
-Two tables that can disagree about whether a rising value is good is the
-defect class this project's audits keep finding. So the ONLY thing declared
-here is the arithmetic of turning a set of already-decided category labels
-into one number, and the wording of the bands that number falls into.
-
-==========================================================================
-THE SCALE, AND WHICH WAY IT POINTS
-==========================================================================
-
-    0 to 100. **HIGHER IS BETTER**: a higher number means more of the
-    parameters that could be assessed moved in the direction the polarity
-    table declares favourable, between the two reports compared.
-
-That sentence is repeated in `SCALE_DIRECTION`, in `scoring_document()` and in
-the API response, because a one-dimensional score whose direction the reader
-has to infer is worse than no score.
-
-==========================================================================
-HOW A CATEGORY BECOMES A NUMBER -- AND WHY THE SPACING IS EQUAL
-==========================================================================
-
-Module 29 emits one `category` per parameter, by a precedence it documents
-itself. Five of those seven categories are ORDERED statements about the
-direction a parameter moved, and this file assigns each of them a point value
-on the 0-100 scale:
-
-    newly_normal    100    moved from outside the interval its own report
-                            printed, to inside it
-    improved         75    moved favourably without crossing an interval
-    unchanged        50    both readings present; the change did not clear
-                            the declared stability band
-    worsened         25    moved unfavourably without crossing an interval
-    newly_abnormal    0    moved from inside the interval its own report
-                            printed, to outside it
-
-**THE SPACING IS EQUAL BECAUSE THERE IS NO DEFENSIBLE BASIS FOR ANY OTHER
-SPACING.** Nobody on this project can say that "newly abnormal" is 3.2 times
-as unfavourable as "worsened", and inventing such a ratio would dress a
-guess as a measurement. What IS defensible is the ORDER, and the order is not
-invented here either: it is Module 29's own stated category precedence, in
-which a reference-interval crossing outranks the change axis because it is a
-change of state relative to the interval the laboratory itself printed.
-
-So this is an EQUALLY SPACED FIVE-POINT ORDINAL SCALE. It carries ordering
-information and nothing more. It is not a measurement of how much better
-anyone is, and `scoring_document()` says so in the response.
-
-Two of Module 29's seven categories are deliberately NOT on the scale:
-
-    changed_direction_only   the value moved measurably, but the polarity
-                             table declines to say whether that is better or
-                             worse. There is no honest place for it on a
-                             better/worse axis, and putting it at 50 would
-                             state "it did not move" -- which is false.
-    not_classifiable         nothing could be established at all.
-
-Both are EXCLUDED from the score and listed in the response with the reason.
-See `NON_CONTRIBUTING_CATEGORIES`.
-
-==========================================================================
-WHY "UNCHANGED" SCORES AND "NOT CLASSIFIABLE" DOES NOT
-==========================================================================
-
-This is the single most important distinction in this file, and it is the
-hazard this project keeps rediscovering (`RiskLevel.highest([])` returns None
-rather than LOW; Module 18 will not report a healthy status when nothing was
-assessed; Module 28 will not report `stable` when it had fewer than two
-readings).
-
-`unchanged` is a POSITIVE FINDING. Module 29 emits it only when both reports
-carried a usable reading, the change was computed, and it failed to clear the
-declared stability band. Someone looked, and the parameter did not move. That
-is real information about the patient and it belongs in the score at the
-neutral anchor.
-
-`not_classifiable` and `changed_direction_only` are ABSENCES OF FINDING.
-Nobody could tell. Scoring them at the neutral anchor would silently convert
-"we could not tell" into "it did not move" -- two different facts -- and
-averaging them together fabricates a result. They contribute NOTHING: not a
-neutral value, not a reduced weight, nothing. They appear in the response's
-`excluded` list, and they reduce the contributing count, which is exactly how
-the score stays honest about its own coverage.
-
-==========================================================================
-WEIGHTS
-==========================================================================
-
-**Every scorable parameter carries weight 1.0.** This project has no
-defensible basis for asserting that a change in one canonical parameter is
-clinically more important than a change in another; constructing such a
-hierarchy and presenting it inside a computed score would be inventing
-clinical fact. An honest equal weighting is stated here in preference to an
-invented one.
-
-`WEIGHTS` is nevertheless a per-feature table, total over the catalogue and
-checked at import, for two reasons: so that the equality is explicit and
-checkable rather than implicit in a mean, and so that a reviewer who DOES have
-a basis has exactly one place to record it -- with the basis alongside.
-
-A weight of 0.0 is not "less important". It means the feature has no
-direction of change at all (`gender` is not a trend), and the response
-reports it as an exclusion, never as a small contribution.
-
-==========================================================================
-"RELATIVE CHANGES" -- WHERE THEY ARE, AND WHY THERE IS NO SECOND SCALING
-==========================================================================
-
-The specification asks the score to consider relative changes. It already
-does, entirely upstream of this file:
-
-* A change that does not clear the reference change value (RCV) band declared
-  in `app/data/trend_polarity.py` is `unchanged` and scores at the neutral
-  anchor. A change that does clear it is `improved` or `worsened`.
-* The size of every contributing change is reported alongside the score, as
-  `absolute_change` and `percent_change` taken from Module 28's arithmetic.
-
-**No further magnitude multiplier is applied**, deliberately. A change of
-twice the RCV is not "twice as improved"; there is no published basis for any
-particular curve, and any curve invented here would be a third clinical table
-that could disagree with the two that exist. The RCV band is the project's
-one declared statement about when a relative change is real, and Module 30
-uses it through Modules 28/29 rather than restating it.
-
-==========================================================================
-MINIMUM COVERAGE
-==========================================================================
-
-See `MINIMUM_CONTRIBUTING_PARAMETERS`. A score is refused below it.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -173,41 +21,20 @@ from app.schemas.comparison import (
     CATEGORY_WORSENED,
 )
 
-#: Bump when any point value, weight, band or coverage floor below changes.
-#: Echoed in every response so a stored score can be traced back to the table
-#: that produced it. Independent of `TREND_POLICY_VERSION`, which versions the
-#: clinical tables Module 30 does not own.
 PROGRESS_SCORING_VERSION = "1.0.0"
 
-
-# --------------------------------------------------------------------------
-# The scale
-# --------------------------------------------------------------------------
 
 SCALE_MIN = 0.0
 SCALE_MAX = 100.0
 
-#: The one token a consumer may branch on to know which way the scale points.
 SCALE_DIRECTION = "higher_is_better"
 
-#: WRITTEN FOR THE PATIENT, NOT FOR THIS SERVICE.
-#: The previous wording shouted "HIGHER IS BETTER" in the middle of a sentence
-#: whose caller ALSO prints "Higher is better." in front of it, and explained
-#: the scale in terms of "the parameters that could be assessed" moving in "the
-#: direction the polarity table records as favourable". A polarity table is a
-#: file in this repository. Nothing about it is the reader's business, and
-#: naming it on a results page is this platform's most repeated defect -- see
-#: MEMORY 6u, 6w, 6af, and now this.
-#: Every fact is kept: the range, which way it points, and what moves it.
 SCALE_DIRECTION_TEXT = (
     "A higher number means more of your results moved in the better "
     "direction between the two reports. A lower number means more of them "
     "moved the other way."
 )
 
-#: What kind of scale it is, as a token and as a sentence. Named constants
-#: rather than literals buried in `scoring_document()`, so that the API
-#: response and the policy endpoint provably carry the SAME words.
 SCALE_KIND = "equally_spaced_five_point_ordinal"
 
 SCALE_KIND_NOTE = (
@@ -219,33 +46,18 @@ SCALE_KIND_NOTE = (
     "anything changed."
 )
 
-#: The score returned when every contributing parameter is `unchanged`. Stated
-#: as a named constant because it is the anchor the bands are built around,
-#: and because it is the value a reader will most want to sanity-check.
 NEUTRAL_ANCHOR = 50.0
-
-
-# --------------------------------------------------------------------------
-# Category -> points
-# --------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class CategoryPoints:
-    """One of Module 29's category labels, and its place on the 0-100 scale."""
 
     category: str
     points: float
-    #: Rank on the five-point ordinal scale, 1 = least favourable.
     rank: int
     basis: str
 
 
-#: The five ORDERED categories, and nothing else. `changed_direction_only` and
-#: `not_classifiable` are absent on purpose -- see `NON_CONTRIBUTING_CATEGORIES`
-#: below and the module docstring. `_self_check()` asserts that these two dicts
-#: together cover every value in Module 29's `CATEGORY_VALUES`, so a new
-#: category cannot ship without a decision recorded here.
 CATEGORY_POINTS: Dict[str, CategoryPoints] = {
     CATEGORY_NEWLY_NORMAL: CategoryPoints(
         CATEGORY_NEWLY_NORMAL,
@@ -318,19 +130,11 @@ CATEGORY_POINTS: Dict[str, CategoryPoints] = {
 }
 
 
-#: Why a category contributes NOTHING. A machine-readable code plus the
-#: sentence the response carries. Absence is reported as absence; it is never
-#: converted into a neutral score, a reduced weight, or a smaller contribution.
 EXCLUDED_DIRECTION_UNDECLARED = "DIRECTION_UNDECLARED"
 EXCLUDED_NOT_CLASSIFIABLE = "NOT_CLASSIFIABLE"
 EXCLUDED_ZERO_WEIGHT = "ZERO_WEIGHT_IN_SCORING_TABLE"
 EXCLUDED_NO_WEIGHT_DECLARED = "NO_WEIGHT_DECLARED"
 
-#: Unreachable while `_self_check()` holds, because it fails at import if any
-#: Module 29 category lacks a decision here. It exists so that the alternative
-#: to a missing decision is a stated exclusion rather than a KeyError in the
-#: middle of a patient's score -- or, far worse, a silent default onto the
-#: neutral anchor.
 EXCLUDED_UNKNOWN_CATEGORY = "UNKNOWN_CATEGORY"
 
 EXCLUSION_REASON_CODES: Tuple[str, ...] = (
@@ -344,7 +148,6 @@ EXCLUSION_REASON_CODES: Tuple[str, ...] = (
 
 @dataclass(frozen=True)
 class NonContributingCategory:
-    """A Module 29 category that is deliberately kept off the scale."""
 
     category: str
     reason_code: str
@@ -382,14 +185,8 @@ NON_CONTRIBUTING_CATEGORIES: Dict[str, NonContributingCategory] = {
 }
 
 
-# --------------------------------------------------------------------------
-# Weights
-# --------------------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class ParameterWeight:
-    """How much one canonical feature counts toward the weighted mean."""
 
     feature: str
     weight: float
@@ -415,10 +212,6 @@ _NOT_A_TREND_BASIS = (
     "from an omission."
 )
 
-#: TOTAL over `CANONICAL_FEATURES`. `_self_check()` fails at import if a
-#: catalogue feature has no row here, so adding a feature to
-#: `feature_catalog.py` without deciding what Module 30 does about it cannot
-#: silently produce a score that quietly ignores it.
 WEIGHTS: Dict[str, ParameterWeight] = {
     "hba1c": ParameterWeight("hba1c", 1.0, _EQUAL_WEIGHT_BASIS),
     "blood_glucose": ParameterWeight(
@@ -443,7 +236,6 @@ WEIGHTS: Dict[str, ParameterWeight] = {
     "creatinine": ParameterWeight("creatinine", 1.0, _EQUAL_WEIGHT_BASIS),
     "cholesterol": ParameterWeight("cholesterol", 1.0, _EQUAL_WEIGHT_BASIS),
     "triglycerides": ParameterWeight("triglycerides", 1.0, _EQUAL_WEIGHT_BASIS),
-    # The liver panel (2026-10-04): equal weight, like every measured value.
     "alt": ParameterWeight("alt", 1.0, _EQUAL_WEIGHT_BASIS),
     "ast": ParameterWeight("ast", 1.0, _EQUAL_WEIGHT_BASIS),
     "bilirubin_total": ParameterWeight("bilirubin_total", 1.0, _EQUAL_WEIGHT_BASIS),
@@ -473,24 +265,6 @@ WEIGHTS: Dict[str, ParameterWeight] = {
         0.0,
         _NOT_A_TREND_BASIS + " A categorical identity attribute.",
     ),
-    # ================ the complete blood count ==============================
-    #
-    # WEIGHT 1.0, AND NONE OF THEM REACHES A SCORE TODAY. All twelve carry
-    # POLARITY_UNDECLARED, so Module 29 returns them as
-    # changed_direction_only or not_classifiable and they are excluded on the
-    # CATEGORY axis -- which is where a "we do not say which way is better"
-    # decision belongs, not here.
-    #
-    # THE WEIGHT IS 1.0 RATHER THAN 0.0 ON PURPOSE, following `hemoglobin`
-    # and `blood_glucose` directly above. 0.0 in this file means "this is not
-    # a trend at all" (gender, smoking history). These twelve ARE trends --
-    # a platelet count can be followed -- so recording them as non-trends
-    # would be false, and declaring a polarity later would then need a second
-    # edit here that somebody would forget.
-    #
-    # ⚠ CONSEQUENCE, STATED BECAUSE IT WAS A DELIBERATE CHOICE: adding these
-    # twelve did NOT change any existing progress score. Verified against all
-    # four stored reports before and after.
     **{
         _cbc: ParameterWeight(
             _cbc,
@@ -523,13 +297,6 @@ WEIGHTS: Dict[str, ParameterWeight] = {
 }
 
 
-# --------------------------------------------------------------------------
-# Minimum coverage
-# --------------------------------------------------------------------------
-
-#: Below this many CONTRIBUTING parameters, no score is emitted at all:
-#: `score` is null and the outcome says why. It is never replaced by 50, never
-#: by a band, and never by a sentence that reads like steady progress.
 MINIMUM_CONTRIBUTING_PARAMETERS = 3
 
 MINIMUM_COVERAGE_BASIS = (
@@ -546,13 +313,6 @@ MINIMUM_COVERAGE_BASIS = (
     "request; that is a limit of the current polarity table, and it is "
     "reported in every response as the contributing count rather than hidden."
 ).format(
-    # DERIVED, NOT TYPED. This sentence is served verbatim by
-    # `GET /api/v1/progress/policy`, and it said "eight" when the answer was
-    # nine -- a number a reviewer would reasonably check the weights against.
-    # The adjacent `feature_coverage_note` was computed and correct the whole
-    # time, which is the argument for computing this one too: a hand-typed
-    # count goes stale the first time the polarity table gains a row, and
-    # nothing fails when it does.
     trendable=sum(1 for name in FEATURES if stability_for(name) is not None),
     with_polarity=sum(
         1
@@ -564,18 +324,8 @@ MINIMUM_COVERAGE_BASIS = (
 )
 
 
-# --------------------------------------------------------------------------
-# Bands
-# --------------------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class ProgressBandDef:
-    """One labelled interval of the 0-100 scale.
-
-    `lower` is INCLUSIVE and `upper` is EXCLUSIVE, except for the topmost
-    band, whose `upper` is inclusive so that a score of 100 has a band.
-    """
 
     key: str
     lower: float
@@ -647,8 +397,6 @@ BANDS: Tuple[ProgressBandDef, ...] = (
 )
 
 
-#: The score is rounded to this many decimal places BEFORE the band is chosen,
-#: so the number a reader sees and the band beside it can never disagree.
 SCORE_DECIMAL_PLACES = 1
 
 ROUNDING_NOTE = (
@@ -657,12 +405,6 @@ ROUNDING_NOTE = (
     "never disagree."
 )
 
-
-# --------------------------------------------------------------------------
-# Copy. Deliberately flat, non-clinical language, in the register
-# `app/population/policy.py` uses. Scanned by the Module 24 safety scanner at
-# import time from `app/services/progress_analyzer.py`.
-# --------------------------------------------------------------------------
 
 WHAT_THIS_IS = (
     "The health progress score is a single number describing how a set of "
@@ -675,15 +417,6 @@ WHAT_THIS_IS = (
     "is their average. Every parameter counts the same."
 )
 
-#: SHORTER, NEVER WEAKER. Ninety words of NOT-statements is a paragraph a
-#: reader skips, and a caveat that is skipped is not a caveat. Every claim
-#: from the long version survives here: it is not a risk score, not a measure
-#: of health, not a diagnosis; it says nothing about what to do; it describes
-#: only movement between two reports; it cannot see what was not measured on
-#: both of them; and the question of whether any of it matters belongs to a
-#: professional. MEMORY 6ag: shortening is not the same decision as dropping,
-#: and this platform has found this class of sentence MISSING three times.
-#: Checked by `assert_safe` at import -- see `progress_analyzer`.
 WHAT_THIS_IS_NOT = (
     "This number is not a health score, not a risk score and not a "
     "diagnosis. It only describes which way your results moved between two "
@@ -694,40 +427,15 @@ WHAT_THIS_IS_NOT = (
 )
 
 
-# --------------------------------------------------------------------------
-# Lookup
-# --------------------------------------------------------------------------
-
-
 def points_for(category: str) -> Optional[CategoryPoints]:
-    """The scale position for one of Module 29's categories, or None.
-
-    None means the category is deliberately off the scale -- look it up in
-    `NON_CONTRIBUTING_CATEGORIES` for the reason code. None does NOT mean
-    "no threshold, so score it neutrally": the caller must exclude it.
-    """
     return CATEGORY_POINTS.get(category)
 
 
 def weight_for(feature: str) -> Optional[ParameterWeight]:
-    """The weight row for a canonical feature, or None if it has none.
-
-    `_self_check()` makes None unreachable for a catalogue feature; the
-    Optional is kept so a caller that is handed an unknown name excludes it
-    with `NO_WEIGHT_DECLARED` rather than defaulting it to 1.0.
-    """
     return WEIGHTS.get(feature)
 
 
 def band_for(score: float) -> ProgressBandDef:
-    """The band a score falls in. Lower bound inclusive, upper exclusive.
-
-    The topmost band's upper bound is inclusive, so 100 is banded. A value
-    outside 0-100 cannot arise -- every point value is inside the range and a
-    weighted mean of values in a range stays in that range -- and `_self_check`
-    asserts the bands tile the whole range with no gap and no overlap, so this
-    function always returns.
-    """
     for band in BANDS:
         if band.lower <= score < band.upper:
             return band
@@ -739,20 +447,7 @@ def band_for(score: float) -> ProgressBandDef:
     )
 
 
-# --------------------------------------------------------------------------
-# Import-time enforcement
-# --------------------------------------------------------------------------
-
-
 def _self_check() -> None:
-    """Fail at IMPORT if this table is incomplete or internally inconsistent.
-
-    The dangerous cases are all silent-default cases: a category with no
-    decision recorded would have to be given one at runtime, and a feature
-    with no weight row would have to be given a default weight. Both are
-    clinical claims made by omission, so both fail loudly here instead.
-    """
-    # 1. Every Module 29 category has a decision: on the scale, or off it.
     decided = set(CATEGORY_POINTS) | set(NON_CONTRIBUTING_CATEGORIES)
     missing = [name for name in CATEGORY_VALUES if name not in decided]
     if missing:
@@ -773,8 +468,6 @@ def _self_check() -> None:
             f"Module 30 scores categories Module 29 cannot emit: {unknown}."
         )
 
-    # 2. The five scale positions are distinct, ranked consistently, and lie
-    #    inside the declared scale.
     ranks = sorted(entry.rank for entry in CATEGORY_POINTS.values())
     if ranks != list(range(1, len(CATEGORY_POINTS) + 1)):
         raise ValueError(f"CATEGORY_POINTS ranks are not 1..n: {ranks}")
@@ -791,10 +484,6 @@ def _self_check() -> None:
                 f"{entry.category} scores {entry.points}, outside the scale."
             )
 
-    # 3. The claim made in the module docstring -- that the spacing is EQUAL --
-    #    is enforced rather than merely asserted in a comment. If someone
-    #    edits a point value into an uneven scale, this fails, because the
-    #    docstring and `scoring_document()` would then both be lying.
     steps = {
         round(higher.points - lower.points, 9)
         for lower, higher in zip(by_rank, by_rank[1:])
@@ -813,7 +502,6 @@ def _self_check() -> None:
     if neutral != NEUTRAL_ANCHOR:
         raise ValueError("unchanged must sit on the declared NEUTRAL_ANCHOR")
 
-    # 4. The weight table is TOTAL over the catalogue.
     no_weight = [name for name in CANONICAL_FEATURES if name not in WEIGHTS]
     if no_weight:
         raise ValueError(
@@ -831,9 +519,6 @@ def _self_check() -> None:
         if not entry.basis.strip():
             raise ValueError(f"{name}: every weight must state its basis")
 
-    # 5. A feature declared trendable with a declared polarity must be able to
-    #    reach the score. A zero weight on such a feature would silently drop a
-    #    parameter the clinical table says is meaningful.
     for name, polarity in POLARITY.items():
         scorable = polarity.trendable and polarity.kind != POLARITY_UNDECLARED
         if scorable and WEIGHTS[name].weight <= 0.0:
@@ -848,7 +533,6 @@ def _self_check() -> None:
                 "Module 30 weight."
             )
 
-    # 6. The bands tile the whole scale exactly once.
     if BANDS[0].lower != SCALE_MIN or BANDS[-1].upper != SCALE_MAX:
         raise ValueError("the bands must span the whole declared scale")
     for lower, higher in zip(BANDS, BANDS[1:]):
@@ -860,12 +544,6 @@ def _self_check() -> None:
         if band.upper <= band.lower:
             raise ValueError(f"band {band.key} is empty or inverted")
 
-    # 7. Every anchor gets a band of its own, and no anchor sits on an
-    #    INTERIOR boundary -- which is the stated basis for the boundaries. The
-    #    two outer edges of the scale (0 and 100) are exempt because they are
-    #    the ends of the scale itself, exactly as _BAND_BASIS says. If someone
-    #    moves a boundary onto an anchor, that basis sentence stops being true,
-    #    so it fails here rather than becoming a false comment.
     banded: Dict[str, str] = {}
     for entry in CATEGORY_POINTS.values():
         band = band_for(entry.points)
@@ -885,7 +563,6 @@ def _self_check() -> None:
             )
         banded[band.key] = entry.category
 
-    # 8. The coverage floor must actually enforce the rule it states.
     if MINIMUM_CONTRIBUTING_PARAMETERS < 3:
         raise ValueError(
             "MINIMUM_CONTRIBUTING_PARAMETERS below 3 lets a single parameter "
@@ -895,11 +572,6 @@ def _self_check() -> None:
 
 
 def scoring_document() -> Dict[str, object]:
-    """Machine-readable dump of the whole table, for review and for the API.
-
-    Shape, points, weights, bands and their stated bases only -- no patient
-    data of any kind.
-    """
     return {
         "module": 30,
         "scoring_version": PROGRESS_SCORING_VERSION,

@@ -1,17 +1,5 @@
 'use strict';
 
-/**
- * Modules 4 + 5 orchestration - `POST /reports/:id/analyze` and
- * `GET /reports/:id/analysis`.
- *
- * EVERY ai-service call is mocked at the axios layer, so this suite passes with
- * no Python service running and no network. Mocking at the transport rather
- * than at `aiServiceClient` is deliberate: several of the properties that
- * matter most - the tri-state profile field genuinely absent from the wire
- * body, the auth and correlation headers, the `data` envelope being unwrapped
- * before the features call - are only observable in the actual outgoing
- * request, and a client-level mock would assert them against itself.
- */
 
 const fs = require('fs');
 const os = require('os');
@@ -22,10 +10,6 @@ const UPLOAD_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'vaidyaai-analysis-tes
 process.env.UPLOAD_ROOT = UPLOAD_ROOT;
 process.env.UPLOAD_MAX_BYTES = String(64 * 1024);
 
-// --- axios transport mock ---------------------------------------------------
-// The identifier must start with `mock` for jest's module-factory allow-list,
-// and is only dereferenced inside the arrow functions (i.e. at call time), so
-// there is no temporal-dead-zone problem with jest.mock hoisting.
 const mockAxios = { post: jest.fn(), get: jest.fn() };
 jest.mock('axios', () => ({
   create: () => ({
@@ -58,18 +42,12 @@ const TERM_PATH = '/api/v1/explain/term';
 
 const auth = (token) => ({ Authorization: `Bearer ${token}` });
 
-// --- fixtures ---------------------------------------------------------------
 
 const pdfBytes = (filler = 'lab report body') =>
   Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.from(filler), Buffer.from('\n%%EOF\n')]);
 
-/**
- * A canary string standing in for report content. It must appear nowhere in a
- * log, nowhere in `statusMessage`, and nowhere in an error response.
- */
 const PHI_CANARY = 'PATIENT-ASHA-PATEL-HBA1C-6.8-CANARY';
 
-/** Module 4's contract shape (MEMORY.md section 8). */
 const extractionFixture = () => ({
   source: 'pdf',
   raw_text: `Haemoglobin 14.2 g/dl ${PHI_CANARY}`,
@@ -93,14 +71,6 @@ const extractionFixture = () => ({
   warnings: ['page 1 was recovered by the PDF repairer'],
 });
 
-/**
- * Module 5's confirmed shape. FOUR warning-bearing keys, and picking the wrong
- * one silently loses every Module 4 warning:
- *   warnings[]           Module 5's OWN only, plain strings
- *   upstream_warnings[]  Module 4's, as { stage, module, message }
- *   all_warnings[]       both, upstream first  <- the authoritative one
- *   upstream{}           provenance, incl. pages_unreadable + confidence
- */
 const REPAIR_WARNING = 'page 1 was recovered by the PDF repairer';
 const UNIT_WARNING = 'unit for creatinine was not recognised; value left unconverted';
 
@@ -128,14 +98,6 @@ const featuresFixture = () => ({
   },
 });
 
-/**
- * Module 6's shape, DERIVED FROM THE REQUEST rather than hard-coded.
- *
- * The real service forwards its input's warnings, missing-feature list and
- * upstream provenance into its own output. A static fixture would forward
- * warnings the caller never sent, which would make the "a stage stopped
- * propagating" tests pass for the wrong reason.
- */
 const validationFixture = (body) => {
   const engineered = (body && body.engineered) || {};
   const featureMap = engineered.features || {};
@@ -183,7 +145,6 @@ const forwarded = (body) =>
     ? body.validated.all_warnings
     : []);
 
-/** Module 8's shape. One decision, with evidence and a recommendation. */
 const rulesFixture = (body) => ({
   decisions: [
     {
@@ -220,7 +181,6 @@ const rulesFixture = (body) => ({
   metadata: { engine: 'rules' },
 });
 
-/** Modules 9/10's shape. */
 const mlFixture = (body) => ({
   decisions: [
     {
@@ -254,17 +214,6 @@ const mlFixture = (body) => ({
   metadata: { engine: 'ml' },
 });
 
-/**
- * Modules 17-20's `ClinicalReport`, DERIVED FROM THE REQUEST for the same
- * reason the validation fixture is: the real endpoint forwards its input's
- * warnings into `validation_warnings`, and a static fixture would forward
- * warnings the caller never sent - making the propagation tests pass for the
- * wrong reason.
- *
- * The default is a fully-assessed report. The Module 18 cases that matter most
- * (nothing assessed, partly assessed) are built from it by the tests that need
- * them, so there is exactly one description of the shape.
- */
 const clinicalReportFixture = (body) => {
   const validated = (body && body.validated) || {};
   const warnings = Array.isArray(validated.all_warnings) ? validated.all_warnings : [];
@@ -287,9 +236,6 @@ const clinicalReportFixture = (body) => {
         condition: 'diabetes',
         status: 'Indicated',
         risk: 'High',
-        // Module 23 reads this to attach each explained value to the findings
-        // it contributed to. Without it every explanation would arrive with an
-        // empty `conditions` list and the tests would not notice.
         evidence_features: ['hba1c'],
         contributions: [
           { source: 'clinical_rule_engine', status: 'Indicated', risk: 'High' },
@@ -328,8 +274,6 @@ const clinicalReportFixture = (body) => {
       rejected_features: Object.keys(validated.rejected || {}),
       missing_features: validated.missing_features || [],
     },
-    // Modules 4/5/6/8/9-10/16/17 - every origin, intact. This is the report's
-    // own contract and the backend reads it first.
     validation_warnings: warnings,
     warnings_by_stage: warnings.reduce((acc, w) => {
       acc[w.stage] = (acc[w.stage] || 0) + 1;
@@ -348,7 +292,6 @@ const clinicalReportFixture = (body) => {
       input_kind: 'validated',
     },
     metadata: { report_version: '1.0.0', input_received: 'validated' },
-    // Module 16 nested VERBATIM, and through it Module 15's collection.
     fusion: {
       fused: [
         {
@@ -376,14 +319,6 @@ const clinicalReportFixture = (body) => {
   };
 };
 
-/**
- * Module 18's FOURTH CASE: nothing could be assessed at all.
- *
- * `status` is `null` and `status_label` is a word that is NOT one of the
- * spec's three, because "no abnormal findings" is vacuously true for a report
- * whose every test was unreadable and rendering that as `Healthy` would tell a
- * patient whose document could not be read that they are well.
- */
 const nothingAssessedReport = (body) => {
   const report = clinicalReportFixture(body);
   return {
@@ -428,32 +363,16 @@ const nothingAssessedReport = (body) => {
   };
 };
 
-// --- Modules 23 + 26 fixtures -----------------------------------------------
 
-/**
- * An APPROVED patient-facing sentence. Deliberately contains no number the
- * safety layer would have had to ground, and no clinical claim.
- */
 const EXPLANATION_TEXT =
   'HbA1c reflects the average amount of sugar carried in your blood over the ' +
   'past few months. Your result is above the range this laboratory prints as ' +
   'usual. This is information to discuss with a qualified healthcare professional.';
 
-/**
- * A REFUSED sentence, and the span the safety layer matched inside it.
- *
- * THE AI-SERVICE NEVER SENDS EITHER OF THESE - `explanation` is assigned only
- * from `guarded_generation().approved_text`, and `safe_fallback()` copies codes
- * without reading the verdict's text. They are planted in the fixtures anyway,
- * because the property under test is that the BACKEND cannot persist them even
- * if the far side regresses. A test that only sends what the service currently
- * sends proves the service, not this code.
- */
 const REFUSED_CANARY =
   'REFUSED-UNSAFE-CANARY you definitely have diabetes, start metformin 500mg twice daily';
 const REFUSED_SPAN_CANARY = 'REFUSED-SPAN-CANARY you definitely have diabetes';
 
-/** Module 24's reviewed fallback wording, verbatim from app/safety/fallback.py. */
 const FALLBACK_NOTICE =
   'A plain-language explanation could not be prepared for this report. The ' +
   'structured findings above were produced by the analysis itself and are ' +
@@ -465,7 +384,6 @@ const NOT_GROUNDED_NOTICE =
 const MODEL_UNAVAILABLE_NOTICE =
   'The plain-language explanation service was not available, so no explanation was written.';
 
-/** The catalogue-sourced fallback. Codes only - never the refused prose. */
 const safeFallback = (violationCodes = []) => ({
   version: '1.0.0',
   generated_explanation_available: false,
@@ -506,11 +424,6 @@ const sourcesFixture = () => [
   },
 ];
 
-/**
- * ONE `PatientExplanation`, in whichever of Module 23's five outcomes is asked
- * for. `leak: true` additionally plants the refused text and the offending span
- * that the real service never sends - see REFUSED_CANARY above.
- */
 function explanationItem(feature, conditions, outcome = 'generated', { leak = false } = {}) {
   const base = {
     module: 23,
@@ -547,9 +460,6 @@ function explanationItem(feature, conditions, outcome = 'generated', { leak = fa
     const codes = ['DIAGNOSIS_CLAIM', 'MEDICATION_ADVICE'];
     return {
       ...base,
-      // `notice` is NULL for this outcome by design on the Python side - the
-      // reviewed wording lives on `fallback.notice`. That is exactly the shape
-      // a renderer reading `notice` alone would show as blank.
       explanation: leak ? REFUSED_CANARY : null,
       fallback: safeFallback(codes),
       notice: null,
@@ -564,8 +474,6 @@ function explanationItem(feature, conditions, outcome = 'generated', { leak = fa
         attempts: 2,
         ...(leak
           ? {
-              // Shapes a regressed safety layer might attach. None of these are
-              // sent today; all of them must be impossible to persist.
               offending_span: REFUSED_SPAN_CANARY,
               rejected_text: REFUSED_CANARY,
               modifications: [{ span: REFUSED_SPAN_CANARY, reason: 'DIAGNOSIS_CLAIM' }],
@@ -599,13 +507,6 @@ function explanationItem(feature, conditions, outcome = 'generated', { leak = fa
   };
 }
 
-/**
- * Module 23's `ReportExplanationSet`, DERIVED FROM THE REQUEST for the same
- * reason the validation and report fixtures are: `explain_report` reads the
- * report's own `laboratory_values` and `conditions`, so a static fixture would
- * explain findings the caller never sent and make the wiring tests pass for the
- * wrong reason.
- */
 function explanationFixture(body, { outcome = 'generated', leak = false } = {}) {
   const report = (body && body.report) || {};
   const byFeature = {};
@@ -631,7 +532,6 @@ function explanationFixture(body, { outcome = 'generated', leak = false } = {}) 
   };
 }
 
-/** Module 26's `LifestyleGuidance`. Catalogue text; `generated` is always false. */
 function guidanceFixture(body) {
   const asked = body || {};
   return {
@@ -669,7 +569,6 @@ function guidanceFixture(body) {
 
 const okResponse = (data) => ({ status: 200, data: { success: true, data } });
 
-/** Build an axios-shaped failure. The response body carries PHI on purpose. */
 function transportError({ status, code, message = 'transport failure' }) {
   const err = new Error(message);
   if (status !== undefined) {
@@ -682,7 +581,6 @@ function transportError({ status, code, message = 'transport failure' }) {
   return err;
 }
 
-/** Record of every outgoing call, in order. */
 let outgoing = [];
 
 function wireAiService({
@@ -714,15 +612,6 @@ function wireAiService({
   });
 }
 
-/**
- * The full section-16 chain, now running through to the PATIENT-FACING
- * explanation - the last hop in section 14's safety architecture.
- *
- * Three ordered phases. Rules/ML/report are concurrent with each other, and so
- * are the explanation and the guidance, so neither group's internal order is
- * asserted - but the explanation phase MUST come after the report phase,
- * because the report is its input.
- */
 const EXPLAIN_PHASE = [EXPLAIN_PATH, GUIDANCE_PATH];
 
 function expectFullChain(calls) {
@@ -734,7 +623,6 @@ function expectFullChain(calls) {
 
 const callsTo = (url) => outgoing.filter((call) => call.url === url);
 
-// --- users / reports --------------------------------------------------------
 
 async function makeUser(email) {
   const { res } = await registerUser({ email, name: 'Test User' });
@@ -762,7 +650,6 @@ const analyze = (token, id) => request(app).post(`${REPORTS}/${id}/analyze`).set
 const getAnalysis = (token, id) =>
   request(app).get(`${REPORTS}/${id}/analysis`).set(auth(token));
 
-/** Load a report WITH the select:false analysis payload. */
 const loadRaw = (id) =>
   Report.findById(id).select(
     '+extraction +features +featureValidation +ruleDecisions +mlDecisions +clinicalReport ' +
@@ -775,20 +662,8 @@ const getClinicalReport = (token, id) =>
 const getExplanation = (token, id) =>
   request(app).get(`${REPORTS}/${id}/explanation`).set(auth(token));
 
-// --- suite ------------------------------------------------------------------
 
 describe('unmappedTestNames - which skipped tests get described', () => {
-  // THIS SELECTOR SPENDS MONEY. It used to take only the tests the laboratory
-  // had marked abnormal, because describing all of them is what exhausts a
-  // twenty-call-a-day quota. The reader asked for EVERY unassessed test to be
-  // described -- a test listed with no explanation, in a section titled "What
-  // these results mean", reads as one nobody could explain.
-  //
-  // THE COST IS BOUNDED ELSEWHERE, DELIBERATELY, and that is what makes this
-  // selector's job simple: the ai-service caps one request at
-  // `MAX_PER_REQUEST` and caches every answer under the normalised test NAME,
-  // so a common panel is described once for the process and reused. This
-  // function's only remaining duty is to return the right NAMES, once each.
   const { unmappedTestNames } = analysisService;
 
   const features = (names) => ({ unmapped: names.map((test_name) => ({ test_name })) });
@@ -804,9 +679,6 @@ describe('unmappedTestNames - which skipped tests get described', () => {
   });
 
   it('ASKS ABOUT AN UNFLAGGED TEST TOO, which is the change', () => {
-    // These were the excluded case and are now the point: a reader looking at
-    // "Urine Colour: Pale Yellow" with nothing beside it has no way to tell
-    // whether it was unremarkable or unexplainable.
     expect(
       unmappedTestNames(
         features(['Urine Colour', 'Urine Clarity']),
@@ -819,9 +691,6 @@ describe('unmappedTestNames - which skipped tests get described', () => {
   });
 
   it('sends a NAME and nothing else, whatever the row carries', () => {
-    // The §6v contract downstream: the model is given a test name with no
-    // value, no interval and no flag, so its description is about the test and
-    // never about this reader. A selector that returned rows would break it.
     const out = unmappedTestNames(
       features(['Potassium']),
       extraction([
@@ -840,7 +709,6 @@ describe('unmappedTestNames - which skipped tests get described', () => {
   });
 
   it('does not ask about a test this platform DID assess', () => {
-    // Not in `unmapped`, so it has a card of its own and a real explanation.
     expect(
       unmappedTestNames(
         features(['Potassium']),
@@ -918,9 +786,7 @@ describe('Modules 4+5 - analysis orchestration', () => {
     fs.rmSync(UPLOAD_ROOT, { recursive: true, force: true });
   });
 
-  // ================================================ progress (2026-10-04) ===
   describe('progress steps for the Reports page', () => {
-    /** Wrap a stage so it records the step stored at the moment it is called. */
     const recording = (seen, name, id, respond) => async (body, options) => {
       const doc = await Report.findById(id);
       seen.push([name, doc.analysis.progressStep, doc.toPublicJSON().analysisProgress]);
@@ -956,7 +822,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
         explain: 'explaining',
         guidance: 'explaining',
       });
-      // What the page is shown while it runs.
       const shown = Object.fromEntries(seen.map(([name, , progress]) => [name, progress]));
       expect(shown.extract).toMatchObject({ step: 'reading', stepNumber: 1, totalSteps: 4 });
       expect(shown.explain).toMatchObject({ step: 'explaining', stepNumber: 4, totalSteps: 4 });
@@ -1016,16 +881,11 @@ describe('Modules 4+5 - analysis orchestration', () => {
       });
       const checking = new Report({ ...base, status: 'processing', analysis: { progressStep: 'checking' } });
       expect(checking.toPublicJSON().analysisProgress).toMatchObject({ step: 'checking', stepNumber: 2 });
-      // A step left behind by a crashed run never reads as live.
       const stale = new Report({ ...base, status: 'failed', analysis: { progressStep: 'deciding' } });
       expect(stale.toPublicJSON().analysisProgress).toBeUndefined();
     });
   });
 
-  // ============================================================ happy path ===
-  // RENDER'S FREE PLAN (2026-10-06): the first Analyse after a quiet spell hit
-  // an ai-service still waking, got 502, and the run failed. With
-  // AI_SERVICE_WAKE_WAIT_MS set the backend asks /health until it answers.
   describe('a sleeping ai-service is waited for, not failed on', () => {
     const saved = {};
     const badGateway = () => Object.assign(new Error('bad gateway'), { response: { status: 502, data: '' } });
@@ -1078,9 +938,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
     });
   });
 
-  // A RÉSUMÉ WAS UPLOADED ON THE LIVE SITE (2026-10-06): 0 results were read,
-  // the run went on with the profile alone and the dashboard said "Healthy --
-  // Overall risk: Low". A file with no test results now stops the run.
   describe('a file with no test results is not assessed at all', () => {
     it.each([
       ['no rows at all', []],
@@ -1096,7 +953,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
 
       expect(res.status).toBe(422);
       expect(res.body.error.code).toBe('NO_LAB_RESULTS');
-      // Nothing after reading: no features, no rules, no models, no LLM.
       expect(outgoing.map((c) => c.url)).toEqual([EXTRACT_PATH]);
 
       const stored = await loadRaw(report.id);
@@ -1139,7 +995,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
       expect(res.body.data.analysis.features.features.hba1c).toBe(6.8);
       expect(res.body.data.analysis.extractionConfidence).toBe(0.99);
 
-      // Every stage was called, in the section-16 order, exactly once each.
       expectFullChain(outgoing.map((c) => c.url));
 
       const stored = await loadRaw(report.id);
@@ -1160,18 +1015,15 @@ describe('Modules 4+5 - analysis orchestration', () => {
         expect(call.options.headers['X-Service-Key']).toBe(config.aiService.apiKey);
         const requestId = call.options.headers['X-Request-Id'];
         expect(typeof requestId).toBe('string');
-        expect(requestId).toBe(report.id); // opaque report id, never PHI
+        expect(requestId).toBe(report.id);
         expect(requestId).not.toContain(PHI_CANARY);
       }
-      // The same id correlates both stages of one analysis.
       expect(outgoing[0].options.headers['X-Request-Id']).toBe(
         outgoing[1].options.headers['X-Request-Id']
       );
     });
 
     it('only ever sends a correlation id the service will accept', () => {
-      // Outside [A-Za-z0-9._:-] the ai-service SILENTLY DISCARDS the header, so
-      // a dirty seed must fall back to a uuid rather than lose correlation.
       for (const dirty of [
         'asha patel.pdf',
         'report/../../etc',
@@ -1184,7 +1036,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
         expect(id).toMatch(aiServiceClient.REQUEST_ID_PATTERN);
         expect(id).not.toBe(dirty);
       }
-      // A clean ObjectId is passed through unchanged.
       const objectId = new mongoose.Types.ObjectId().toString();
       expect(aiServiceClient.newRequestId(objectId)).toBe(objectId);
     });
@@ -1195,7 +1046,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
       await analyze(user.token, report.id);
 
       const body = callsTo(ENGINEER_PATH)[0].body;
-      // `{ extraction: <data> }`, never `{ extraction: { success, data } }`.
       expect(body.extraction).toBeDefined();
       expect(body.extraction.success).toBeUndefined();
       expect(body.extraction.data).toBeUndefined();
@@ -1208,8 +1058,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
       await analyze(user.token, report.id);
 
       const body = callsTo(ENGINEER_PATH)[0].body;
-      // Exactly `{ extraction, profile? }` - never a `data` envelope and never
-      // a bare `extracted_parameters`, which the service rejects as ambiguous.
       expect(Object.keys(body).sort()).toEqual(['extraction']);
       expect(body).not.toHaveProperty('data');
       expect(body).not.toHaveProperty('extracted_parameters');
@@ -1219,9 +1067,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
     });
 
     it('treats a 200 that accounted for NO parameters as a failure', async () => {
-      // The observed silent failure: relaying the wrapped envelope used to be
-      // accepted with 200 and `features: {}`, so the pipeline looked healthy
-      // and produced nothing. An empty-but-200 must never be a success.
       const user = await makeUser('emptyresult@example.com');
       const report = await uploadReport(user.token);
       wireAiService({
@@ -1248,8 +1093,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
     });
 
     it('accepts an empty feature set when Module 5 accounted for the parameters', async () => {
-      // Legitimate: everything the report contained was recognised and rejected
-      // (wrong specimen, unknown analyte) rather than never seen.
       const user = await makeUser('allunmapped@example.com');
       const report = await uploadReport(user.token);
       wireAiService({
@@ -1266,19 +1109,16 @@ describe('Modules 4+5 - analysis orchestration', () => {
       const report = await uploadReport(user.token);
       await analyze(user.token, report.id);
 
-      // The full extraction, raw text included, IS sent to Module 5...
       const form = callsTo(EXTRACT_PATH)[0].body;
       expect(form).toBeDefined();
       expect(callsTo(ENGINEER_PATH)[0].body.extraction.raw_text).toContain(PHI_CANARY);
 
-      // ...but the stored copy keeps only the fact that text existed.
       const stored = await loadRaw(report.id);
       expect(stored.extraction.raw_text).toBeUndefined();
       expect(stored.extraction.raw_text_available).toBe(true);
       expect(stored.extraction.pages[0].raw_text).toBeUndefined();
       expect(stored.extraction.pages[0].raw_text_available).toBe(true);
       expect(stored.extraction.pages[0].page_number).toBe(1);
-      // Everything structured survives.
       expect(stored.extraction.extracted_parameters[0].test_name).toBe('HbA1c');
       expect(stored.extraction.report_metadata.lab_name).toBe('Test Diagnostics');
       expect(stored.extraction.source).toBe('pdf');
@@ -1319,11 +1159,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
     });
   });
 
-  // ================================================= someone else's report ===
-  //
-  // 2026-10-03: every analysis used the ACCOUNT profile for what a report did
-  // not print, and always for BMI, smoking, blood pressure and heart history
-  // -- so a relative's report was judged partly as the account holder.
   describe("someone else's report -- the account profile is not sent", () => {
     const fullProfile = {
       age: 20,
@@ -1375,14 +1210,7 @@ describe('Modules 4+5 - analysis orchestration', () => {
     });
   });
 
-  // ====================================================== tri-state profile ===
   describe('tri-state profile fields (hypertension / heartDisease)', () => {
-    /**
-     * THE highest-risk silent-corruption path in the whole pipeline. Absent
-     * means UNKNOWN; sending `false` fabricates a negative clinical finding and
-     * breaks Module 12's skip logic. Asserted on the ACTUAL outgoing request
-     * body, not on an intermediate object.
-     */
     it('keeps an absent hypertension ABSENT from the wire payload', async () => {
       const user = await makeUser('tristate@example.com');
       const created = await request(app)
@@ -1393,9 +1221,8 @@ describe('Modules 4+5 - analysis orchestration', () => {
           gender: 'female',
           heightCm: 165,
           weightKg: 68,
-          heartDisease: false, // explicit false MUST be sent
+          heartDisease: false,
           smokingHistory: 'never',
-          // hypertension deliberately omitted -> unknown
         });
       expect(created.status).toBe(201);
       expect(created.body.data.profile.hypertension).toBeUndefined();
@@ -1405,23 +1232,15 @@ describe('Modules 4+5 - analysis orchestration', () => {
 
       const profile = callsTo(ENGINEER_PATH)[0].body.profile;
 
-      // The key must not exist at all - not `false`, not `null`, not present.
       expect(Object.prototype.hasOwnProperty.call(profile, 'hypertension')).toBe(false);
       expect('hypertension' in profile).toBe(false);
-      // And it must not appear in the serialised body either.
       expect(JSON.stringify(callsTo(ENGINEER_PATH)[0].body)).not.toContain('hypertension');
 
-      // An explicit `false` is a value and IS sent.
       expect(Object.prototype.hasOwnProperty.call(profile, 'heartDisease')).toBe(true);
       expect(profile.heartDisease).toBe(false);
     });
 
     it('keeps it absent across EVERY stage of the chain, not just the first', async () => {
-      // The absence has to survive four more hops now. A stage that filled it
-      // in with `false` on the way past would fabricate a negative clinical
-      // finding, and Module 12's kidney predictor uses exactly that distinction
-      // to decide when to skip - so the whole outgoing conversation is checked,
-      // not only the features call.
       const user = await makeUser('tristatechain@example.com');
       const created = await request(app)
         .post(PROFILE)
@@ -1433,7 +1252,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
           weightKg: 68,
           heartDisease: false,
           smokingHistory: 'never',
-          // hypertension deliberately omitted -> unknown
         });
       expect(created.status).toBe(201);
 
@@ -1442,24 +1260,18 @@ describe('Modules 4+5 - analysis orchestration', () => {
       expect(res.status).toBe(200);
       expectFullChain(outgoing.map((c) => c.url));
 
-      // NOT ONE outgoing body carries a VALUE for hypertension. The only place
-      // the name may appear downstream is `missing_features`, which is the
-      // correct representation of "unknown" - the failure being guarded against
-      // is a `false` appearing anywhere, in any stage's payload.
       for (const call of outgoing) {
-        if (call.url === EXTRACT_PATH) continue; // multipart, no JSON body
+        if (call.url === EXTRACT_PATH) continue;
         const serialised = JSON.stringify(call.body);
         expect(serialised).not.toContain('"hypertension":false');
         expect(serialised).not.toContain('"hypertension": false');
         expect(serialised).not.toContain('"hypertension":null');
       }
 
-      // The features call: the key does not exist on the profile at all.
       const profile = callsTo(ENGINEER_PATH)[0].body.profile;
       expect(Object.prototype.hasOwnProperty.call(profile, 'hypertension')).toBe(false);
       expect(JSON.stringify(profile)).not.toContain('hypertension');
 
-      // The three downstream stages: it is MISSING, never valued or rejected.
       const engineered = callsTo(VALIDATE_PATH)[0].body.engineered;
       expect(engineered.features.hypertension).toBeUndefined();
       expect(engineered.missing_features).toContain('hypertension');
@@ -1470,11 +1282,8 @@ describe('Modules 4+5 - analysis orchestration', () => {
         expect(validated.missing_features).toContain('hypertension');
       }
 
-      // `heartDisease: false` IS a value and IS sent - absence and false are
-      // not the same thing and must not be conflated in either direction.
       expect(callsTo(ENGINEER_PATH)[0].body.profile.heartDisease).toBe(false);
 
-      // And the stored result still reports it as MISSING, never as false.
       const stored = await loadRaw(report.id);
       expect(stored.features.missing_features).toContain('hypertension');
       expect(stored.features.features.hypertension).toBeUndefined();
@@ -1512,7 +1321,7 @@ describe('Modules 4+5 - analysis orchestration', () => {
       expect(profile).toHaveProperty('smokingHistory', 'former');
       expect(profile).toHaveProperty('heightCm', 180);
       expect(profile).toHaveProperty('weightKg', 90);
-      expect(profile).toHaveProperty('bmi'); // derived by Module 2
+      expect(profile).toHaveProperty('bmi');
       expect(profile).not.toHaveProperty('smoking_history');
       expect(profile).not.toHaveProperty('height_cm');
     });
@@ -1546,17 +1355,14 @@ describe('Modules 4+5 - analysis orchestration', () => {
       expect('hypertension' in built).toBe(false);
       expect('heartDisease' in built).toBe(false);
 
-      // `false` is a value, not an absence.
       const withFalse = analysisService.buildProfilePayload({ hypertension: false });
       expect(withFalse).toEqual({ hypertension: false });
     });
   });
 
-  // ============================================================= no profile ===
   describe('no profile', () => {
     it('still analyses on lab data alone and omits `profile` entirely', async () => {
       const user = await makeUser('noprofile@example.com');
-      // Module 2 answers 404 when no profile exists - the pipeline must cope.
       const probe = await request(app).get(PROFILE).set(auth(user.token));
       expect(probe.status).toBe(404);
 
@@ -1573,7 +1379,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
     });
   });
 
-  // ================================================================ errors ===
   describe('ai-service failures are handled distinctly and never 500-with-stack', () => {
     const cases = [
       { name: '401 (bad service key)', failure: { status: 401 }, status: 502, code: 'AI_SERVICE_UNAUTHORIZED' },
@@ -1601,7 +1406,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
       expect(res.status).toBe(status);
       expect(res.body.success).toBe(false);
       expect(res.body.error.code).toBe(code);
-      // No stack, no filesystem paths, no PHI from the service's body.
       expect(res.body.error.stack).toBeUndefined();
       expect(JSON.stringify(res.body)).not.toMatch(/node_modules|\.js:\d+/);
       expect(JSON.stringify(res.body)).not.toContain(PHI_CANARY);
@@ -1610,7 +1414,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
       expect(stored.status).toBe('failed');
       expect(stored.statusMessage).toContain(code);
       expect(stored.statusMessage).not.toContain(PHI_CANARY);
-      // Nothing was persisted from a failed run.
       expect(stored.extraction).toBeUndefined();
       expect(stored.analysis.version).toBe(0);
     });
@@ -1669,8 +1472,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
 
       const stored = await loadRaw(report.id);
       expect(stored.status).toBe('failed');
-      // Extraction succeeded but the run as a whole did not, so nothing is
-      // persisted: a half-analysis is not a state any consumer should see.
       expect(stored.extraction).toBeUndefined();
     });
 
@@ -1689,14 +1490,13 @@ describe('Modules 4+5 - analysis orchestration', () => {
       }
 
       const stored = await loadRaw(report.id);
-      expect(stored.status).toBe('uploaded'); // untouched
+      expect(stored.status).toBe('uploaded');
       expect(outgoing).toHaveLength(0);
     });
 
     it('reports a missing stored file as 404, not a 500', async () => {
       const user = await makeUser('nofile@example.com');
       const report = await uploadReport(user.token);
-      // Remove the bytes behind the report's back.
       const stored = await loadRaw(report.id);
       const { getStorage } = require('../src/storage');
       await getStorage(stored.storageDriver).remove(stored.storageKey);
@@ -1708,7 +1508,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
     });
   });
 
-  // =============================================================== retries ===
   describe('retry policy', () => {
     it('retries a transient 500 but not a 401', async () => {
       config.aiService.retries = 1;
@@ -1737,7 +1536,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
       });
       const resB = await analyze(userB.token, reportB.id);
       expect(resB.status).toBe(502);
-      // Deterministic: exactly one attempt, no retry.
       expect(callsTo(EXTRACT_PATH)).toHaveLength(1);
     });
 
@@ -1775,13 +1573,11 @@ describe('Modules 4+5 - analysis orchestration', () => {
       const res = await analyze(user.token, report.id);
       expect(res.status).toBe(200);
       expect(sizes).toHaveLength(2);
-      // The second attempt read the same complete file, not an empty one.
       expect(sizes[1]).toBe(sizes[0]);
       expect(sizes[1]).toBeGreaterThan(0);
     });
   });
 
-  // ============================================================== warnings ===
   describe('warnings survive with their origin', () => {
     it('persists both stages\' warnings and preserves stated provenance', async () => {
       const user = await makeUser('warnings@example.com');
@@ -1791,34 +1587,26 @@ describe('Modules 4+5 - analysis orchestration', () => {
       expect(res.status).toBe(200);
 
       const warnings = res.body.data.analysis.warnings;
-      // The Module 4 warning (propagated by Module 5 with its origin stated)
-      // and the native Module 5 warning are both present and distinguishable.
       const repaired = warnings.find((w) => /PDF repairer/.test(w.message));
       const unitWarning = warnings.find((w) => /creatinine/.test(w.message));
       expect(repaired).toBeDefined();
       expect(repaired.stage).toBe('extraction');
-      expect(repaired.module).toBe('module-4-ocr'); // richer origin preserved
+      expect(repaired.module).toBe('module-4-ocr');
       expect(unitWarning).toBeDefined();
       expect(unitWarning.stage).toBe('feature_engineering');
 
-      // The same warning arrives from `all_warnings`, `upstream_warnings` and
-      // the extraction response; it collapses to ONE entry, keeping its origin.
       expect(warnings.filter((w) => /PDF repairer/.test(w.message))).toHaveLength(1);
       expect(warnings).toHaveLength(2);
-      // Upstream first, as the service ordered them.
       expect(warnings[0].stage).toBe('extraction');
 
       const stored = await loadRaw(report.id);
       expect(stored.analysisWarnings).toHaveLength(2);
       expect(stored.analysis.warningCount).toBe(2);
-      // Provenance forwarded under `upstream` is pulled up into metadata.
       expect(stored.analysis.pagesUnreadable).toEqual([2]);
       expect(res.body.data.analysis.pagesUnreadable).toEqual([2]);
     });
 
     it('still surfaces Module 4 warnings if the service stops propagating them', async () => {
-      // A regression on the Python side (the exact defect that was just fixed)
-      // must not make a damaged scan look like a clean one.
       const user = await makeUser('noprop@example.com');
       const report = await uploadReport(user.token);
       wireAiService({
@@ -1826,7 +1614,7 @@ describe('Modules 4+5 - analysis orchestration', () => {
           okResponse({
             features: { hba1c: 6.8 },
             unmapped: [],
-            warnings: [], // Module 4's warnings dropped
+            warnings: [],
           }),
       });
 
@@ -1882,8 +1670,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
         { warnings: [{ code: 'REPAIRED', message: 'b' }, 'c'] }
       );
       expect(merged).toHaveLength(3);
-      // The extraction-stage entry keeps every field the service sent -
-      // `page` and `severity` are not flattened away to fit a common shape.
       const fromExtraction = merged.find((w) => w.stage === 'extraction');
       expect(fromExtraction).toMatchObject({
         stage: 'extraction',
@@ -1892,7 +1678,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
         page: 1,
         severity: 'warn',
       });
-      // Same code, different message -> a DIFFERENT warning, kept.
       expect(merged.filter((w) => w.code === 'REPAIRED')).toHaveLength(2);
       expect(merged).toContainEqual({ stage: 'feature_engineering', message: 'c' });
     });
@@ -1941,9 +1726,8 @@ describe('Modules 4+5 - analysis orchestration', () => {
       const byStage = (stage) =>
         res.body.data.analysis.warnings.filter((w) => w.stage === stage);
 
-      // All five origins survive - NOT just the last stage's list.
       expect(byStage('extraction')[0].message).toBe(REPAIR_WARNING);
-      expect(byStage('extraction')[0].module).toBe('module-4-ocr'); // richest kept
+      expect(byStage('extraction')[0].module).toBe('module-4-ocr');
       expect(byStage('feature_engineering')[0].message).toBe(UNIT_WARNING);
       expect(byStage('validation')[0]).toEqual({
         stage: 'validation',
@@ -1952,14 +1736,11 @@ describe('Modules 4+5 - analysis orchestration', () => {
       });
       expect(byStage('rules')[0].message).toBe(RULES_WARNING);
       expect(byStage('ml')[0].message).toBe(ML_WARNING);
-      // Five distinct warnings, each exactly once despite arriving repeatedly
-      // through every stage's propagated `all_warnings`.
       expect(res.body.data.analysis.warnings).toHaveLength(5);
 
       const stored = await loadRaw(report.id);
       expect(stored.analysisWarnings).toHaveLength(5);
       expect(stored.analysis.warningCount).toBe(5);
-      // And the same five come back from the retrieval route.
       const fetched = await getAnalysis(user.token, report.id);
       expect(fetched.body.data.analysis.warnings).toHaveLength(5);
       expect(fetched.body.data.analysis.warnings.map((w) => w.stage).sort()).toEqual([
@@ -1972,11 +1753,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
     });
 
     it('carries FUSION and REPORT warnings through with their origins too', async () => {
-      // Module 16's abstention warning ("the rules flagged this; the model
-      // could not assess it") and Module 17's incompleteness warning reach the
-      // backend ONLY through the report's `validation_warnings`. Nothing else
-      // in the chain carries them, so this is the last hop and it must not
-      // drop them.
       const user = await makeUser('reportwarnings@example.com');
       const report = await uploadReport(user.token);
 
@@ -2001,7 +1777,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
       const warnings = res.body.data.analysis.warnings;
       const byStage = (stage) => warnings.filter((w) => w.stage === stage);
 
-      // Every origin from Module 4 to Module 17, each exactly once.
       expect(byStage('extraction')[0].message).toBe(REPAIR_WARNING);
       expect(byStage('extraction')[0].module).toBe('module-4-ocr');
       expect(byStage('feature_engineering')[0].message).toBe(UNIT_WARNING);
@@ -2015,8 +1790,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
         module: 17,
         message: REPORT_WARNING,
       });
-      // The upstream pair is NOT re-tagged as `report` just because the report
-      // relayed them - the origin the service stated always wins.
       expect(warnings).toHaveLength(4);
       expect(byStage('report')).toHaveLength(1);
 
@@ -2042,8 +1815,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
 
       const res = await analyze(user.token, report.id);
       expect(res.status).toBe(200);
-      // Modules 4 and 5 both still reported, with origins - losing them at the
-      // last hop is the defect this project has shipped twice.
       expect(res.body.data.analysis.warnings.map((w) => w.stage).sort()).toEqual([
         'extraction',
         'feature_engineering',
@@ -2061,7 +1832,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
 
       const res = await analyze(user.token, report.id);
       expect(res.status).toBe(200);
-      // Stages 4 and 5 both still reported, with origins.
       expect(res.body.data.analysis.warnings.map((w) => w.stage)).toEqual([
         'extraction',
         'feature_engineering',
@@ -2088,7 +1858,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
     });
   });
 
-  // ================================== Modules 6, 8, 9/10 - the full chain ===
   describe('validation, clinical rules and ML predictors', () => {
     it('runs the whole section-16 chain and persists every stage', async () => {
       const user = await makeUser('fullchain@example.com');
@@ -2100,7 +1869,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
       expectFullChain(outgoing.map((c) => c.url));
 
       const { analysis } = res.body.data;
-      // Every stage reported OK, and none is missing from the record.
       for (const stage of [
         'extraction',
         'feature_engineering',
@@ -2113,12 +1881,10 @@ describe('Modules 4+5 - analysis orchestration', () => {
       }
       expect(analysis.stagesFailed).toEqual([]);
 
-      // Module 6.
       expect(analysis.validation.valid.hba1c.value).toBe(6.8);
       expect(analysis.validFeatureCount).toBe(2);
       expect(analysis.rejectedFeatureCount).toBe(0);
 
-      // Modules 8 and 9/10, with evidence and recommendations intact.
       expect(analysis.ruleDecisions.decisions[0].condition).toBe('diabetes');
       expect(analysis.ruleDecisions.decisions[0].evidence[0].feature).toBe('hba1c');
       expect(analysis.ruleDecisions.decisions[0].recommendations[0].code).toBe(
@@ -2126,14 +1892,12 @@ describe('Modules 4+5 - analysis orchestration', () => {
       );
       expect(analysis.mlDecisions.decisions[0].source_kind).toBe('machine_learning');
 
-      // The always-loaded summary.
       expect(analysis.ruleDecisionCount).toBe(1);
       expect(analysis.mlDecisionCount).toBe(1);
       expect(analysis.decisionCount).toBe(2);
-      expect(analysis.highestRisk).toBe('High'); // High (rules) beats Medium (ML)
+      expect(analysis.highestRisk).toBe('High');
       expect(analysis.conditionsFlagged).toEqual(['diabetes']);
 
-      // ...and it is on the document itself, not synthesised in the response.
       const stored = await loadRaw(report.id);
       expect(stored.featureValidation.valid.hba1c.value).toBe(6.8);
       expect(stored.ruleDecisions.decisions).toHaveLength(1);
@@ -2148,17 +1912,13 @@ describe('Modules 4+5 - analysis orchestration', () => {
       const report = await uploadReport(user.token);
       await analyze(user.token, report.id);
 
-      // Module 6 gets Module 5's data object under `engineered` - whole, not
-      // sliced to `features`, or upstream provenance dies at this boundary.
       const validateBody = callsTo(VALIDATE_PATH)[0].body;
       expect(Object.keys(validateBody)).toEqual(['engineered']);
-      expect(validateBody.engineered.success).toBeUndefined(); // unwrapped
+      expect(validateBody.engineered.success).toBeUndefined();
       expect(validateBody.engineered.features.hba1c).toBe(6.8);
       expect(validateBody.engineered.all_warnings).toHaveLength(2);
       expect(validateBody.engineered.upstream.pages_unreadable).toEqual([2]);
 
-      // Modules 8 and 9/10 both get Module 6's data object under `validated` -
-      // never `engineered`, which would silently re-validate in-process.
       for (const path of [RULES_PATH, PREDICT_PATH]) {
         const body = callsTo(path)[0].body;
         expect(Object.keys(body)).toEqual(['validated']);
@@ -2169,12 +1929,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
     });
 
     it('stores EVERY decision, including several for one condition from one source', async () => {
-      // The unit of a rule decision is one RULE, not one condition: HbA1c 6.8
-      // and fasting glucose 112 legitimately produce TWO `diabetes` decisions
-      // from the rule engine, and that is what makes per-rule traceability
-      // possible. De-duplicating or collapsing them here would destroy the
-      // evidence trail and silently drop the weaker finding. Grouping and
-      // fusing is Module 15/16's job, not this layer's.
       const user = await makeUser('multidecision@example.com');
       const report = await uploadReport(user.token);
 
@@ -2209,7 +1963,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
 
       const ruleDecisions = res.body.data.analysis.ruleDecisions.decisions;
       expect(ruleDecisions).toHaveLength(2);
-      // Same condition, same source, both kept and both distinguishable.
       expect(ruleDecisions.map((d) => d.condition)).toEqual(['diabetes', 'diabetes']);
       expect(ruleDecisions.map((d) => d.source_kind)).toEqual([
         'clinical_rule',
@@ -2220,19 +1973,14 @@ describe('Modules 4+5 - analysis orchestration', () => {
         'FASTING_GLUCOSE_IMPAIRED',
       ]);
       expect(ruleDecisions.map((d) => d.risk)).toEqual(['High', 'Medium']);
-      // Each decision keeps ITS OWN evidence.
       expect(ruleDecisions[0].evidence[0].feature).toBe('hba1c');
       expect(ruleDecisions[1].evidence[0].feature).toBe('blood_glucose');
 
-      // The counts are over DECISIONS, not conditions.
       expect(res.body.data.analysis.ruleDecisionCount).toBe(2);
-      expect(res.body.data.analysis.decisionCount).toBe(3); // 2 rules + 1 ML
+      expect(res.body.data.analysis.decisionCount).toBe(3);
       expect(res.body.data.analysis.highestRisk).toBe('High');
-      // `conditionsFlagged` is a set of CONDITIONS, so one name for two
-      // decisions is correct - and it must not be mistaken for a count.
       expect(res.body.data.analysis.conditionsFlagged).toEqual(['diabetes']);
 
-      // Persisted and retrieved intact, in order, with nothing collapsed.
       const stored = await loadRaw(report.id);
       expect(stored.ruleDecisions.decisions).toHaveLength(2);
       expect(stored.analysis.ruleDecisionCount).toBe(2);
@@ -2244,9 +1992,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
     });
 
     it('never calls the in-memory Module 7 repository', async () => {
-      // ai-service's feature repository is process-local and lost on restart.
-      // MongoDB is the durable store; loading a snapshot there too would be a
-      // second source of truth guaranteed to disagree after any restart.
       const user = await makeUser('norepo@example.com');
       const report = await uploadReport(user.token);
       await analyze(user.token, report.id);
@@ -2290,8 +2035,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
         },
         predict: async (body) => {
           events.push('ml:start');
-          // The ML stage finishes while the rule stage is still blocked, which
-          // is only possible if both were dispatched before either resolved.
           releaseRules();
           events.push('ml:end');
           return okResponse(mlFixture(body));
@@ -2304,7 +2047,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
     });
   });
 
-  // ============================ Modules 17-20 - the clinical report ========
   describe('clinical report (Modules 17-20)', () => {
     it('runs the chain THROUGH to a persisted clinical report', async () => {
       const user = await makeUser('report@example.com');
@@ -2319,11 +2061,8 @@ describe('Modules 4+5 - analysis orchestration', () => {
       expect(analysis.stages.report).toMatchObject({ ok: true });
       expect(analysis.report.report_version).toBe('1.0.0');
       expect(analysis.report.conditions[0].condition).toBe('diabetes');
-      // Module 16's fusion arrives nested VERBATIM, so the exact rule or model
-      // behind any line stays reachable from the report itself.
       expect(analysis.report.fusion.fused[0].hybrid).toBe(true);
 
-      // The always-loaded summary a listing needs, without the payload.
       expect(analysis.overallStatus).toBe('Needs Medical Attention');
       expect(analysis.overallStatusLabel).toBe('Needs Medical Attention');
       expect(analysis.overallRisk).toBe('High');
@@ -2342,10 +2081,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
     });
 
     it('sends Module 6\'s WHOLE data object, `rejected` map included', async () => {
-      // Module 20's rejected-feature join is built by lifting `rejected` out of
-      // the RAW request body. Slicing the payload would not fail - it would
-      // return 200 with a report saying "this value was not available in the
-      // submitted report" about a value that WAS there and was refused.
       const user = await makeUser('reportbody@example.com');
       const report = await uploadReport(user.token);
       wireAiService({
@@ -2368,7 +2103,7 @@ describe('Modules 4+5 - analysis orchestration', () => {
 
       const body = callsTo(REPORT_PATH)[0].body;
       expect(Object.keys(body)).toEqual(['validated']);
-      expect(body.validated.success).toBeUndefined(); // unwrapped
+      expect(body.validated.success).toBeUndefined();
       expect(body.validated.rejected.creatinine.reason_code).toBe('IMPLAUSIBLE_HIGH');
       expect(body.validated.valid.hba1c.status).toBe('valid');
       expect(body.validated.all_warnings).toHaveLength(2);
@@ -2377,16 +2112,12 @@ describe('Modules 4+5 - analysis orchestration', () => {
     });
 
     it('never calls /decisions/fuse - the report carries that fusion already', async () => {
-      // A second fusion call would run the decision engine twice and hand us
-      // two fusion objects that could disagree: a second source of truth for
-      // the same facts.
       const user = await makeUser('nofuse@example.com');
       const report = await uploadReport(user.token);
       await analyze(user.token, report.id);
 
       expect(outgoing.map((c) => c.url)).not.toContain(FUSE_PATH);
       expect(outgoing.some((c) => c.url.includes('/decisions'))).toBe(false);
-      // ...and the fusion is there anyway, read out of the report.
       const stored = await loadRaw(report.id);
       expect(stored.clinicalReport.fusion.fused).toHaveLength(1);
     });
@@ -2415,8 +2146,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
 
       const res = await analyze(user.token, report.id);
       expect(res.status).toBe(200);
-      // The report stage started while the rule stage was still blocked, which
-      // is only possible if both were dispatched before either resolved.
       expect(events).toEqual(['rules:start', 'report:start']);
     });
 
@@ -2482,9 +2211,7 @@ describe('Modules 4+5 - analysis orchestration', () => {
     });
   });
 
-  // ================================= Module 18 - ALL FOUR overall statuses ===
   describe('Module 18 overall status - the fourth case survives to the API', () => {
-    /** Analyse one report with the report stage returning `payload`. */
     async function analyseWithReport(email, buildReport) {
       const user = await makeUser(email);
       const report = await uploadReport(user.token);
@@ -2495,9 +2222,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
     }
 
     it('NOTHING ASSESSED: status is null, label is "Not Assessed", complete false', async () => {
-      // THE CASE THE SPEC DOES NOT NAME, and the dangerous one. "No abnormal
-      // findings" is vacuously true for a report whose every test was
-      // unreadable; a consumer must never see this rendered as `Healthy`.
       const { user, report, res } = await analyseWithReport(
         'notassessed@example.com',
         nothingAssessedReport
@@ -2511,15 +2235,12 @@ describe('Modules 4+5 - analysis orchestration', () => {
       expect(analysis.anyAssessed).toBe(false);
       expect(analysis.unassessedConditionCount).toBe(2);
 
-      // The four cases are NOT collapsed into three anywhere on the way out.
       expect(analysis.overallStatusLabel).not.toBe('Healthy');
-      expect(JSON.stringify(analysis.overallStatus)).toBe('null'); // not "Healthy"
+      expect(JSON.stringify(analysis.overallStatus)).toBe('null');
 
-      // The caveat is non-null exactly when `complete` is false...
       expect(analysis.report.overall.caveat).not.toBeNull();
       expect(analysis.report.overall.rule_applied).toBe('nothing_assessed');
 
-      // ...and it survives BOTH retrieval routes, not just the analyze response.
       const fetched = await getAnalysis(user.token, report.id);
       expect(fetched.body.data.analysis.overallStatus).toBeNull();
       expect(fetched.body.data.analysis.overallStatusLabel).toBe('Not Assessed');
@@ -2536,8 +2257,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
         anyAssessed: false,
       });
 
-      // Stored as an explicit null - the fourth case is a VALUE on the
-      // document, distinguishable from a report stage that never ran.
       const stored = await loadRaw(report.id);
       expect(stored.analysis.overallStatus).toBeNull();
       expect(stored.analysis.overallStatusLabel).toBe('Not Assessed');
@@ -2554,7 +2273,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
 
       const observed = [];
       for (const [status, label, risk, assessed] of cases) {
-        // eslint-disable-next-line no-await-in-loop
         const { res } = await analyseWithReport(
           `overall-${String(status)}@example.com`.toLowerCase().replace(/\s+/g, '-'),
           (body) => {
@@ -2584,14 +2302,10 @@ describe('Modules 4+5 - analysis orchestration', () => {
         ['Needs Monitoring', 'Needs Monitoring', 'Medium'],
         ['Needs Medical Attention', 'Needs Medical Attention', 'High'],
       ]);
-      // Four distinct labels reached the API. Collapsing to three is the defect.
       expect(new Set(observed.map((o) => o[1])).size).toBe(4);
     });
 
     it('a PARTIAL assessment never presents as complete', async () => {
-      // Some topics assessed, others not. The status of what WAS assessed is
-      // kept - downgrading a clean partial report would report a finding nobody
-      // made - so the incompleteness has to be structural instead.
       const { user, report, res } = await analyseWithReport(
         'partialassess@example.com',
         (body) => {
@@ -2619,7 +2333,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
 
       const { analysis } = res.body.data;
       expect(analysis.overallStatus).toBe('Healthy');
-      // ...but nothing in the response says the assessment was complete.
       expect(analysis.assessmentComplete).toBe(false);
       expect(analysis.unassessedConditionCount).toBe(1);
       expect(analysis.report.overall.caveat).not.toBeNull();
@@ -2634,10 +2347,7 @@ describe('Modules 4+5 - analysis orchestration', () => {
     });
 
     it('an UNRECOGNISED status degrades to "Not Assessed", never to "Healthy"', async () => {
-      // A future vocabulary, a typo, or a truncated response must fail towards
-      // "we cannot say", not towards "you are well".
       for (const bogus of ['Fine', '', 'healthy', 42, {}]) {
-        // eslint-disable-next-line no-await-in-loop
         const { res } = await analyseWithReport(
           `bogus-${String(typeof bogus)}-${String(bogus).slice(0, 4) || 'x'}@example.com`
             .toLowerCase()
@@ -2646,8 +2356,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
             const base = clinicalReportFixture(body);
             return {
               ...base,
-              // A label that claims health beside a status we do not recognise:
-              // the label must NOT be believed over the status.
               overall: { ...base.overall, status: bogus, status_label: 'Healthy' },
             };
           }
@@ -2665,8 +2373,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
       expect(summariseReport(null).overallStatusLabel).toBeUndefined();
       expect(summariseReport(null).overallStatus).toBeUndefined();
 
-      // A null status can never produce one of the spec's three words, whatever
-      // the service claims in `status_label`.
       const lying = summariseReport({
         overall: { status: null, status_label: 'Healthy', any_assessed: true, complete: true },
       });
@@ -2675,9 +2381,7 @@ describe('Modules 4+5 - analysis orchestration', () => {
       expect(lying.anyAssessed).toBe(false);
       expect(lying.assessmentComplete).toBe(false);
 
-      // A missing `complete` is not "complete".
       expect(summariseReport({ overall: { status: 'Healthy' } }).assessmentComplete).toBe(false);
-      // An unrecognised risk is not `Low`.
       expect(summariseReport({ overall: { status: 'Healthy', risk: 'Severe' } }).overallRisk)
         .toBeNull();
       expect(analysisService.OVERALL_STATUS_VALUES).not.toContain(
@@ -2686,7 +2390,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
     });
   });
 
-  // ===================================================== partial failure ===
   describe('partial failure - a stage that fails never claims success', () => {
     it('validation fails: features are still stored, rules and ML are SKIPPED', async () => {
       const user = await makeUser('valfail@example.com');
@@ -2699,9 +2402,7 @@ describe('Modules 4+5 - analysis orchestration', () => {
 
       const res = await analyze(user.token, report.id);
 
-      // A partial result is more useful than none, so this is a 200...
       expect(res.status).toBe(200);
-      // ...but nothing in it claims the failed stages succeeded.
       expect(res.body.data.report.status).toBe('partial');
       expect(res.body.data.analysis.stages.validation).toMatchObject({
         ok: false,
@@ -2713,18 +2414,11 @@ describe('Modules 4+5 - analysis orchestration', () => {
         reasonCode: 'VALIDATION_UNAVAILABLE',
       });
       expect(res.body.data.analysis.stages.ml.skipped).toBe(true);
-      // The clinical report depends on the same validated input, so it is
-      // skipped for the same reason and by the same rule.
       expect(res.body.data.analysis.stages.report).toEqual({
         ok: false,
         skipped: true,
         reasonCode: 'VALIDATION_UNAVAILABLE',
       });
-      // Modules 23 and 26 read the clinical report, which was never built, so
-      // they are skipped one link further down the same chain - with their OWN
-      // reason code, not validation's. "There was no validated input" and
-      // "there was no report to explain" are different facts about different
-      // stages, and a shared code would make the second unreadable.
       expect(res.body.data.analysis.stages.explanation).toEqual({
         ok: false,
         skipped: true,
@@ -2744,8 +2438,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
         'guidance',
       ]);
 
-      // Rules, ML, the report and the explanation were never called with
-      // un-validated input as a fallback.
       expect(callsTo(RULES_PATH)).toHaveLength(0);
       expect(callsTo(PREDICT_PATH)).toHaveLength(0);
       expect(callsTo(REPORT_PATH)).toHaveLength(0);
@@ -2754,19 +2446,16 @@ describe('Modules 4+5 - analysis orchestration', () => {
 
       const stored = await loadRaw(report.id);
       expect(stored.status).toBe('partial');
-      expect(stored.analysis.version).toBe(1); // the run DID produce a result
+      expect(stored.analysis.version).toBe(1);
       expect(stored.extraction.extracted_parameters).toHaveLength(1);
       expect(stored.features.features.hba1c).toBe(6.8);
       expect(stored.featureValidation).toBeUndefined();
       expect(stored.ruleDecisions).toBeUndefined();
       expect(stored.mlDecisions).toBeUndefined();
       expect(stored.clinicalReport).toBeUndefined();
-      // Counts for a stage that did not answer are ABSENT, never 0.
       expect(stored.analysis.decisionCount).toBeUndefined();
       expect(stored.analysis.highestRisk).toBeUndefined();
       expect(stored.analysis.validFeatureCount).toBeUndefined();
-      // And the overall status is ABSENT, not `null`: "the report stage did
-      // not run" is a different fact from "the report assessed nothing".
       expect(stored.analysis.overallStatus).toBeUndefined();
       expect(stored.analysis.overallStatusLabel).toBeUndefined();
     });
@@ -2794,11 +2483,10 @@ describe('Modules 4+5 - analysis orchestration', () => {
       expect(stored.featureValidation).toBeDefined();
       expect(stored.ruleDecisions).toBeUndefined();
       expect(stored.mlDecisions.decisions).toHaveLength(1);
-      // Only the ML source is counted; the rule count is absent, not zero.
       expect(stored.analysis.ruleDecisionCount).toBeUndefined();
       expect(stored.analysis.mlDecisionCount).toBe(1);
       expect(stored.analysis.decisionCount).toBe(1);
-      expect(stored.analysis.highestRisk).toBe('Medium'); // ML only
+      expect(stored.analysis.highestRisk).toBe('Medium');
     });
 
     it('ML fails: the rule decisions are NOT lost', async () => {
@@ -2819,7 +2507,7 @@ describe('Modules 4+5 - analysis orchestration', () => {
       const stored = await loadRaw(report.id);
       expect(stored.ruleDecisions.decisions).toHaveLength(1);
       expect(stored.mlDecisions).toBeUndefined();
-      expect(stored.analysis.highestRisk).toBe('High'); // rules only
+      expect(stored.analysis.highestRisk).toBe('High');
     });
 
     it('the report fails: the validation and both decision sources are NOT lost', async () => {
@@ -2827,15 +2515,13 @@ describe('Modules 4+5 - analysis orchestration', () => {
       const report = await uploadReport(user.token);
       wireAiService({
         report: () => {
-          throw transportError({ status: 500 }); // response body carries PHI
+          throw transportError({ status: 500 });
         },
       });
 
       const res = await analyze(user.token, report.id);
       expect(res.status).toBe(200);
       expect(res.body.data.report.status).toBe('partial');
-      // Modules 23 and 26 take the report as their input, so a failed report
-      // takes them with it - SKIPPED, with a reason, not silently absent.
       expect(res.body.data.analysis.stagesFailed).toEqual([
         'report',
         'explanation',
@@ -2853,14 +2539,11 @@ describe('Modules 4+5 - analysis orchestration', () => {
         ok: false,
         errorCode: 'AI_SERVICE_ERROR',
       });
-      // Everything upstream of it survived.
       expect(res.body.data.analysis.stages.rules.ok).toBe(true);
       expect(res.body.data.analysis.stages.ml.ok).toBe(true);
       expect(res.body.data.analysis.ruleDecisions.decisions).toHaveLength(1);
       expect(res.body.data.analysis.mlDecisions.decisions).toHaveLength(1);
-      // The report is explicitly null, not silently missing.
       expect(res.body.data.analysis.report).toBeNull();
-      // No overall status is invented for a report that was never produced.
       expect(res.body.data.analysis.overallStatus).toBeUndefined();
       expect(res.body.data.analysis.overallStatusLabel).toBeUndefined();
 
@@ -2869,15 +2552,12 @@ describe('Modules 4+5 - analysis orchestration', () => {
       expect(stored.featureValidation).toBeDefined();
       expect(stored.ruleDecisions.decisions).toHaveLength(1);
 
-      // The sibling route says so rather than serving half a page.
       const only = await getClinicalReport(user.token, report.id);
       expect(only.status).toBe(404);
       expect(JSON.stringify(only.body)).not.toContain(PHI_CANARY);
     });
 
     it('rules fail: the clinical report is still produced', async () => {
-      // The report endpoint re-derives its own decisions in-process, so it is
-      // genuinely independent of the standalone rule call beside it.
       const user = await makeUser('rulesfailreport@example.com');
       const report = await uploadReport(user.token);
       wireAiService({
@@ -2908,8 +2588,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
       expect(second.body.data.analysis.version).toBe(2);
 
       const stored = await loadRaw(report.id);
-      // Run 1's report described run 1's features. Leaving it beside run 2's
-      // would present a stale overall health status as current.
       expect(stored.clinicalReport).toBeUndefined();
       expect(stored.analysis.overallStatus).toBeUndefined();
       expect(stored.analysis.overallStatusLabel).toBeUndefined();
@@ -2921,7 +2599,7 @@ describe('Modules 4+5 - analysis orchestration', () => {
       const report = await uploadReport(user.token);
       wireAiService({
         report: () => {
-          throw transportError({ status: 500 }); // response body carries PHI
+          throw transportError({ status: 500 });
         },
       });
       await analyze(user.token, report.id);
@@ -2953,7 +2631,7 @@ describe('Modules 4+5 - analysis orchestration', () => {
       const report = await uploadReport(user.token);
       wireAiService({
         rules: () => {
-          throw transportError({ status: 500 }); // response body carries PHI
+          throw transportError({ status: 500 });
         },
       });
       await analyze(user.token, report.id);
@@ -2967,7 +2645,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
     });
 
     it('a stage record can only ever hold a machine code we defined', () => {
-      // An error carrying report text in its `code` must not reach the record.
       const leaky = { code: `LEAK_${PHI_CANARY}`, message: PHI_CANARY };
       expect(analysisService.safeErrorCode(leaky)).toBe('ANALYSIS_STAGE_FAILED');
       expect(analysisService.safeErrorCode(new Error(PHI_CANARY))).toBe(
@@ -2986,9 +2663,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
       const first = await analyze(user.token, report.id);
       expect(first.body.data.report.status).toBe('processed');
 
-      // The second run's features are current; its rule decisions do not exist.
-      // Leaving run 1's conclusions beside run 2's features would present stale
-      // clinical findings as current.
       wireAiService({
         rules: () => {
           throw transportError({ status: 500 });
@@ -3005,8 +2679,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
     });
 
     it('a FATAL stage still loses nothing that was already stored', async () => {
-      // Extraction and feature engineering remain load-bearing: if either
-      // fails there is no result at all, and the previous one must survive.
       const user = await makeUser('fatalkeeps@example.com');
       const report = await uploadReport(user.token);
       expect((await analyze(user.token, report.id)).status).toBe(200);
@@ -3022,7 +2694,7 @@ describe('Modules 4+5 - analysis orchestration', () => {
       const stored = await loadRaw(report.id);
       expect(stored.status).toBe('failed');
       expect(stored.analysis.version).toBe(1);
-      expect(stored.ruleDecisions.decisions).toHaveLength(1); // run 1's, intact
+      expect(stored.ruleDecisions.decisions).toHaveLength(1);
       expect(stored.mlDecisions.decisions).toHaveLength(1);
     });
 
@@ -3031,14 +2703,11 @@ describe('Modules 4+5 - analysis orchestration', () => {
       expect(highestRisk('Low', 'High')).toBe('High');
       expect(highestRisk('Medium', 'Low')).toBe('Medium');
       expect(highestRisk(undefined, null)).toBeNull();
-      // "no decisions" must not become "low risk", and an unknown band is not
-      // ranked into the ordering.
       expect(highestRisk('Catastrophic')).toBeNull();
       expect(highestRisk('Catastrophic', 'Low')).toBe('Low');
     });
   });
 
-  // ============================================================= lifecycle ===
   describe('status lifecycle', () => {
     it('moves uploaded -> processing -> processed', async () => {
       const user = await makeUser('lifecycle@example.com');
@@ -3047,7 +2716,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
       let observedDuringRun = null;
       wireAiService({
         extract: async () => {
-          // Observed from inside the call: the report is `processing`.
           const mid = await Report.findById(report.id);
           observedDuringRun = mid.status;
           return okResponse(extractionFixture());
@@ -3079,8 +2747,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
     });
 
     it('statusMessage can only ever be a value from the safe table', () => {
-      // An error carrying report text - the exact thing that must not land in
-      // statusMessage - degrades to the generic phrase.
       const leaky = new Error(`mongo rejected value ${PHI_CANARY}`);
       leaky.code = 'SOME_UNMAPPED_CODE';
       expect(analysisService.safeStatusMessage(leaky)).toBe(
@@ -3088,7 +2754,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
       );
       expect(analysisService.safeStatusMessage(leaky)).not.toContain(PHI_CANARY);
 
-      // Even a matching code contributes only the table's own text.
       const mapped = { code: 'AI_SERVICE_TIMEOUT', message: PHI_CANARY };
       expect(analysisService.safeStatusMessage(mapped)).not.toContain(PHI_CANARY);
       expect(analysisService.safeStatusMessage(null)).toBe(
@@ -3109,7 +2774,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
     });
   });
 
-  // =========================================================== concurrency ===
   describe('concurrency guard', () => {
     it('two simultaneous analyses: one runs, the other gets 409', async () => {
       const user = await makeUser('concurrent@example.com');
@@ -3128,10 +2792,7 @@ describe('Modules 4+5 - analysis orchestration', () => {
         },
       });
 
-      // `.then()` is what actually dispatches a supertest request - holding the
-      // unresolved object would never send it.
       const first = analyze(user.token, report.id).then((res) => res);
-      // Give the first request time to take the lock before the second starts.
       await new Promise((resolve) => setTimeout(resolve, 300));
       const second = await analyze(user.token, report.id);
 
@@ -3142,7 +2803,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
       const firstRes = await first;
       expect(firstRes.status).toBe(200);
 
-      // The expensive stage ran exactly once.
       expect(started).toBe(1);
       expect(callsTo(EXTRACT_PATH)).toHaveLength(1);
 
@@ -3173,7 +2833,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
       const report = await uploadReport(user.token);
       const userDoc = { _id: user.id, id: user.id, role: ROLES.PATIENT };
 
-      // Simulate a process that died mid-analysis.
       await Report.updateOne(
         { _id: report.id },
         {
@@ -3185,7 +2844,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
         }
       );
 
-      // Still locked from a fresh caller's point of view? No - it is stale.
       const claimed = await analysisService.claimForAnalysis({
         user: userDoc,
         reportId: report.id,
@@ -3205,7 +2863,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
         reportId: report.id,
         requestId: 'run-one',
       });
-      // Another run takes over before run-one finishes.
       await Report.updateOne({ _id: report.id }, { $set: { 'analysis.requestId': 'run-two' } });
 
       await expect(
@@ -3218,7 +2875,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
     });
   });
 
-  // ================================================================ re-run ===
   describe('re-run semantics (overwrite, non-destructive on failure)', () => {
     it('a successful re-run overwrites and bumps the version', async () => {
       const user = await makeUser('rerun@example.com');
@@ -3238,7 +2894,7 @@ describe('Modules 4+5 - analysis orchestration', () => {
 
       const stored = await loadRaw(report.id);
       expect(stored.extraction.extraction_confidence).toBe(0.5);
-      expect(stored.features.features.blood_glucose).toBeUndefined(); // replaced
+      expect(stored.features.features.blood_glucose).toBeUndefined();
     });
 
     it('a FAILED re-run leaves the previous successful analysis intact', async () => {
@@ -3256,11 +2912,9 @@ describe('Modules 4+5 - analysis orchestration', () => {
       const second = await analyze(user.token, report.id);
       expect(second.status).toBe(504);
 
-      // Status reflects the LATEST attempt...
       const stored = await loadRaw(report.id);
       expect(stored.status).toBe('failed');
       expect(stored.analysis.runCount).toBe(2);
-      // ...but the stored payload is still the last SUCCESSFUL one.
       expect(stored.analysis.version).toBe(1);
       expect(stored.features.features.hba1c).toBe(6.8);
 
@@ -3288,11 +2942,7 @@ describe('Modules 4+5 - analysis orchestration', () => {
     });
   });
 
-  // ========================================================= printed date ===
   describe('the date the report prints (2026-09-24)', () => {
-    // Extraction always returned `report_metadata.report_date` and nothing
-    // read it: two reports printing 05-Sep-2026 sat on the timeline as the
-    // 9th and the 11th, the dates typed at upload.
     const printing = (reportDate) => () =>
       okResponse({ ...extractionFixture(), report_metadata: { lab_name: 'X', report_date: reportDate } });
 
@@ -3317,7 +2967,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
       const stored = await Report.findById(report.id).lean();
       expect(stored.printedDateStatus).toBe('read');
       expect(stored.printedDate.toISOString()).toBe('2026-09-05T00:00:00.000Z');
-      // THE SORT KEY FOLLOWS IT, although `updateOne` skipped the save hook.
       expect(stored.chronoDate.toISOString()).toBe('2026-09-05T00:00:00.000Z');
       expect(stored.reportDate).toBeUndefined();
     });
@@ -3332,7 +2981,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
       expect(stored.chronoDate.toISOString()).toBe('2026-09-09T00:00:00.000Z');
       expect(stored.printedDate.toISOString()).toBe('2026-09-05T00:00:00.000Z');
 
-      // Both reach the page, so it can say they disagree.
       const listed = await request(app).get(REPORTS).set(auth(user.token));
       const row = listed.body.data.reports.find((r) => r.id === report.id);
       expect(row.reportDate).toBe('2026-09-09T00:00:00.000Z');
@@ -3350,7 +2998,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
       expect(stored.printedDate).toBeUndefined();
       expect(stored.chronoDate.getTime()).toBe(stored.uploadedAt.getTime());
 
-      // The unreadable text is sent so the page can quote it.
       const listed = await request(app).get(REPORTS).set(auth(user.token));
       expect(listed.body.data.reports[0].printedDateRaw).toBe('05/09/2026');
     });
@@ -3381,8 +3028,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
       let stored = await Report.findById(report.id).lean();
       expect(stored.printedIdentity).toEqual({ sex: 'female', sexStatus: 'read', ageYears: 34, ageStatus: 'read' });
 
-      // A re-run whose extraction carries no such keys -- an older ai-service
-      // -- must UNSET it: "nobody looked", never a stale "checked".
       wireAiService();
       await analyze(user.token, report.id);
       stored = await Report.findById(report.id).lean();
@@ -3405,7 +3050,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
     });
   });
 
-  // ============================================================= retrieval ===
   describe('GET /reports/:id/analysis', () => {
     it('404s before the report has ever been analysed', async () => {
       const user = await makeUser('notyet@example.com');
@@ -3462,7 +3106,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
       expect(res.status).toBe(200);
       expect(res.body.data.report.status).toBe('partial');
       expect(res.body.data.analysis.ruleDecisions.decisions).toHaveLength(1);
-      // A stage that did not answer is explicitly null, not silently missing.
       expect(res.body.data.analysis.mlDecisions).toBeNull();
       expect(res.body.data.analysis.stages.ml.ok).toBe(false);
     });
@@ -3490,7 +3133,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
     });
   });
 
-  // ============================================================= ownership ===
   describe('ownership - medical data has no staff exception', () => {
     let owner;
     let reportId;
@@ -3517,8 +3159,7 @@ describe('Modules 4+5 - analysis orchestration', () => {
       const onRandom = await analyze(stranger.token, randomId);
 
       expect(onOthers.status).toBe(404);
-      expect(onOthers.body).toEqual(onRandom.body); // byte-identical
-      // And nothing was run on the owner's behalf.
+      expect(onOthers.body).toEqual(onRandom.body);
       expect(outgoing).toHaveLength(0);
     });
 
@@ -3542,8 +3183,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
       const onRandom = await getClinicalReport(stranger.token, randomId);
 
       expect(onOthers.status).toBe(404);
-      // Byte-identical to a random id: a non-owner cannot even learn the
-      // report exists, let alone read anything clinical about it.
       expect(onOthers.body).toEqual(onRandom.body);
       expect(JSON.stringify(onOthers.body)).not.toContain(PHI_CANARY);
       expect(JSON.stringify(onOthers.body)).not.toContain('Needs Medical Attention');
@@ -3566,9 +3205,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
       const onRandom = await getExplanation(stranger.token, randomId);
 
       expect(onOthers.status).toBe(404);
-      // BYTE-IDENTICAL to a random id. The explanation is the most readable
-      // thing this system produces - plain sentences about a named person's
-      // blood - so a non-owner must not even learn the report exists.
       expect(onOthers.body).toEqual(onRandom.body);
       expect(JSON.stringify(onOthers.body)).not.toContain(PHI_CANARY);
       expect(JSON.stringify(onOthers.body)).not.toContain(EXPLANATION_TEXT);
@@ -3596,17 +3232,14 @@ describe('Modules 4+5 - analysis orchestration', () => {
     });
   });
 
-  // ================================================================ health ===
   describe('health / readiness', () => {
     beforeEach(() => {
-      // The verdict is cached and probes are coalesced (see routes/index.js),
-      // so each case starts from a clean slate.
       require('../src/routes').resetAiHealthCache();
     });
 
     it('GET /health never blocks on the ai-service', async () => {
       mockAxios.get.mockImplementation(
-        () => new Promise(() => {}) // never settles
+        () => new Promise(() => {})
       );
       const res = await request(app).get(`${config.apiPrefix}/health`);
       expect(res.status).toBe(200);
@@ -3636,7 +3269,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
       );
       for (const res of results) expect(res.status).toBe(200);
 
-      // Eight unauthenticated inbound requests, ONE outbound request.
       expect(mockAxios.get).toHaveBeenCalledTimes(1);
     });
 
@@ -3653,7 +3285,6 @@ describe('Modules 4+5 - analysis orchestration', () => {
     });
   });
 
-  // ================================================================== PHI ===
   describe('PHI never reaches a log', () => {
     it('logs nothing containing report text on the failure path', async () => {
       const user = await makeUser('phi@example.com');
@@ -3677,24 +3308,9 @@ describe('Modules 4+5 - analysis orchestration', () => {
 });
 
 describe('the glossary stage spends model calls, and is budgeted like it', () => {
-  // FOUND LIVE ON Test 3.pdf, and the logs named both halves precisely:
-  //
-  //   ai-service  parameter_glossary {requested: 17, generated: 16, cached: 1}
-  //   backend     stage=glossary outcome=failure code=ECONNABORTED attempt=1
-  //   backend     stage=glossary outcome=failure code=ECONNABORTED attempt=2
-  //
-  // Seventeen descriptions were generated and every one was thrown away,
-  // twice. The stage was borrowing `guidanceTimeoutMs` -- 30s -- whose own
-  // comment argues for a short budget because that stage "CALLS NO MODEL AT
-  // ALL". The glossary makes one call per test. It fitted only while the cap
-  // was eight.
   const aiServiceClient = require('../src/services/aiServiceClient');
   const originalRetries = config.aiService.retries;
 
-  // SET EXPLICITLY, NOT INHERITED. Another block in this file sets
-  // `retries = 0` for its own reasons, and a retry test that reads whatever
-  // the previous block left behind proves nothing about the code -- the first
-  // version of the last test here passed and failed for that reason alone.
   beforeEach(() => {
     mockAxios.post.mockReset();
     config.aiService.retries = 1;
@@ -3708,9 +3324,6 @@ describe('the glossary stage spends model calls, and is budgeted like it', () =>
 
   it('does NOT use the budget meant for stages that call no model', () => {
     expect(config.aiService.glossaryTimeoutMs).not.toBe(config.aiService.guidanceTimeoutMs);
-    // Measured, not guessed: ~1.2s per description at the fast model, and
-    // several times that once the daily quota pushes the chain onto a
-    // fallback. A ceiling of 24 tests has to fit inside this.
     expect(config.aiService.glossaryTimeoutMs).toBeGreaterThanOrEqual(24 * 4000);
   });
 
@@ -3723,9 +3336,6 @@ describe('the glossary stage spends model calls, and is budgeted like it', () =>
   });
 
   it('NEVER RETRIES A TIMEOUT, because the calls are already spent', async () => {
-    // The retry does not recover the model calls, it spends them again. On a
-    // free tier of twenty a day that is the difference between one report and
-    // none -- the live failure burned roughly thirty-four calls for nothing.
     const timeout = Object.assign(new Error('timeout of 30000ms exceeded'), {
       code: 'ECONNABORTED',
       isAxiosError: true,
@@ -3740,8 +3350,6 @@ describe('the glossary stage spends model calls, and is budgeted like it', () =>
   });
 
   it('still retries a stage that has NOT been given its own budget', async () => {
-    // The per-call override must not have turned retries off everywhere. This
-    // is the guarantee that keeps the change narrow.
     const timeout = Object.assign(new Error('timeout'), {
       code: 'ECONNABORTED',
       isAxiosError: true,
@@ -3757,18 +3365,11 @@ describe('the glossary stage spends model calls, and is budgeted like it', () =>
 });
 
 describe('Module 34 spends model calls too, and is budgeted like it', () => {
-  // THE SAME FAULT, NAMED BEFORE IT FIRED RATHER THAN AFTER. Module 34 makes
-  // one model call per out-of-range finding and was borrowing
-  // `explainTimeoutMs` -- a budget shared with stages that make one call in
-  // total. It fitted only while the cap was six, and the cap is now sixteen,
-  // measured from two real reports that both exceeded six.
   const aiServiceClient = require('../src/services/aiServiceClient');
   const originalRetries = config.aiService.retries;
 
   beforeEach(() => {
     mockAxios.post.mockReset();
-    // Set explicitly. A retry test reading whatever a previous block left
-    // behind proves nothing about the code.
     config.aiService.retries = 1;
     aiServiceClient.resetClient();
   });
@@ -3782,9 +3383,6 @@ describe('Module 34 spends model calls too, and is budgeted like it', () => {
     expect(config.aiService.findingContextTimeoutMs).not.toBe(
       config.aiService.explainTimeoutMs
     );
-    // Sixteen findings at the glossary's own measured rate, plus the safety
-    // validation each answer passes, plus room for the slower fallback model
-    // the daily quota forces the chain onto.
     expect(config.aiService.findingContextTimeoutMs).toBeGreaterThanOrEqual(16 * 4000);
   });
 

@@ -1,51 +1,3 @@
-"""Does fusion earn its place? Rule-only vs model-only vs fused.
-
-WHY THIS EXISTS
-===============
-
-The central architectural claim of VaidyaAI is that a deterministic rule engine
-and a condition-specific model are better combined than used alone. That claim
-was asserted and never measured. A reviewer of the manuscript identified the
-omission as the most important missing experiment, and they were right.
-
-WHAT MAKES IT MEASURABLE HERE
-=============================
-
-The diabetes dataset carries `hba1c`, `blood_glucose` AND the outcome label, so
-the platform's own threshold rule and its trained forest can both be evaluated
-on the same held-out patients against the same ground truth. That is exactly
-the comparison the architecture rests on.
-
-⚠ THIS IS NOT A CLINICAL VALIDATION. The label is the dataset's, not a
-clinician's, and the rule being tested is partly the criterion by which such
-labels are usually assigned -- see the leakage ablation. What this experiment
-can settle is narrower and still worth settling: given these three decision
-procedures over identical inputs, does combining them change the error profile?
-
-PROTOCOL
-========
-
-The split is reproduced exactly as `train_diabetes.py` creates it -- same file,
-de-duplicated before splitting, stratified 80/20 at random_state 42 -- and the
-SHIPPED model artifact is loaded rather than retrained, so the model arm is the
-one actually deployed.
-
-Rule arm: the platform's own thresholds. HbA1c >= 6.5 % is diabetes-range;
-5.7-6.4 % is the prediabetes band. Glucose is treated under the unknown-timing
-policy the rule engine applies when a report does not establish that a sample
-was fasting: >= 200 mg/dL is diabetes-range and >= 140 mg/dL is the 2-hour
-post-load impaired boundary. Using the post-load boundary for a sample of
-unknown timing is the platform's deliberate choice against over-calling.
-
-Model arm: the shipped probability, banded by the two published operating
-thresholds.
-
-Fused arm: the platform's fusion rule -- the maximum risk over contributing
-sources on the ordering low < medium < high.
-
-⚠ WRITES NOTHING INTO ml/artifacts/.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -92,7 +44,6 @@ def load_frame() -> pd.DataFrame:
 
 
 def rule_band(row: pd.Series) -> int:
-    """The platform's threshold rule, as a band."""
     a1c = row["hba1c"]
     glu = row["blood_glucose"]
     if a1c >= HBA1C_DIABETES or glu >= GLUCOSE_DIABETES_UNKNOWN_TIMING:
@@ -122,7 +73,6 @@ def wilson(k: int, n: int):
 
 
 def score(name: str, bands: np.ndarray, y: np.ndarray) -> Dict:
-    """Treat the HIGH band as the positive call; report the full stratification."""
     flag = (bands == BANDS["high"]).astype(int)
     tp = int(((flag == 1) & (y == 1)).sum())
     tn = int(((flag == 0) & (y == 0)).sum())
@@ -183,8 +133,6 @@ def main() -> None:
     t_low = float(thresholds["borderline"])
 
     bundle = joblib.load(MODEL)
-    # The bundle keeps metadata under `variants` and the fitted estimators
-    # under `pipelines`; the deployed one for this arm is the `both` variant.
     pipe = bundle["pipelines"]["both"]
     prob = pipe.predict_proba(X_test)[:, 1]
 

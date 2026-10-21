@@ -1,19 +1,3 @@
-"""The Module 4 -> Module 5 boundary, driven the way the backend will drive it.
-
-Two things are verified here:
-
-1. NOTHING THE FINAL REPORT NEEDS IS DROPPED at the boundary. Module 4's
-   warnings are the ONLY signal that MuPDF silently repaired a damaged PDF, or
-   that a page of a multi-page scan could not be read. If they vanish, a report
-   built from a partially unreadable scan is indistinguishable from one built
-   from a clean scan, and a missing lab row silently reads as "test not
-   present" instead of "we could not read this page". Spec Module 17 requires
-   validation warnings in the final report metadata.
-
-2. THE EXACT REQUEST SHAPE the backend sends is accepted, and the correlation
-   id survives, so a failure can be traced across the two services.
-"""
-
 from __future__ import annotations
 
 import io
@@ -30,10 +14,8 @@ from tests.test_feature_engineer import OBSERVED_MODULE_4_PARAMETERS
 ENGINEER = "/api/v1/features/engineer"
 EXTRACT = "/api/v1/ocr/extract"
 
-#: The warning the auditor observed being dropped -- MuPDF's silent repair.
 REPAIR_WARNING = "page 1 was recovered by the PDF repairer"
 
-#: Module 4's partial-degradation warning for an unreadable page.
 SKIPPED_PAGE_WARNING = (
     "Page 2 could not be processed by the extraction model "
     "(MODEL_RESPONSE_MALFORMED); it was skipped."
@@ -41,7 +23,6 @@ SKIPPED_PAGE_WARNING = (
 
 
 def module_4_payload(**overrides) -> dict:
-    """A realistic Module 4 `data` object: a damaged, partially-read 2-page scan."""
     payload = {
         "source": {
             "filename": "report.pdf",
@@ -67,13 +48,7 @@ def module_4_payload(**overrides) -> dict:
     return payload
 
 
-# --------------------------------------------------------------------------
-# 1. Warnings cross the boundary, with their origin intact
-# --------------------------------------------------------------------------
-
-
 def test_module_4_warnings_reach_module_5_output(client):
-    """REGRESSION: this returned `warnings: []` and lost both warnings."""
     body = client.post(ENGINEER, json={"extraction": module_4_payload()}).json()
     data = body["data"]
 
@@ -86,7 +61,6 @@ def test_module_4_warnings_reach_module_5_output(client):
 def test_every_warning_records_the_stage_that_raised_it(client):
     payload = module_4_payload(
         extracted_parameters=[
-            # No printed unit -> Module 5 raises a warning of its own.
             {"test_name": "HbA1c", "value_raw": "6.8", "value_numeric": 6.8},
         ]
     )
@@ -106,7 +80,6 @@ def test_every_warning_records_the_stage_that_raised_it(client):
 
 
 def test_upstream_warnings_are_not_merged_into_module_5s_own_list(client):
-    """`warnings` keeps meaning 'what Module 5 itself found'. No origin loss."""
     data = client.post(ENGINEER, json={"extraction": module_4_payload()}).json()["data"]
     assert data["warnings"] == []
     assert len(data["upstream_warnings"]) == 2
@@ -148,11 +121,6 @@ def test_a_bare_string_warning_is_accepted(client):
     assert [w["message"] for w in data["upstream_warnings"]] == [REPAIR_WARNING]
 
 
-# --------------------------------------------------------------------------
-# The rest of the boundary: what else was being dropped
-# --------------------------------------------------------------------------
-
-
 def test_extraction_confidence_survives_the_boundary(client):
     data = client.post(ENGINEER, json={"extraction": module_4_payload()}).json()["data"]
     assert data["upstream"]["extraction_confidence"] == pytest.approx(0.87)
@@ -163,7 +131,6 @@ def test_report_metadata_survives_the_boundary(client):
     metadata = data["upstream"]["report_metadata"]
     assert metadata["lab_name"] == "Northfield Diagnostic Laboratory"
     assert metadata["report_date"] == "12/03/2024"
-    # Presence only -- the name itself is never carried, exactly as Module 4.
     assert metadata["patient_name_present"] is True
     assert set(metadata) == {
         "lab_name", "report_date", "patient_name_present", "patient_sex", "patient_age",
@@ -180,7 +147,6 @@ def test_source_information_survives_the_boundary(client):
 
 
 def test_per_page_readability_survives_so_a_gap_is_not_read_as_absence(client):
-    """The safety-critical bit: WHICH pages could not be read."""
     data = client.post(ENGINEER, json={"extraction": module_4_payload()}).json()["data"]
     upstream = data["upstream"]
     assert upstream["pages"] == [
@@ -192,7 +158,6 @@ def test_per_page_readability_survives_so_a_gap_is_not_read_as_absence(client):
 
 
 def test_page_text_itself_is_not_carried_forward(client):
-    """Bulk PHI must not be duplicated into the feature set."""
     payload = module_4_payload(
         raw_text="CANARY-BULK-REPORT-TEXT",
         pages=[{"page_number": 1, "raw_text": "CANARY-PAGE-TEXT"}],
@@ -219,7 +184,6 @@ def test_upstream_block_reports_when_no_extraction_context_was_given(client):
 
 
 def test_direct_import_carries_upstream_context_too(client):
-    """Module 7 / the ML layer call the function, not the endpoint."""
     data = engineer_from_extraction(module_4_payload())
     assert [w.message for w in data.upstream_warnings] == [
         REPAIR_WARNING,
@@ -244,13 +208,7 @@ def test_engineer_features_derives_rows_from_the_extraction_when_omitted():
     assert "hba1c" in data.features
 
 
-# --------------------------------------------------------------------------
-# 2. The exact request body the backend will POST
-# --------------------------------------------------------------------------
-
-
 def test_canonical_form_extraction_key(client):
-    """The documented form: Module 4's `data` unwrapped under `extraction`."""
     body = client.post(
         ENGINEER,
         json={"extraction": module_4_payload(), "profile": {"age": 45}},
@@ -262,7 +220,6 @@ def test_canonical_form_extraction_key(client):
 
 
 def test_module_4_response_envelope_is_accepted_verbatim(client):
-    """Relaying `{success, data}` used to yield an EMPTY feature set, silently."""
     body = client.post(
         ENGINEER,
         json={"success": True, "data": module_4_payload(), "profile": {"age": 45}},
@@ -307,7 +264,6 @@ def test_an_ambiguous_body_is_rejected_not_guessed_at(client):
 
 
 def test_tolerance_does_not_weaken_validation(client):
-    """Every accepted form still validates rows against the Module 4 contract."""
     for body in (
         {"extraction": {"extracted_parameters": [{"value_raw": "6.8"}]}},
         {"success": True, "data": {"extracted_parameters": [{"value_raw": "6.8"}]}},
@@ -325,7 +281,6 @@ def test_a_non_dict_data_key_is_not_mistaken_for_an_extraction(client):
 
 
 def test_end_to_end_extract_then_engineer(client, synthetic_pdf):
-    """Drive the two stages in sequence exactly as the backend will."""
     extraction = client.post(
         EXTRACT,
         files={"file": ("report.pdf", io.BytesIO(synthetic_pdf), "application/pdf")},
@@ -334,7 +289,6 @@ def test_end_to_end_extract_then_engineer(client, synthetic_pdf):
     envelope = extraction.json()
     assert set(envelope) == {"success", "data"}
 
-    # The backend relays the envelope; both forms must work.
     for body in (envelope, {"extraction": envelope["data"]}):
         engineered = client.post(ENGINEER, json=body)
         assert engineered.status_code == 200, engineered.text
@@ -346,7 +300,6 @@ def test_end_to_end_extract_then_engineer(client, synthetic_pdf):
 
 
 def test_extract_warnings_flow_end_to_end(client_factory, synthetic_pdf):
-    """A low-confidence extraction's warning must reach Module 5's output."""
     from tests.conftest import WELL_FORMED_PAGE_PAYLOAD, FakeGeminiClient
 
     fake = FakeGeminiClient(
@@ -366,14 +319,9 @@ def test_extract_warnings_flow_end_to_end(client_factory, synthetic_pdf):
     assert all(w["stage"] == "extraction" for w in data["upstream_warnings"])
 
 
-# --------------------------------------------------------------------------
-# 3. Correlation id
-# --------------------------------------------------------------------------
-
-
 @pytest.mark.parametrize("path", [ENGINEER, "/api/v1/health", "/api/v1/features/catalog"])
 def test_request_id_is_echoed(client, path):
-    supplied = "68b1f0c2a4d9e7b3c1a2f4d6"  # an opaque Mongo ObjectId
+    supplied = "68b1f0c2a4d9e7b3c1a2f4d6"
     if path == ENGINEER:
         response = client.post(
             path, json={}, headers={REQUEST_ID_HEADER: supplied}
@@ -419,7 +367,7 @@ def test_request_id_is_echoed_on_a_401(authed_client):
 def test_request_id_appears_in_log_lines(authed_client, caplog):
     supplied = "trace-log-canary-001"
     with caplog.at_level(logging.DEBUG):
-        authed_client.get("/api/v1/features/catalog")  # no key -> logs a rejection
+        authed_client.get("/api/v1/features/catalog")
         authed_client.get(
             "/api/v1/features/catalog", headers={REQUEST_ID_HEADER: supplied}
         )
@@ -442,15 +390,15 @@ def test_request_id_survives_extraction_log_lines(client_factory, synthetic_pdf,
 @pytest.mark.parametrize(
     "hostile",
     [
-        "Jordan Sample",              # a space -> rejected (and it is PHI)
-        "patient@example.com",        # '@' not allowed
-        "abc\ninjected log line",     # log injection
-        "abc\r\nSet-Cookie: x=1",     # header injection
-        "\x1b[31mred",                # ANSI escape
-        "x" * 129,                    # over the length cap
-        "",                           # empty
-        "   ",                        # whitespace
-        "../../etc/passwd",           # '/' not allowed
+        "Jordan Sample",
+        "patient@example.com",
+        "abc\ninjected log line",
+        "abc\r\nSet-Cookie: x=1",
+        "\x1b[31mred",
+        "x" * 129,
+        "",
+        "   ",
+        "../../etc/passwd",
     ],
 )
 def test_an_unusable_request_id_is_discarded_not_echoed(client, hostile, caplog):
@@ -464,9 +412,9 @@ def test_an_unusable_request_id_is_discarded_not_echoed(client, hostile, caplog)
 
 def test_sanitizer_accepts_the_opaque_ids_the_backend_will_send():
     for good in (
-        "68b1f0c2a4d9e7b3c1a2f4d6",                # Mongo ObjectId
-        "3f2504e0-4f89-11d3-9a0c-0305e82c3301",    # UUID
-        "report:68b1f0c2a4d9e7b3c1a2f4d6",         # namespaced
+        "68b1f0c2a4d9e7b3c1a2f4d6",
+        "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "report:68b1f0c2a4d9e7b3c1a2f4d6",
         "req_2024.08.29-0001",
     ):
         assert sanitize_request_id(good) == good
@@ -478,21 +426,12 @@ def test_request_id_is_never_reflected_into_the_response_body(client):
     assert supplied not in body
 
 
-# --------------------------------------------------------------------------
-# Timeouts -- the backend needs a number to set its client timeout above
-# --------------------------------------------------------------------------
-
-
 def test_the_gemini_call_is_bounded(settings):
     assert settings.gemini_timeout_seconds > 0
     assert settings.gemini_max_retries >= 1
 
 
 def test_worst_case_duration_matches_the_documented_formula(settings):
-    """Documented in README. The backend sets its timeout above this."""
-    # 3 attempts x 120s, plus backoff 1s and 2s each with up to 25% jitter,
-    # per page -- TWICE since 2026-10-10, because a failed page is read once
-    # more after a 20 s pause -- x 10 pages. (Was 3637.5 before that retry.)
     per_page = 3 * 120.0 + (1.0 * 1.25 + 2.0 * 1.25)
     expected = (2 * per_page + 20.0) * 10
     assert settings.worst_case_extraction_seconds == pytest.approx(expected)
@@ -509,14 +448,7 @@ def test_worst_case_shrinks_with_a_tighter_configuration():
         gemini_retry_base_delay_seconds=1.0,
         max_page_count=10,
     )
-    # 2 x 45 + 1.25 backoff = 91.25 per page; read twice + 20 s pause; x10.
-    # (Was 912.5 before the 2026-10-10 page retry.)
     assert tuned.worst_case_extraction_seconds == pytest.approx(2025.0)
-
-
-# --------------------------------------------------------------------------
-# PHI canaries on the new surfaces
-# --------------------------------------------------------------------------
 
 
 def test_upstream_carry_forward_leaks_nothing_to_the_logs(client, caplog):
@@ -535,10 +467,8 @@ def test_upstream_carry_forward_leaks_nothing_to_the_logs(client, caplog):
             ENGINEER, json={"extraction": payload}, headers={SERVICE_KEY_HEADER: "x"}
         )
     assert response.status_code == 200
-    # The lab name and the warning are in the RESPONSE (the report needs them)...
     assert "CANARY-LAB-NAME" in response.text
     assert "CANARY-UPSTREAM-WARNING" in response.text
-    # ...and in NO log line.
     for canary in (
         "CANARY-RAW-TEXT",
         "CANARY-PAGE-TEXT",

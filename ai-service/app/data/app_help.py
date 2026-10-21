@@ -1,24 +1,3 @@
-"""How to use VaidyaAI -- the help notes the chatbot answers app questions from.
-
-Fixed, reviewed text (owner, 2026-10-09; widened the same day: "the chatbot
-should be able to tell about the app everything -- how to upload, where to
-go, what each section is"). Every page title, section heading and button
-name below was read from the frontend code (pages/*.jsx, components/*.jsx)
-the day it was written. If the app changes, change the note -- a stale note
-is a wrong answer.
-
-HOW THEY ARE USED (services/chatbot.py): for an app question the model is
-given the SITE MAP plus the best-matching notes and answers the exact
-question in its own words. If its answer is refused by the safety check, or
-no model is available, the best-matching note is shown word for word -- so
-every note must pass Module 24 as it stands (tests/test_chatbot.py).
-
-KEYWORDS ARE APP WORDS ONLY: a health word here ("weight", "results",
-"doctor") would route a health question to an app note. Hyphens are written
-as spaces ("re analyse"): the question is reduced to letters and digits
-before matching.
-"""
-
 from __future__ import annotations
 
 import re
@@ -34,8 +13,6 @@ class HelpNote:
     text: str
 
 
-#: Given to the model with EVERY app question, so "where is...?" can always be
-#: answered. App.jsx (Nav), Reports.jsx, Dashboard.jsx headings.
 SITE_MAP = HelpNote(
     "site_map",
     "Finding your way around VaidyaAI",
@@ -58,10 +35,8 @@ HELP_NOTES: Tuple[HelpNote, ...] = (
     HelpNote(
         "upload",
         "Uploading a report",
-        # No bare "pdf": "download my results as pdf" matched this note live.
         ("upload", "uploading", "add report", "add a report", "jpg", "png", "file size", "attach",
          "new report"),
-        # Reports.jsx: accept=".pdf,.jpg,.jpeg,.png", "up to 10 MB".
         "Click Reports in the menu. In the 'Upload a report' box, choose a PDF or "
         "a clear photo (JPG or PNG) of a blood test report, up to 10 MB. You can "
         "also type the date printed on the report and say whose report it is "
@@ -74,7 +49,6 @@ HELP_NOTES: Tuple[HelpNote, ...] = (
         "Analysing a report",
         ("analyse", "analyze", "analysis", "analysing", "progress bar", "slow", "taking long",
          "taking so long", "stuck", "re analyse", "reanalyse", "how long", "being analysed"),
-        # Reports.jsx STEP labels; the free hosting sleeps (MEMORY 6bu).
         "On the Reports page, press Analyse on a report. A progress bar walks "
         "through four steps: reading the report, checking the values, clinical "
         "rules and models, and writing explanations. It usually takes one to "
@@ -89,7 +63,6 @@ HELP_NOTES: Tuple[HelpNote, ...] = (
         "The Reports page",
         ("reports page", "your reports", "uploaded reports", "report list", "status", "badge",
          "not yet analysed", "original file", "open the file"),
-        # Reports.jsx: headings, STATUS_COPY, row buttons.
         "Click Reports in the menu. At the top is the 'Upload a report' box, and "
         "below it 'Your uploaded reports'. Each report has a label: 'Uploaded, not "
         "yet analysed', 'Being analysed', 'Analysed', 'Analysed, with some stages "
@@ -124,7 +97,6 @@ HELP_NOTES: Tuple[HelpNote, ...] = (
         ("profile", "your details", "my details", "personal details", "enter my age",
          "change my age", "change my weight", "change my height", "update my details",
          "fill details"),
-        # Profile.jsx hints.
         "Click 'Your details' in the menu. It holds your age, sex, height, "
         "weight, smoking history, and whether you have high blood pressure or "
         "heart disease. The analysis uses them, for example age and sex for "
@@ -138,7 +110,6 @@ HELP_NOTES: Tuple[HelpNote, ...] = (
         "The report dashboard",
         ("dashboard", "result page", "results page", "view dashboard", "report page",
          "open a report", "open my report"),
-        # Dashboard.jsx headings, top to bottom.
         "On the Reports page, press 'View dashboard' on an analysed report. From "
         "top to bottom it has: the Overall card and 'In short', the 'Overall "
         "risk' gauge, 'Coverage of the conditions checked', 'Worth a closer look' "
@@ -201,7 +172,6 @@ HELP_NOTES: Tuple[HelpNote, ...] = (
         ("timeline", "trend", "trends", "over time", "compare reports", "compare my reports",
          "previous report", "went up", "went down", "arrows", "progress score",
          "comparing two reports"),
-        # Timeline.jsx sections.
         "Click Timeline in the menu. It compares your analysed reports over "
         "time and needs at least two of them. It has three parts: 'Trends over "
         "time' (a chart for each test), 'Comparing two reports' (two reports side "
@@ -224,8 +194,6 @@ HELP_NOTES: Tuple[HelpNote, ...] = (
     HelpNote(
         "doctor_summary",
         "Summary for a clinician",
-        # "to my doctor" etc.: live (2026-10-09) "how can I show my report to my
-        # doctor?" matched nothing and the model INVENTED a share icon and email.
         ("clinician", "summary for", "doctor summary", "share with my doctor", "show my doctor",
          "to my doctor", "to the doctor", "to a doctor", "for my doctor", "for the doctor",
          "print", "handover", "healthcare professional summary", "share my report",
@@ -240,8 +208,6 @@ HELP_NOTES: Tuple[HelpNote, ...] = (
     HelpNote(
         "save_print",
         "Saving or printing your results",
-        # Live 2026-10-09: "how do I download my results as pdf?" was answered
-        # "Summary for a clinician creates a PDF" -- it does not.
         ("download", "save", "save as pdf", "as pdf", "export", "keep a copy", "copy of my results",
          "print my results", "print the report"),
         "VaidyaAI has no download or export button for results. To keep a copy, "
@@ -255,7 +221,6 @@ HELP_NOTES: Tuple[HelpNote, ...] = (
         "Account, password and deleting data",
         ("password", "account", "delete my", "delete a report", "remove a report", "sign out",
          "log out", "logout", "privacy", "my data", "forgot"),
-        # AccountSettings.jsx; forgot-password was removed (MEMORY 6bp).
         "Click 'Your details' in the menu; the Account section is at the bottom. "
         "There you can change your password or delete your account. Deleting the "
         "account removes your reports and their files. A single report can be "
@@ -293,8 +258,6 @@ HELP_NOTES: Tuple[HelpNote, ...] = (
     HelpNote(
         "about",
         "What VaidyaAI is",
-        # NOT the bare word "about": "write me a poem about cricket" matched it
-        # live (2026-10-09) and the model answered instead of redirecting.
         ("what is vaidyaai", "about vaidyaai", "what does this app", "how does it work",
          "is it accurate", "what can this app"),
         "VaidyaAI reads a laboratory report, checks each value against "
@@ -319,13 +282,6 @@ _WORD = re.compile(r"[a-z0-9]+")
 
 
 def match_help(question: str, limit: int = 3) -> List[HelpNote]:
-    """The notes whose keywords appear in the question, best first.
-
-    The site map is matched like any note but ranked AFTER every specific
-    note, whatever its hit count: "where can we go to check timeline?" hits
-    the site map twice ("where", "go to") and the Timeline note once, and the
-    Timeline note is the right fallback answer.
-    """
     text = " ".join(_WORD.findall((question or "").lower()))
     if not text:
         return []

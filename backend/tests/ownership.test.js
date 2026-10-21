@@ -19,8 +19,6 @@ const otherPatient = { id: idB.toString(), role: ROLES.PATIENT };
 const admin = { id: new mongoose.Types.ObjectId().toString(), role: ROLES.ADMIN };
 const clinician = { id: new mongoose.Types.ObjectId().toString(), role: ROLES.CLINICIAN };
 
-// Generic record shape - Module 1 owns no record collection, so this stands in
-// for anything a later module associates with a user.
 const record = { _id: new mongoose.Types.ObjectId(), user: idA };
 
 describe('ownership.isOwner', () => {
@@ -67,11 +65,6 @@ describe('ownership.canAccess', () => {
     expect(canAccess(otherPatient, record)).toBe(false);
   });
 
-  // INVERTED (was: "allows an admin by default"). `allowRoles` now defaults to
-  // `[]` - deny by default. An opt-OUT bypass fails open: any future module
-  // touching patient data would inherit it by forgetting to opt out. Section 19
-  // grants no staff exception to "users can access only their own medical
-  // information". The capability still exists; it must now be asked for.
   it('denies an admin by default (no implicit privileged bypass)', () => {
     expect(canAccess(admin, record)).toBe(false);
   });
@@ -85,9 +78,6 @@ describe('ownership.canAccess', () => {
     expect(canAccess(admin, record, { allowRoles: [] })).toBe(false);
   });
 
-  // The bypass capability must remain available for resources where staff
-  // access is genuinely warranted (audit logs, user administration) - it just
-  // has to be granted explicitly and deliberately at the call site.
   it('allows an admin when the bypass is granted explicitly', () => {
     expect(canAccess(admin, record, { allowRoles: [ROLES.ADMIN] })).toBe(true);
   });
@@ -131,9 +121,6 @@ describe('ownership.ownerScopedFilter', () => {
     });
   });
 
-  // INVERTED (was: "leaves the filter unscoped for privileged roles"). Deny by
-  // default: an admin's query is scoped to their own documents like anyone
-  // else's unless the bypass is granted explicitly.
   it('scopes an admin to their own documents by default', () => {
     expect(ownerScopedFilter(admin, { base: { status: 'ready' } })).toEqual({
       status: 'ready',

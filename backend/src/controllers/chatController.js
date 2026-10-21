@@ -9,19 +9,6 @@ const { ownerScopedFilter, assertCanAccess, OWNER_ONLY } = require('../utils/own
 const aiService = require('../services/aiServiceClient');
 const analysisService = require('../services/analysisService');
 
-/**
- * POST /api/v1/chat -- the chatbot (2026-10-09).
- *
- * A general question needs nothing but a signed-in user. A question asked on a
- * report's dashboard also names that report; it is loaded OWNER-SCOPED, so
- * another user's id matches nothing and the question is answered as a general
- * one rather than confirming the report exists. Only a compact summary of the
- * stored analysis is sent -- names, values, the report's printed ranges and
- * the topics' statuses -- never the file, the patient's name or the raw text.
- *
- * Nothing is stored: the question and the answer live only in the response.
- * LOGGING: none of the question, the context or the answer.
- */
 
 const MAX_RESULTS = 60;
 const MAX_TOPICS = 20;
@@ -35,7 +22,6 @@ const STATUS_WORDS = {
 
 const clip = (value, max) => (value === undefined || value === null ? undefined : String(value).slice(0, max));
 
-/** The compact, PHI-light context the ai-service is given for ONE report. */
 function reportContext(clinicalReport) {
   if (!analysisService.isUsableClinicalReport(clinicalReport)) return null;
   const results = (clinicalReport.laboratory_values || [])
@@ -65,7 +51,6 @@ function reportContext(clinicalReport) {
     }))
     .filter((t) => t.condition && t.status);
   const overall = clip(clinicalReport.overall && clinicalReport.overall.status_label, 80);
-  // Undefined keys are dropped by JSON; the ai-service forbids unknown ones.
   return JSON.parse(JSON.stringify({ results, topics, overall }));
 }
 
@@ -83,10 +68,6 @@ const ask = asyncHandler(async (req, res) => {
     }
   }
 
-  // A SLEEPING ai-service IS WAITED FOR, not failed on (2026-10-09) -- the
-  // same wake-up check an analysis makes. Still asleep at the deadline: the
-  // question is NOT sent (a free-model request is not spent on a service that
-  // cannot answer) and the reader is told plainly to try again.
   const maxWaitMs = config.aiService.chatWakeWaitMs;
   if (maxWaitMs > 0) {
     const wake = await aiService.waitUntilReady({ maxWaitMs });

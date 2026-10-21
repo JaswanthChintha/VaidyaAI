@@ -1,10 +1,3 @@
-"""Test-name normalisation and the clinician-auditable synonym table.
-
-Every synonym in the table must map to its own feature, and the guards that
-stop urine/CSF results and lipid sub-fractions being folded into blood
-features must hold.
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -27,9 +20,6 @@ from app.data.feature_catalog import (
     strip_qualifiers,
 )
 
-# --------------------------------------------------------------------------
-# The canonical feature set matches the specification
-# --------------------------------------------------------------------------
 
 SPEC_FEATURES = [
     "hba1c",
@@ -66,10 +56,6 @@ def test_lab_and_profile_features_are_disjoint_and_complete():
         "creatinine",
         "cholesterol",
         "triglycerides",
-        # ---- the complete blood count, added with the Module 31 tables ----
-        # Listed one per line rather than derived, so that a feature
-        # disappearing from the catalogue fails here instead of shrinking a
-        # still-green set comparison.
         "hematocrit",
         "rbc_count",
         "mcv",
@@ -82,7 +68,6 @@ def test_lab_and_profile_features_are_disjoint_and_complete():
         "eosinophils",
         "basophils",
         "platelet_count",
-        # ---- the liver panel (2026-10-04) ----
         "alt",
         "ast",
         "bilirubin_total",
@@ -98,11 +83,6 @@ def test_profile_features_are_sourced_from_the_patient_profile():
 
 def test_only_lab_features_have_a_synonym_table():
     assert set(FEATURE_SYNONYMS) == set(LAB_FEATURES)
-
-
-# --------------------------------------------------------------------------
-# Name normalisation
-# --------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -127,13 +107,8 @@ def test_normalize_test_name(printed, expected):
 def test_strip_qualifiers_removes_method_and_specimen_words():
     assert strip_qualifiers("serum creatinine level") == "creatinine"
     assert strip_qualifiers("total cholesterol serum") == "total cholesterol"
-    # A single remaining token is never stripped away to nothing.
     assert strip_qualifiers("serum") == "serum"
 
-
-# --------------------------------------------------------------------------
-# Every synonym in the table resolves to its own feature
-# --------------------------------------------------------------------------
 
 ALL_SYNONYMS = [
     (feature, syn.term)
@@ -159,15 +134,9 @@ def test_every_synonym_is_case_and_punctuation_insensitive(feature, term):
 
 
 def test_synonym_index_has_no_cross_feature_collisions():
-    # Building the index raises on collision; assert the built index is sane.
     for key, match in SYNONYM_INDEX.items():
         assert match.feature in FEATURE_SYNONYMS
         assert normalize_test_name(key) == key
-
-
-# --------------------------------------------------------------------------
-# The spec's own example, plus real observed Module 4 names
-# --------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -220,11 +189,6 @@ def test_hemoglobin_a1c_is_not_confused_with_hemoglobin():
     assert hb.feature == "hemoglobin"
 
 
-# --------------------------------------------------------------------------
-# Guards
-# --------------------------------------------------------------------------
-
-
 @pytest.mark.parametrize(
     "printed",
     [
@@ -262,15 +226,6 @@ def test_lipid_subfractions_are_not_total_cholesterol(printed):
 
 
 @pytest.mark.parametrize(
-    # ⚠ "Platelet Count" WAS IN THIS LIST AND IS NOT UNKNOWN ANY MORE. It is
-    # a canonical feature with a population table and a knowledge document,
-    # so asserting that it maps to nothing would now be satisfied only by
-    # removing the mapping. The remaining five are still genuinely unmapped;
-    # TSH and ESR are known gaps recorded in MEMORY.md.
-    #
-    # ⚠ "Bilirubin" LEFT ON 2026-10-04, for the same reason: it is now TOTAL
-    # bilirubin (the liver panel). "Alkaline Phosphatase" takes its place --
-    # another liver test this platform still does not map.
     "printed", ["Sodium", "Potassium", "TSH", "ESR", "Alkaline Phosphatase"]
 )
 def test_unknown_tests_report_no_canonical_feature(printed):
@@ -286,22 +241,12 @@ def test_empty_test_names_are_reported(printed):
     assert reason == UnmappedReason.EMPTY_TEST_NAME
 
 
-# --------------------------------------------------------------------------
-# Glucose specificity ranking
-# --------------------------------------------------------------------------
-
-
 def test_fasting_glucose_outranks_postprandial_and_random():
     fasting, _ = lookup_test_name("Fasting Blood Glucose")
     plain, _ = lookup_test_name("Glucose")
     random_, _ = lookup_test_name("Random Blood Sugar")
     pp, _ = lookup_test_name("Post Prandial Blood Sugar")
     assert fasting.preference > plain.preference > random_.preference > pp.preference
-
-
-# --------------------------------------------------------------------------
-# Patient-profile vocabularies
-# --------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -348,11 +293,6 @@ def test_unrecognised_gender_is_not_guessed():
     assert normalize_gender("banana") is None
 
 
-# --------------------------------------------------------------------------
-# Tri-state booleans -- absent is NOT false
-# --------------------------------------------------------------------------
-
-
 @pytest.mark.parametrize(
     "raw,expected",
     [
@@ -386,19 +326,6 @@ def test_tristate_boolean_garbage_is_reported_not_guessed():
     assert value is None
 
 
-# --------------------------------------------------------------------------
-# Comma-separated qualifiers
-# --------------------------------------------------------------------------
-#
-# A REAL REPORT PRINTED "GLYCOSYLATED HEMOGLOBIN, HbA1c" AND IT MAPPED TO
-# NOTHING. Both halves are independently valid synonyms of `hba1c`, and the
-# parenthetical form of the same name -- "Glycosylated Hemoglobin (HbA1c)" --
-# already worked; only the comma form did not. On a report whose only test was
-# that one, the analysis produced zero features and every row of the dashboard
-# read "Not measured", which reads as the platform having lost the results
-# rather than as never having understood the name.
-
-
 def test_a_comma_separated_qualifier_maps_like_the_parenthetical_one():
     from app.data.feature_catalog import lookup_test_name
 
@@ -407,7 +334,6 @@ def test_a_comma_separated_qualifier_maps_like_the_parenthetical_one():
     assert comma is not None
     assert paren is not None
     assert comma.feature == paren.feature == "hba1c"
-    # Not an exact match: the printed name is not the synonym, part of it is.
     assert comma.exact is False
 
 
@@ -430,13 +356,6 @@ def test_ordinary_comma_qualifiers_still_reach_their_feature(printed, feature):
 
 @pytest.mark.parametrize("printed", ["Cholesterol, LDL", "Cholesterol, HDL", "Cholesterol, VLDL"])
 def test_a_lipid_subfraction_is_still_refused_after_the_comma(printed):
-    """THE CASE A WRONG GUESS WOULD BE CLINICALLY SERIOUS.
-
-    `cholesterol` means TOTAL cholesterol. Folding an LDL value into it would
-    put the wrong number under a threshold built for a different one. The
-    distinct-analyte guard runs against the whole printed name before any
-    candidate is tried, so the comma branch can never reach these.
-    """
     from app.data.feature_catalog import lookup_test_name
     from app.data.feature_catalog import UnmappedReason
 
@@ -446,7 +365,6 @@ def test_a_lipid_subfraction_is_still_refused_after_the_comma(printed):
 
 
 def test_segments_naming_different_features_are_refused_not_guessed():
-    """Two halves that disagree is a name this function does not understand."""
     from app.data.feature_catalog import lookup_test_name
     from app.data.feature_catalog import UnmappedReason
 
@@ -464,33 +382,10 @@ def test_a_comma_name_with_no_known_segment_is_still_unmapped():
     assert reason == UnmappedReason.NO_SYNONYM
 
 
-# ==========================================================================
-# `description` IS A LABEL, AND IS RENDERED TO READERS
-# ==========================================================================
-#
-# It reaches the comparison table, the clinician summary, the progress table
-# and the explanation prompt, and it is fed to the RAG retriever as a search
-# term. Four profile entries carried an internal note instead, and a patient
-# comparing two reports was shown:
-#
-#     "Self-described gender as stored by Module 2."
-#     "Smoking history, diabetes-dataset categories."
-#
-# -- a module number and the name of a training dataset. The `hypertension`
-# and `heart_disease` entries would have printed
-# "TRI-STATE: true / false / absent(unknown)" the moment they appeared.
-#
-# This is the fourth place this platform has leaked its own vocabulary onto a
-# reader-facing surface (MEMORY.md 6u, 6w, 6af, 6an-e). Every previous fix was
-# applied to the SURFACE. This one is at the source, so the guard belongs here
-# too -- a scan of the table itself, which no rendering test can substitute
-# for because a label is only wrong once someone renders it.
-
-
 _FORBIDDEN_IN_A_LABEL = (
-    "module",          # "as stored by Module 2"
-    "tri-state",       # an implementation contract
-    "dataset",         # "diabetes-dataset categories"
+    "module",
+    "tri-state",
+    "dataset",
     "absent(unknown)",
     "true / false",
 )
@@ -509,11 +404,6 @@ def test_no_feature_label_names_this_platform_s_own_machinery():
 
 
 def test_every_feature_label_reads_as_a_name_not_a_sentence():
-    """A label is a noun phrase. A full stop is the tell that a note crept in.
-
-    Both of the strings this test was written for ended in one, and neither
-    was a label: they were sentences explaining the field to a maintainer.
-    """
     from app.data.feature_catalog import FEATURES
 
     offenders = [
@@ -525,52 +415,22 @@ def test_every_feature_label_reads_as_a_name_not_a_sentence():
 
 
 def test_every_feature_has_a_non_empty_label():
-    """The floor. An empty label renders as nothing at all, which is worse
-    than a clumsy one -- a row with no name is a row a reader cannot act on.
-    """
     from app.data.feature_catalog import FEATURES
 
     assert [n for n, d in FEATURES.items() if not d.description.strip()] == []
 
 
-
-# --------------------------------------------------------------------------
-# THE PARENTHETICAL WHOSE GOOD HALF IS INSIDE THE BRACKETS
-#
-# Found on a real laboratory report, and the cost was not a missing row. The
-# dashboard told a reader with a prediabetic-range HbA1c that the test was NOT
-# ON THEIR REPORT, while the same page listed it among the tests the
-# laboratory had flagged HIGH. An absence reported as a fact about the
-# document, about a test that was in it.
-# --------------------------------------------------------------------------
-
-
 def test_the_misspelled_outer_half_no_longer_throws_away_the_good_inner_half():
-    """The exact string off the report, not a tidied version of it.
-
-    "GLYSOLATED" is the laboratory's own misspelling of GLYCOSYLATED, so the
-    outer half matches nothing. The inner "( HBA1C)" -- leading space and all
-    -- is an exact synonym, and every candidate before this branch either kept
-    the parenthetical or discarded it without ever trying its contents.
-    """
     from app.data.feature_catalog import lookup_test_name
 
     match, reason = lookup_test_name("GLYSOLATED HAEMOGLOBIN ( HBA1C)")
     assert reason is None
     assert match is not None
     assert match.feature == "hba1c"
-    # NEVER `exact`: the printed name is not the synonym, a part of it is.
     assert match.exact is False
 
 
 def test_segments_naming_different_features_are_refused():
-    """THE AGREEMENT RULE, and the whole safety of the branch.
-
-    The fixture is shaped to reach this branch and nothing else: the outer
-    half is meaningless, so no earlier candidate can resolve it, and the two
-    parentheticals name different features. A name this module does not
-    understand is reported, never guessed at.
-    """
     from app.data.feature_catalog import UnmappedReason, lookup_test_name
 
     match, reason = lookup_test_name("ZZZ (Creatinine) (HbA1c)")
@@ -579,13 +439,6 @@ def test_segments_naming_different_features_are_refused():
 
 
 def test_a_lipid_subfraction_is_still_refused_before_any_segment_is_tried():
-    """The case where a wrong guess would be clinically serious.
-
-    Mapping an LDL value into TOTAL cholesterol puts a number against a
-    threshold it was never measured for. `DISTINCT_ANALYTE_TOKENS` is checked
-    against the WHOLE name above, so this returns before the parenthetical
-    branch exists -- and it must stay above it.
-    """
     from app.data.feature_catalog import UnmappedReason, lookup_test_name
 
     for name in ("Cholesterol (LDL)", "Cholesterol (HDL)", "Cholesterol (VLDL)"):
@@ -595,7 +448,6 @@ def test_a_lipid_subfraction_is_still_refused_before_any_segment_is_tried():
 
 
 def test_a_parenthetical_that_names_nothing_stays_unmapped():
-    """The branch may not turn "no idea" into a guess."""
     from app.data.feature_catalog import UnmappedReason, lookup_test_name
 
     match, reason = lookup_test_name("GLYSOLATED HAEMOGLOBIN (SPECIMEN 4)")
@@ -604,19 +456,10 @@ def test_a_parenthetical_that_names_nothing_stays_unmapped():
 
 
 def test_names_that_already_mapped_are_decided_exactly_as_before():
-    """PURELY ADDITIVE, and this is what makes the change safe to ship.
-
-    The branch runs only after all four candidates miss, so it can turn a
-    refusal into a mapping and can never turn one mapping into another.
-    `Creatinine (HbA1c)` is the case that proves it: the outer half is a valid
-    synonym, so the candidate loop resolves it to creatinine and the agreement
-    rule never sees it.
-    """
     from app.data.feature_catalog import lookup_test_name
 
     assert lookup_test_name("Creatinine (HbA1c)")[0].feature == "creatinine"
     assert lookup_test_name("Glycosylated Haemoglobin (HbA1c)")[0].feature == "hba1c"
-    # A bare synonym is still an EXACT match, which consumers rank on.
     bare = lookup_test_name("HbA1c")[0]
     assert bare.feature == "hba1c"
     assert bare.exact is True

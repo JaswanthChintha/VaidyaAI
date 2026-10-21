@@ -1,98 +1,3 @@
-"""Module 28 trend polarity and stability bands -- the REVIEWABLE data file.
-
-`app/services/trend_analyzer.py` contains the logic; this file contains the
-judgements. It follows `app/data/validation_rules.py` and
-`app/data/clinical_rules.py` exactly: plain tables, no control flow beyond a
-lookup, every entry citing its basis, and a `_self_check()` that fails at
-IMPORT time if this table and `app/data/feature_catalog.py` disagree.
-
---------------------------------------------------------------------------
-WHY THIS FILE EXISTS: DIRECTION IS NOT THE SAME AS "BETTER"
---------------------------------------------------------------------------
-
-A trend module that computes `last - first` knows only that a number went up
-or down. Turning that into "improving" or "worsening" is a CLINICAL
-judgement and it is different for every feature:
-
-    HbA1c        6.1 -> 6.8   rose   -> WORSENING
-    Vitamin D     14 -> 28    rose   -> IMPROVING (it was deficient)
-    Creatinine   0.9 -> 1.6   rose   -> WORSENING
-
-There is no rule of arithmetic that separates those. So the polarity is
-DECLARED here, per feature, with its basis -- never inferred, never guessed,
-and never hard-coded inline in the analyzer.
-
-A feature whose polarity is `UNDECLARED` gets direction and magnitude and
-NOTHING ELSE. The analyzer returns `trend: null` with the reason code
-`CLINICAL_DIRECTION_UNKNOWN`. That is a deliberate refusal, not a gap in the
-table: three features below are undeclared ON PURPOSE and say why.
-
---------------------------------------------------------------------------
-THE TWO DECLARATIONS
---------------------------------------------------------------------------
-
-1. `POLARITY` -- how a change in this feature maps onto better/worse.
-
-   `MONOTONE`          One direction is unfavourable at every value.
-                       `direction_of_harm` is "increase" or "decrease".
-                       No threshold is needed, which is why these entries are
-                       safe WITHOUT sex, age or timing context.
-
-   `TOWARD_REFERENCE`  Both extremes are unfavourable. Improvement is movement
-                       TOWARD the declared interval, measured as the distance
-                       from the value to that interval. Either bound may be
-                       `None`, meaning "no harm threshold is declared on that
-                       side".
-
-   `UNDECLARED`        Refusal. Direction only.
-
-2. `STABILITY` -- how much change has to happen before "it changed" is a
-   claim worth making. "Stable" is EARNED here, never defaulted: a series that
-   fails to reach these thresholds is stable, and a series with fewer than two
-   usable points is INSUFFICIENT_DATA, which is a different thing entirely.
-
---------------------------------------------------------------------------
-THE BASIS OF THE STABILITY THRESHOLDS -- READ THIS BEFORE QUOTING THEM
---------------------------------------------------------------------------
-
-Two consecutive laboratory results always differ, even when nothing about the
-patient changed, because of analytical imprecision (CVa) and within-subject
-biological variation (CVi). The conventional statistic for "is this difference
-real?" is the REFERENCE CHANGE VALUE:
-
-    RCV = 2**0.5 * Z * sqrt(CVa**2 + CVi**2)
-
-with Z = 1.96 for a two-sided 95 % probability, i.e. a multiplier of 2.77.
-`significant_change_pct` below is that RCV, rounded to a whole percent.
-
-*** THESE CVa / CVi INPUTS ARE LITERATURE-TYPICAL VALUES RECORDED WITH THEIR
-*** ARITHMETIC SO A REVIEWER CAN CHECK THEM. THEY HAVE **NOT** BEEN
-*** INDEPENDENTLY AUDITED AGAINST THE EFLM BIOLOGICAL VARIATION DATABASE ON
-*** THIS PROJECT. Treat them the way `MEMORY.md` treated the Module 5
-*** conversion factors before they were verified: usable, written down, and
-*** explicitly pending review. Every row states the CVa and CVi it used.
-
-`min_absolute_change` is a second, independent floor in the canonical unit. It
-exists because a percentage is meaningless near zero and because a laboratory
-does not report to infinite resolution -- a 40 % rise in a vitamin D of 2
-ng/mL is one reporting increment, not a trend. A change must clear BOTH the
-percentage and the absolute floor to count as a change.
-
---------------------------------------------------------------------------
-WHAT IS NEVER DONE HERE
---------------------------------------------------------------------------
-
-* No polarity is inferred from a feature's name, its reference range, or the
-  direction that happens to be more common.
-* No feature is given a default polarity. A feature absent from `POLARITY`
-  fails `_self_check()` at import; it does not quietly become MONOTONE.
-* No clinical classification is restated here. `TOWARD_REFERENCE` bounds are
-  cited sufficiency/normality intervals used to answer "is this moving toward
-  or away from normal?" -- they are NOT diagnostic cut-offs and Module 28
-  makes no diagnostic claim with them. Diagnosis-facing thresholds live in
-  `app/data/clinical_rules.py` and are not duplicated here.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -100,14 +5,8 @@ from typing import Dict, Optional, Tuple
 
 from app.data.feature_catalog import FEATURES
 
-#: Bump when a polarity or stability entry changes. Echoed in every response so
-#: a stored trend can be traced back to the table that produced it.
 TREND_POLICY_VERSION = "1.0.0"
 
-
-# --------------------------------------------------------------------------
-# Polarity
-# --------------------------------------------------------------------------
 
 POLARITY_MONOTONE = "monotone"
 POLARITY_TOWARD_REFERENCE = "toward_reference"
@@ -125,44 +24,22 @@ HARM_DECREASE = "decrease"
 
 @dataclass(frozen=True)
 class TrendPolarity:
-    """How a change in one canonical feature maps onto better / worse."""
 
     feature: str
     kind: str
-    #: THE MAINTAINER'S NOTE. Written for someone reading this file: it names
-    #: modules, functions, source paths and extension points, and it should.
-    #: It is NOT for a reader of the timeline, and it reached one -- a user
-    #: opening a glucose trend was shown "Module 8 already refuses ...
-    #: EXTENSION POINT: `sample_timing()` in app/data/clinical_rules.py".
-    #: Accurate, valuable, and addressed to the wrong person.
     basis: str
 
-    #: THE SAME DECISION, FOR THE PERSON WHOSE BLOOD IT IS. One or two
-    #: sentences, no module numbers, no file paths, no function names. Every
-    #: entry that can be refused needs one; `reader_reason()` refuses to fall
-    #: back to `basis` precisely so that a missing one is a blank rather than
-    #: a leak of the note above.
     reader_basis: Optional[str] = None
 
-    #: MONOTONE only. Which direction of change is the unfavourable one.
     direction_of_harm: Optional[str] = None
 
-    #: TOWARD_REFERENCE only. Either bound may be None (= no declared harm
-    #: threshold on that side). Stated in the feature's CANONICAL unit.
     optimal_low: Optional[float] = None
     optimal_high: Optional[float] = None
 
-    #: False means "this feature is not a trend at all" -- see `age`.
     trendable: bool = True
 
-    #: The declaration is only valid at or above this age. When any report in
-    #: the series carries a younger age, the feature is refused rather than
-    #: classified with an adult rule.
     min_age_years: Optional[int] = None
 
-    #: True for features whose value is only comparable between reports when
-    #: the sample timing matches (glucose). The analyzer refuses a series that
-    #: mixes two DIFFERENT established timings.
     timing_sensitive: bool = False
 
 
@@ -182,22 +59,6 @@ def _reader_interval(polarity: "TrendPolarity") -> str:
 
 
 def reader_reason(polarity: "TrendPolarity") -> str:
-    """The polarity decision in words a patient can read.
-
-    DELIBERATELY DOES NOT FALL BACK TO `basis`. A fallback is what put a
-    source-file path and two module numbers on a patient's timeline, and it
-    would do it again the moment someone adds a polarity entry and forgets the
-    reader text. A generic sentence is worse writing and cannot leak.
-
-    ⚠ THE GENERIC SENTENCE WAS A REFUSAL, AND IT WAS GIVEN TO THE DECLARED
-    ENTRIES TOO. None of the seven declared polarities -- HbA1c, creatinine,
-    cholesterol, triglycerides, vitamin D, B12, BMI -- has a `reader_basis`, so
-    every one of them carried "This platform does not declare whether a change
-    in this measurement is an improvement" beside `kind: monotone,
-    direction_of_harm: increase` in the same payload. Seen 2026-09-24 in
-    Module 29's HbA1c row. The sentence is now DERIVED FROM THE DECLARATION,
-    so the two cannot disagree; the refusal is kept for what is refused.
-    """
     if polarity.reader_basis:
         return polarity.reader_basis
     if polarity.kind == POLARITY_MONOTONE and polarity.direction_of_harm in (
@@ -219,9 +80,6 @@ def reader_reason(polarity: "TrendPolarity") -> str:
     if polarity.kind == POLARITY_TOWARD_REFERENCE and (
         polarity.optimal_low is not None or polarity.optimal_high is not None
     ):
-        # The crossing clause only where there ARE two sides: the analyzer
-        # refuses a jump from below a two-sided range to above it (or back),
-        # and a one-sided range has no far side to jump to.
         both = polarity.optimal_low is not None and polarity.optimal_high is not None
         return (
             "This platform counts a change as favourable when it moves closer "
@@ -238,7 +96,6 @@ def reader_reason(polarity: "TrendPolarity") -> str:
 
 
 POLARITY: Dict[str, TrendPolarity] = {
-    # =================================================== declared MONOTONE ==
     "hba1c": TrendPolarity(
         "hba1c",
         POLARITY_MONOTONE,
@@ -292,7 +149,6 @@ POLARITY: Dict[str, TrendPolarity] = {
             "restated."
         ),
     ),
-    # ========================================== declared TOWARD_REFERENCE ==
     "vitamin_d": TrendPolarity(
         "vitamin_d",
         POLARITY_TOWARD_REFERENCE,
@@ -339,7 +195,6 @@ POLARITY: Dict[str, TrendPolarity] = {
             "with the adult rule."
         ),
     ),
-    # ================================== declared UNDECLARED, deliberately ==
     "blood_glucose": TrendPolarity(
         "blood_glucose",
         POLARITY_UNDECLARED,
@@ -406,7 +261,6 @@ POLARITY: Dict[str, TrendPolarity] = {
             "with no information in it. Refused with NOT_TRENDABLE."
         ),
     ),
-    # ============ non-numeric features: no trend arithmetic is possible ====
     "hypertension": TrendPolarity(
         "hypertension",
         POLARITY_UNDECLARED,
@@ -444,20 +298,6 @@ POLARITY: Dict[str, TrendPolarity] = {
         trendable=False,
         basis="Categorical identity attribute. Not a health trend.",
     ),
-    # =============== the complete blood count: TRENDABLE, UNDECLARED ========
-    #
-    # ALL TWELVE ARE TRENDABLE AND ALL TWELVE REFUSE A DIRECTION, and the two
-    # facts together are the point. A platelet count can be followed over
-    # time, so direction and magnitude are reported; but every one of these is
-    # harmful at BOTH extremes, so "better" has no meaning without a target
-    # interval this service does not have. That is the same reasoning already
-    # written above for `hemoglobin`.
-    #
-    # THE FIVE DIFFERENTIALS HAVE A SECOND, INDEPENDENT REASON: they are
-    # PERCENTAGES OF A TOTAL. A neutrophil percentage can rise because
-    # neutrophils rose or because lymphocytes fell, and those are different
-    # events. Declaring a direction on a proportion would attribute a change
-    # to the wrong cell line.
     "hematocrit": TrendPolarity(
         "hematocrit",
         POLARITY_UNDECLARED,
@@ -641,7 +481,6 @@ POLARITY: Dict[str, TrendPolarity] = {
             "automatically good news."
         ),
     ),
-    # ================================ the liver panel (2026-10-04) ==========
     "alt": TrendPolarity(
         "alt",
         POLARITY_MONOTONE,
@@ -674,40 +513,22 @@ POLARITY: Dict[str, TrendPolarity] = {
 }
 
 
-# --------------------------------------------------------------------------
-# Stability bands
-# --------------------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class StabilityBand:
-    """How much change counts as change, for one canonical feature.
-
-    A change must clear BOTH thresholds to be called a change. Below either
-    one, the series is STABLE -- which is a positive finding here, earned by
-    passing this test, not a value assigned when nothing else matched.
-    """
 
     feature: str
     significant_change_pct: float
     min_absolute_change: float
     basis: str
-    #: The inputs to the RCV arithmetic, recorded so a reviewer can recompute.
     analytical_cv_pct: Optional[float] = None
     within_subject_cv_pct: Optional[float] = None
 
 
-#: RCV multiplier: 2**0.5 * 1.96, the two-sided 95 % reference change value.
 RCV_Z = 1.96
 RCV_MULTIPLIER = 2.7718585822512662
 
 
 def reference_change_value(analytical_cv: float, within_subject_cv: float) -> float:
-    """`2**0.5 * 1.96 * sqrt(CVa**2 + CVi**2)`, as a percentage.
-
-    Public so the test suite and a reviewer can recompute every row below
-    instead of trusting the numbers that were typed in.
-    """
     return RCV_MULTIPLIER * ((analytical_cv**2 + within_subject_cv**2) ** 0.5)
 
 
@@ -831,19 +652,6 @@ STABILITY: Dict[str, StabilityBand] = {
             "a clinician can overrule it; it is not dressed up as evidence."
         ),
     ),
-    # ================ the complete blood count ==============================
-    #
-    # THE CVi FIGURES BELOW ARE NOT NEW. Every one is the EFLM published
-    # median already carried in `app/data/lab_variation.py`, where each row
-    # cites its own meta-analysis page, median and interval. Taking them from
-    # there rather than re-sourcing them keeps ONE number per analyte in the
-    # repository: if the variation table is corrected, these must move with it
-    # and `test_cbc_stability_matches_lab_variation` fails if they do not.
-    #
-    # ⚠ EVERY `CVa` IS STILL UNSOURCED, exactly as `lab_variation.py` records
-    # of itself. Analytical variation is a property of the ANALYSER and the
-    # right source is its own QC data, which this platform never receives.
-    # The RCV arithmetic below is therefore only as good as those placeholders.
     "hematocrit": StabilityBand(
         "hematocrit",
         significant_change_pct=9.0,
@@ -1001,7 +809,6 @@ STABILITY: Dict[str, StabilityBand] = {
             "taken as 23 %. Absolute floor 10 x10^3/uL."
         ),
     ),
-    # ================================ the liver panel (2026-10-04) ==========
     "alt": StabilityBand(
         "alt",
         significant_change_pct=29.0,
@@ -1041,18 +848,10 @@ STABILITY: Dict[str, StabilityBand] = {
 }
 
 
-# --------------------------------------------------------------------------
-# Lookup
-# --------------------------------------------------------------------------
-
-
 def polarity_for(feature: str) -> Optional[TrendPolarity]:
-    """The polarity declaration for a canonical feature, or None if unknown."""
     return POLARITY.get(feature)
 
 
-#: The two sides of a reference interval, named so a caller cannot pass a
-#: bare boolean and get the sense backwards.
 SIDE_BELOW = "below"
 SIDE_ABOVE = "above"
 
@@ -1060,93 +859,29 @@ SIDES: Tuple[str, ...] = (SIDE_BELOW, SIDE_ABOVE)
 
 
 def harm_declared_beyond(feature: str, side: str) -> Optional[bool]:
-    """Tri-state: is going PAST a reference interval on `side` unfavourable?
-
-    `True`  -- this table declares harm on that side.
-    `False` -- this table declares that there is NO harm threshold on that
-               side. Not "we have not looked": the declaration is positive.
-    `None`  -- UNKNOWN. The feature has no declared clinical direction, or is
-               not in this table at all.
-
-    WHY THIS LIVES HERE AND NOT IN THE CALLER. A laboratory report often
-    prints only ONE end of a reference interval, and Module 5's contract makes
-    `reference_low` and `reference_high` independently nullable, so a
-    one-sided interval also arises when extraction loses a bound that WAS
-    printed. A consumer then has to answer: a reading that is not past the one
-    bound it has -- is it inside the interval, or is its position simply not
-    known?
-
-    That question is exactly the judgement this file exists to hold, and it is
-    per feature:
-
-        cholesterol   `< 200 mg/dL`, reading 150. MONOTONE, harm on increase
-                      only. Nothing below is declared unfavourable, so the
-                      reading IS inside. -> harm below: False.
-        creatinine    `0.6 - ` with the upper bound lost, reading 6.5.
-                      MONOTONE, harm on increase. The missing side is the
-                      harmful one, so the position is NOT known.
-                      -> harm above: True.
-        haemoglobin   ` - 17.0` with the lower bound lost, reading 7.5.
-                      UNDECLARED: this table refuses to say where haemoglobin
-                      becomes harmful (the lower limit is sex-, age- and
-                      pregnancy-specific -- see the entry). -> None, unknown.
-
-    A caller that treated any of those three the same way would be reporting
-    severe anaemia as in-range. Getting `False` and `None` confused here is
-    the "absence becomes a value" hazard in its most direct form, which is
-    why the return is tri-state and why there is no default branch below.
-
-    Only `POLARITY` is read. No threshold, no reference range and no patient
-    value reaches this function; it answers a question about the TABLE.
-    """
     if side not in SIDES:
         raise ValueError(f"side must be one of {SIDES}")
     entry = POLARITY.get(feature)
     if entry is None:
         return None
     if entry.kind == POLARITY_MONOTONE:
-        # "One direction is unfavourable at every value" -- so the other
-        # direction is declared favourable at every value, and there is no
-        # harm threshold on it.
         if entry.direction_of_harm == HARM_INCREASE:
             return side == SIDE_ABOVE
         if entry.direction_of_harm == HARM_DECREASE:
             return side == SIDE_BELOW
-        # `_self_check` makes this unreachable; refusing beats guessing.
-        return None  # pragma: no cover
+        return None
     if entry.kind == POLARITY_TOWARD_REFERENCE:
-        # A `None` bound is documented above as "no harm threshold is declared
-        # on that side" -- a positive declaration, so it maps to False.
         if side == SIDE_BELOW:
             return entry.optimal_low is not None
         return entry.optimal_high is not None
-    # UNDECLARED, including the non-trendable rows. Nothing is claimed about
-    # either side.
     return None
 
 
 def stability_for(feature: str) -> Optional[StabilityBand]:
-    """The stability band for a canonical feature, or None if it has none.
-
-    None means the feature is not numerically trendable at all; it does NOT
-    mean "no threshold, so everything counts as a change". The analyzer
-    refuses a feature with no band rather than treating any change as real.
-    """
     return STABILITY.get(feature)
 
 
-# --------------------------------------------------------------------------
-# Import-time enforcement
-# --------------------------------------------------------------------------
-
-
 def _self_check() -> None:
-    """Fail at import if this table and the feature catalog disagree.
-
-    A canonical feature with no polarity row is the dangerous case: the
-    analyzer would have to pick a default, and every default here is a silent
-    clinical claim. So the table must be TOTAL over the catalog.
-    """
     missing = [name for name in FEATURES if name not in POLARITY]
     if missing:
         raise ValueError(
@@ -1166,14 +901,6 @@ def _self_check() -> None:
             raise ValueError(f"{name}: unknown polarity kind {entry.kind!r}")
         if not entry.basis.strip():
             raise ValueError(f"{name}: every polarity entry must state its basis")
-        # NOT scanned by the recommendation safety scanner, deliberately. These
-        # `basis` strings are REVIEWER-facing: they cite guidelines and discuss
-        # why a declaration is or is not safe, so they legitimately contain
-        # words ("treatment", "deficiency") the patient-facing scanner bans.
-        # They are served only by the policy endpoint, which returns no patient
-        # data. The PATIENT-FACING strings this module can emit are the reason
-        # templates in app/services/trend_analyzer.py, and THOSE are scanned at
-        # import time.
 
         numeric = definition.value_type in ("number", "integer")
 
@@ -1212,20 +939,17 @@ def _self_check() -> None:
                 raise ValueError(
                     f"{name}: TOWARD_REFERENCE declared on a non-trendable feature"
                 )
-        else:  # UNDECLARED
+        else:
             if entry.direction_of_harm is not None or entry.optimal_low is not None:
                 raise ValueError(
                     f"{name}: UNDECLARED must not carry a polarity parameter"
                 )
 
-        # A non-numeric feature can never be trendable, whatever the row says.
         if not numeric and entry.trendable:
             raise ValueError(
                 f"{name}: value_type {definition.value_type!r} cannot be trendable"
             )
 
-    # Every feature the analyzer is willing to trend must have a stability
-    # band, or "stable" would have no meaning for it.
     for name, entry in POLARITY.items():
         if entry.trendable and name not in STABILITY:
             raise ValueError(
@@ -1241,8 +965,6 @@ def _self_check() -> None:
             raise ValueError(f"{name}: stability thresholds must be positive")
         if not band.basis.strip():
             raise ValueError(f"{name}: every stability band must state its basis")
-        # Where the row claims to be an RCV, recompute it. A typo in the
-        # percentage is otherwise invisible.
         if band.analytical_cv_pct is not None and band.within_subject_cv_pct is not None:
             computed = reference_change_value(
                 band.analytical_cv_pct, band.within_subject_cv_pct
@@ -1254,15 +976,6 @@ def _self_check() -> None:
                     f"{computed:.2f} computed from the stated CVa/CVi"
                 )
 
-    # ---- `harm_declared_beyond` is total, and answers only where the table
-    # ---- actually declares something.
-    #
-    # The consumer of this accessor (Module 29's abnormality axis) treats
-    # `False` as "a reading on this side of a one-sided interval is inside it"
-    # and `None` as "not determinable". So a row that declares NO clinical
-    # direction must never yield a definite `False`, or an undeclared feature
-    # would silently acquire a normality claim. That is asserted here rather
-    # than trusted to the branch structure.
     for name, entry in POLARITY.items():
         answers = tuple(harm_declared_beyond(name, side) for side in SIDES)
         if entry.kind == POLARITY_UNDECLARED:
@@ -1288,10 +1001,6 @@ _self_check()
 
 
 def policy_document() -> Dict[str, object]:
-    """Machine-readable dump of both tables, for review and for the API.
-
-    Shape and thresholds only -- no patient data of any kind.
-    """
     return {
         "version": TREND_POLICY_VERSION,
         "polarity_kinds": {

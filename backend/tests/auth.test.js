@@ -90,11 +90,8 @@ describe('Module 1 - Authentication', () => {
       expect(res.body.error.details.some((d) => d.field === 'role')).toBe(true);
     });
 
-    // Regression: defect 3. bcrypt silently ignores input past 72 BYTES, so a
-    // 103-character password would authenticate against any string sharing its
-    // first 72 bytes. Over-long passwords are rejected instead of truncated.
     it('rejects a password longer than 72 bytes', async () => {
-      const longPassword = `Str0ng!${'a'.repeat(96)}`; // 103 characters
+      const longPassword = `Str0ng!${'a'.repeat(96)}`;
       expect(longPassword).toHaveLength(103);
 
       const { res } = await registerUser({ password: longPassword });
@@ -103,9 +100,6 @@ describe('Module 1 - Authentication', () => {
       expect(res.body.error.details.some((d) => d.field === 'password')).toBe(true);
     });
 
-    // 2026-10-02: an over-long password was answered with the "at least 8
-    // characters" rule, which says nothing about being too long. It is now
-    // told so, in characters a reader understands -- never "bytes".
     it('tells an over-long password that it is too long, in plain words', async () => {
       const { res } = await registerUser({ password: `Str0ng!${'a'.repeat(96)}` });
       expect(res.status).toBe(422);
@@ -115,36 +109,23 @@ describe('Module 1 - Authentication', () => {
       expect(message).not.toMatch(/byte/i);
     });
 
-    // The real property: for an account that DOES exist, a different string
-    // sharing the password's leading bytes must not authenticate. Registering
-    // an over-long password and watching the login fail proves nothing - the
-    // account was never created, so that test would pass even with truncation
-    // fully live.
     it('a different string sharing the first 72 bytes cannot authenticate', async () => {
-      const password = `Aa1!${'x'.repeat(56)}`; // 60 bytes: under the cap, account is created
+      const password = `Aa1!${'x'.repeat(56)}`;
       expect(Buffer.byteLength(password, 'utf8')).toBe(60);
 
       const reg = await registerUser({ password });
       expect(reg.res.status).toBe(201);
 
-      // Shares every byte of the stored password, then diverges. Kept at 68
-      // bytes so it passes validation and actually reaches bcrypt.compare -
-      // this must be rejected by the hash comparison, not by the length cap.
       const attack = `${password}DIFFERS!`;
       expect(Buffer.byteLength(attack, 'utf8')).toBeLessThanOrEqual(72);
       const res = await login(validUser.email, attack);
       expect(res.status).toBe(401);
       expect(res.body.error.code).toBe('INVALID_CREDENTIALS');
 
-      // Sanity: the genuine password still works, so the 401 above is about
-      // the suffix and not a broken account.
       const genuine = await login(validUser.email, password);
       expect(genuine.status).toBe(200);
     });
 
-    // Boundary case: bcrypt truncates the CANDIDATE too, so for a stored
-    // password of exactly 72 bytes, "<password> + junk" would compare equal
-    // unless the login chain also caps the submitted value.
     it('rejects a 72-byte password plus a suffix at the boundary', async () => {
       const password = `Aa1!${'x'.repeat(68)}`;
       expect(Buffer.byteLength(password, 'utf8')).toBe(72);
@@ -160,11 +141,8 @@ describe('Module 1 - Authentication', () => {
       expect(genuine.status).toBe(200);
     });
 
-    // The model layer must hold on its own, for entry paths that never touch
-    // registerValidator: seed scripts, admin provisioning, and any future
-    // change-password / reset flow.
     it('enforces the 72-byte cap at the model, bypassing the validator entirely', async () => {
-      const longPassword = `Str0ng!${'a'.repeat(93)}`; // 100 bytes
+      const longPassword = `Str0ng!${'a'.repeat(93)}`;
       expect(Buffer.byteLength(longPassword, 'utf8')).toBe(100);
 
       await expect(
@@ -181,7 +159,6 @@ describe('Module 1 - Authentication', () => {
 
       await expect(user.save()).rejects.toMatchObject({ name: 'ValidationError' });
 
-      // The stored password is untouched, so the original still works.
       const res = await login(validUser.email, validUser.password);
       expect(res.status).toBe(200);
     });
@@ -195,10 +172,6 @@ describe('Module 1 - Authentication', () => {
     });
 
     it('measures the 72-byte limit in bytes, not characters', async () => {
-      // 20 four-byte emoji + 8 ASCII = 88 bytes. Each astral-plane emoji is a
-      // surrogate pair, so String.length counts it as 2: 20*2 + 8 = 48.
-      // Under the 72 limit by String.length, over it by bytes - which is
-      // exactly why the check must use Buffer.byteLength.
       const multibyte = `Aa1!${'\u{1F600}'.repeat(20)}bcde`;
       expect(multibyte.length).toBe(48);
       expect(Buffer.byteLength(multibyte, 'utf8')).toBe(88);
@@ -228,7 +201,6 @@ describe('Module 1 - Authentication', () => {
       ];
 
       for (const payload of bodies) {
-        // eslint-disable-next-line no-await-in-loop
         const res = await request(app).post(`${BASE}/register`).send(payload);
         expect(res.status).toBe(422);
         expect(res.body.success).toBe(false);
@@ -284,10 +256,6 @@ describe('Module 1 - Authentication', () => {
       expect(res.body.error.details.some((d) => d.field === 'email')).toBe(true);
     });
 
-    // Regression: defect 2. An array email reaches Mongo's scalar-vs-array
-    // matching, which matches ANY listed address - letting one request spray a
-    // single password across thousands of harvested emails for the cost of one
-    // bcrypt.compare. mongoSanitize does not touch arrays; only a type check does.
     it('rejects an array email (credential-spray via type confusion)', async () => {
       const res = await request(app)
         .post(`${BASE}/login`)
@@ -333,7 +301,6 @@ describe('Module 1 - Authentication', () => {
       ];
 
       for (const payload of bodies) {
-        // eslint-disable-next-line no-await-in-loop
         const res = await request(app).post(`${BASE}/login`).send(payload);
         expect(res.status).toBe(422);
         expect(res.body.success).toBe(false);
@@ -359,7 +326,7 @@ describe('Module 1 - Authentication', () => {
     it('returns 401 for a malformed Authorization header', async () => {
       const res = await request(app)
         .get(`${BASE}/me`)
-        .set('Authorization', accessToken); // no "Bearer " prefix
+        .set('Authorization', accessToken);
 
       expect(res.status).toBe(401);
       expect(res.body.error.code).toBe('MISSING_TOKEN');
@@ -528,10 +495,6 @@ describe('Module 1 - Authentication', () => {
     });
   });
 
-  // Regression: defect 4. Module 1 ships no change-password endpoint, so the
-  // revocation is driven from the model's pre('save') password hook. These
-  // tests change the password at the model layer, exactly as a future
-  // change-password or reset flow would.
   describe('password change revokes existing sessions', () => {
     const NEW_PASSWORD = 'An0ther!Passw0rd';
 
@@ -579,7 +542,6 @@ describe('Module 1 - Authentication', () => {
       await changePassword(validUser.email, NEW_PASSWORD);
 
       for (const session of [deviceA, deviceB]) {
-        // eslint-disable-next-line no-await-in-loop
         const attempt = await request(app)
           .post(`${BASE}/refresh`)
           .send({ refreshToken: session.body.data.refreshToken });
@@ -591,10 +553,6 @@ describe('Module 1 - Authentication', () => {
       await registerUser();
       const user = await User.findOne({ email: validUser.email });
 
-      // Minted a minute before the change. NOTE: `passwordChangedAt` is
-      // deliberately backdated by 1s in the model hook, so a token minted
-      // within that same second still passes; that grace window is known,
-      // out-of-scope debt and is not what this test covers.
       const accessToken = jwt.sign(
         {
           sub: user._id.toString(),
@@ -624,9 +582,6 @@ describe('Module 1 - Authentication', () => {
       const { res } = await registerUser();
       const { refreshToken } = res.body.data;
 
-      // Simulate a password change that happened after this token was issued,
-      // WITHOUT clearing the stored digests, so the passwordChangedAfter check
-      // in the refresh flow is what has to catch it.
       await User.updateOne(
         { email: validUser.email },
         { passwordChangedAt: new Date(Date.now() + 60 * 1000) }
@@ -717,8 +672,6 @@ describe('Module 1 - Error shape and unknown routes', () => {
     expect(res.body.error.code).toBe('BAD_REQUEST');
   });
 
-  // Regression: defect 5. An oversized body used to reach the generic 500
-  // branch, which prints a stack trace containing absolute node_modules paths.
   it('returns 413 (not 500) for an oversized body, with no stack trace', async () => {
     const oversized = { email: 'a@example.com', password: 'x'.repeat(20 * 1024) };
     const res = await request(app)

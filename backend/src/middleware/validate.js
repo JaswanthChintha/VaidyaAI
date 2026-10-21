@@ -3,11 +3,6 @@
 const { validationResult } = require('express-validator');
 const ApiError = require('../utils/ApiError');
 
-/**
- * Runs a list of express-validator chains, then converts any failures into a
- * single 422 ApiError with structured details.
- * @param {import('express-validator').ValidationChain[]} chains
- */
 function validate(chains) {
   return async function validationMiddleware(req, res, next) {
     try {

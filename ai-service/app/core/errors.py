@@ -1,29 +1,12 @@
-"""Error types and the consistent JSON error envelope.
-
-Every failure path in this service surfaces as:
-
-    {"success": false, "error": {"code": "...", "message": "..."}}
-
-with a meaningful HTTP status -- never an unhandled 500 with a stack trace.
-
-SECURITY NOTE: error messages are returned to the caller. They must never
-contain report content, extracted medical values, or the API key.
-"""
-
 from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
 
 class ErrorCode:
-    """Stable, machine-readable error codes. Module 5 may branch on these."""
 
-    # --- authentication (401) ---
-    # Deliberately ONE code for every rejection reason: a missing header, a
-    # wrong key, an empty key and a whitespace key must be indistinguishable.
     UNAUTHORIZED = "UNAUTHORIZED"
 
-    # --- intake / validation (4xx) ---
     NO_FILE = "NO_FILE"
     EMPTY_FILE = "EMPTY_FILE"
     FILE_TOO_LARGE = "FILE_TOO_LARGE"
@@ -33,7 +16,6 @@ class ErrorCode:
     ENCRYPTED_PDF = "ENCRYPTED_PDF"
     NO_RENDERABLE_PAGES = "NO_RENDERABLE_PAGES"
 
-    # --- upstream model (5xx / 429) ---
     MODEL_NOT_CONFIGURED = "MODEL_NOT_CONFIGURED"
     MODEL_TIMEOUT = "MODEL_TIMEOUT"
     MODEL_RATE_LIMITED = "MODEL_RATE_LIMITED"
@@ -44,12 +26,10 @@ class ErrorCode:
     MODEL_RESPONSE_BLOCKED = "MODEL_RESPONSE_BLOCKED"
     MODEL_RESPONSE_EMPTY = "MODEL_RESPONSE_EMPTY"
 
-    # --- catch-all ---
     INTERNAL_ERROR = "INTERNAL_ERROR"
 
 
 class ServiceError(Exception):
-    """Base class for every error this service deliberately raises."""
 
     status_code: int = 500
     code: str = ErrorCode.INTERNAL_ERROR
@@ -73,11 +53,6 @@ class ServiceError(Exception):
 
 
 class UnauthorizedError(ServiceError):
-    """Service-to-service authentication failed.
-
-    The message is a FIXED string. It must never say which check failed, and
-    must never echo the presented key.
-    """
 
     status_code = 401
     code = ErrorCode.UNAUTHORIZED
@@ -98,14 +73,12 @@ class UnsupportedMediaTypeError(ServiceError):
 
 
 class UnprocessableDocumentError(ServiceError):
-    """The file was accepted but could not be turned into pages."""
 
     status_code = 422
     code = ErrorCode.CORRUPT_FILE
 
 
 class ModelError(ServiceError):
-    """Anything that went wrong talking to, or parsing the output of, Gemini."""
 
     status_code = 502
     code = ErrorCode.MODEL_REQUEST_FAILED

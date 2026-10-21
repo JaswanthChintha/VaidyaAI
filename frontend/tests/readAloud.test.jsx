@@ -2,10 +2,6 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ReadAloud, { pickVoice } from '../src/components/ReadAloud';
 
-/**
- * 🔊 Read aloud (2026-10-06). The browser's own speech engine is faked here:
- * jsdom has none, which is also the "unsupported browser" case.
- */
 
 const VOICES = [
   { name: 'Online US', lang: 'en-US', localService: false },
@@ -77,7 +73,7 @@ describe('the button', () => {
     render(<ReadAloud text="Haemoglobin. It carries oxygen." label="Haemoglobin" />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Read aloud: Haemoglobin' }));
-    expect(synth.cancel).toHaveBeenCalled(); // one at a time
+    expect(synth.cancel).toHaveBeenCalled();
     expect(synth.speak).toHaveBeenCalledTimes(1);
     const utterance = synth.speak.mock.calls[0][0];
     expect(utterance.text).toBe('Haemoglobin. It carries oxygen.');
@@ -95,7 +91,6 @@ describe('the button', () => {
     render(<ReadAloud text="Short." />);
     fireEvent.click(screen.getByRole('button', { name: 'Read aloud' }));
     const utterance = synth.speak.mock.calls[0][0];
-    // The engine finishing happens outside React.
     act(() => utterance.onend());
     expect(screen.getByRole('button', { name: 'Read aloud' })).toBeInTheDocument();
   });

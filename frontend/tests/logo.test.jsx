@@ -7,11 +7,6 @@ import Logo, { LOGO_DROP, LOGO_PULSE } from '../src/components/Logo';
 import Landing from '../src/pages/Landing';
 import { AuthProvider } from '../src/lib/auth';
 
-/**
- * The drop + pulse logo (owner's choice, 2026-10-06) is drawn in three places
- * -- Logo.jsx, the splash, and public/favicon.svg -- from the same two paths.
- * These tests keep the three from drifting apart.
- */
 describe('the logo', () => {
   it('draws a tile, the drop and the pulse, hidden from screen readers', () => {
     const { container } = render(<Logo size={40} />);

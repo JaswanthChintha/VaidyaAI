@@ -1,32 +1,3 @@
-"""The ML Prediction Engine -- iterate the registry, collect decisions.
-
-    predict_all(validated=...)  ->  MLPredictionData  ->  Module 15  ->  16
-
-Framework-independent: no FastAPI, no I/O beyond loading a cached artifact, no
-global state other than the default registry (which can be overridden per
-call). Module 15 imports and calls this exactly as it calls
-`evaluate_rules()`.
-
-==========================================================================
-THE ENGINE KNOWS NOTHING ABOUT ANY PARTICULAR PREDICTOR
-==========================================================================
-
-The entire dispatch is::
-
-    for predictor in registry:
-        decisions.append(predictor.predict(values, context=context))
-
-There is no `if predictor.name == "diabetes_rf"` anywhere in this file, and
-there never should be. That is what makes Modules 11 and 12 a one-line change
-in `app/ml/registry.py` -- and `tests/test_ml_registry.py` proves it by running
-this engine over a fake predictor for a condition that does not exist yet.
-
-A predictor that raises is CONTAINED, not propagated: one broken model must not
-take down the analysis of every other condition. The failure becomes a warning
-plus an INSUFFICIENT_DATA decision, which carries `risk=None` and therefore
-cannot be mistaken for a clean result.
-"""
-
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
@@ -52,7 +23,6 @@ from app.schemas.ml import (
 
 logger = get_logger(__name__)
 
-#: Bumped when the ENGINE's behaviour changes, independently of any model.
 ML_ENGINE_VERSION = "1.0.0"
 
 ML_ENGINE_POLICY = (
@@ -72,20 +42,6 @@ def predict_all(
     engineered: Any = None,
     registry: Optional[PredictorRegistry] = None,
 ) -> MLPredictionData:
-    """Run every registered predictor and return `ClinicalDecision[]`.
-
-    `validated` -- Module 6's `FeatureValidationData`, a `ValidatedFeaturesInput`
-    or the equivalent dict. PREFERRED.
-
-    `engineered` -- Module 5's `FeatureEngineeringData` or the equivalent dict.
-    Passed through `validate_features()` in-process first, so a model still
-    only ever sees validated values and no plausibility logic is duplicated.
-
-    `registry` -- defaults to the process registry. Tests and Module 15 may
-    pass their own.
-
-    When both feature inputs are given, `validated` wins.
-    """
     registry = registry if registry is not None else default_registry()
     bundle = build_feature_bundle(validated, engineered=engineered)
     context = bundle.context()
@@ -148,13 +104,10 @@ def _run_one(
     context,
     warnings: List[str],
 ) -> Tuple[ClinicalDecision, PredictorRunSummary]:
-    """One predictor, with its failure contained."""
     report = predictor.check_sufficiency(values)
     try:
         decision = predictor.predict(values, context=context)
-    except Exception as exc:  # noqa: BLE001 - contained deliberately
-        # Type only in the log. A model exception message can echo input values,
-        # which are medical data and must never reach the logs.
+    except Exception as exc:
         logger.error(
             "predictor_failed %s",
             safe_meta(predictor=predictor.name, error_type=type(exc).__name__),
@@ -228,8 +181,6 @@ def _summarise(
             1 for d in decisions if d.status is DecisionStatus.NOT_INDICATED
         ),
         insufficient_data_count=sum(1 for d in decisions if not d.was_assessed),
-        # RiskLevel.highest() returns None for an empty list, so "nothing
-        # assessed" never silently becomes "Low".
         highest_risk=highest_risk(decisions),
         predictors_registered=len(runs),
         predictors_run=sum(1 for r in runs if r.assessed),

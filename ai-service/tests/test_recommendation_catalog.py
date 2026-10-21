@@ -1,14 +1,3 @@
-"""The recommendation catalogue and its safety scanner.
-
-This is the file that stops VaidyaAI emitting medical advice. The tests here
-have two jobs:
-
-  1. prove the catalogue itself is clean, and
-  2. prove the scanner that checks it ACTUALLY DETECTS violations -- a scanner
-     that matched nothing would pass job 1 vacuously while providing no safety
-     at all.
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -17,11 +6,6 @@ from app.data import recommendation_catalog as rc
 from app.data.clinical_rules import COMPOSITE_RULES, THRESHOLD_RULES
 from app.schemas.decisions import Recommendation
 from app.services.rule_engine import ALL_NOTE_FRAGMENTS
-
-
-# --------------------------------------------------------------------------
-# The structural mechanism
-# --------------------------------------------------------------------------
 
 
 def test_recommendations_can_only_be_built_from_a_code():
@@ -37,7 +21,6 @@ def test_an_unknown_code_raises_and_never_falls_back_to_text():
 
 
 def test_recommendation_helper_takes_no_text_parameter():
-    """The API shape IS the safety property: there is no string to inject."""
     import inspect
 
     parameters = inspect.signature(rc.recommendation).parameters
@@ -57,11 +40,6 @@ def test_recommendations_deduplicates_and_preserves_order():
     ]
 
 
-# --------------------------------------------------------------------------
-# The catalogue is clean
-# --------------------------------------------------------------------------
-
-
 def test_no_catalogue_text_contains_unsafe_language():
     for code, entry in rc.RECOMMENDATIONS.items():
         assert rc.scan_text(entry.text) == [], f"{code}: {entry.text!r}"
@@ -75,18 +53,12 @@ def test_every_entry_records_why_it_exists_and_uses_a_known_category():
 
 
 def test_no_catalogue_text_contains_a_digit():
-    """A number in educational text is nearly always a dose or a target.
-
-    The single exception is the analyte's own name, "vitamin B12", which is
-    stripped before the check rather than used to weaken it.
-    """
     for code, entry in rc.RECOMMENDATIONS.items():
         text = entry.text.replace("B12", "B-twelve")
         assert not any(ch.isdigit() for ch in text), code
 
 
 def test_rule_band_labels_are_scanned_too():
-    """Band labels reach the reader via EvidenceItem.note."""
     for rule in THRESHOLD_RULES:
         for band in rule.bands:
             assert rc.scan_text(band.label) == [], f"{rule.id}: {band.label!r}"
@@ -100,11 +72,6 @@ def test_rule_band_labels_are_scanned_too():
 def test_engine_note_fragments_are_safe():
     for fragment in ALL_NOTE_FRAGMENTS:
         assert rc.scan_text(fragment) == [], fragment
-
-
-# --------------------------------------------------------------------------
-# The scanner is NOT vacuous
-# --------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -135,8 +102,6 @@ def test_scanner_detects_each_class_of_violation(text, expected):
 
 
 def test_scanner_allows_a_laboratory_concentration_but_not_a_dose():
-    # "126 mg/dL" is a threshold; "500 mg" is a dose. The distinction is what
-    # lets a rule band cite its threshold without weakening the scanner.
     assert "dose_quantity" not in rc.scan_text("at or above 126 mg/dL")
     assert "dose_quantity" in rc.scan_text("take 500 mg")
 
@@ -147,7 +112,6 @@ def test_assert_safe_raises_on_unsafe_text():
 
 
 def test_import_time_check_rejects_an_unsafe_entry():
-    """Adding unsafe wording must break the import, not the report."""
     original = dict(rc.RECOMMENDATIONS)
     try:
         rc.RECOMMENDATIONS["BAD"] = rc.CatalogEntry(

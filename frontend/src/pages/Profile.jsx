@@ -5,35 +5,6 @@ import { profileFieldLabel } from '../lib/labels';
 import AccountSettings from '../components/AccountSettings';
 import Icon from '../components/Icon';
 
-/**
- * Module 2's patient profile.
- *
- * ==========================================================================
- * THE TWO THINGS THIS FORM MUST NOT DO
- * ==========================================================================
- *
- * 1. IT MUST NOT SEND `false` FOR AN UNANSWERED QUESTION. `hypertension` and
- *    `heartDisease` are TRI-STATE server-side: true, false, or absent meaning
- *    nobody asked. Module 12's kidney predictor reads that distinction to
- *    decide whether to skip rather than guess, and collapsing absent to
- *    `false` fabricates a negative clinical finding -- MEMORY.md section 6a
- *    names this explicitly. An HTML checkbox cannot express three states, so
- *    these are radio groups with an explicit "Prefer not to say / not sure",
- *    which is sent by OMITTING the key. Not by sending `null`: the validator
- *    rejects that as a type error, so the honest answer would have produced a
- *    422 the patient could not act on. See `payload()`.
- *
- * 2. IT MUST NOT SEND A DERIVED BMI. BMI is excluded from the writable
- *    allow-list AND recomputed by a model hook, so a client-supplied value is
- *    ignored twice over. It is displayed read-only here, from the server's
- *    own computation, so the number on screen is the number the models use.
- *
- * Gender offers all four stored values including `prefer_not_to_say`. Module
- * 31 answers `SEX_COHORT_NOT_AVAILABLE` for the two non-binary options rather
- * than coercing a stated gender into a binary cohort, and that refusal is the
- * correct behaviour -- so the option is offered honestly here rather than
- * hidden to make a percentile available.
- */
 
 const GENDERS = [
   { value: 'male', label: 'Male' },
@@ -42,11 +13,6 @@ const GENDERS = [
   { value: 'prefer_not_to_say', label: 'Prefer not to say' },
 ];
 
-/* THE VALUES ARE THE DIABETES MODEL'S OWN CATEGORIES and must not change;
-   only the words do (owner, 2026-10-02). "Ever smoked" and "Not currently
-   smoking" sat beside "Former" and "Current" with nothing to tell them apart.
-   They are the two half-answers: smoked at some point but not saying whether
-   now, and not smoking now but not saying whether before. */
 const SMOKING = [
   { value: '', label: 'Not answered' },
   { value: 'never', label: 'Never smoked' },
@@ -57,38 +23,17 @@ const SMOKING = [
   { value: 'no_info', label: 'Prefer not to say' },
 ];
 
-/** true / false / null -- never a bare checkbox. See the header. */
 const TRISTATE_OPTIONS = [
   { v: true, label: 'Yes' },
   { v: false, label: 'No' },
   { v: null, label: 'Not sure / prefer not to say' },
 ];
 
-/** The stored answer in the words the form uses for it. */
 export function answerLabel(value) {
   const match = TRISTATE_OPTIONS.find((option) => option.v === value);
   return match ? match.label : TRISTATE_OPTIONS[2].label;
 }
 
-/**
- * One tri-state question, as a disclosure.
- *
- * CLOSED IS THE RESTING STATE, and closing loses nothing: THE ANSWER IS ON
- * THE SUMMARY. A collapsed question that hid its own answer would make the
- * reader open both boxes to find out what is recorded, which is more work
- * than the open version and would put an absence ("Not sure") out of sight --
- * the one thing this form must never do.
- *
- * `<details>` REPLACED `<fieldset>`, and that fixed the layout defect as a
- * side effect. A `<legend>` is positioned OVER its fieldset's top border by
- * the user agent: give the box a background and the heading sits half on the
- * border with the line running through it, which is exactly what it looked
- * like. There is no CSS that makes a legend an ordinary block without a float
- * hack, and the element was buying nothing that `role="radiogroup"` plus an
- * `aria-label` does not -- the grouping a screen reader needs is preserved,
- * and the question is now announced once rather than by both a summary and a
- * legend saying the same words.
- */
 function TriState({ label, value, onChange, help, open, onOpenChange }) {
   const name = label.replace(/\s+/g, '-').toLowerCase();
   return (
@@ -131,24 +76,8 @@ const EMPTY = {
 };
 
 export default function Profile() {
-  // Set by SignIn right after a new account is created (owner, 2026-10-06).
   const welcome = Boolean(useLocation().state?.welcome);
   const [form, setForm] = useState(EMPTY);
-  /**
-   * Which diagnosis questions are open.
-   *
-   * CLOSED ON ARRIVAL AND CLOSED AFTER A SAVE. They are two of the eight
-   * fields on this form and they take five rows each; left open they are most
-   * of the page, and a reader who has already answered them has no reason to
-   * be looking at the radio buttons.
-   *
-   * This state is NOT derived from the answers. Opening "unanswered" ones
-   * automatically was the obvious move and is wrong twice over: it would
-   * re-open both boxes on every visit for anyone who has deliberately chosen
-   * "prefer not to say" -- nagging someone for an answer they have already
-   * given -- and it would make the boxes spring open again the moment a save
-   * completed, which is the behaviour being removed.
-   */
   const [openQuestion, setOpenQuestion] = useState({
     hypertension: false,
     heartDisease: false,
@@ -174,14 +103,10 @@ export default function Profile() {
           heightCm: profile.heightCm ?? '',
           weightKg: profile.weightKg ?? '',
           smokingHistory: profile.smokingHistory ?? '',
-          // `?? null` NOT `|| false`: a stored `false` is a real answer and
-          // must round-trip as one.
           hypertension: profile.hypertension ?? null,
           heartDisease: profile.heartDisease ?? null,
         });
       } catch (err) {
-        // 404 is the documented "no profile yet" answer, not an error -- the
-        // backend deliberately 404s rather than returning an empty 200.
         if (err instanceof ApiError && err.status === 404) {
           setExists(false);
         } else {
@@ -198,14 +123,6 @@ export default function Profile() {
     setSaved(false);
   }
 
-  /**
-   * Build the payload.
-   *
-   * An empty text field is OMITTED, not sent as `""` or `0`. The numeric
-   * fields accept JSON numbers only -- `"70kg"` and `"170"` are both 422 --
-   * so a blank must not become a zero on the way out, and a unit must never
-   * be smuggled through as a string.
-   */
   function payload() {
     const out = {};
     if (form.age !== '') out.age = Number(form.age);
@@ -214,18 +131,6 @@ export default function Profile() {
     if (form.weightKg !== '') out.weightKg = Number(form.weightKg);
     if (form.smokingHistory !== '') out.smokingHistory = form.smokingHistory;
 
-    // "NOT SURE" IS SENT BY OMITTING THE KEY, NOT BY SENDING null.
-    //
-    // The validator rejects an explicit null outright -- "Heart disease status
-    // must be true or false" -- so a patient choosing "Not sure" would have
-    // got a 422 they could not act on. This comment previously claimed the
-    // opposite, and a contract check against the running backend caught it.
-    //
-    // Clearing works because this form saves with PUT, whose replace
-    // semantics drop any field the body omits. That is also why every save
-    // sends the WHOLE form: a partial PATCH could never move an answer back
-    // to unknown, and "I told you I have hypertension and now I am not sure"
-    // has to be expressible. `false` is a real answer and is still sent.
     if (form.hypertension !== null) out.hypertension = form.hypertension;
     if (form.heartDisease !== null) out.heartDisease = form.heartDisease;
     return out;
@@ -237,15 +142,11 @@ export default function Profile() {
     setSaved(false);
     try {
       const body = payload();
-      // Always PUT. It upserts, so there is no create/update branch to get
-      // wrong, and its replace semantics are what make "Not sure" reachable.
       const data = await api.saveProfile(body);
       const profile = data.profile || data;
       setServer(profile);
       setExists(true);
       setSaved(true);
-      // The answers are in; the controls for changing them are not what the
-      // reader needs to see next.
       setOpenQuestion({ hypertension: false, heartDisease: false });
     } catch (err) {
       setError(err.message);
@@ -393,19 +294,6 @@ export default function Profile() {
               {error}
             </p>
           ) : null}
-          {/* WHAT "SAVED." DOES NOT MEAN, and the reason this page looked
-              broken. `analysisService.buildProfilePayload()` reads the profile
-              AT ANALYSIS TIME and the result is stored on the report, so a
-              report that has already been analysed keeps the answers that were
-              known when it ran. A reader who answers these two questions
-              BECAUSE the dashboard told them "no value was available for your
-              history of heart disease and high blood pressure" then sees the
-              dashboard say exactly the same thing, and concludes the save did
-              nothing.
-              It is the same standing property as the explanation cap and the
-              clinician narrative (MEMORY 6ad, 6ag): changing an input does not
-              rewrite what a past run stored. Said here, where the reader is
-              when the expectation forms. */}
           {saved ? (
             <>
               <p className="ok">Saved.</p>
@@ -445,19 +333,9 @@ export default function Profile() {
               Profile completeness: <strong>{completeness.percent}%</strong> (
               {completeness.filled} of {completeness.fields} fields the analysis
               can use).
-              {/* THE FIELD NAMES WERE PRINTED RAW. "Still blank: heartDisease"
-                  is a key from the profile document shown to the person whose
-                  heart it is -- the same defect as `vitamin_b12` reaching a
-                  patient, one layer up. The words now match the question the
-                  form asks above, so a reader can find what they are told is
-                  missing. */}
               {completeness.missing?.length ? (
                 <>
                   {' '}
-                  {/* "Not answered yet", not "Still blank" (2026-10-02): the
-                      form above shows "Not sure / prefer not to say" for the
-                      same unanswered question, and "blank" beside a visible
-                      answer read as two different facts. */}
                   Not answered yet:{' '}
                   {completeness.missing.map(profileFieldLabel).join(', ')}.
                 </>

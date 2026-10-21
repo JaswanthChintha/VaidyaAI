@@ -1,16 +1,3 @@
-"""Module 22 -- the Medical Knowledge Base corpus.
-
-Covers what a corpus that GROUNDS AN LLM has to guarantee:
-
-  * vocabulary alignment with the shared catalogues, in both directions
-  * coverage of everything the pipeline can actually produce
-  * the import-time safety self-check, including that it CATCHES a planted
-    unsafe document rather than merely existing
-  * agreement with Module 24's validator, which is the authoritative gate
-
-No network, no API key, no model. Everything here is pure data.
-"""
-
 from __future__ import annotations
 
 import dataclasses
@@ -50,11 +37,6 @@ def _clone(doc: KnowledgeDocument, **changes) -> KnowledgeDocument:
 SAMPLE = "lab_hba1c"
 
 
-# --------------------------------------------------------------------------
-# Shape and vocabulary alignment
-# --------------------------------------------------------------------------
-
-
 def test_corpus_is_not_empty_and_ids_are_unique():
     assert len(DOCUMENTS) >= 40
     assert len(set(DOCUMENTS)) == len(DOCUMENTS)
@@ -62,13 +44,11 @@ def test_corpus_is_not_empty_and_ids_are_unique():
 
 @pytest.mark.parametrize("doc_id", sorted(DOCUMENTS))
 def test_every_document_is_structurally_valid(doc_id):
-    """The import-time check, re-run per document so a failure names one."""
     _check_document(DOCUMENTS[doc_id])
 
 
 @pytest.mark.parametrize("doc_id", sorted(DOCUMENTS))
 def test_no_document_references_a_name_outside_the_catalogues(doc_id):
-    """A near-miss tag is INVISIBLE to retrieval, not merely untidy."""
     doc = DOCUMENTS[doc_id]
     for feature in doc.features:
         assert feature in FEATURES, f"{doc_id}: {feature!r} not in feature_catalog"
@@ -78,7 +58,6 @@ def test_no_document_references_a_name_outside_the_catalogues(doc_id):
 
 @pytest.mark.parametrize("doc_id", sorted(DOCUMENTS))
 def test_every_document_carries_a_basis_and_a_review_date(doc_id):
-    """A claim a reader cannot trace does not belong in a grounding corpus."""
     doc = DOCUMENTS[doc_id]
     assert doc.basis.strip()
     assert doc.last_reviewed.strip()
@@ -87,7 +66,6 @@ def test_every_document_carries_a_basis_and_a_review_date(doc_id):
 
 @pytest.mark.parametrize("feature", sorted(FEATURES))
 def test_every_canonical_feature_has_at_least_one_document(feature):
-    """Spec: the corpus must cover what the pipeline actually produces."""
     assert documents_for_feature(feature), f"no knowledge document covers {feature!r}"
 
 
@@ -104,7 +82,6 @@ def test_coverage_reports_no_gaps():
 
 
 def test_every_topic_is_represented():
-    """A topic in the vocabulary with no documents is a spec gap."""
     counts = coverage()["topics"]
     for topic in TOPICS:
         assert counts[topic] > 0, f"topic {topic!r} has no documents"
@@ -133,13 +110,7 @@ def test_knowledge_base_document_is_serialisable_and_complete():
         assert key in entry
 
 
-# --------------------------------------------------------------------------
-# The safety scanner -- it must CATCH things, not merely exist
-# --------------------------------------------------------------------------
-
-
 def test_the_scanner_detects_an_obviously_unsafe_sentence():
-    """If this fails, every other safety assertion here is theatre."""
     fired = scan_text(CANARY_SENTENCE)
     assert len(fired) >= CANARY_MIN_MATCHES, fired
 
@@ -177,20 +148,16 @@ def test_scanner_catches_unsafe_text(text, expected):
     ],
 )
 def test_scanner_does_not_fire_on_legitimate_corpus_language(text):
-    """False positives are not harmless: they train authors to distrust it."""
     assert scan_text(text) == [], scan_text(text)
 
 
 def test_scanner_is_insensitive_to_line_wrapping():
-    """Both directions. A pattern must not be disarmed by a line break, and
-    the required disclaiming phrasing must not be rejected by one."""
     assert scan_text("you\nhave diabetes") == scan_text("you have diabetes")
     assert scan_text("this is not a\ndiagnosis") == []
     assert normalise("a\n b\t c") == "a b c"
 
 
 def test_planted_unsafe_document_is_rejected():
-    """THE test for this module: the self-check must catch a bad document."""
     planted = _clone(
         DOCUMENTS[SAMPLE],
         doc_id="planted_unsafe",
@@ -210,7 +177,6 @@ def test_planted_unsafe_document_is_rejected():
     ],
 )
 def test_unsafe_text_in_any_scanned_field_is_rejected(field, value):
-    """Every reader-visible field is scanned, not only the body."""
     planted = _clone(DOCUMENTS[SAMPLE], doc_id="planted", **{field: value})
     with pytest.raises(UnsafeKnowledgeError):
         _check_document(planted)
@@ -234,17 +200,10 @@ def test_document_without_basis_is_rejected():
         _check_document(planted)
 
 
-# --------------------------------------------------------------------------
-# Reviewed safety exemptions
-# --------------------------------------------------------------------------
-
-
 def test_exemptions_are_rare_and_all_justified():
     exempted = {
         d.doc_id: d.safety_exemptions for d in DOCUMENTS.values() if d.safety_exemptions
     }
-    # Not a cap for its own sake: an exemption is a reviewer's signed statement,
-    # and a corpus accumulating them quietly is the thing to notice.
     assert len(exempted) <= 3, f"too many exempted documents: {sorted(exempted)}"
     for doc_id, exemptions in exempted.items():
         for pattern, justification in exemptions:
@@ -271,7 +230,6 @@ def test_an_exemption_without_justification_is_rejected():
 
 
 def test_a_medication_exemption_still_forbids_administration_language():
-    """The exemption permits the NOUN. It never permits the instruction."""
     planted = _clone(
         DOCUMENTS[SAMPLE],
         doc_id="planted",
@@ -294,23 +252,6 @@ def test_a_medication_exemption_still_forbids_administration_language():
 )
 def test_scan_administration(text, flagged):
     assert scan_administration(text) is flagged
-
-
-# --------------------------------------------------------------------------
-# Agreement with Module 24 -- the AUTHORITATIVE gate
-# --------------------------------------------------------------------------
-#
-# Module 23 will quote retrieved knowledge verbatim to ground its explanations.
-# If a quoted sentence fails Module 24's validator, the WHOLE generation is
-# rejected and the patient sees a fallback instead of an explanation. So a
-# corpus string that Module 24 refuses is a latent generation failure baked
-# into the data.
-#
-# This is the reason the corpus is held to Module 24's rules and not only to
-# its own intake scanner: the two are separate implementations (see
-# app/data/knowledge_safety.py on why), and this is what keeps them in
-# agreement permanently. Drift becomes a red test here rather than a rejected
-# generation in front of a user.
 
 
 def _validator_strings(doc):

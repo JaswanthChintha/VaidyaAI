@@ -1,15 +1,3 @@
-"""Module 7 -- the Feature Repository, exercised through its real interface.
-
-The framework-independent entry points, which is what Module 15 will call.
-
-Covered here: loading a genuine Module 6 result; every accessor; absent staying
-distinct from false, zero, None and "normal" for both the tri-state booleans and
-numerics; a rejected feature having no readable value anywhere; provenance
-surviving unflattened; warnings and `upstream` carried through with origins;
-several snapshots per patient held and returned in order; empty and all-rejected
-inputs; and handing the stored set straight to Modules 8 and 9.
-"""
-
 from __future__ import annotations
 
 import copy
@@ -53,21 +41,12 @@ from app.services.feature_repository import (
 from app.services.repository_backend import InMemoryRepositoryBackend
 from app.services.validator import validate_features
 
-# --------------------------------------------------------------------------
-# Isolation -- the default backend is process-wide state
-# --------------------------------------------------------------------------
-
 
 @pytest.fixture(autouse=True)
 def _clean_backend():
     reset_default_backend()
     yield
     reset_default_backend()
-
-
-# --------------------------------------------------------------------------
-# Builders -- one entry of Module 6's `valid` / `rejected` maps
-# --------------------------------------------------------------------------
 
 
 def vf(
@@ -104,7 +83,6 @@ def vf(
 
 
 def rf(name: str, value: Any, *, code: str = "IMPLAUSIBLE_VALUE_HIGH") -> Dict[str, Any]:
-    """One entry of Module 6's `rejected` map -- WITH its original value."""
     definition = FEATURES[name]
     return {
         "name": name,
@@ -129,7 +107,6 @@ def validated(
     rejected: Optional[Dict[str, Any]] = None,
     **overrides: Any,
 ) -> Dict[str, Any]:
-    """Module 6's `data` object."""
     features = features or {}
     rejected = rejected or {}
     payload: Dict[str, Any] = {
@@ -172,11 +149,6 @@ def repo(payload: Optional[Dict[str, Any]] = None, **kwargs: Any) -> FeatureRepo
     return load_features(payload if payload is not None else REALISTIC, **kwargs)
 
 
-# --------------------------------------------------------------------------
-# Loading a real Module 6 result, end to end from Module 5
-# --------------------------------------------------------------------------
-
-
 def test_loads_a_genuine_module_6_result_produced_by_module_5():
     extraction = {
         "extracted_parameters": [
@@ -208,16 +180,13 @@ def test_loads_a_genuine_module_6_result_produced_by_module_5():
     assert r.require("hba1c") == 6.8
     assert r.unit("hba1c") == "%"
     assert r.require("age") == 45
-    # Module 6 rejected the impossible creatinine; it is not usable here.
     assert r.has("creatinine") is False
     assert r.is_rejected("creatinine") is True
-    # Module 4's warning survived four module boundaries with its origin.
     assert ("extraction", 4) in [(w.stage, w.module) for w in r.warnings()]
     assert r.extraction_confidence == 0.99
 
 
 def test_accepts_module_5_output_and_validates_it_in_process():
-    """`engineered=` must go through Module 6 -- never stored unvalidated."""
     engineered = engineer_features(
         extraction={
             "extracted_parameters": [
@@ -262,11 +231,6 @@ def test_accepts_a_plain_dict_a_model_and_a_parsed_input_alike():
     assert from_model.values() == from_dict.values() == {"hba1c": 6.1}
 
 
-# --------------------------------------------------------------------------
-# ABSENCE -- the property this module exists to protect
-# --------------------------------------------------------------------------
-
-
 def test_get_returns_the_absent_sentinel_not_none_false_or_zero():
     r = repo()
     value = r.get("vitamin_d")
@@ -274,17 +238,16 @@ def test_get_returns_the_absent_sentinel_not_none_false_or_zero():
     assert value is not None
     assert value is not False
     assert value != 0
-    assert value != False  # noqa: E712 -- the point is that it is not equal
+    assert value != False
     assert value != ""
 
 
 def test_the_absent_sentinel_refuses_to_be_a_boolean():
-    """`if repo.get(x):` must not quietly take the false branch."""
     r = repo()
     with pytest.raises(AbsentValueError):
         bool(r.get("hypertension"))
     with pytest.raises(AbsentValueError):
-        if r.get("hypertension"):  # pragma: no cover - raises before the body
+        if r.get("hypertension"):
             pass
 
 
@@ -326,7 +289,6 @@ def test_require_raises_and_the_error_names_the_reason_not_the_value():
     with pytest.raises(FeatureUnavailableError) as excinfo:
         r.require("creatinine")
     assert excinfo.value.reason_code == "IMPLAUSIBLE_VALUE_HIGH"
-    # The message reaches logs and HTTP responses: no value may be in it.
     assert "9999" not in str(excinfo.value)
 
 
@@ -351,11 +313,6 @@ def test_an_unknown_feature_name_is_a_different_failure_from_an_absent_value():
             call()
 
 
-# --------------------------------------------------------------------------
-# ABSENT vs FALSE vs ZERO -- tri-states and numerics
-# --------------------------------------------------------------------------
-
-
 @pytest.mark.parametrize("name", ["hypertension", "heart_disease"])
 def test_tristate_keeps_true_false_and_unknown_apart(name):
     present_false = repo(validated({name: vf(name, False)}))
@@ -366,7 +323,6 @@ def test_tristate_keeps_true_false_and_unknown_apart(name):
     assert present_true.tristate(name) is True
     assert absent.tristate(name) is None
 
-    # And the distinction is visible without `tristate` too.
     assert present_false.has(name) is True
     assert absent.has(name) is False
     assert present_false.require(name) is False
@@ -383,7 +339,6 @@ def test_an_absent_tristate_is_never_reported_as_a_negative_finding(name):
 
 
 def test_tristate_refuses_to_be_pointed_at_a_number():
-    """A numeric zero must never be readable through the boolean accessor."""
     r = repo(validated({"blood_glucose": vf("blood_glucose", 0.0)}))
     with pytest.raises(FeatureTypeError):
         r.tristate("blood_glucose")
@@ -415,7 +370,7 @@ def test_numeric_refuses_a_value_that_is_not_in_its_canonical_unit():
             {"hba1c": vf("hba1c", 48.0, canonical_unit=False, unit="mmol/mol")}
         )
     )
-    assert r.has("hba1c") is True  # still stored, still readable as raw
+    assert r.has("hba1c") is True
     assert r.require("hba1c") == 48.0
     assert r.canonical_unit("hba1c") is False
     with pytest.raises(FeatureTypeError):
@@ -434,11 +389,6 @@ def test_absent_is_distinct_from_present_across_the_whole_catalogue():
         assert r.why_unavailable(name) is None
 
 
-# --------------------------------------------------------------------------
-# REJECTED features are not readable as values
-# --------------------------------------------------------------------------
-
-
 def test_a_rejected_feature_is_not_readable_as_a_usable_value():
     r = repo()
     assert r.has("creatinine") is False
@@ -454,7 +404,6 @@ def test_a_rejected_feature_is_not_readable_as_a_usable_value():
 
 
 def test_the_rejected_value_has_no_field_to_be_read_from():
-    """Structural, in the way `ValidatedFeaturesInput` has no `rejected`."""
     assert "value" not in UnavailableFeature.model_fields
     from app.schemas.repository import IncomingRejection
 
@@ -467,7 +416,6 @@ def test_the_rejected_value_is_dropped_at_the_parse_boundary():
     assert entry.availability == AVAILABILITY_REJECTED
     assert entry.reason_code == "IMPLAUSIBLE_VALUE_HIGH"
     assert not hasattr(entry, "value")
-    # The number 9999 must not survive as a value anywhere in the stored maps.
     stored = r.snapshot.model_dump(mode="json")
     assert "creatinine" not in stored["features"]
     assert "value" not in stored["unavailable"]["creatinine"]
@@ -477,15 +425,12 @@ def test_the_rejection_reason_is_still_retrievable_for_module_20():
     r = repo()
     entry = r.why_unavailable("creatinine")
     assert entry.reason
-    # Provenance is kept so the refusal can be explained against the printed
-    # line -- explanation metadata, reached only through `provenance`.
     assert entry.provenance.original_test_name == "Creatinine"
     assert r.rejected() == ("creatinine",)
     assert r.availability("creatinine") == AVAILABILITY_REJECTED
 
 
 def test_a_feature_in_both_partitions_resolves_to_unavailable_not_usable():
-    """If Module 6's disjointness ever broke, the safe answer is 'no value'."""
     payload = validated({"creatinine": vf("creatinine", 1.0)}, {"creatinine": rf("creatinine", 9999.0)})
     r = load_features(payload, store=False)
     assert r.has("creatinine") is False
@@ -503,11 +448,6 @@ def test_an_all_rejected_input_yields_an_empty_but_explaining_repository():
     assert r.summary().rejected_count == 2
     for name in CANONICAL_FEATURES:
         assert r.why_unavailable(name) is not None
-
-
-# --------------------------------------------------------------------------
-# PROVENANCE
-# --------------------------------------------------------------------------
 
 
 def test_provenance_survives_intact_and_unflattened():
@@ -538,14 +478,8 @@ def test_provenance_round_trips_through_json_unchanged():
     )
 
 
-# --------------------------------------------------------------------------
-# ACCESSORS
-# --------------------------------------------------------------------------
-
-
 def test_reading_a_feature_needs_no_knowledge_of_where_it_came_from():
     r = repo()
-    # Lab value and profile value read identically.
     assert r.require("hba1c") == 6.8
     assert r.require("age") == 45
 
@@ -563,8 +497,6 @@ def test_unit_accessors():
     r = repo()
     assert r.unit("hba1c") == "%"
     assert r.unit("blood_glucose") == "mg/dl"
-    # A present boolean legitimately has no unit -- which is why absence is
-    # NOT signalled with None here.
     assert r.unit("heart_disease") is None
     assert is_absent(r.unit("vitamin_d"))
     assert r.canonical_unit("hba1c") is True
@@ -578,7 +510,6 @@ def test_feature_record_and_quality_flags():
     assert record.questionable is True
     assert r.is_questionable("hemoglobin") is True
     assert r.is_questionable("hba1c") is False
-    # An ABSENT feature is not "flagged" -- it is not there at all.
     assert r.is_questionable("vitamin_d") is False
     assert r.questionable() == ("hemoglobin",)
 
@@ -624,11 +555,6 @@ def test_repr_leaks_no_values_and_no_patient_reference():
     assert "patient-42" not in text
     assert "6.8" not in text
     assert "hba1c" not in text
-
-
-# --------------------------------------------------------------------------
-# WARNINGS and UPSTREAM
-# --------------------------------------------------------------------------
 
 
 def test_all_warnings_are_carried_with_their_origins():
@@ -699,7 +625,6 @@ def test_upstream_context_is_carried_through_unchanged():
 
 
 def test_a_partial_document_changes_why_a_feature_is_missing():
-    """An unread row is not the same finding as an absent test."""
     clean = load_features(validated({}), store=False)
     damaged = load_features(
         validated({}, upstream={"provided": True, "pages_unreadable": [2]}),
@@ -717,13 +642,7 @@ def test_module_6_missing_features_list_is_preserved_verbatim():
     payload = validated({"hba1c": vf("hba1c", 6.8)}, missing_features=["vitamin_d"])
     r = load_features(payload, store=False)
     assert r.snapshot.missing_features == ["vitamin_d"]
-    # And the authoritative "can I read it?" answer is still complete.
     assert "vitamin_b12" in r.missing()
-
-
-# --------------------------------------------------------------------------
-# EMPTY input
-# --------------------------------------------------------------------------
 
 
 def test_an_empty_input_gives_an_empty_repository_that_still_answers():
@@ -742,11 +661,6 @@ def test_load_features_with_no_argument_at_all():
     r = load_features()
     assert len(r) == 0
     assert r.snapshot_id
-
-
-# --------------------------------------------------------------------------
-# MULTIPLE SNAPSHOTS PER PATIENT (the Modules 28-30 groundwork)
-# --------------------------------------------------------------------------
 
 
 def snap(value: float, date: str, patient: str = "p1") -> FeatureRepository:
@@ -857,11 +771,6 @@ def test_store_false_builds_a_repository_without_persisting_it():
     assert default_backend().count() == 0
 
 
-# --------------------------------------------------------------------------
-# The repository as the SINGLE ACCESS POINT for the analysis modules
-# --------------------------------------------------------------------------
-
-
 def test_the_stored_set_feeds_the_rule_engine_without_re_extraction():
     from app.services.rule_engine import evaluate_rules
 
@@ -901,11 +810,6 @@ def test_what_is_handed_to_consumers_keeps_questionable_and_warnings():
     assert set(handed["questionable"]) == {"hemoglobin"}
     assert isinstance(handed["all_warnings"], list)
     assert handed["upstream"]["provided"] is True
-
-
-# --------------------------------------------------------------------------
-# Snapshot integrity and introspection
-# --------------------------------------------------------------------------
 
 
 def test_the_snapshot_maps_are_disjoint_by_construction():
@@ -951,7 +855,7 @@ def test_an_unusable_value_in_the_valid_map_never_becomes_a_stored_value():
     assert r.has("blood_glucose") is False
     assert is_absent(r.get("blood_glucose"))
     assert r.availability("blood_glucose") == "unusable"
-    assert r.has("hba1c") is True  # the rest of the payload survives
+    assert r.has("hba1c") is True
 
 
 def test_the_interface_document_is_shape_only():
@@ -992,11 +896,6 @@ def test_the_default_backend_can_be_swapped_without_touching_consumers():
     load_features(validated({"hba1c": vf("hba1c", 6.8)}), patient_ref="p1")
     assert private.count() == 1
     assert latest("p1").require("hba1c") == 6.8
-
-
-# --------------------------------------------------------------------------
-# PHI must never reach the logs
-# --------------------------------------------------------------------------
 
 
 def test_storing_a_snapshot_logs_no_values_names_or_identifiers(caplog):

@@ -1,28 +1,3 @@
-"""Module 9 -- the Machine Learning Prediction Engine.
-
-    Module 6 (validated features)
-            |
-            v
-      +-----------------+
-      | PredictorRegistry |     <- Module 13
-      +-----------------+
-            |
-            +-- DiabetesPredictor   (Module 10, built)
-            +-- HeartPredictor      (Module 11, not built)
-            +-- KidneyPredictor     (Module 12, not built)
-            |
-            v
-      ClinicalDecision[]  ->  Module 15 -> Module 16
-
-Nothing here trains a model. Training lives in `ml/train_diabetes.py` and is
-run by hand; this package only ever LOADS a persisted artifact.
-
-The public surface deliberately mirrors the rest of the service: a
-framework-independent `predict_all()` that Module 15 can call in-process,
-exactly as it calls `engineer_features()`, `validate_features()` and
-`evaluate_rules()`.
-"""
-
 from __future__ import annotations
 
 from app.ml.base import (

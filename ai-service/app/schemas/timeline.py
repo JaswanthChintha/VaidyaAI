@@ -1,58 +1,3 @@
-"""The Module 28 (Health Timeline and Trend Analysis) contract, pydantic v2.
-
-Module 28 answers ONE question, for one canonical feature at a time:
-
-    given the SAME feature measured across several reports over time, is it
-    improving, worsening, stable -- or is that not determinable?
-
---------------------------------------------------------------------------
-WHERE THE PIECES LIVE, AND WHY
---------------------------------------------------------------------------
-
-The HISTORY lives in `backend/` Mongo, where `Report.chronoDate` is already
-indexed on `{user, chronoDate}` for exactly this. The backend assembles a
-patient's reports and POSTs them here.
-
-The COMPUTATION lives in this service, because canonical feature names,
-canonical units and the trend polarity table all live here. Comparing two
-reports' values without that normalisation is precisely the "silently corrupts
-data across a boundary" defect class this project audits for: 6.5 and 48 are
-the same HbA1c, and 1.0 mg/dL and 88.4 umol/L are the same creatinine.
-
---------------------------------------------------------------------------
-WHAT IS REUSED RATHER THAN REINVENTED
---------------------------------------------------------------------------
-
-A report snapshot is submitted as Module 6's VALIDATED output
-(`valid` / `questionable` / `rejected`, i.e.
-`app.schemas.repository.ValidatedFeatureSetInput`), or as an already-built
-Module 7 `FeatureSnapshot`. There is no third feature shape. The service turns
-either into a `FeatureSnapshot` with `app.services.feature_repository`'s own
-`build_snapshot`, so:
-
-* a rejected value is DISCARDED at the parse boundary and can never reach a
-  trend calculation, and
-* the reason a feature is unavailable comes from the same `unavailable` map
-  every other consumer reads.
-
---------------------------------------------------------------------------
-ABSENCE IS A GAP, NEVER A VALUE
---------------------------------------------------------------------------
-
-A feature missing from one report produces a `TimelineGap` -- a report id, a
-date and a reason code. `TimelineGap` HAS NO `value` FIELD, for the same
-structural reason `UnavailableFeature` has none. Nothing interpolates, nothing
-carries a value forward, and nothing substitutes zero.
-
---------------------------------------------------------------------------
-NO CLINICAL CLAIM, NO MODEL
---------------------------------------------------------------------------
-
-This module calls no LLM and makes no statement about a diagnosis. Every
-string it emits is assembled from templates that are safety-scanned at import
-time in `app/services/trend_analyzer.py`. There is no free-text entry point.
-"""
-
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -71,32 +16,22 @@ from app.data.trend_polarity import TREND_POLICY_VERSION
 from app.schemas.repository import FeatureSnapshot, ValidatedFeatureSetInput
 from app.schemas.validation import ValidationFinding
 
-#: The stage identifier Module 28 stamps on its own warnings.
 STAGE_TIMELINE = "timeline"
 TIMELINE_MODULE = 28
 
 
-# --------------------------------------------------------------------------
-# Outcome vocabulary
-# --------------------------------------------------------------------------
-
-#: `trend` -- the spec's three classifications. `None` for every other outcome.
 TREND_IMPROVING = "improving"
 TREND_WORSENING = "worsening"
 TREND_STABLE = "stable"
 
 TREND_VALUES = (TREND_IMPROVING, TREND_WORSENING, TREND_STABLE)
 
-#: `direction` -- pure arithmetic. Says nothing about better or worse.
 DIRECTION_RISING = "rising"
 DIRECTION_FALLING = "falling"
 DIRECTION_UNCHANGED = "unchanged"
 
 DIRECTION_VALUES = (DIRECTION_RISING, DIRECTION_FALLING, DIRECTION_UNCHANGED)
 
-#: `outcome` -- ALWAYS present. This is the field a consumer branches on.
-#: Exactly one outcome means `trend` is set; every other outcome means
-#: `trend is None` and says why, explicitly, rather than defaulting to stable.
 OUTCOME_TREND_CLASSIFIED = "TREND_CLASSIFIED"
 OUTCOME_INSUFFICIENT_DATA = "INSUFFICIENT_DATA"
 OUTCOME_CLINICAL_DIRECTION_UNKNOWN = "CLINICAL_DIRECTION_UNKNOWN"
@@ -123,19 +58,12 @@ OUTCOME_VALUES = (
     OUTCOME_NO_STABILITY_BAND,
 )
 
-#: Why one report contributes no point to one feature's series.
 GAP_REJECTED = "REJECTED"
 GAP_NOT_REPORTED = "NOT_REPORTED"
 GAP_UNUSABLE = "UNUSABLE"
 GAP_NON_NUMERIC_VALUE = "NON_NUMERIC_VALUE"
 GAP_NON_FINITE_VALUE = "NON_FINITE_VALUE"
 GAP_QUESTIONABLE_EXCLUDED = "QUESTIONABLE_EXCLUDED"
-#: A finite number outside the physiologically possible band Module 6 states
-#: for this feature. Normally unreachable: the `validated` input path drops
-#: rejected values at the parse boundary, so Module 6 has already removed
-#: these. It IS reachable through the `snapshot` path, which accepts a
-#: `FeatureSnapshot` posted directly with no validation behind it -- an audit
-#: classified `hba1c -1.0 -> -2.0` as `improving` through exactly that door.
 GAP_IMPLAUSIBLE_VALUE = "IMPLAUSIBLE_VALUE"
 
 OUTCOME_DESCRIPTIONS: Dict[str, str] = {
@@ -195,11 +123,6 @@ def utcnow() -> datetime:
 
 
 def _as_utc(value: Optional[datetime]) -> Optional[datetime]:
-    """Naive datetimes are read as UTC, as `SnapshotIdentity` already does.
-
-    A mix of naive and aware datetimes raises at COMPARISON time, i.e. in the
-    middle of a sort, rather than at the point of the mistake.
-    """
     if value is None:
         return None
     if value.tzinfo is None:
@@ -207,23 +130,7 @@ def _as_utc(value: Optional[datetime]) -> Optional[datetime]:
     return value.astimezone(timezone.utc)
 
 
-# --------------------------------------------------------------------------
-# Request
-# --------------------------------------------------------------------------
-
-
 class TimelineReportInput(BaseModel):
-    """ONE report's contribution to the timeline.
-
-    `chrono_date` is the ordering key and mirrors the backend's
-    `Report.chronoDate`. It is REQUIRED: a report with no date has no place on
-    a timeline, and inventing one (from upload order, say) would silently
-    fabricate the ordering the whole module depends on.
-
-    Supply the features EITHER as `validated` (Module 6's `data` object) OR as
-    `snapshot` (a Module 7 `FeatureSnapshot`). Supplying both is a 422 --
-    nothing is guessed.
-    """
 
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
@@ -255,18 +162,11 @@ class TimelineReportInput(BaseModel):
     @field_validator("chrono_date")
     @classmethod
     def _tz_aware(cls, v: datetime) -> datetime:
-        return _as_utc(v)  # type: ignore[return-value]
+        return _as_utc(v)
 
     @model_validator(mode="before")
     @classmethod
     def _accept_report_ref(cls, value: Any) -> Any:
-        """`report_ref` is accepted as a synonym of `report_id`.
-
-        Module 7's `SnapshotIdentity` calls it `report_ref`; the spec calls it a
-        report id. Both names reach the same field rather than one of them
-        silently producing a validation error against a payload the backend
-        already knows how to build.
-        """
         if not isinstance(value, dict):
             return value
         out = dict(value)
@@ -287,7 +187,6 @@ class TimelineReportInput(BaseModel):
 
 
 class TimelineOptions(BaseModel):
-    """Analysis options. Every one of them narrows; none of them invents."""
 
     model_config = ConfigDict(extra="ignore")
 
@@ -324,20 +223,11 @@ class TimelineOptions(BaseModel):
                 f"not canonical features: {sorted(set(unknown))}. See "
                 "GET /api/v1/features/catalog."
             )
-        # De-duplicated, catalog order -- so the response key order does not
-        # depend on how the caller happened to type the list.
         chosen = set(v)
         return [name for name in CANONICAL_FEATURES if name in chosen]
 
 
 class TimelineTrendsRequest(BaseModel):
-    """Analyse one patient's feature history.
-
-    The reports array may arrive in ANY order; it is sorted here by
-    `chrono_date`. Ties break on `sequence` when supplied, then on `report_id`
-    -- both properties of the data, so two calls with the same reports in a
-    different array order produce byte-identical output.
-    """
 
     model_config = ConfigDict(extra="ignore")
 
@@ -356,7 +246,6 @@ class TimelineTrendsRequest(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _unwrap(cls, value: Any) -> Any:
-        """Accept `{"data": {...}}` so a relayed envelope is not an empty run."""
         if not isinstance(value, dict):
             return value
         if "reports" in value:
@@ -385,17 +274,7 @@ class TimelineTrendsRequest(BaseModel):
         return self
 
 
-# --------------------------------------------------------------------------
-# Response -- series
-# --------------------------------------------------------------------------
-
-
 class TimelinePoint(BaseModel):
-    """One usable reading of one feature, at one report.
-
-    A point exists ONLY when the report actually carried a usable value for
-    this feature. There is no such thing as an interpolated point.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -419,12 +298,6 @@ class TimelinePoint(BaseModel):
 
 
 class TimelineGap(BaseModel):
-    """A report that contributes NO point for this feature, and why.
-
-    HAS NO `value` FIELD, deliberately and structurally -- the same guarantee
-    `app.schemas.repository.UnavailableFeature` makes. A gap can never be read
-    as a zero, and no code path can later 'fill it in'.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -439,15 +312,6 @@ class TimelineGap(BaseModel):
 
 
 class TrendChange(BaseModel):
-    """The magnitude of the change, first usable point to last usable point.
-
-    Net change is used rather than a fitted slope: it is the quantity the
-    specification's own worked example describes, it is exactly reproducible by
-    hand from `points`, and it cannot overstate confidence the way a regression
-    line drawn through three readings can. `direction_consistency` and
-    `volatile` are supplied so a caller can SEE when the net change hides a
-    reversal, instead of the classification quietly absorbing it.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -485,7 +349,6 @@ class TrendChange(BaseModel):
 
 
 class AppliedPolarity(BaseModel):
-    """The polarity declaration used, echoed so the answer is checkable."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -501,7 +364,6 @@ class AppliedPolarity(BaseModel):
 
 
 class AppliedStability(BaseModel):
-    """The stability band used, and whether the change cleared it."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -517,12 +379,6 @@ class AppliedStability(BaseModel):
 
 
 class FeatureTrend(BaseModel):
-    """The full answer for ONE canonical feature.
-
-    Branch on `outcome`. `trend` is non-null for exactly one outcome value,
-    `TREND_CLASSIFIED`; for every other outcome it is `None` and `outcome`
-    plus `reason` say why. `trend` is never `stable` by default.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -584,12 +440,6 @@ class FeatureTrend(BaseModel):
 
     @model_validator(mode="after")
     def _trend_only_when_classified(self) -> "FeatureTrend":
-        """The structural half of "stable is earned".
-
-        A `trend` set alongside any outcome other than TREND_CLASSIFIED, or a
-        TREND_CLASSIFIED with no trend, is a contradiction -- and it is caught
-        here rather than being shipped to a dashboard that would render it.
-        """
         if self.outcome == OUTCOME_TREND_CLASSIFIED and self.trend is None:
             raise ValueError("TREND_CLASSIFIED requires a trend")
         if self.outcome != OUTCOME_TREND_CLASSIFIED and self.trend is not None:
@@ -599,13 +449,7 @@ class FeatureTrend(BaseModel):
         return self
 
 
-# --------------------------------------------------------------------------
-# Response -- summary and envelope
-# --------------------------------------------------------------------------
-
-
 class TimelineReportRef(BaseModel):
-    """One report's position on the timeline. Identity and date only."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -618,7 +462,6 @@ class TimelineReportRef(BaseModel):
 
 
 class TimelineSummary(BaseModel):
-    """Counts only -- no values. Safe to render as a headline."""
 
     model_config = ConfigDict(extra="forbid")
 

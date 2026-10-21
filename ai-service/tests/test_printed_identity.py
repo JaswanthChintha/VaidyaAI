@@ -1,12 +1,3 @@
-"""The patient's sex and age AS PRINTED -- and still never the name.
-
-Added 2026-09-24. Every analysis used the ACCOUNT PROFILE's age and sex and
-never the report's, so a 34-year-old woman's report on a "20, male" account
-was judged with male thresholds, and compared with a 63-year-old man's as one
-person's history. Module 4 now copies the printed sex and age; the backend
-reads them, compares them, and warns.
-"""
-
 from __future__ import annotations
 
 import io
@@ -34,8 +25,6 @@ def test_the_printed_sex_and_age_reach_the_contract_verbatim(client_factory):
 
 
 def test_not_printed_is_null_and_the_key_is_still_there(client_factory):
-    """The KEY is how the backend tells "the report does not print it" from
-    "this extraction predates the field": an old stored extraction has no key."""
     metadata = upload(client_factory(), make_synthetic_pdf(1)).json()["data"]["report_metadata"]
     assert "patient_sex" in metadata and metadata["patient_sex"] is None
     assert "patient_age" in metadata and metadata["patient_age"] is None
@@ -81,12 +70,10 @@ def test_the_model_is_asked_for_both_and_never_for_a_name():
     props = gemini_response_schema()["properties"]
     assert props["patient_sex"] == {"type": "string", "nullable": True}
     assert props["patient_age"] == {"type": "string", "nullable": True}
-    # The laboratory's name and the name's PRESENCE -- and no other name.
     assert {key for key in props if "name" in key} == {"lab_name", "patient_name_present"}
 
     prompt = build_page_prompt(1, 1)
     assert "`patient_sex`" in prompt and "`patient_age`" in prompt
-    # The three ways a model could invent a sex or an age, each forbidden.
     assert "Do not infer it from the name" in prompt
     assert "sex-specific reference ranges" in prompt
     assert "Do not compute it from a date of birth" in prompt

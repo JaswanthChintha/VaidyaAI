@@ -1,22 +1,3 @@
-"""Module 12 -- the Kidney Disease Predictor.
-
-THESE TESTS LOAD THE PERSISTED ARTIFACT. They never fit a model. If
-`ml/artifacts/kidney_rf_v1.joblib` is missing, run `python ml/train_kidney.py`;
-training inside a test run would make these numbers unfalsifiable.
-
-No API key and no network are needed.
-
-Two groups of tests carry most of the weight here:
-
-  * THE SKIP. Spec Module 12's headline feature. Asserted on the decision's
-    STATUS, RISK and CONFIDENCE, because an under-informed prediction rendered
-    as a reassuring "Low" is the failure `app/schemas/decisions.py` calls the
-    most dangerous one this type can have.
-  * THE TRI-STATE. Asserted on the ACTUAL DataFrame handed to the pipeline,
-    not on metadata and not on a comment. "Nobody asked" silently becoming
-    "no hypertension" produces a perfectly plausible-looking prediction.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -51,10 +32,6 @@ from app.schemas.decisions import (
 
 pytestmark = pytest.mark.filterwarnings("ignore::UserWarning")
 
-
-# --------------------------------------------------------------------------
-# Fixtures -- small hand-written feature maps. NOT training data.
-# --------------------------------------------------------------------------
 
 HIGH_RISK = {
     "creatinine": 4.6,
@@ -92,11 +69,6 @@ def _frame(predictor: KidneyPredictor, features: dict):
     variant, _ = predictor.select_variant(features)
     frame, trace = predictor._model_row(features, variant)
     return variant, frame, trace
-
-
-# --------------------------------------------------------------------------
-# The artifact exists, is loadable, and matches its metrics document
-# --------------------------------------------------------------------------
 
 
 def test_the_committed_artifact_loads(predictor, bundle):
@@ -139,7 +111,6 @@ def test_the_full_spec_metric_set_is_recorded(bundle):
 
 
 def test_the_small_sample_caveat_travels_with_the_numbers(bundle):
-    """400 rows. A metric without its uncertainty invites over-reading."""
     for name, spec in bundle.variants.items():
         assert "n=100" in spec["metrics"]["small_sample_caveat"]
     assert "399-row" in bundle.get("honest_read")
@@ -160,13 +131,7 @@ def test_no_synthetic_or_resampled_rows_were_used(bundle):
     assert "none" in dataset["resampling"]
 
 
-# --------------------------------------------------------------------------
-# The malformed class label
-# --------------------------------------------------------------------------
-
-
 def test_the_malformed_label_row_was_dropped_not_repaired(bundle):
-    """`ckd` 250 / `notckd` 149 / `no` 1. Guessing the label is fabrication."""
     dataset = bundle.get("dataset")
     assert dataset["raw_class_counts"]["no"] == 1
     assert dataset["malformed_label_rows_dropped"] == 1
@@ -177,7 +142,6 @@ def test_the_malformed_label_row_was_dropped_not_repaired(bundle):
 
 
 def test_missingness_was_imputed_not_dropped(bundle):
-    """1,013 missing cells across 400 rows -- dropping them would gut the file."""
     dataset = bundle.get("dataset")
     assert dataset["missing_cells_total_raw"] > 1000
     assert dataset["missing_cells_in_used_features"]["hemoglobin"] == 52
@@ -194,13 +158,7 @@ def test_the_units_match_the_feature_catalogue_without_conversion(bundle):
     assert bundle.get("dataset")["unit_conversion"].startswith("none")
 
 
-# --------------------------------------------------------------------------
-# THE TRI-STATE. ASSERTED ON THE REAL MATRIX.
-# --------------------------------------------------------------------------
-
-
 def test_an_absent_hypertension_is_absent_from_the_model_matrix(predictor):
-    """THE test of this module. Absent must NEVER become 'no'."""
     features = {k: v for k, v in HIGH_RISK.items() if k != TRI_STATE_HYPERTENSION}
     variant, frame, trace = _frame(predictor, features)
     assert variant == "without_hypertension"
@@ -209,12 +167,10 @@ def test_an_absent_hypertension_is_absent_from_the_model_matrix(predictor):
         "creatinine", "hemoglobin", "blood_glucose", "age",
     ]
     assert trace[TRI_STATE_HYPERTENSION]["status"] == "not_asserted"
-    # And nothing anywhere in the row stands in for the missing answer.
     assert "no" not in [str(v) for v in frame.iloc[0].tolist()]
 
 
 def test_an_explicit_false_IS_included_as_a_real_answer(predictor):
-    """'No, I do not have hypertension' is information. Not the same as absent."""
     variant, frame, trace = _frame(predictor, dict(HIGH_RISK, hypertension=False))
     assert variant == "with_hypertension"
     assert frame[TRI_STATE_HYPERTENSION].iloc[0] == HYPERTENSION_LEVELS[False] == "no"
@@ -230,7 +186,6 @@ def test_an_explicit_true_reaches_the_model_as_yes(predictor):
 
 @pytest.mark.parametrize("junk", [0, 1, "no", "yes", "false", "unknown", "", None])
 def test_a_non_boolean_tri_state_is_treated_as_unknown_never_coerced(predictor, junk):
-    """`bool("false")` is True and `bool(0)` is False. Both fabricate an answer."""
     variant, frame, _ = _frame(predictor, dict(HIGH_RISK, hypertension=junk))
     assert variant == "without_hypertension", junk
     assert TRI_STATE_HYPERTENSION not in frame.columns, junk
@@ -263,15 +218,9 @@ def test_the_tri_state_policy_is_recorded_in_the_artifact(bundle):
 
 
 def test_a_boolean_never_leaks_into_a_numeric_column(predictor):
-    """isinstance(True, int) is True; without the guard it becomes 1.0."""
     _, frame, trace = _frame(predictor, dict(HIGH_RISK, creatinine=True))
     assert trace["creatinine"]["status"] == "imputed"
     assert frame["creatinine"].isna().iloc[0]
-
-
-# --------------------------------------------------------------------------
-# INFORMATION SUFFICIENCY -- spec Module 12's headline feature
-# --------------------------------------------------------------------------
 
 
 def test_required_features_are_the_load_bearing_pair(predictor):
@@ -283,7 +232,6 @@ def test_required_features_are_the_load_bearing_pair(predictor):
 
 @pytest.mark.parametrize("missing", ["creatinine", "hemoglobin"])
 def test_missing_either_required_feature_skips_the_prediction(predictor, missing):
-    """The spec's own words: skip rather than blindly producing a result."""
     features = {k: v for k, v in HIGH_RISK.items() if k != missing}
     decision = predictor.predict(features)
     assert decision.status is DecisionStatus.INSUFFICIENT_DATA
@@ -295,7 +243,6 @@ def test_missing_either_required_feature_skips_the_prediction(predictor, missing
 
 @pytest.mark.parametrize("optional", ["blood_glucose", "age", "hypertension"])
 def test_missing_an_optional_feature_still_produces_a_prediction(predictor, optional):
-    """A predictor that skips too eagerly is not safer, only silent."""
     features = {k: v for k, v in HIGH_RISK.items() if k != optional}
     decision = predictor.predict(features)
     assert decision.status is not DecisionStatus.INSUFFICIENT_DATA
@@ -303,7 +250,6 @@ def test_missing_an_optional_feature_still_produces_a_prediction(predictor, opti
 
 
 def test_the_sufficiency_boundary_is_exactly_the_two_required_features(predictor):
-    """One step either side of the line."""
     exactly_enough = {"creatinine": 4.6, "hemoglobin": 8.9}
     decision = predictor.predict(exactly_enough)
     assert decision.status is not DecisionStatus.INSUFFICIENT_DATA
@@ -345,7 +291,6 @@ def test_the_skip_names_the_missing_feature_in_evidence(predictor):
 
 
 def test_a_skip_is_still_a_decision_so_the_topic_is_never_silent(predictor):
-    """`Kidney Disease` is always_assessed; silence would read as 'nothing found'."""
     assert C.CONDITIONS[C.KIDNEY_DISEASE].always_assessed is True
     decision = predictor.predict({})
     assert isinstance(decision, ClinicalDecision)
@@ -362,14 +307,11 @@ def test_an_unreadable_document_changes_the_wording_of_the_skip(predictor):
 
 
 def test_the_sufficiency_rule_is_backed_by_measured_numbers(bundle):
-    """The rule must rest on evidence, not on intuition."""
     evidence = bundle.get("sufficiency_evidence")
     subsets = evidence["subsets"]
     assert subsets["creatinine+hemoglobin"] > 0.95
-    # Every single-feature model is materially worse than the required pair.
     for single in ("creatinine", "hemoglobin", "blood_glucose", "age"):
         assert subsets[single] < subsets["creatinine+hemoglobin"]
-    # And blanking a required input at RUN TIME costs more than any optional.
     blanked = evidence["imputed_at_prediction_time"]["blanked"]
     assert blanked["hemoglobin"]["delta"] < blanked["age"]["delta"]
     assert blanked["hemoglobin"]["delta"] < blanked["hypertension"]["delta"]
@@ -382,11 +324,6 @@ def test_an_unavailable_model_skips_rather_than_predicting_or_crashing():
     assert decision.status is DecisionStatus.INSUFFICIENT_DATA
     assert decision.risk is None
     assert decision.metadata["skipped_reason"] == "model_unavailable"
-
-
-# --------------------------------------------------------------------------
-# Imputation of optional numerics
-# --------------------------------------------------------------------------
 
 
 def test_a_missing_optional_numeric_is_left_for_the_median_imputer(predictor):
@@ -414,11 +351,6 @@ def test_unparseable_numeric_falls_back_to_imputation_rather_than_crashing(predi
     decision = predictor.predict(dict(HIGH_RISK, blood_glucose="not a number"))
     assert decision.status is not DecisionStatus.INSUFFICIENT_DATA
     assert decision.metadata["features_imputed"] == ["blood_glucose"]
-
-
-# --------------------------------------------------------------------------
-# Risk bands
-# --------------------------------------------------------------------------
 
 
 def test_band_boundaries_are_inclusive_at_the_lower_edge(predictor):
@@ -449,7 +381,6 @@ def test_the_shipped_thresholds_are_the_ones_the_bands_use(predictor, bundle):
         assert 0.0 < borderline < indicated < 1.0
         assert spec["thresholds"]["indicated_minimum_recall"] == 0.98
         assert spec["thresholds"]["borderline_minimum_recall"] == 0.99
-        # The rule Module 10 uses is recorded, and is non-binding here.
         assert spec["thresholds"]["module_10_rule_would_give"] is not None
         assert (
             spec["thresholds"]["indicated_precision_achieved"]
@@ -458,7 +389,6 @@ def test_the_shipped_thresholds_are_the_ones_the_bands_use(predictor, bundle):
 
 
 def test_the_borderline_band_is_not_collapsed_onto_the_indicated_one(bundle):
-    """The degenerate case the criteria were changed to avoid."""
     for name, spec in bundle.variants.items():
         assert spec["thresholds"]["borderline"] < spec["thresholds"]["indicated"]
 
@@ -478,18 +408,11 @@ def test_a_clearly_healthy_profile_is_not_indicated_and_low(predictor):
 
 
 def test_predictions_are_deterministic(predictor):
-    """The band a reader sees is identical; the float may differ by one ulp
-    because the forest sums 300 tree votes across worker threads."""
     first = predictor.predict(dict(HIGH_RISK))
     second = predictor.predict(dict(HIGH_RISK))
     assert first.confidence == pytest.approx(second.confidence, abs=1e-12)
     assert first.status is second.status
     assert first.metadata["risk_band"] == second.metadata["risk_band"]
-
-
-# --------------------------------------------------------------------------
-# The decision contract
-# --------------------------------------------------------------------------
 
 
 def test_the_model_reports_the_canonical_condition_byte_for_byte(predictor):
@@ -517,7 +440,6 @@ def test_every_decision_says_it_is_a_likelihood(predictor):
 
 
 def test_the_decision_carries_module_16s_own_basis_vocabulary(predictor):
-    """A skip must not claim `model_probability`: no model ran."""
     from app.schemas.fusion import BASIS_MODEL_PROBABILITY, BASIS_NOT_ASSESSED
 
     assessed = predictor.predict(dict(HIGH_RISK))
@@ -527,13 +449,7 @@ def test_the_decision_carries_module_16s_own_basis_vocabulary(predictor):
     assert skipped.metadata[ASSESSMENT_BASIS_KEY] == BASIS_NOT_ASSESSED
 
 
-# --------------------------------------------------------------------------
-# Evidence
-# --------------------------------------------------------------------------
-
-
 def test_evidence_names_the_features_the_spec_calls_for(predictor):
-    """Spec Module 12: creatinine, haemoglobin, blood glucose, age, hypertension."""
     decision = predictor.predict(dict(HIGH_RISK))
     assert set(decision.evidence_features()) == {
         "creatinine", "hemoglobin", "blood_glucose", "age", "hypertension",
@@ -581,7 +497,6 @@ def test_feature_importance_is_labelled_global_and_never_per_patient(predictor):
 
 
 def test_a_clinically_extreme_low_haemoglobin_is_described_as_low(predictor):
-    """Wording matters: 'far above the usual range' would be simply wrong."""
     context = PredictionContext(clinically_extreme=frozenset({"hemoglobin"}))
     decision = predictor.predict(dict(HIGH_RISK), context=context)
     item = [e for e in decision.evidence if e.feature == "hemoglobin"][0]
@@ -595,11 +510,6 @@ def test_questionable_input_is_carried_into_evidence_and_recommendations(predict
     assert "INPUT_QUALITY_CAVEAT" in [r.code for r in decision.recommendations]
 
 
-# --------------------------------------------------------------------------
-# Metadata and honesty about the model
-# --------------------------------------------------------------------------
-
-
 def test_metadata_carries_model_provenance(predictor):
     decision = predictor.predict(dict(HIGH_RISK))
     model = decision.metadata["model"]
@@ -607,7 +517,6 @@ def test_metadata_carries_model_provenance(predictor):
     assert model["algorithm"] == "RandomForestClassifier"
     assert model["dataset_sha256"]
     assert model["malformed_label_rows_dropped"] == 1
-    # The 19 kidney parameters VaidyaAI cannot supply are named, not hidden.
     assert "bu" in model["kidney_parameters_unavailable_to_vaidyaai"]
 
 
@@ -615,15 +524,6 @@ def test_the_decision_does_not_overstate_a_tiny_dataset(predictor):
     decision = predictor.predict(dict(HIGH_RISK))
     reference = decision.metadata["model_performance_reference"]
     assert reference["roc_auc"] > 0.95
-    # THE SMALL-SAMPLE FACT, not one phrasing of it and not the count.
-    #
-    # This asserted the literal "399 rows", then "399". The note no longer
-    # carries the count at all: a clinician reads it on the doctor summary and
-    # the dataset arithmetic is the EVIDENCE for the caveat rather than the
-    # caveat. The invariant is unchanged and is what the count was a proxy for
-    # -- a near-perfect metric must never appear without the fact that the
-    # dataset was small and the accuracy does not transfer. The exact figures
-    # stay in the artifact metrics, whose audience is a model reviewer.
     honest = reference["honest_read"]
     lowered_note = honest.lower()
     assert any(word in lowered_note for word in ("small", "tiny", "limited")), honest
@@ -635,11 +535,6 @@ def test_band_meaning_states_the_measured_positive_rate(predictor):
     for features in (HIGH_RISK, LOW_RISK):
         decision = predictor.predict(dict(features))
         assert "%" in decision.metadata["band_meaning"]
-
-
-# --------------------------------------------------------------------------
-# Recommendations -- catalogue codes only
-# --------------------------------------------------------------------------
 
 
 def test_every_recommendation_resolves_to_a_catalogue_code(predictor):
@@ -683,11 +578,6 @@ def test_the_decision_never_asserts_a_diagnosis(predictor):
             assert scan_text(recommendation.text) == []
 
 
-# --------------------------------------------------------------------------
-# Serialisation and privacy
-# --------------------------------------------------------------------------
-
-
 def test_decisions_round_trip_through_json(predictor):
     for features in (HIGH_RISK, LOW_RISK, {}):
         decision = predictor.predict(dict(features))
@@ -715,14 +605,6 @@ def test_metadata_contains_no_raw_report_text(predictor):
         assert forbidden not in blob
 
 
-# --------------------------------------------------------------------------
-# The note's audience
-# --------------------------------------------------------------------------
-
-#: Vocabulary that belongs to whoever trained the model, not to the clinician
-#: the doctor summary is addressed to. `honest_read` is rendered VERBATIM on
-#: that page (Module 32), so this is the only layer that can keep it readable:
-#: a check in the frontend runs against a fixture and cannot see this string.
 MODEL_REVIEWER_VOCABULARY = (
     "roc-auc",
     "roc auc",
@@ -740,13 +622,6 @@ MODEL_REVIEWER_VOCABULARY = (
 
 
 def test_the_honest_read_is_written_for_a_clinician(predictor):
-    """The caveat is worth nothing to a reader who stops at the vocabulary.
-
-    It is rendered verbatim on the document a patient hands to a clinician, and
-    a clinician is not obliged to know what a ROC-AUC is. Every FACT stays --
-    the dataset size, the easy separation, the fragility of the test split --
-    only the register changed.
-    """
     decision = predictor.predict(dict(HIGH_RISK))
     honest = decision.metadata["model_performance_reference"]["honest_read"]
     lowered = honest.lower()
@@ -754,15 +629,7 @@ def test_the_honest_read_is_written_for_a_clinician(predictor):
     offenders = [word for word in MODEL_REVIEWER_VOCABULARY if word in lowered]
     assert not offenders, f"{offenders} in: {honest}"
 
-    # ...and the substance did not go with the jargon. Not the COUNT: the
-    # dataset arithmetic is the evidence for the caveat, not the caveat, and a
-    # clinician acts on the smallness rather than on 399.
     assert any(word in lowered for word in ("small", "tiny", "limited")), honest
-    # THE DIRECTION OF THE CLAIM, not just the phrase. Asserting that
-    # "screening population" appears passes just as happily for "it HOLDS in a
-    # screening population" -- the inversion of the one thing this note exists
-    # to say about a near-perfect number. Several phrasings are allowed so the
-    # sentence can still be reworded; the negation cannot be dropped.
     assert any(
         phrase in lowered
         for phrase in (

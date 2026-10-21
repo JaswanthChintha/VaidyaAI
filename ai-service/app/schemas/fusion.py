@@ -1,58 +1,3 @@
-"""The Module 15 (Decision Engine) and Module 16 (Fusion Engine) contract.
-
-Like Modules 8 and 9/10, nothing here redefines, subclasses or wraps
-`ClinicalDecision`. The Module 14 object is the currency; these types describe
-how a *set* of them is organised, grouped and fused.
-
-==========================================================================
-THE REQUEST SHAPE IS INHERITED, FOR THE SAME REASON MODULE 9's IS
-==========================================================================
-
-`DecisionFusionRequest` SUBCLASSES `RuleEvaluationRequest` and adds nothing, so
-`POST /api/v1/decisions/fuse` accepts byte-for-byte what
-`POST /api/v1/rules/evaluate` and `POST /api/v1/ml/predict` accept, and rejects
-the same ambiguities with the same 422s. Re-implementing the unwrap logic would
-let the tolerances drift, and the failure mode of a drift is not an error -- it
-is an HTTP 200 carrying `fused: []`.
-
-==========================================================================
-TWO LAYERS, DELIBERATELY SEPARATE
-==========================================================================
-
-    evaluate_rules() ─┐
-                      ├─> collect_decisions()  ─> fuse_decisions() ─> report
-    predict_all()   ──┘        (Module 15)          (Module 16)
-
-Module 15 is "an intermediate decision management layer before fusion" (spec).
-Its job is NOT to merge across analytical approaches -- that is fusion's -- but
-to collect, identify and GROUP BY ``(condition, source)``.
-
-WHY THE GROUPING LIVES IN MODULE 15 AND NOT IN MODULE 8
--------------------------------------------------------
-The rule engine legitimately emits MORE THAN ONE decision for one condition
-from one source. A patient with HbA1c 6.8 and fasting glucose 112 gets
-``Diabetes / Indicated / High`` from the HbA1c rule AND
-``Diabetes / Borderline / Medium`` from the glucose rule. That is correct: the
-unit of a rule decision is one RULE, not one condition, which is exactly what
-makes per-rule traceability possible.
-
-But handed straight to fusion those two produce
-``sources = ["Clinical Rule Engine", "Clinical Rule Engine"]``, double-weight
-the condition in Module 19's prioritisation, and render two contradictory cards
-on one dashboard. So they are collapsed HERE, upstream of fusion and downstream
-of the rule engine, where neither of those modules has to change.
-
-==========================================================================
-STABLE DECISION IDS
-==========================================================================
-
-Every collected decision is given a deterministic id built from its origin,
-condition and the rule id or predictor name that produced it. Ids are stable
-across runs for the same input, which is what lets Module 20 trace a fused
-finding back to the exact rule or model -- and lets a reviewer diff two runs.
-Nothing random, nothing time-based: a UUID would make the grouping unauditable.
-"""
-
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
@@ -69,35 +14,17 @@ from app.schemas.features import StageWarning, UpstreamExtraction
 from app.schemas.rules import RuleEvaluationRequest
 from app.schemas.validation import FeatureValidationSummary
 
-#: Stage identifiers stamped on each layer's own warnings.
 STAGE_DECISIONS = "decisions"
 DECISIONS_MODULE = 15
 STAGE_FUSION = "fusion"
 FUSION_MODULE = 16
 
 
-# --------------------------------------------------------------------------
-# Assessment basis -- the "Heart Disease means two things" hazard
-# --------------------------------------------------------------------------
-#
-# `Heart Disease` is emitted by the composite clinical rule as a COUNT OF
-# RECORDED RISK FACTORS, and by Module 11's predictor as an ESTIMATED
-# LIKELIHOOD. Both are legitimately about the same topic, so they must still
-# fuse -- renaming either would break fusion, which is the one thing Module 16
-# exists to do. What must NOT happen is the two being blended into a single
-# sentence that reads as though one number meant the other.
-#
-# So the basis travels with each contribution, machine-readable, and a fused
-# decision whose contributions disagree about the basis is FLAGGED. Module 17
-# renders the contributions separately in that case instead of one merged
-# claim, and Module 20 has the label it needs to say which question was asked.
-
 BASIS_THRESHOLD = "threshold_comparison"
 BASIS_RISK_FACTOR_COUNT = "risk_factor_count"
 BASIS_MODEL_PROBABILITY = "model_probability"
 BASIS_NOT_ASSESSED = "not_assessed"
 
-#: The QUESTION each basis answers.
 FAMILY_MEASURED_VALUE = "measured_value"
 FAMILY_RISK_FACTOR_BURDEN = "risk_factor_burden"
 FAMILY_ESTIMATED_LIKELIHOOD = "estimated_likelihood"
@@ -110,26 +37,8 @@ BASIS_FAMILY: Dict[str, str] = {
     BASIS_NOT_ASSESSED: FAMILY_NONE,
 }
 
-#: NOT every pair of families conflicts, and over-flagging would be its own
-#: defect -- a caveat attached to every fused decision is a caveat nobody
-#: reads.
-#:
-#: A threshold comparison on HbA1c and a model's probability of diabetes are
-#: two METHODS of answering ONE question ("what is this patient's glycaemic
-#: status?"). Combining them is the entire point of a hybrid system, and
-#: flagging that pair as a conflict would flag the normal case.
-#:
-#: A RISK-FACTOR COUNT is different in kind. "Three or more major
-#: cardiovascular risk factors were counted" is a statement about BURDEN -- how
-#: many adverse things are on record -- not about how likely the condition is.
-#: Presenting it interchangeably with a model's likelihood tells the reader
-#: that a tally was a probability. So the burden family, and only the burden
-#: family, conflicts with anything else.
 CONFLICTING_FAMILY = FAMILY_RISK_FACTOR_BURDEN
 
-#: Fixed, reviewed, user-facing wording -- never composed at runtime, and
-#: scanned by the recommendation catalogue's safety scanner at import time (see
-#: `_self_check` below), exactly as Module 8's band labels are.
 BASIS_CONFLICT_NOTE = (
     "The analyses contributing to this topic answer different questions: one "
     "counts recorded risk factors, the other estimates a statistical "
@@ -137,10 +46,6 @@ BASIS_CONFLICT_NOTE = (
     "not interchangeable and one does not confirm the other."
 )
 
-
-# --------------------------------------------------------------------------
-# Overall health status (spec Module 18)
-# --------------------------------------------------------------------------
 
 STATUS_HEALTHY = "Healthy"
 STATUS_NEEDS_MONITORING = "Needs Monitoring"
@@ -153,31 +58,12 @@ OVERALL_STATUSES: Tuple[str, ...] = (
 )
 
 
-# --------------------------------------------------------------------------
-# Request
-# --------------------------------------------------------------------------
-
-
 class DecisionFusionRequest(RuleEvaluationRequest):
-    """Byte-for-byte the same accepted shapes as Modules 8 and 9. See above."""
 
     model_config = ConfigDict(extra="ignore")
 
 
-# --------------------------------------------------------------------------
-# Module 15 -- collection
-# --------------------------------------------------------------------------
-
-
 class SourceRunSummary(BaseModel):
-    """What one decision SOURCE did on this request.
-
-    Present for every source the Decision Engine tried, including one that
-    FAILED. `failed: true` with `decision_count: 0` is not the same as a source
-    that ran and produced nothing, and collapsing the two would let a crashed
-    predictor read as a clean result -- the same reasoning that makes the three
-    fusion conditions `always_assessed` in `app/data/conditions.py`.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -201,7 +87,6 @@ class SourceRunSummary(BaseModel):
 
 
 class CollectedDecision(BaseModel):
-    """One raw `ClinicalDecision` plus the identity Module 20 traces through."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -225,13 +110,6 @@ class CollectedDecision(BaseModel):
 
 
 class DecisionGroup(BaseModel):
-    """Every decision for one ``(condition, source)`` pair, collapsed to one.
-
-    THIS is the audit requirement from the integration audit. `member_count > 1`
-    is normal and correct for the rule engine; what matters is that fusion sees
-    ONE entry per source, so `sources` cannot repeat and Module 19 cannot
-    double-weight the condition.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -285,7 +163,6 @@ class DecisionCollectionSummary(BaseModel):
 
 
 class DecisionCollectionData(BaseModel):
-    """Module 15's output. The intermediate layer, before fusion."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -323,24 +200,10 @@ class DecisionCollectionData(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
     def raw_decisions(self) -> List[ClinicalDecision]:
-        """Every collected `ClinicalDecision`, ungrouped."""
         return [item.decision for item in self.collected]
 
 
-# --------------------------------------------------------------------------
-# Module 16 -- fusion
-# --------------------------------------------------------------------------
-
-
 class DecisionContribution(BaseModel):
-    """What ONE analytical source contributed to a fused decision.
-
-    Spec Module 16 point 6: "the system identifies the analytical sources
-    contributing to the final decision". This is that identification, kept
-    machine-readable so Module 20 can trace the fused finding back to the exact
-    rule or model and Module 17 can show a rule and a model side by side when
-    they answered different questions.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -366,7 +229,6 @@ class DecisionContribution(BaseModel):
 
 
 class FusedDecision(BaseModel):
-    """One condition, one consolidated decision, provenance intact."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -426,7 +288,6 @@ class FusedDecision(BaseModel):
 
 
 class PrioritizedCondition(BaseModel):
-    """One row of Module 19's priority list -- one CONDITION, never one decision."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -439,7 +300,6 @@ class PrioritizedCondition(BaseModel):
 
 
 class FusionSummary(BaseModel):
-    """Everything Modules 17, 18 and 19 need WITHOUT re-deriving it."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -453,7 +313,6 @@ class FusionSummary(BaseModel):
         "grouping and fusion absorbed. Non-zero is normal.",
     )
 
-    # -- Module 18 ------------------------------------------------------
     overall_status: Optional[str] = Field(
         default=None,
         description=(
@@ -490,14 +349,12 @@ class FusionSummary(BaseModel):
         default_factory=list, description="INSUFFICIENT_DATA."
     )
 
-    # -- Module 19 ------------------------------------------------------
     prioritized: List[PrioritizedCondition] = Field(
         default_factory=list,
         description="High -> Medium -> Low -> unassessed, then canonical "
         "condition order. ONE ROW PER CONDITION.",
     )
 
-    # -- provenance -----------------------------------------------------
     sources_used: List[str] = Field(default_factory=list)
     sources_failed: List[str] = Field(default_factory=list)
     basis_conflict_conditions: List[str] = Field(default_factory=list)
@@ -507,7 +364,6 @@ class FusionSummary(BaseModel):
 
 
 class DecisionFusionData(BaseModel):
-    """The `data` object of a successful fusion response."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -549,13 +405,7 @@ class DecisionFusionResponse(BaseModel):
     data: DecisionFusionData
 
 
-# --------------------------------------------------------------------------
-# Import-time enforcement
-# --------------------------------------------------------------------------
-
-
 def _self_check() -> None:
-    """Fail at import if the fixed user-facing wording is unsafe or drifts."""
     from app.data.recommendation_catalog import assert_safe
 
     assert_safe(BASIS_CONFLICT_NOTE, "fusion.BASIS_CONFLICT_NOTE")

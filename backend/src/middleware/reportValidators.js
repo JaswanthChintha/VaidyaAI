@@ -4,19 +4,6 @@ const { body, param, query } = require('express-validator');
 const { SORT_FIELDS, REPORT_STATUS_VALUES } = require('../models/Report');
 const Profile = require('../models/Profile');
 
-/**
- * Module 3 validators.
- *
- * The same rule Modules 1 and 2 document applies verbatim: every chain starts
- * with a type guard and `.bail()` before any sanitizer or comparison, so no
- * untyped value can reach a Mongo query. This matters more here than elsewhere
- * because multipart fields are parsed by multer AFTER `express-mongo-sanitize`
- * and `hpp()` have already run - those two middlewares see an empty body on an
- * upload request and protect nothing. The guards below are the only thing
- * standing between a multipart field and the database.
- *
- * Error messages are static and never echo the submitted value.
- */
 
 const PAGINATION = Object.freeze({
   defaultLimit: 20,
@@ -24,17 +11,10 @@ const PAGINATION = Object.freeze({
   maxPage: 10000,
 });
 
-/** Earliest plausible date on a lab report. Rejects typos like year 0201. */
 const MIN_REPORT_YEAR = 1900;
 
-/** Tolerance for a client clock running ahead of the server. */
 const FUTURE_SKEW_MS = 24 * 60 * 60 * 1000;
 
-/**
- * `reportDate` - the date printed on the lab report (optional).
- * Multipart fields are always strings, so this is a string chain even though
- * the stored value is a Date.
- */
 const reportDateField = body('reportDate')
   .optional()
   .isString()
@@ -61,14 +41,6 @@ const reportDateField = body('reportDate')
   .withMessage('Report date is not a valid date')
   .customSanitizer((value) => new Date(value));
 
-/*
- * WHOSE REPORT (2026-10-03). Shared by the upload form (multipart, so every
- * value arrives as a string) and PATCH /reports/:id/subject (JSON). Type
- * guard and `.bail()` first, as everywhere in this file. Age and sex are
- * accepted only for someone else's report; for one's own they would be a
- * second, competing copy of the profile, and are refused rather than ignored
- * so a client cannot believe they were stored.
- */
 const SUBJECT_OWNERS = Object.freeze(['self', 'other']);
 
 const subjectOwnerField = (required) => {
@@ -122,10 +94,8 @@ const uploadReportValidator = [
   subjectSexField,
 ];
 
-/** PATCH /reports/:id/subject -- whose report, changed after upload. */
 const reportSubjectValidator = [subjectOwnerField(true), subjectAgeField, subjectSexField];
 
-/** `:id` must be a 24-char hex ObjectId before it is allowed near a query. */
 const reportIdValidator = [
   param('id')
     .isString()
@@ -157,7 +127,6 @@ const listReportsValidator = [
     .bail()
     .toInt(),
 
-  // Allow-listed, never interpolated into a query from raw input.
   query('sort')
     .optional()
     .isString()

@@ -1,128 +1,3 @@
-"""Modules 17-20 -- the Clinical Report contract.
-
-    Module 16 fusion  ─>  Module 17 report  ─>  Module 27 dashboard
-                              │                 Module 32 doctor summary
-                              ├─ Module 18 overall health status
-                              ├─ Module 19 risk prioritisation
-                              └─ Module 20 evidence and explainability
-
-Spec Module 17: "The report is designed as a structured object so that the
-backend and frontend can consume the same standardized format." This file is
-that object, pydantic v2 enforced, so a renderer never has to re-derive
-anything and two renderers cannot derive it differently.
-
-Nothing here redefines `ClinicalDecision`, `FusedDecision` or `StageWarning`.
-The report is a VIEW: it re-shapes what Modules 15/16 already produced and
-attaches what only this layer can supply -- the laboratory values, the
-rejected-feature join, and the overall interpretation.
-
-==========================================================================
-MODULE 18 -- THE FOURTH CASE THE SPEC DOES NOT NAME
-==========================================================================
-
-The specification names three outcomes:
-
-    No abnormal findings              -> Healthy
-    Abnormal findings + no High risk  -> Needs Monitoring
-    Abnormal finding + High risk      -> Needs Medical Attention
-
-There is a fourth case, and it is the dangerous one: **nothing was assessed at
-all**. "No abnormal findings" is then VACUOUSLY TRUE -- a report whose every
-test was unreadable has no abnormal findings in exactly the way an empty set
-has no members. Rendering that as `Healthy` would tell a reader whose document
-could not be read that they are well. It is the same failure class as an
-`INSUFFICIENT_DATA` decision carrying a risk level, which
-`app/schemas/decisions.py` forbids at the type level and calls "the most
-dangerous failure mode this type can have".
-
-So this module adds a FOURTH outcome, `Not Assessed`, and never emits one of
-the spec's three when `any_assessed` is false. `OverallHealthStatus.status`
-keeps the spec's own vocabulary (`None` outside it, mirroring Module 16's
-`summary.overall_status`), while `status_label` is always renderable.
-
-THE FIFTH CASE -- PARTIAL ASSESSMENT -- IS HANDLED DIFFERENTLY, ON PURPOSE.
-When SOME topics could be assessed and others could not, the honest answer is
-not to invent a worse status: downgrading a clean partial report to
-`Needs Monitoring` would report a finding nobody found, which is its own
-fabrication. Instead the spec's status is kept and the incompleteness is made
-STRUCTURAL rather than editorial:
-
-    complete = False        machine-readable, cannot be missed by a renderer
-    caveat   = <fixed text> non-null exactly when complete is False
-    unassessed_conditions   named, so the gap is specific rather than vague
-
-    status_label            'Healthy (partial assessment)' for a clean partial
-                            result, so the label alone never reads as complete
-
-A renderer that shows `status_label` and ignores `complete` is still missing
-information, and the `caveat` being non-null is how a reviewer detects it --
-but the label no longer presents a one-test report as a full clean bill of
-health.
-
-==========================================================================
-MODULE 19 -- PRIORITY IS PER CONDITION, AND `Not Assessed` IS ITS OWN BAND
-==========================================================================
-
-Two rules, both from the integration audit:
-
-1. ONE ROW PER CONDITION. The rule engine legitimately emits several decisions
-   for one condition (HbA1c 6.8 AND fasting glucose 112 both produce a
-   `Diabetes` decision). Module 15 groups by `(condition, source)` and Module
-   16 fuses to one per condition, so prioritisation reads `fused` and NEVER
-   counts decisions. `PrioritizedFinding.contributing_decision_count` exists
-   for display only and is explicitly not an input to the ordering -- counting
-   it would give `Diabetes` double weight purely because two tests were
-   ordered.
-
-2. AN UNASSESSED CONDITION IS NOT A LOW-RISK CONDITION. It has `risk=None`; it
-   has no risk level at all. Sorting it beside genuinely low-risk findings
-   would bury an open question underneath settled ones. It therefore gets its
-   own band, `Not Assessed`, ordered:
-
-       flagged findings   High -> Medium -> Low     (real abnormal findings)
-       NOT ASSESSED                                  (open questions)
-       normal findings    High -> Medium -> Low     (assessed, nothing found)
-
-   A flagged low-risk finding still outranks an open question because it IS a
-   finding. A NORMAL finding does not, because "we looked and found nothing"
-   is settled and "we could not look" is not.
-
-==========================================================================
-MODULE 20 -- THE REJECTED-FEATURE JOIN
-==========================================================================
-
-Module 6 keeps a value it refuses to trust (`rejected`, with `reason_code` and
-`reason`) instead of deleting it, precisely so this layer can explain the
-exclusion. But Modules 8 and 9/10 do not parse `rejected` at all -- that
-absence is what makes "rules never consume a rejected value" structural -- so
-their evidence for such a feature says
-
-    "this value was not available in the submitted report"
-
-which is FACTUALLY WRONG. The value WAS in the report. It was read, and it was
-refused. The rejection reason reaches `all_warnings`, but nothing joined it to
-the evidence item.
-
-`EvidenceLine.availability` is that join. When a cited feature appears in
-Module 6's `rejected` map the line is `found_but_not_trusted`, carries the
-validator's own `reason_code`/`reason`, and says so -- never "it wasn't
-there". The two statements have different clinical consequences: "no
-creatinine was ordered" and "creatinine was printed in a unit we could not
-read" call for completely different next steps.
-
-==========================================================================
-ML EXPLANATIONS ARE NOT OVERSTATED
-==========================================================================
-
-Module 10/11/12 feature importances are GLOBAL, mean-impurity-decrease numbers
-measured over the whole training set, and each artifact says so in its own
-metadata. They rank features FOR THE MODEL and they order the evidence; they
-are NOT a per-patient reason. `MLExplanation.importance_is_per_patient` is a
-literal `False` in the wire format rather than a caveat buried in prose,
-because spec section 24 forbids unsupported certainty and a renderer that
-labels a global ranking "why you got this result" has produced exactly that.
-"""
-
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -148,37 +23,14 @@ from app.schemas.fusion import (
     STATUS_NEEDS_MONITORING,
 )
 
-#: The stage identifier Module 17 stamps on its OWN warnings, matching
-#: `STAGE_FUSION = "fusion"` in `app/schemas/fusion.py`.
 STAGE_REPORT = "report"
 REPORT_MODULE = 17
 
-# --------------------------------------------------------------------------
-# Module 18 -- overall health status, including the fourth case
-# --------------------------------------------------------------------------
 
-#: The fourth outcome. NOT one of the spec's three, deliberately: it must be
-#: impossible to mistake for `Healthy` by a renderer that only knows three.
 STATUS_NOT_ASSESSED = "Not Assessed"
 
-#: The FIFTH label (integration audit D4). A report in which exactly one normal
-#: HbA1c could be assessed used to return `status="Healthy"`,
-#: `status_label="Healthy"`, `risk=Low` -- byte-identical in all three fields to
-#: a report in which every topic was assessed and every one was clean.
-#: `complete=false`, the caveat and `unassessed_conditions` were all present and
-#: correct, so a renderer that reads them is fine; but the builder's claim that
-#: a label-only renderer "is demonstrably wrong" was not true, because nothing
-#: in the label showed the difference. Now it does.
-#:
-#: `status` is deliberately UNCHANGED at its spec value. The spec's three-value
-#: vocabulary keeps working for consumers that read `status`; only the always-
-#: renderable label carries the qualification. The word "Healthy" is kept in it
-#: so nobody reads the partial case as a fourth, worse finding -- nothing
-#: abnormal WAS found; the point is that less was looked at.
 STATUS_HEALTHY_PARTIAL = "Healthy (partial assessment)"
 
-#: The five labels a report can display. `OverallHealthStatus.status` holds
-#: only the spec's three (or None); `status_label` holds one of these five.
 OVERALL_STATUS_LABELS: Tuple[str, ...] = (
     STATUS_HEALTHY,
     STATUS_HEALTHY_PARTIAL,
@@ -187,15 +39,10 @@ OVERALL_STATUS_LABELS: Tuple[str, ...] = (
     STATUS_NOT_ASSESSED,
 )
 
-#: Which branch of the Module 18 rule fired. Machine-readable so a reviewer can
-#: audit the decision without re-running it, and so Module 27 can style the
-#: card without string-matching a label.
 RULE_NOTHING_ASSESSED = "nothing_assessed"
 RULE_NO_ABNORMAL_FINDINGS = "no_abnormal_findings"
 RULE_ABNORMAL_WITHOUT_HIGH_RISK = "abnormal_without_high_risk"
 RULE_ABNORMAL_WITH_HIGH_RISK = "abnormal_with_high_risk"
-#: Topics WERE judged, none flagged -- but every one of them from the details
-#: entered (BMI, age, sex), none from a test result on the report (2026-10-06).
 RULE_NO_LAB_RESULT_ASSESSED = "no_lab_result_assessed"
 
 OVERALL_STATUS_RULES: Tuple[str, ...] = (
@@ -206,18 +53,12 @@ OVERALL_STATUS_RULES: Tuple[str, ...] = (
     RULE_ABNORMAL_WITH_HIGH_RISK,
 )
 
-#: Fixed, reviewed, user-facing wording. Never composed at runtime, and scanned
-#: by the recommendation catalogue's safety scanner at import time -- the same
-#: treatment Module 8 gives its band labels and Module 16 its basis note.
 CAVEAT_NOTHING_ASSESSED = (
     "Nothing in this report could be assessed, so no overall health status is "
     "given. An absence of findings here is not a finding of good health: it "
     "means the analysis had nothing it could use."
 )
 
-#: A résumé uploaded on the live site (2026-10-06) read 0 results and was then
-#: called "Healthy -- Overall risk: Low" from BMI, age and sex alone. A clean
-#: result that no test result supports is not a statement about health.
 CAVEAT_NO_LAB_RESULT_ASSESSED = (
     "No test result on this report is one this tool assesses, so no overall "
     "health status is given. Any topic shown was judged only from the details "
@@ -247,7 +88,6 @@ OVERALL_STATUS_POLICY = (
 
 
 class OverallHealthStatus(BaseModel):
-    """Spec Module 18, plus the fourth case the spec does not name."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -309,15 +149,9 @@ class OverallHealthStatus(BaseModel):
     policy: str = OVERALL_STATUS_POLICY
 
 
-# --------------------------------------------------------------------------
-# Module 19 -- risk prioritisation
-# --------------------------------------------------------------------------
-
 PRIORITY_HIGH = "High"
 PRIORITY_MEDIUM = "Medium"
 PRIORITY_LOW = "Low"
-#: The fourth band. A condition with `risk=None` has NO risk level; it must not
-#: be filed under Low, where it would sort below settled findings.
 PRIORITY_NOT_ASSESSED = "Not Assessed"
 
 PRIORITY_BANDS: Tuple[str, ...] = (
@@ -327,8 +161,6 @@ PRIORITY_BANDS: Tuple[str, ...] = (
     PRIORITY_NOT_ASSESSED,
 )
 
-#: Ordering tiers. Lower sorts first. See the module docstring for why an
-#: unassessed condition sits above a NORMAL finding but below a FLAGGED one.
 TIER_FLAGGED = 0
 TIER_UNASSESSED = 1
 TIER_NORMAL = 2
@@ -346,7 +178,6 @@ PRIORITIZATION_POLICY = (
 
 
 class PrioritizedFinding(BaseModel):
-    """One row of Module 19's list. ONE CONDITION, never one decision."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -381,18 +212,11 @@ class PrioritizedFinding(BaseModel):
     )
 
 
-# --------------------------------------------------------------------------
-# Module 20 -- evidence and explainability
-# --------------------------------------------------------------------------
-
-#: The chain spec Module 20 requires the report to make visible.
 EVIDENCE_CHAIN: Tuple[str, str, str] = ("Input", "Evidence", "Decision")
 
-#: How a cited value stood in relation to the submitted document.
 AVAILABILITY_OBSERVED = "observed"
 AVAILABILITY_NOT_PRESENT = "not_present_in_report"
 AVAILABILITY_UNREADABLE = "unreadable_document"
-#: THE JOIN. Read, and refused. Never to be rendered as "not present".
 AVAILABILITY_FOUND_BUT_NOT_TRUSTED = "found_but_not_trusted"
 
 AVAILABILITY_VALUES: Tuple[str, ...] = (
@@ -450,12 +274,6 @@ EXPLAINABILITY_POLICY = (
 
 
 class EvidenceLine(BaseModel):
-    """One `Input -> Evidence -> Decision` line, ready to render.
-
-    Everything a renderer needs is a field. Nothing is prose that a consumer
-    would have to parse, and nothing about a value's provenance has to be
-    re-derived from a note string.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -491,7 +309,6 @@ class EvidenceLine(BaseModel):
     )
     source_stage: Optional[str] = None
 
-    # -- the Module 6 join ------------------------------------------------
     availability: str = Field(
         default=AVAILABILITY_OBSERVED,
         description="observed | not_present_in_report | unreadable_document | "
@@ -530,7 +347,6 @@ class EvidenceLine(BaseModel):
 
 
 class RuleExplanation(BaseModel):
-    """Spec Module 20 for a rule decision: value, condition, classification."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -551,18 +367,6 @@ class RuleExplanation(BaseModel):
 
 
 class MLExplanation(BaseModel):
-    """Spec Module 20 for an ML decision: model, prediction, probability, inputs.
-
-    `importance_is_per_patient` is a literal False on the wire. See the module
-    docstring: a global ranking presented as a personal reason is exactly the
-    unsupported certainty spec section 24 forbids.
-
-    `protected_namespaces=()` because the spec's own vocabulary for this
-    section is "Model source", "Prediction", "Probability" -- `model_name` and
-    `model_version` are the honest field names, and renaming them to dodge
-    pydantic's `model_` namespace warning would make the wire format worse to
-    read for no gain.
-    """
 
     model_config = ConfigDict(extra="forbid", protected_namespaces=())
 
@@ -624,7 +428,6 @@ class MLExplanation(BaseModel):
 
 
 class SourceExplanation(BaseModel):
-    """What ONE analytical source contributed, and how it reached it."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -647,7 +450,6 @@ class SourceExplanation(BaseModel):
 
 
 class ConditionExplanation(BaseModel):
-    """Module 20 for one condition: the whole `Input -> Evidence -> Decision`."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -677,7 +479,6 @@ class ConditionExplanation(BaseModel):
 
 
 class ExplainabilitySection(BaseModel):
-    """Module 20 as a whole."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -693,21 +494,7 @@ class ExplainabilitySection(BaseModel):
     ml_importance_caveat: str = ML_IMPORTANCE_CAVEAT
 
 
-# --------------------------------------------------------------------------
-# Module 17 -- the report's own sections
-# --------------------------------------------------------------------------
-
-
 class PatientInformation(BaseModel):
-    """Spec Module 17's 'patient information'.
-
-    DELIBERATELY CARRIES NO IDENTITY. No name, no patient id, no date of birth,
-    no contact detail. This service never receives them (Module 2 holds them in
-    `backend/`), and a report object that had somewhere to put them would
-    invite a caller to fill it in. The clinical context below is what the
-    analysis actually used; `backend/` attaches identity at the point of
-    delivery, where it is already authenticated and owner-scoped.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -733,12 +520,6 @@ class PatientInformation(BaseModel):
 
 
 class LaboratoryValue(BaseModel):
-    """One laboratory or profile value, as the report presents it.
-
-    Module 27 renders these as laboratory cards; Module 32 renders the same
-    rows with the reference information a clinician expects. Both read this
-    single shape, which is the point of spec Module 17.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -793,14 +574,6 @@ class LaboratoryValue(BaseModel):
 
 
 class ContributionView(BaseModel):
-    """One source's contribution to one condition, rendered SIDE BY SIDE.
-
-    Spec Module 16 fuses; it does not blend. When `basis_conflict` is set on
-    the parent, a risk-factor burden and an estimated likelihood are sitting in
-    this list together and each keeps its OWN `band_labels` and status. They
-    must never be collapsed into one sentence -- that is the `Heart Disease`
-    hazard Module 16 flagged and left for this layer to render.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -820,7 +593,6 @@ class ContributionView(BaseModel):
 
 
 class ReportedCondition(BaseModel):
-    """One condition as the report presents it -- a Module 27 condition card."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -857,14 +629,6 @@ class ReportedCondition(BaseModel):
 
 
 class ReportRecommendation(BaseModel):
-    """A consolidated recommendation. Catalogue-sourced, by code, always.
-
-    `text` is re-read FROM `app/data/recommendation_catalog.py` at build time
-    rather than copied from the decision that carried it. That is not
-    belt-and-braces: it means no path exists by which text that is not in the
-    reviewed catalogue can reach a report, even if a producer somewhere
-    constructed a `Recommendation` with its own wording.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -882,12 +646,6 @@ class ReportRecommendation(BaseModel):
 
 
 class DocumentQuality(BaseModel):
-    """How well the source document could actually be read.
-
-    Spec Module 17 lists validation warnings; this is the other half of the
-    same honesty. A report built from a partially unreadable scan must SAY so,
-    in a field, not only in a warning string a renderer may not show.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -913,7 +671,6 @@ class DocumentQuality(BaseModel):
 
 
 class ReportSummary(BaseModel):
-    """The counts Modules 27 and 32 put at the top of a page."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -936,13 +693,6 @@ class ReportSummary(BaseModel):
 
 
 class ClinicalReport(BaseModel):
-    """Spec Module 17. THE structured object backend and frontend both consume.
-
-    Section order follows the spec's own list: patient information, laboratory
-    values, clinical decisions, overall health status, overall risk, critical
-    conditions, normal findings, evidence, recommendations, system metadata,
-    validation warnings.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -951,7 +701,6 @@ class ClinicalReport(BaseModel):
         default_factory=lambda: datetime.now(timezone.utc)
     )
 
-    # -- spec Module 17's list, in order --------------------------------
     patient: PatientInformation = Field(default_factory=PatientInformation)
     laboratory_values: List[LaboratoryValue] = Field(default_factory=list)
     conditions: List[ReportedCondition] = Field(
@@ -1015,18 +764,7 @@ class ClinicalReport(BaseModel):
     )
 
 
-# --------------------------------------------------------------------------
-# Request / response
-# --------------------------------------------------------------------------
-
-
 class ReportRejectedFeature(BaseModel):
-    """One entry of Module 6's `rejected` map, as this layer receives it.
-
-    Permissive (`extra="ignore"`, everything optional) for the same reason
-    every other incoming view in this service is: one odd entry must not turn
-    into a 422 that discards a whole report.
-    """
 
     model_config = ConfigDict(extra="ignore")
 
@@ -1042,35 +780,6 @@ class ReportRejectedFeature(BaseModel):
 
 
 class ClinicalReportRequest(DecisionFusionRequest):
-    """Byte-for-byte the Module 15/16 request, PLUS the rejected features.
-
-    INPUT TOLERANCE IS INHERITED, NOT RE-IMPLEMENTED. `DecisionFusionRequest`
-    subclasses `RuleEvaluationRequest`, so every shape `/rules/evaluate`,
-    `/ml/predict` and `/decisions/fuse` accept is accepted here identically and
-    every ambiguity is the same 422. Re-implementing the unwrap would let the
-    tolerances drift, and a drift's failure mode is not an error -- it is an
-    HTTP 200 carrying an empty report.
-
-    WHY `rejected_features` IS A SEPARATE FIELD AND NOT PART OF `validated`
-    ---------------------------------------------------------------------
-    `ValidatedFeaturesInput` has no `rejected` field ON PURPOSE: that absence
-    is what makes "a clinical rule can never read a rejected value" structural
-    rather than disciplinary. Widening it here would hand the rule engine an
-    attribute it currently cannot reach. So the rejected map is lifted OUT of
-    the posted body into its own field, which only Modules 17/20 read. The
-    decision chain still receives exactly what it received before.
-
-    A caller may set `rejected_features` explicitly. A caller who simply relays
-    Module 6's response verbatim -- the overwhelmingly common case -- does not
-    have to: the endpoint additionally runs
-    `report_builder.extract_rejected_features()` over the RAW body, which finds
-    the map wherever the inherited unwrap would have put the rest of the
-    object. That lift deliberately lives in the route rather than in a
-    `model_validator` here, because a subclass's before-validator runs BEFORE
-    the inherited `_unwrap` and would therefore have to duplicate the unwrap's
-    shape logic to survive it -- and a duplicated tolerance is a tolerance that
-    drifts.
-    """
 
     model_config = ConfigDict(extra="ignore")
 
@@ -1088,18 +797,7 @@ class ClinicalReportResponse(BaseModel):
     data: ClinicalReport
 
 
-# --------------------------------------------------------------------------
-# Import-time enforcement
-# --------------------------------------------------------------------------
-
-
 def _self_check() -> None:
-    """Fail at import if this layer's fixed user-facing wording is unsafe.
-
-    Same mechanism as `app/schemas/fusion.py`: adding unsafe wording produces a
-    service that refuses to start, not a report that quietly says something it
-    must not. A reviewer cannot forget to run the check.
-    """
     from app.data.recommendation_catalog import assert_safe
 
     fixed = {

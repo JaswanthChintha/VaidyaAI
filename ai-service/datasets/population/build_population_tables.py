@@ -1,85 +1,3 @@
-"""Build Module 31's population distribution tables from REAL NHANES microdata.
-
-RUN THIS TO REPRODUCE `distributions/*.json` FROM SOURCE. Nothing in Module 31
-is hand-written, estimated, interpolated or "reasonably approximated": every
-number in every shipped table is a survey-weighted quantile of the public
-NHANES microdata files whose sha256 digests are recorded in `PROVENANCE.md`.
-
-    cd ai-service
-    .venv/Scripts/python.exe datasets/population/build_population_tables.py \
-        --raw datasets/population/raw \
-        --out datasets/population/distributions
-
-The raw `.xpt` files are NOT committed (they are ~15 MB and are permanently
-published by CDC). `--download` fetches them from the CDC URLs recorded below
-and verifies the sha256 of each against the digest recorded here, so a silently
-changed upstream file fails the build instead of quietly changing a percentile.
-
---------------------------------------------------------------------------
-WHY MICRODATA AND NOT A PUBLISHED PERCENTILE TABLE
---------------------------------------------------------------------------
-
-CDC/NCHS publishes summary tables for some of these analytes, but not for all
-of them, not on a single consistent set of age bands, and not at the percentile
-grid this module needs. Transcribing numbers out of PDFs by hand is exactly the
-kind of step where a wrong digit becomes a false clinical claim.
-
-The NHANES public-use microdata file IS the primary published source. Computing
-a weighted quantile from it is measurement, not invention: it is deterministic,
-it is reproducible by anyone from the same public files, and the method is
-written down below. The shipped tables therefore say
-`"derivation": "computed_by_vaidyaai_from_published_microdata"` and never claim
-to be a CDC-published percentile table.
-
-Two published NCHS summary statistics are recomputed as a CROSS-CHECK and
-printed by this script (see `--check`); the agreement is recorded in
-`PROVENANCE.md`.
-
---------------------------------------------------------------------------
-METHOD (this is the whole method; there is nothing else)
---------------------------------------------------------------------------
-
-Analytic sample
-    * `RIDSTATR == 2`  -- interviewed AND MEC-examined (the exam weight is only
-      valid for these).
-    * `WTMEC2YR > 0`   -- a zero exam weight represents nobody.
-    * `RIDAGEYR >= 20` -- ADULTS ONLY. Paediatric reference distributions are
-      age-in-months sensitive and are not derivable at this band width; a child
-      scored against an adult table is a clinical error, so children are simply
-      not covered (the service returns `available: false`).
-    * `RIDEXPRG != 1`  -- pregnant participants excluded. Pregnancy shifts
-      haemoglobin, creatinine and lipids materially. Recorded as a limitation:
-      a pregnant patient is therefore compared against a non-pregnant cohort.
-    * the analyte value is present (item non-response dropped; NHANES notes
-      that no re-weighting for item non-response is applied here).
-
-Strata
-    * sex from `RIAGENDR` (1 = Male, 2 = Female -- NHANES codebook).
-    * ten-year age bands 20-29 .. 70-79 plus "80 and over" (NHANES top-codes
-      age at 80, so the top band cannot be split).
-    * A stratum with fewer than MIN_CELL_N = 100 unweighted observations is
-      DROPPED, not published. A noisy percentile is worse than no percentile.
-
-Weighted quantile estimator
-    Sort the stratum's values ascending. Let W be the cumulative sum of
-    `WTMEC2YR` and T the stratum's total weight. The p-th percentile is the
-    smallest observed value x_i with W_i / T >= p/100 -- the inverse of the
-    weighted empirical CDF (the "type 1" / lower estimator). No interpolation
-    between observations, no distributional assumption. Every published number
-    is therefore a value that a real NHANES participant actually had.
-
-    Variance is NOT estimated. NHANES is a complex multistage design and a
-    correct standard error needs `SDMVPSU`/`SDMVSTRA` with Taylor-series
-    linearisation. The module reports a percentile BAND rather than a point
-    estimate precisely because it cannot report an interval, and PROVENANCE.md
-    records this as a limitation.
-
-Percentile grid
-    1, 2.5, 5, 10, 25, 50, 75, 90, 95, 97.5, 99.
-    The service brackets a patient's value BETWEEN two adjacent grid points and
-    never interpolates a single percentile number out of them.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -94,9 +12,6 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-# --------------------------------------------------------------------------
-# Source files. sha256 recorded 2026-09-04 from the CDC URLs below.
-# --------------------------------------------------------------------------
 
 CDC_BASE = "https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public"
 
@@ -148,9 +63,6 @@ SOURCE_FILES: Dict[str, Dict[str, str]] = {
     },
 }
 
-# --------------------------------------------------------------------------
-# Strata
-# --------------------------------------------------------------------------
 
 PERCENTILE_GRID: Tuple[float, ...] = (
     1.0,
@@ -166,7 +78,6 @@ PERCENTILE_GRID: Tuple[float, ...] = (
     99.0,
 )
 
-#: (age_min, age_max_inclusive). 80 is NHANES' top-code, so the last band is open.
 AGE_BANDS: Tuple[Tuple[int, Optional[int]], ...] = (
     (20, 29),
     (30, 39),
@@ -179,14 +90,7 @@ AGE_BANDS: Tuple[Tuple[int, Optional[int]], ...] = (
 
 SEXES = {1: "male", 2: "female"}
 
-#: Below this many unweighted observations a stratum is dropped, not published.
 MIN_CELL_N = 100
-
-
-# --------------------------------------------------------------------------
-# Feature specifications -- one per canonical VaidyaAI feature that has a
-# real, verified NHANES distribution.
-# --------------------------------------------------------------------------
 
 
 class Spec:
@@ -402,28 +306,6 @@ SPECS: Tuple[Spec, ...] = (
             "supplement use.",
         ),
     ),
-    # ====================================================================
-    # THE COMPLETE BLOOD COUNT, from the file haemoglobin already came from
-    # ====================================================================
-    #
-    # `CBC_J.xpt` was downloaded for `hemoglobin` and carries the whole
-    # count. These twelve therefore cost no new download and no new cycle:
-    # same file, same cycle, same demographic file, same weight variable,
-    # same analytic sample as haemoglobin. Every one of them appears on the
-    # real reports this platform ingests.
-    #
-    # ALL TWELVE ARE `POLARITY_UNDECLARED` IN app/data/trend_polarity.py, and
-    # that is a clinical statement rather than an omission: each is harmful
-    # at BOTH extremes, which is the same reason haemoglobin is undeclared.
-    # A percentile still answers "how common is this value", which is the
-    # only question Module 31 asks.
-    #
-    # THE DIFFERENTIAL IS TAKEN AS PERCENT, NOT ABSOLUTE COUNT. NHANES
-    # publishes both (`LBXNEPCT` and `LBDNENO`). The reports this service
-    # reads print percentages -- `NEUTROPHILS 82 %` on Test 3 -- so the
-    # percentage is the quantity that can actually be matched to a patient
-    # value. Comparing a printed percentage against an absolute-count
-    # distribution would produce a confident and meaningless percentile.
     Spec(
         feature="hematocrit",
         table_id="nhanes_2017_2018_hematocrit",
@@ -670,11 +552,6 @@ SPECS: Tuple[Spec, ...] = (
 )
 
 
-# --------------------------------------------------------------------------
-# Machinery
-# --------------------------------------------------------------------------
-
-
 def sha256_of(path: Path) -> str:
     h = hashlib.sha256()
     with path.open("rb") as fh:
@@ -689,7 +566,7 @@ def download_sources(raw_dir: Path) -> None:
         target = raw_dir / name
         if not target.exists():
             print(f"downloading {name} <- {meta['url']}")
-            urllib.request.urlretrieve(meta["url"], target)  # noqa: S310
+            urllib.request.urlretrieve(meta["url"], target)
         digest = sha256_of(target)
         status = "OK" if digest == meta["sha256"] else "MISMATCH"
         print(f"  {name}: {digest} [{status}]")
@@ -719,12 +596,6 @@ def verify_sources(raw_dir: Path) -> Dict[str, str]:
 def weighted_quantiles(
     values: np.ndarray, weights: np.ndarray, percentiles: Tuple[float, ...]
 ) -> List[float]:
-    """Inverse of the weighted empirical CDF -- see the module docstring.
-
-    Returns, for each requested percentile p, the smallest OBSERVED value whose
-    cumulative weight fraction reaches p/100. No interpolation: every returned
-    number is a value some participant actually had.
-    """
     order = np.argsort(values, kind="mergesort")
     v = values[order]
     w = weights[order]
@@ -886,26 +757,6 @@ def build_table(raw_dir: Path, spec: Spec, digests: Dict[str, str]) -> dict:
     }
 
 
-# --------------------------------------------------------------------------
-# Independent cross-check against PUBLISHED NCHS summary statistics.
-# --------------------------------------------------------------------------
-
-# The estimator below is validated against numbers CDC/NCHS ACTUALLY PUBLISHED.
-# Both reference PDFs are committed under `reference/` so the transcription can
-# be re-checked without a network.
-#
-# NOTE ON CYCLES: both published references pool NHANES 2015-2018 (two cycles);
-# the tables built here use 2017-2018 (one cycle) so that a single, dated cohort
-# is described. The comparison is therefore a METHOD check, not an identity
-# check -- close agreement shows the sample definition, the exam weights and the
-# quantile estimator are right; exact equality is not expected and would in fact
-# be suspicious.
-
-#: NCHS Series 3 No. 46, Table 15 (adult males) and Table 14 (adult females),
-#: "Body mass index values ... selected percentiles ... United States,
-#: 2015-2018", All race and Hispanic-origin groups rows. Transcribed from
-#: `reference/sr03-046-508.pdf`, PDF pages 25 and 24.
-#: Published percentile columns: 5th, 10th, 15th, 25th, 50th, 75th, 85th, 90th, 95th.
 NCHS_SR3_46_BMI_PERCENTILES = {
     "male": {
         "20-29": [18.7, 20.0, 21.0, 22.6, 26.5, 31.6, 34.4, 36.8, 39.5],
@@ -927,10 +778,6 @@ NCHS_SR3_46_BMI_PERCENTILES = {
 }
 NCHS_SR3_46_GRID = (5.0, 10.0, 15.0, 25.0, 50.0, 75.0, 85.0, 90.0, 95.0)
 
-#: NCHS Data Brief No. 363, April 2020, Figure 1 notes: "Crude estimates are
-#: 11.5% for total, 10.3% for men, and 12.6% for women" -- prevalence of HIGH
-#: total cholesterol (>= 240 mg/dL) among US adults aged 20 and over,
-#: 2015-2018. Transcribed from `reference/db363-h.pdf`, page 1.
 DB363_HIGH_TC_CRUDE = {"total": 11.5, "male": 10.3, "female": 12.6}
 
 

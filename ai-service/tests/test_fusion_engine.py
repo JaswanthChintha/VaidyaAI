@@ -1,11 +1,3 @@
-"""Module 16 -- the Hybrid Decision Fusion Engine.
-
-Spec: "one of the key components of the VaidyaAI architecture". These tests
-check each of the six behaviours the spec names, plus the two it leaves to the
-implementer -- status fusion around INSUFFICIENT_DATA, and how `None` vs `0.0`
-confidence is handled -- and the `Heart Disease` semantic hazard.
-"""
-
 from __future__ import annotations
 
 from typing import Any, Dict, List
@@ -79,13 +71,7 @@ def ml(
     )
 
 
-# --------------------------------------------------------------------------
-# 1. CONDITION -- decisions about the same condition are grouped
-# --------------------------------------------------------------------------
-
-
 def test_a_rule_and_a_model_about_one_condition_become_one_decision():
-    """The spec's own worked example: rule + Random Forest -> one Diabetes card."""
     fused = only([decision(C.DIABETES), ml(C.DIABETES)])
     assert fused.condition == C.DIABETES
     assert fused.decision.source_kind is DecisionSourceKind.FUSION
@@ -111,11 +97,6 @@ def test_fused_decisions_come_out_in_canonical_condition_order():
         C.KIDNEY_DISEASE,
         C.OBESITY,
     ]
-
-
-# --------------------------------------------------------------------------
-# 2. RISK -- Low < Medium < High, highest retained
-# --------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -144,7 +125,6 @@ def test_the_highest_applicable_risk_is_retained(rule_risk, model_risk, expected
 
 
 def test_nothing_assessed_never_becomes_low_risk():
-    """`RiskLevel.highest([])` returns None, and fusion must not undo that."""
     fused = only(
         [decision(status=DecisionStatus.INSUFFICIENT_DATA, risk=None)]
     )
@@ -161,11 +141,6 @@ def test_an_empty_input_produces_no_fused_decisions_and_no_overall_risk():
     assert data.summary.any_assessed is False
 
 
-# --------------------------------------------------------------------------
-# 3. CONFIDENCE -- None is not 0.0
-# --------------------------------------------------------------------------
-
-
 def test_a_rule_producing_no_probability_does_not_suppress_the_models():
     fused = only([decision(confidence=None), ml(confidence=0.87)])
     assert fused.confidence == 0.87
@@ -173,7 +148,6 @@ def test_a_rule_producing_no_probability_does_not_suppress_the_models():
 
 
 def test_a_model_that_ran_and_was_maximally_unconfident_is_not_treated_as_absent():
-    """`0.0` is a probability a model produced; `None` is no probability at all."""
     fused = only(
         [
             decision(status=DecisionStatus.NOT_INDICATED, risk=RiskLevel.LOW),
@@ -200,16 +174,10 @@ def test_the_strongest_available_probability_is_used():
 
 
 def test_each_sources_own_confidence_survives_for_module_20():
-    """The fused number is a maximum; who produced it must stay recoverable."""
     fused = only([decision(confidence=None), ml(confidence=0.87)])
     by_source = {c.source: c.confidence for c in fused.contributions}
     assert by_source == {"Clinical Rule Engine": None, "Random Forest": 0.87}
     assert fused.decision.metadata["source_confidence"] == by_source
-
-
-# --------------------------------------------------------------------------
-# 4. EVIDENCE -- combined from multiple sources, without duplicates
-# --------------------------------------------------------------------------
 
 
 def test_evidence_from_several_sources_is_combined():
@@ -236,11 +204,6 @@ def test_the_same_evidence_cited_by_both_sources_appears_once():
     assert len(fused.decision.evidence) == 1
 
 
-# --------------------------------------------------------------------------
-# 5. RECOMMENDATIONS -- consolidated, duplicates removed
-# --------------------------------------------------------------------------
-
-
 def test_recommendations_are_consolidated_and_de_duplicated():
     fused = only(
         [
@@ -257,7 +220,6 @@ def test_recommendations_are_consolidated_and_de_duplicated():
 
 
 def test_fusion_never_invents_a_recommendation():
-    """Only ever a union. Safety stays structural: no new advice appears here."""
     incoming = {"NOT_A_DIAGNOSIS", "MONITOR_OVER_TIME"}
     fused = only(
         [
@@ -268,13 +230,7 @@ def test_fusion_never_invents_a_recommendation():
     assert {r.code for r in fused.decision.recommendations} <= incoming
 
 
-# --------------------------------------------------------------------------
-# 6. SOURCE -- de-duplicated, and rule + model both reported
-# --------------------------------------------------------------------------
-
-
 def test_one_engine_firing_twice_is_ONE_source_not_two():
-    """The naive-fusion defect named in the integration audit."""
     fused = only(
         [
             decision(status=DecisionStatus.INDICATED, risk=RiskLevel.HIGH),
@@ -284,7 +240,6 @@ def test_one_engine_firing_twice_is_ONE_source_not_two():
     assert fused.sources == ["Clinical Rule Engine"]
     assert fused.decision.metadata["sources"] == ["Clinical Rule Engine"]
     assert len(fused.contributions) == 1
-    # But both raw decisions remain traceable through the one contribution.
     assert len(fused.contributions[0].decision_ids) == 2
     assert len(fused.decision_ids) == 2
     assert fused.hybrid is False
@@ -308,7 +263,6 @@ def test_two_rules_and_a_model_give_two_sources_not_three():
 
 
 def test_a_fused_finding_traces_back_to_the_exact_rule_or_model():
-    """Module 20's requirement, checked end to end."""
     data = run_decision_fusion(
         engineered=TWO_RULE_DIABETES_FEATURES,
         registry=registry_with(FakeDiabetesPredictor()),
@@ -319,19 +273,12 @@ def test_a_fused_finding_traces_back_to_the_exact_rule_or_model():
     for decision_id in diabetes.decision_ids:
         assert decision_id in known, decision_id
         assert known[decision_id].trace
-    # And the trace is reachable without leaving the fused object.
     traces = [t for c in diabetes.contributions for t in c.traces]
     assert "fake_diabetes" in traces
     assert any(t.startswith("HBA1C") or "HBA1C" in t for t in traces)
 
 
-# --------------------------------------------------------------------------
-# STATUS FUSION around INSUFFICIENT_DATA -- both directions
-# --------------------------------------------------------------------------
-
-
 def test_a_model_that_could_not_assess_does_not_hide_a_rule_that_fired():
-    """The first direction: fused must NOT read as 'insufficient data'."""
     fused = only(
         [
             decision(C.KIDNEY_DISEASE, DecisionStatus.INDICATED, RiskLevel.HIGH),
@@ -348,7 +295,6 @@ def test_a_model_that_could_not_assess_does_not_hide_a_rule_that_fired():
 
 
 def test_but_the_models_abstention_is_never_silently_discarded():
-    """The second half of the same requirement."""
     data = fuse(
         [
             decision(C.KIDNEY_DISEASE, DecisionStatus.INDICATED, RiskLevel.HIGH),
@@ -365,7 +311,6 @@ def test_but_the_models_abstention_is_never_silently_discarded():
     assert fused.unassessed_sources == ["Random Forest"]
     assert fused.assessed_source_count == 1
     assert fused.decision.metadata["unassessed_sources"] == ["Random Forest"]
-    # It reaches the reader, not just the metadata.
     assert any("could not assess" in w for w in data.warnings)
     assert any(w.stage == STAGE_FUSION for w in data.all_warnings)
     assert C.KIDNEY_DISEASE in data.summary.partially_assessed_conditions
@@ -373,7 +318,6 @@ def test_but_the_models_abstention_is_never_silently_discarded():
 
 
 def test_a_condition_nothing_assessed_is_reported_as_insufficient_data():
-    """The other direction: never present as assessed when nothing assessed."""
     fused = only(
         [
             decision(
@@ -407,7 +351,6 @@ def test_the_fused_status_is_the_most_severe_of_the_sources_that_assessed():
 
 
 def test_a_fused_decision_satisfies_every_schema_invariant():
-    """It is a real `ClinicalDecision`, not a look-alike."""
     for decisions in (
         [decision(), ml()],
         [decision(status=DecisionStatus.INSUFFICIENT_DATA, risk=None)],
@@ -420,11 +363,6 @@ def test_a_fused_decision_satisfies_every_schema_invariant():
             assert fused.risk is None
         else:
             assert fused.risk is not None
-
-
-# --------------------------------------------------------------------------
-# The `Heart Disease` semantic hazard
-# --------------------------------------------------------------------------
 
 
 def test_a_risk_factor_count_beside_a_model_likelihood_is_flagged_not_blended():
@@ -446,12 +384,10 @@ def test_a_risk_factor_count_beside_a_model_likelihood_is_flagged_not_blended():
     )
     fused = only([rule, model])
 
-    # It STILL fuses -- the condition is not renamed and the sources still join.
     assert fused.condition == C.HEART_DISEASE
     assert fused.hybrid is True
     assert len(fused.contributions) == 2
 
-    # But the distinction is visible to Module 17.
     assert fused.basis_conflict is True
     assert fused.basis_note == BASIS_CONFLICT_NOTE
     assert set(fused.assessment_bases) == {
@@ -462,7 +398,6 @@ def test_a_risk_factor_count_beside_a_model_likelihood_is_flagged_not_blended():
     assert by_source["Clinical Rule Engine"] == BASIS_RISK_FACTOR_COUNT
     assert by_source["Random Forest"] == BASIS_MODEL_PROBABILITY
 
-    # And each source's own wording survives, so neither has to be paraphrased.
     labels = {c.source: c.band_labels for c in fused.contributions}
     assert "three or more major cardiovascular risk factors were counted" in (
         labels["Clinical Rule Engine"]
@@ -471,12 +406,6 @@ def test_a_risk_factor_count_beside_a_model_likelihood_is_flagged_not_blended():
 
 
 def test_a_threshold_rule_beside_a_model_is_NOT_flagged_as_a_conflict():
-    """Over-flagging would caveat the normal hybrid case into meaninglessness.
-
-    An HbA1c threshold and a diabetes model are two METHODS of answering one
-    question. Only a risk-factor BURDEN sitting beside a different kind of
-    claim is the hazard.
-    """
     fused = only(
         [
             decision(C.DIABETES, metadata={"rule_id": "HBA1C_HIGH"}),
@@ -503,15 +432,7 @@ def test_the_conflict_note_reaches_the_warnings_and_is_safe_to_display():
     assert scan_text(BASIS_CONFLICT_NOTE) == []
 
 
-# --------------------------------------------------------------------------
-# Module 18 -- overall health status, without re-deriving it
-# --------------------------------------------------------------------------
-
-
-#: A test result read from the report. Since 2026-10-06 a clean result needs
-#: one behind it to be called Healthy (`rests_on_lab_result`).
 LAB_EVIDENCE = [EvidenceItem(feature="hba1c", value=5.2, unit="%", source_stage="lab_report")]
-#: Profile details only -- no test result.
 PROFILE_EVIDENCE = [
     EvidenceItem(feature="bmi", value=24.97, unit="kg/m2", source_stage="patient_profile")
 ]
@@ -554,11 +475,6 @@ def test_abnormal_with_high_risk_is_needs_medical_attention():
 
 
 def test_a_report_where_nothing_could_be_assessed_is_NOT_healthy():
-    """'No abnormal findings' is vacuously true when nothing was assessed.
-
-    Rendering "Healthy" there is the exact failure `decisions.py` calls the
-    most dangerous this type can have, so `overall_status` is None instead.
-    """
     data = fuse(
         [
             decision(C.DIABETES, DecisionStatus.INSUFFICIENT_DATA, None),
@@ -582,12 +498,6 @@ def test_a_partly_readable_report_is_still_given_a_status_but_flagged():
     assert data.summary.any_assessed is True
     assert data.summary.assessment_incomplete is True
     assert data.summary.unassessed_conditions == [C.KIDNEY_DISEASE]
-
-
-# --------------------------------------------------------------------------
-# No "Healthy" without a test result (2026-10-06). A résumé uploaded on the
-# live site was called "Healthy -- Overall risk: Low" from BMI, age and sex.
-# --------------------------------------------------------------------------
 
 
 def test_clean_from_the_profile_alone_is_not_healthy_and_has_no_risk():
@@ -624,17 +534,11 @@ def test_one_test_result_anywhere_is_enough_for_healthy():
 
 
 def test_a_flagged_profile_finding_is_still_reported():
-    # Only the REASSURANCE needs a lab behind it; a high BMI is a real finding.
     data = fuse(
         [decision(C.OBESITY, DecisionStatus.INDICATED, RiskLevel.MEDIUM, evidence=PROFILE_EVIDENCE)]
     )
     assert data.summary.overall_status == STATUS_NEEDS_MONITORING
     assert data.summary.overall_risk is RiskLevel.MEDIUM
-
-
-# --------------------------------------------------------------------------
-# Module 19 -- prioritisation counts CONDITIONS, never decisions
-# --------------------------------------------------------------------------
 
 
 def test_prioritisation_orders_by_risk_and_lists_each_condition_once():
@@ -669,11 +573,6 @@ def test_unflagged_conditions_sort_below_flagged_ones():
     )
     assert [r.condition for r in data.summary.prioritized] == [C.ANEMIA, C.DIABETES]
     assert [r.flagged for r in data.summary.prioritized] == [True, False]
-
-
-# --------------------------------------------------------------------------
-# Warnings carried through
-# --------------------------------------------------------------------------
 
 
 def test_every_upstream_warning_reaches_the_fused_result_with_its_origin():
@@ -725,11 +624,6 @@ def test_every_warning_module_16_produces_is_safe_to_show_a_patient():
         assert scan_text(message) == [], message
 
 
-# --------------------------------------------------------------------------
-# Resilience carried through fusion
-# --------------------------------------------------------------------------
-
-
 def test_one_source_failing_still_produces_fused_decisions(monkeypatch):
     monkeypatch.setattr(DE, "predict_all", lambda *a, **k: 1 / 0)
     data = run_decision_fusion(engineered=FULL_FEATURES)
@@ -748,17 +642,11 @@ def test_both_sources_failing_yields_no_status_rather_than_a_reassuring_one(monk
     assert len(data.summary.sources_failed) == 2
 
 
-# --------------------------------------------------------------------------
-# End to end over a realistic feature set
-# --------------------------------------------------------------------------
-
-
 def test_a_realistic_report_end_to_end():
     data = run_decision_fusion(
         engineered=FULL_FEATURES, registry=registry_with(FakeDiabetesPredictor())
     )
 
-    # One fused decision per condition, and fewer than the raw decisions.
     assert len({f.condition for f in data.fused}) == len(data.fused)
     assert data.summary.raw_decision_count > data.summary.fused_count
 
@@ -769,28 +657,22 @@ def test_a_realistic_report_end_to_end():
     assert diabetes.risk is RiskLevel.HIGH
     assert len(diabetes.decision_ids) >= 2
 
-    # No source appears twice anywhere.
     for fused in data.fused:
         assert len(fused.sources) == len(set(fused.sources))
 
-    # Module 17's inputs are all present.
     assert data.summary.overall_status == STATUS_NEEDS_MEDICAL_ATTENTION
     assert data.summary.overall_risk is RiskLevel.HIGH
     assert data.summary.critical_conditions
     assert data.summary.prioritized
-    # A clean report legitimately raises no warnings at all; what matters is
-    # that the channel Module 17 reads is present and typed.
     assert isinstance(data.all_warnings, list)
     assert data.upstream_summary is not None
 
-    # And Module 15's layer is still reachable underneath.
     assert data.collection.collected
     assert data.collection.groups
     assert data.metadata["fused_by"] == ["condition"]
 
 
 def test_the_whole_result_serialises_to_json():
-    """Module 17, the backend and the frontend all consume this over the wire."""
     data = run_decision_fusion(
         engineered=FULL_FEATURES, registry=registry_with(FakeDiabetesPredictor())
     )

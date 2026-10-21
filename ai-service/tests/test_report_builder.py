@@ -1,20 +1,3 @@
-"""Modules 17-20 -- Clinical Report, overall status, priority, explainability.
-
-Framework-independent tests: no HTTP, no API key, no network, no training.
-Every feature payload here is hand-written from invented values.
-
-The four things this file exists to hold in place, all of them failure modes
-that a passing "it built a report" test would not catch:
-
-1. An absence of findings must NEVER render as a clean bill of health.
-2. Prioritisation must be per CONDITION, and a skipped condition must not sort
-   as low-risk.
-3. A value that was read and refused must be reported as found-but-not-trusted,
-   never as absent.
-4. A model's global feature importances must never be labelled as a
-   per-patient explanation.
-"""
-
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
@@ -54,11 +37,6 @@ from app.services.report_builder import (
 )
 
 
-# --------------------------------------------------------------------------
-# Payload helpers -- invented values, never real patient data
-# --------------------------------------------------------------------------
-
-
 def feature(
     name: str,
     value: Any,
@@ -74,7 +52,6 @@ def engineered(**features: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def healthy_payload() -> Dict[str, Any]:
-    """Every value inside its configured band."""
     return engineered(
         hba1c=feature("hba1c", 5.1, "%"),
         blood_glucose=feature("blood_glucose", 88.0, "mg/dl"),
@@ -84,8 +61,6 @@ def healthy_payload() -> Dict[str, Any]:
         triglycerides=feature("triglycerides", 110.0, "mg/dl"),
         vitamin_d=feature("vitamin_d", 42.0, "ng/ml"),
         vitamin_b12=feature("vitamin_b12", 480.0, "pg/ml"),
-        # The liver panel (2026-10-04): without it the topic is unassessed and
-        # the report is, correctly, only a partial assessment.
         alt=feature("alt", 18.0, "u/l"),
         ast=feature("ast", 21.0, "u/l"),
         bilirubin_total=feature("bilirubin_total", 0.6, "mg/dl"),
@@ -101,7 +76,6 @@ def healthy_payload() -> Dict[str, Any]:
 
 
 def borderline_payload() -> Dict[str, Any]:
-    """One abnormal finding, nothing in a High band."""
     return engineered(
         hemoglobin=feature("hemoglobin", 14.2, "g/dl"),
         vitamin_d=feature("vitamin_d", 24.0, "ng/ml"),
@@ -110,7 +84,6 @@ def borderline_payload() -> Dict[str, Any]:
 
 
 def high_risk_payload() -> Dict[str, Any]:
-    """A realistic, heavily abnormal panel -- the full end-to-end case."""
     return engineered(
         hba1c=feature("hba1c", 8.4, "%"),
         blood_glucose=feature("blood_glucose", 186.0, "mg/dl"),
@@ -120,7 +93,6 @@ def high_risk_payload() -> Dict[str, Any]:
         triglycerides=feature("triglycerides", 320.0, "mg/dl"),
         vitamin_d=feature("vitamin_d", 12.0, "ng/ml"),
         vitamin_b12=feature("vitamin_b12", 140.0, "pg/ml"),
-        # The liver panel (2026-10-04), raised, so the case stays complete.
         alt=feature("alt", 96.0, "u/l"),
         ast=feature("ast", 71.0, "u/l"),
         bilirubin_total=feature("bilirubin_total", 1.4, "mg/dl"),
@@ -136,12 +108,6 @@ def high_risk_payload() -> Dict[str, Any]:
 
 
 def rejected_creatinine_payload() -> Dict[str, Any]:
-    """Creatinine printed in a unit Module 5 could not convert.
-
-    THE CASE THE AUDIT NAMED. The value IS in the report. Module 6 reads it and
-    refuses it. Modules 8 and 9/10 never see it, so their evidence says it "was
-    not available in the submitted report" -- which is false.
-    """
     return engineered(
         hba1c=feature("hba1c", 6.8, "%"),
         creatinine=feature(
@@ -163,11 +129,6 @@ def rejected_creatinine_payload() -> Dict[str, Any]:
 
 def report_for(payload: Dict[str, Any]) -> ClinicalReport:
     return generate_report(engineered=payload)
-
-
-# ==========================================================================
-# Module 18 -- the three spec outcomes, the fourth case and the fifth
-# ==========================================================================
 
 
 def test_no_abnormal_findings_gives_healthy():
@@ -197,15 +158,7 @@ def test_an_abnormal_finding_with_high_risk_gives_needs_medical_attention():
     assert report.critical_conditions
 
 
-# ---- THE FOURTH CASE -----------------------------------------------------
-
-
 def test_nothing_assessed_is_never_reported_as_healthy():
-    """The single most dangerous output this system can produce.
-
-    "No abnormal findings -> Healthy" is VACUOUSLY true for a report in which
-    nothing could be read. It must not fire.
-    """
     report = generate_report()
     assert report.overall.status is None
     assert report.overall.status_label == STATUS_NOT_ASSESSED
@@ -230,9 +183,6 @@ def test_nothing_assessed_says_so_in_a_warning_too():
     report = generate_report()
     messages = [w.message for w in report.validation_warnings if w.stage == "report"]
     assert any("nothing in this report could be assessed" in m for m in messages)
-
-
-# ---- THE FIFTH CASE: PARTIAL ASSESSMENT ----------------------------------
 
 
 def test_a_partially_assessed_report_is_not_presented_as_complete():
@@ -273,14 +223,8 @@ def test_module_17_and_module_16_never_disagree_about_the_status():
 
 
 def test_overall_status_is_callable_on_its_own():
-    """Module 27 wants the health card without building a whole report."""
     report = report_for(high_risk_payload())
     assert overall_status(report.fusion) == report.overall
-
-
-# ==========================================================================
-# Module 19 -- prioritisation
-# ==========================================================================
 
 
 def test_prioritisation_is_one_row_per_condition():
@@ -291,13 +235,6 @@ def test_prioritisation_is_one_row_per_condition():
 
 
 def test_two_rule_decisions_for_one_condition_do_not_double_weight_it():
-    """The audit's requirement, stated as a test.
-
-    HbA1c 8.4 AND fasting glucose 186 both fire a `Diabetes` rule. The rule
-    engine is right to emit two decisions -- one per RULE -- but Diabetes must
-    appear ONCE in the priority list, and must not outrank anything merely
-    because two relevant tests were ordered.
-    """
     report = report_for(high_risk_payload())
 
     raw = [
@@ -312,8 +249,6 @@ def test_two_rule_decisions_for_one_condition_do_not_double_weight_it():
     assert len(rows) == 1
     assert rows[0].contributing_decision_count >= 2
 
-    # And the count is not part of the ordering: a row with more contributing
-    # decisions does not outrank a row of equal tier and risk with fewer.
     for earlier, later in zip(report.prioritized, report.prioritized[1:]):
         if (earlier.tier, earlier.risk) == (later.tier, later.risk):
             assert C.condition_rank(earlier.condition) < C.condition_rank(
@@ -322,7 +257,6 @@ def test_two_rule_decisions_for_one_condition_do_not_double_weight_it():
 
 
 def test_an_unassessed_condition_does_not_sort_as_low_risk():
-    """It has NO risk level. Filing it under Low would bury an open question."""
     report = report_for(
         engineered(hemoglobin=feature("hemoglobin", 14.2, "g/dl"))
     )
@@ -383,17 +317,7 @@ def test_the_condition_list_follows_the_priority_order():
     )
 
 
-# ==========================================================================
-# Module 20 -- evidence and explainability
-# ==========================================================================
-
-
 def test_a_rejected_value_is_found_but_not_trusted_never_absent():
-    """THE JOIN. The audit's item 3, stated as a test.
-
-    A reader must be told "we found this and could not trust its unit", never
-    "it wasn't there".
-    """
     report = report_for(rejected_creatinine_payload())
     assert "creatinine" in report.explainability.rejected_features_joined
 
@@ -418,7 +342,6 @@ def test_a_rejected_value_is_found_but_not_trusted_never_absent():
 
 
 def test_the_producers_original_note_is_kept_but_no_longer_what_is_shown():
-    """The trace back to what Module 8 actually said must survive the join."""
     report = report_for(rejected_creatinine_payload())
     line = next(
         line
@@ -445,7 +368,6 @@ def test_the_rejection_reason_reaches_the_evidence_with_its_origin():
 
 
 def test_a_genuinely_absent_value_still_reads_as_absent():
-    """The correction must apply ONLY to values that were actually rejected."""
     report = report_for(engineered(hba1c=feature("hba1c", 6.8, "%")))
     absent = [
         line
@@ -471,7 +393,6 @@ def test_a_rejected_value_still_appears_as_a_laboratory_row():
 
 
 def test_rule_evidence_names_the_value_the_threshold_and_the_classification():
-    """Spec Module 20: rule-triggering value, condition, classification."""
     report = report_for(high_risk_payload())
     diabetes = next(
         e for e in report.explainability.conditions if e.condition == C.DIABETES
@@ -492,7 +413,6 @@ def test_rule_evidence_names_the_value_the_threshold_and_the_classification():
 
 
 def test_ml_evidence_names_model_prediction_probability_and_inputs():
-    """Spec Module 20: model source, prediction, probability, input evidence."""
     report = report_for(high_risk_payload())
     ml_sources = [
         source
@@ -513,12 +433,6 @@ def test_ml_evidence_names_model_prediction_probability_and_inputs():
 
 
 def test_ml_feature_importance_is_labelled_global_not_per_patient():
-    """Spec section 24 forbids unsupported certainty.
-
-    Module 10/11/12 importances are mean impurity decrease over the TRAINING
-    SET. They rank features for the model; they are not why THIS patient got
-    THIS result, and the report must not imply that they are.
-    """
     report = report_for(high_risk_payload())
     with_importance = [
         source.ml
@@ -551,7 +465,6 @@ def test_every_condition_shows_the_input_evidence_decision_chain():
 
 
 def test_fusion_explainability_names_the_contributing_sources():
-    """Spec section 13: 'Clinical Rule Engine + Random Forest = Fused'."""
     report = report_for(high_risk_payload())
     hybrid = [e for e in report.explainability.conditions if e.hybrid]
     assert hybrid, "no condition was assessed by both a rule and a model"
@@ -592,11 +505,6 @@ def test_a_malformed_rejection_record_does_not_fail_the_report():
     assert found["hba1c"].name == "hba1c"
 
 
-# ==========================================================================
-# Module 17 -- the report itself
-# ==========================================================================
-
-
 def test_a_realistic_full_feature_set_produces_every_section():
     report = report_for(high_risk_payload())
 
@@ -614,14 +522,11 @@ def test_a_realistic_full_feature_set_produces_every_section():
     assert report.validation_warnings is not None
     assert report.metadata["modules"]["clinical_report"] == 17
     assert report.summary.condition_count == len(report.conditions)
-    # The whole fusion layer is nested verbatim, so Module 32 and Modules
-    # 28-30 can always reach the raw decision behind any line above.
     assert report.fusion.fused
     assert report.fusion.collection.collected
 
 
 def test_the_report_round_trips_through_json():
-    """Backend and frontend consume the same standardized format (spec 17)."""
     report = report_for(high_risk_payload())
     restored = ClinicalReport.model_validate(report.model_dump(mode="json"))
     assert restored.overall.status_label == report.overall.status_label
@@ -631,7 +536,6 @@ def test_the_report_round_trips_through_json():
 
 
 def test_warnings_from_every_stage_reach_the_report_with_their_origin():
-    """Dropping upstream warnings has been a real defect twice on this project."""
     report = generate_report(
         engineered={
             **high_risk_payload(),
@@ -710,26 +614,16 @@ def test_recommendations_are_deduplicated_and_catalogue_sourced():
 
     for rec in report.recommendations:
         assert rec.code in RECOMMENDATIONS, "a code outside the catalogue"
-        # The text is RE-READ from the catalogue, not copied from the decision.
         assert rec.text == RECOMMENDATIONS[rec.code].text
         assert rec.category == RECOMMENDATIONS[rec.code].category
         assert rec.conditions, "a recommendation with no condition behind it"
 
-    # A recommendation carried by several conditions is consolidated into one
-    # entry that records every condition behind it (spec Module 16 point 5).
     consolidated = [r for r in report.recommendations if r.occurrences > 1]
     assert consolidated
     assert all(len(r.conditions) >= 1 for r in consolidated)
 
 
 def test_no_report_text_asserts_a_diagnosis_a_medication_or_a_dosage():
-    """The structural safety property, verified rather than trusted.
-
-    Recommendation text comes from the reviewed catalogue by code, band labels
-    are import-time scanned by Module 8, and every fixed string in
-    `app/schemas/report.py` is scanned at import. This asserts the structure
-    actually held over a real report.
-    """
     for payload in (
         healthy_payload(),
         borderline_payload(),
@@ -743,7 +637,6 @@ def test_no_report_text_asserts_a_diagnosis_a_medication_or_a_dosage():
 
 
 def test_the_violation_scanner_can_actually_fail():
-    """A scanner that matches nothing is not a safety mechanism."""
     report = report_for(high_risk_payload())
     report.recommendations[0].text = "You have diabetes; take 500 mg daily."
     violations = report_text_violations(report)
@@ -753,7 +646,6 @@ def test_the_violation_scanner_can_actually_fail():
 
 
 def test_basis_conflict_is_surfaced_side_by_side_and_not_blended():
-    """The `Heart Disease` hazard: a risk-factor tally is not a probability."""
     report = report_for(high_risk_payload())
     conflicted = [c for c in report.conditions if c.basis_conflict]
     assert conflicted, "the fixture no longer produces a basis conflict"
@@ -765,7 +657,6 @@ def test_basis_conflict_is_surfaced_side_by_side_and_not_blended():
         families = {c.assessment_basis_family for c in condition.contributions}
         assert len(families) >= 2, "the two questions were blended into one"
         for contribution in condition.contributions:
-            # Each keeps ITS OWN wording, status and risk.
             assert contribution.band_labels
             assert contribution.status
         assert condition.condition in report.summary.basis_conflict_conditions
@@ -798,7 +689,6 @@ def test_patient_information_carries_context_but_no_identity():
 
 
 def test_an_unknown_tri_state_is_reported_as_unknown_not_as_false():
-    """The tri-state has survived every hop; this is the last place to lose it."""
     report = report_for(engineered(hba1c=feature("hba1c", 6.8, "%")))
     assert report.patient.hypertension is None
     assert report.patient.heart_disease is None
@@ -853,7 +743,6 @@ def test_the_report_never_invents_a_condition_or_a_risk():
 
 
 def test_generating_from_a_precomputed_fusion_does_not_re_run_the_models():
-    """Modules 27/32 re-render a stored analysis without a second prediction."""
     first = report_for(high_risk_payload())
     again = generate_report(fusion=first.fusion)
     assert again.overall.status_label == first.overall.status_label
@@ -864,7 +753,6 @@ def test_generating_from_a_precomputed_fusion_does_not_re_run_the_models():
 
 
 def test_no_medical_value_reaches_the_logs(caplog):
-    """The report holds clinical values by design. The logs must not."""
     import logging
 
     with caplog.at_level(logging.DEBUG):
@@ -875,24 +763,7 @@ def test_no_medical_value_reaches_the_logs(caplog):
         assert canary not in text, f"{canary!r} reached the logs"
 
 
-# --------------------------------------------------------------------------
-# THE UNMAPPED COUNT SURVIVES THE HTTP BOUNDARY
-#
-# `ValidatedFeaturesInput` declares no `unmapped` field and sets
-# `extra="ignore"`, so Module 6's unmapped rows are dropped silently on the way
-# in. Deriving the count with `len(unmapped or [])` then returns 0 -- and 0
-# here is not a missing number, it is the report stating that every parameter
-# on the document was assessed.
-#
-# Measured on `Test 2.pdf` through the running service: seventeen sent, zero
-# recorded, and the clinician summary went on to list four values as "the
-# reported values". §6u found the same 0 on the patient page and routed around
-# it in `dashboardService` rather than fixing it here.
-# --------------------------------------------------------------------------
-
-
 def test_the_count_comes_from_the_summary_when_the_list_was_dropped():
-    """THE SHAPE THAT ARRIVES OVER HTTP: a summary, and no `unmapped` key."""
     from app.services.report_builder import _resolve_features
 
     view = _resolve_features(
@@ -900,7 +771,6 @@ def test_the_count_comes_from_the_summary_when_the_list_was_dropped():
             "valid": {},
             "questionable": {},
             "missing_features": [],
-            # No "unmapped" key at all -- this is what the request model leaves.
             "summary": {"unmapped_count": 17},
         },
         None,
@@ -909,7 +779,6 @@ def test_the_count_comes_from_the_summary_when_the_list_was_dropped():
 
 
 def test_the_list_is_still_used_when_there_is_no_summary_count():
-    """In-process callers hand over the whole object, list included."""
     from app.services.report_builder import _resolve_features
 
     view = _resolve_features(
@@ -926,8 +795,6 @@ def test_the_list_is_still_used_when_there_is_no_summary_count():
 
 
 def test_a_report_with_nothing_unmapped_still_counts_zero():
-    """Zero must remain reachable: it is the truth for a fully mapped report,
-    and only a FALSE zero is the defect."""
     from app.services.report_builder import _resolve_features
 
     view = _resolve_features(

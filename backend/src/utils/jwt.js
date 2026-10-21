@@ -7,10 +7,6 @@ const ApiError = require('./ApiError');
 
 const TOKEN_TYPE = Object.freeze({ ACCESS: 'access', REFRESH: 'refresh' });
 
-/**
- * Sign a short-lived access token.
- * @param {{ id: string, role: string }} user
- */
 function signAccessToken(user) {
   return jwt.sign(
     { sub: String(user.id), role: user.role, type: TOKEN_TYPE.ACCESS },
@@ -23,11 +19,6 @@ function signAccessToken(user) {
   );
 }
 
-/**
- * Sign a long-lived refresh token. Each token carries a unique `jti` so a single
- * session can be revoked without invalidating the user's other sessions.
- * @param {{ id: string }} user
- */
 function signRefreshToken(user) {
   const jti = crypto.randomUUID();
   const token = jwt.sign(
@@ -53,7 +44,6 @@ function verifyToken(token, secret, expectedType) {
     if (err instanceof jwt.TokenExpiredError) {
       throw ApiError.unauthorized('Token has expired', 'TOKEN_EXPIRED');
     }
-    // JsonWebTokenError / NotBeforeError / malformed input all collapse to 401.
     throw ApiError.unauthorized('Invalid authentication token', 'INVALID_TOKEN');
   }
 
@@ -69,20 +59,10 @@ const verifyAccessToken = (token) =>
 const verifyRefreshToken = (token) =>
   verifyToken(token, config.jwt.refreshSecret, TOKEN_TYPE.REFRESH);
 
-/**
- * Refresh tokens are never stored in plaintext. A SHA-256 digest is enough here
- * because the token itself is high-entropy (signed JWT with a random jti).
- * @param {string} token
- */
 function hashToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
-/**
- * Extract a bearer token from an Authorization header.
- * @param {string|undefined} headerValue
- * @returns {string|null} the token, or null when missing/malformed
- */
 function extractBearerToken(headerValue) {
   if (!headerValue || typeof headerValue !== 'string') return null;
   const parts = headerValue.trim().split(/\s+/);

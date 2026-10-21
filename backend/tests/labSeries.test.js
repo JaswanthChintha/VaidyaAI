@@ -1,21 +1,5 @@
 'use strict';
 
-/**
- * The laboratory's own repeated parameters, over time.
- *
- * ==========================================================================
- * EVERY FIXTURE HERE IS INVENTED ON PURPOSE
- * ==========================================================================
- *
- * Not one of these names is a parameter from this project's real reports. The
- * feature has to work for ANY report carrying ANY parameter this platform
- * does not assess -- there is no list of known tests in the service and there
- * must be none in its tests either, or the suite would pass by recognising
- * the fixtures rather than by the rule working.
- *
- * So: "Zorblex", "Quibblease", "Frimbulator". If the implementation ever
- * starts depending on knowing what a test IS, these break.
- */
 
 const {
   buildLabSeries,
@@ -30,7 +14,6 @@ const {
   buildLabComparison,
 } = require('../src/services/labSeriesService');
 
-/** A history snapshot in `historyService`'s own shape. */
 const snap = (date, unmapped, reportId = `r-${date}`) => ({
   report_id: reportId,
   chrono_date: `${date}T00:00:00.000Z`,
@@ -41,10 +24,6 @@ const row = (test_name, value_raw, unit) => ({ test_name, value_raw, unit });
 
 describe('labSeriesService - names', () => {
   it('matches the same words in any order', () => {
-    // THE DEFECT THIS EXISTS FOR, in an invented vocabulary: one laboratory
-    // prints "ZBX (ZORBLEX FACTOR)" and the next "ZORBLEX FACTOR(ZBX)". Same
-    // test, same words, different arrangement -- and before this they were two
-    // different parameters, each seen once, so neither made a series.
     const out = buildLabSeries([
       snap('2026-01-01', [row('ZBX (ZORBLEX FACTOR)', '12.1', 'mg/L')]),
       snap('2026-02-01', [row('ZORBLEX FACTOR(ZBX)', '38.9', 'mg/L')]),
@@ -64,9 +43,6 @@ describe('labSeriesService - names', () => {
   });
 
   it('does NOT match a name with an extra word', () => {
-    // The line between set equality and guessing. "Free Frimbulator" is not
-    // "Frimbulator", and a file that decided otherwise would be inventing an
-    // identity -- the class of guess that has produced three defects here.
     const out = buildLabSeries([
       snap('2026-01-01', [row('Frimbulator', '1', 'U/L')]),
       snap('2026-02-01', [row('Free Frimbulator', '2', 'U/L')]),
@@ -80,7 +56,6 @@ describe('labSeriesService - names', () => {
   });
 
   it('labels the series with the MOST RECENT spelling', () => {
-    // The reader is holding the newest report.
     const out = buildLabSeries([
       snap('2026-01-01', [row('ZBX (ZORBLEX FACTOR)', '1', 'mg/L')]),
       snap('2026-02-01', [row('ZORBLEX FACTOR(ZBX)', '2', 'mg/L')]),
@@ -91,8 +66,6 @@ describe('labSeriesService - names', () => {
 
 describe('labSeriesService - units', () => {
   it('BLOCKS a series whose reports disagree about the unit', () => {
-    // Two scales on one axis is the failure 6z already caught. The series
-    // still exists and still carries its readings; it simply draws no line.
     const out = buildLabSeries([
       snap('2026-01-01', [row('Frimbulator', '101.9', 'U/L')]),
       snap('2026-02-01', [row('Frimbulator', '13', 'U/mL')]),
@@ -104,14 +77,12 @@ describe('labSeriesService - units', () => {
     expect(s.blocked.reason).toBe('units_differ');
     expect(s.blocked.units.sort()).toEqual(['U/L', 'U/mL']);
     expect(s.unit).toBeNull();
-    // NOT DROPPED. The values are still there to be shown.
     expect(s.points.map((p) => p.value)).toEqual([101.9, 13]);
     expect(out.blockedCount).toBe(1);
     expect(out.plottedCount).toBe(0);
   });
 
   it('treats the same unit written differently as the same unit', () => {
-    // Case and spacing only -- "fL" and "fl" are one unit typed twice.
     const out = buildLabSeries([
       snap('2026-01-01', [row('Zorblex volume', '85.1', 'fL')]),
       snap('2026-02-01', [row('Zorblex volume', '88.6', 'fl ')]),
@@ -121,11 +92,6 @@ describe('labSeriesService - units', () => {
   });
 
   it('joins a unit the extraction MISREAD, because it is the same unit', () => {
-    // THE DEFECT, on real data: TSH is printed `1.81 µIU/mL` on one of this
-    // account's reports and `3.51 ulU/mL` on the other. Same unit. The
-    // extraction read the micro sign as `u` and the capital I as lowercase l
-    // -- the two classic OCR confusions in one short string -- and the panel
-    // then told the reader their reports disagreed about the unit.
     const out = buildLabSeries([
       snap('2026-01-01', [row('Zorblexin', '3.51', 'ulU/mL')]),
       snap('2026-02-01', [row('Zorblexin', '1.81', 'µIU/mL')]),
@@ -134,14 +100,10 @@ describe('labSeriesService - units', () => {
     expect(out.series[0].blocked).toBeNull();
     expect(out.series[0].movement).toBe('fell');
     expect(out.plottedCount).toBe(1);
-    // AND THE READER STILL SEES WHAT THEIR LABORATORY PRINTED. The folding is
-    // a comparison key; it never reaches a screen.
     expect(out.series[0].points.map((p) => p.unit)).toEqual(['ulU/mL', 'µIU/mL']);
   });
 
   it('joins the micro sign with its ASCII substitute', () => {
-    // `ug/dL` for µg/dL is how a laboratory prints it when the character set
-    // will not carry the sign. Always one unit, never two.
     const out = buildLabSeries([
       snap('2026-01-01', [row('Zorblex', '4', 'µmol/L')]),
       snap('2026-02-01', [row('Zorblex', '6', 'umol/L')]),
@@ -150,9 +112,6 @@ describe('labSeriesService - units', () => {
   });
 
   it('still keeps GENUINELY different units apart', () => {
-    // THE HALF THAT MATTERS MORE. A folding that merged two real units would
-    // put incomparable readings on one line, which is worse than the blocked
-    // panel it replaced. These pairs must never join.
     const pairs = [
       ['mg/L', 'mg/dL'],
       ['U/L', 'U/mL'],
@@ -173,16 +132,11 @@ describe('labSeriesService - units', () => {
   });
 
   it('NEVER folds a digit', () => {
-    // A confusable class containing `1` would be a step towards merging
-    // `10^3/µL` with `10^6/µL`, which are different units.
     expect(unitKey('10^3/µL')).toContain('1');
     expect(unitKey('10^3/µL')).not.toBe(unitKey('10^6/µL'));
   });
 
   it('joins U/L with IU/L, because they are the same quantity', () => {
-    // SGPT is 101.9 U/L on one of this account's reports and 13 IU/L on the
-    // other. U and IU of catalytic activity are the same quantity, so the
-    // number per litre is the same figure under either name.
     const out = buildLabSeries([
       snap('2026-01-01', [row('Frimbulase', '101.9', 'U/L')], 'A'),
       snap('2026-02-01', [row('Frimbulase', '13', 'IU/L')], 'B'),
@@ -190,7 +144,6 @@ describe('labSeriesService - units', () => {
 
     expect(out.series[0].blocked).toBeNull();
     expect(out.series[0].movement).toBe('fell');
-    // NO READING WAS ALTERED. The declarations carry no factor.
     expect(out.series[0].movementFrom).toBe(101.9);
     expect(out.series[0].movementTo).toBe(13);
     expect(out.series[0].unitEquivalence.id).toBe('enzyme_activity_per_litre');
@@ -210,13 +163,6 @@ describe('labSeriesService - units', () => {
   });
 
   it('does NOT let % mean g/dL on any other test', () => {
-    // THE MOST IMPORTANT TEST IN THIS FILE.
-    //
-    // `%` is a mass concentration on MCHC and a proportion of the white cell
-    // count on the differential. A global `g/dL == %` declaration -- which is
-    // what putting it in Module 5's flat alias map would be -- would make
-    // every haemoglobin in g/dL interchangeable with a percentage. That is
-    // the worst defect available here, and the scoping is what prevents it.
     for (const test of ['EOSINOPHILS', 'LYMPHOCYTES', 'Haemoglobin', 'Frimbulator']) {
       const out = buildLabSeries([
         snap('2026-01-01', [row(test, '5', '%')], 'A'),
@@ -232,45 +178,17 @@ describe('labSeriesService - units', () => {
       snap('2026-01-01', [row('Zorblex', '35', 'mm/hr')], 'A'),
       snap('2026-02-01', [row('Zorblex', '45', 'mm/hr')], 'B'),
     ]);
-    // No declaration was needed, so none is claimed -- a note on every panel
-    // would be the commentary the reader asked to have removed.
     expect(out.series[0].unitEquivalence).toBeNull();
   });
 
-  // ======================================================================
-  // WHAT CHECKING THE TWO EQUIVALENCES TURNED UP · 2026-09-19
-  // ======================================================================
-  //
-  // Both hold. Neither `basis` said everything it needed to, and each was
-  // incomplete in a different way -- which is what checking them found.
 
-  it('records that IU is ambiguous, and why the global scope survives it', () => {
-    // `IU` also names the International Unit of BIOLOGICAL ACTIVITY -- the
-    // potency unit for vitamins and hormones, unrelated to catalysis. hCG,
-    // LH and FSH are reported in IU/L and mean potency.
-    //
-    // THE ENTRY IS STILL RIGHT TO BE GLOBAL: for the join to be wrong, one
-    // test would have to be printed `IU/L` as a potency and `U/L` elsewhere,
-    // and `U/L` is only ever catalytic activity -- so that test is an enzyme
-    // and both readings are catalytic. The doubt recurs, so the resolution
-    // is written where the next reader will meet it.
-    const source = require('fs').readFileSync(
-      require('path').join(__dirname, '../src/services/unitEquivalence.js'),
-      'utf8'
-    );
-    expect(source).toMatch(/BIOLOGICAL ACTIVITY/);
-    expect(source).toMatch(/no relation between the two units/);
-
+  it('keeps the enzyme-activity equivalence global rather than per test', () => {
     const { UNIT_EQUIVALENCE } = require('../src/services/unitEquivalence');
     const enzyme = UNIT_EQUIVALENCE.find((e) => e.id === 'enzyme_activity_per_litre');
     expect(enzyme.tests).toBeNull();
   });
 
   it('states the assumptions the MCHC equivalence rests on', () => {
-    // It was written as though exact. It holds ASSUMING a red-cell density of
-    // 1 g/mL and negligible plasma haemoglobin -- standard, unstated on any
-    // report, and untrue of a grossly haemolysed sample, which this entry
-    // cannot detect. An equivalence with conditions must name them.
     const { UNIT_EQUIVALENCE } = require('../src/services/unitEquivalence');
     const mchc = UNIT_EQUIVALENCE.find((e) => e.id === 'mchc_mass_concentration');
 
@@ -278,16 +196,10 @@ describe('labSeriesService - units', () => {
     expect(mchc.basis).toMatch(/density of 1 g\/mL/);
     expect(mchc.basis).toMatch(/negligible/);
     expect(mchc.basis).toMatch(/haemolysed/);
-    // And it stays scoped: % on a differential is not a mass concentration.
     expect(mchc.tests).toContain('MCHC');
   });
 
   it('declares NO conversion factor anywhere in the table', () => {
-    // The table may only ever say "these two labels mean one scale". A pair
-    // needing a multiplier is a CONVERSION and belongs in Module 5, upstream
-    // of storage, whose own header calls itself safety-critical. This asserts
-    // the shape so a factor added later fails here rather than silently
-    // rescaling somebody's reading.
     const { UNIT_EQUIVALENCE } = require('../src/services/unitEquivalence');
     const allowed = new Set(['id', 'units', 'tests', 'label', 'basis', 'verified']);
 
@@ -296,17 +208,9 @@ describe('labSeriesService - units', () => {
       for (const field of Object.keys(entry)) {
         expect(allowed.has(field)).toBe(true);
       }
-      // Nothing numeric at all: no factor, no offset, no multiplier.
       for (const value of Object.values(entry)) {
         expect(typeof value).not.toBe('number');
       }
-      // And every entry argues for itself where a reviewer will read it.
-      //
-      // THE ASSERTION TIGHTENED ON 2026-09-19. It matched `CHECK AGAINST` --
-      // a promise that a source exists somewhere. Both entries now NAME the
-      // source, the page and the date it was read, so the test asks for the
-      // thing a reviewer actually needs: a citation, and an explicit
-      // statement that nobody has confirmed it yet.
       expect(entry.basis.length).toBeGreaterThan(40);
       expect(entry.basis).toMatch(/CHECKED AGAINST:/);
       expect(entry.basis).toMatch(/read 2026-/);
@@ -316,10 +220,6 @@ describe('labSeriesService - units', () => {
   });
 
   it('takes a reading that printed NO unit to be in the one unit the series prints', () => {
-    // `Estimated Average Glucose` is stored with `unit: null` -- read out of
-    // the extraction, not inferred -- while the other report gives
-    // `154 mg/dL`. The series was blocked and the reader was told the two
-    // reports disagreed about the unit. They do not; one is silent.
     const out = buildLabSeries([
       snap('2026-01-01', [row('Zorblex', '121.94', null)], 'A'),
       snap('2026-02-01', [row('Zorblex', '154', 'mg/dL')], 'B'),
@@ -329,16 +229,10 @@ describe('labSeriesService - units', () => {
     expect(out.series[0].unit).toBe('mg/dL');
     expect(out.series[0].movementFrom).toBe(121.94);
     expect(out.series[0].movementTo).toBe(154);
-    // DISCLOSED. A reader must not be shown a unit their own document does
-    // not carry without being told where it came from.
     expect(out.series[0].unitAssumed).toEqual({ unit: 'mg/dL', reason: 'not_printed' });
   });
 
   it('finds the newest PRINTED unit when the newest reading is the silent one', () => {
-    // The rule is still "the label on the report the reader is holding", but
-    // once a silent reading can join a series that report may be the silent
-    // one -- and the panel would have shown a pair with no unit at all while
-    // a unit sat on the older report.
     const out = buildLabSeries([
       snap('2026-01-01', [row('Zorblex', '154', 'mg/dL')], 'A'),
       snap('2026-02-01', [row('Zorblex', '121.94', null)], 'B'),
@@ -349,9 +243,6 @@ describe('labSeriesService - units', () => {
   });
 
   it('claims nothing when NO reading printed a unit', () => {
-    // This case already plotted before any of this, because every key folds
-    // to the empty string and nothing differs. It must keep plotting AND keep
-    // claiming no unit -- there is none to claim.
     const out = buildLabSeries([
       snap('2026-01-01', [row('Zorblex', '1', null)], 'A'),
       snap('2026-02-01', [row('Zorblex', '2', null)], 'B'),
@@ -363,9 +254,6 @@ describe('labSeriesService - units', () => {
   });
 
   it('will NOT let a silent reading resolve a real disagreement', () => {
-    // THE GUARD. An absence can fail to create a disagreement; it cannot
-    // settle one. Two different printed units block however many readings
-    // are silent.
     const out = buildLabSeries([
       snap('2026-01-01', [row('Zorblex', '1', null)], 'A'),
       snap('2026-02-01', [row('Zorblex', '2', 'mg/L')], 'B'),
@@ -379,8 +267,6 @@ describe('labSeriesService - units', () => {
   });
 
   it('claims no assumed unit on an ordinary single-unit series', () => {
-    // A note on every panel would be the commentary the reader asked to have
-    // removed.
     const out = buildLabSeries([
       snap('2026-01-01', [row('Zorblex', '35', 'mm/hr')], 'A'),
       snap('2026-02-01', [row('Zorblex', '45', 'mm/hr')], 'B'),
@@ -388,25 +274,8 @@ describe('labSeriesService - units', () => {
     expect(out.series[0].unitAssumed).toBeNull();
   });
 
-  /*
-   * TWO TESTS FOR `unit_missing` STOOD HERE AND ARE DELETED WITH THE BRANCH.
-   *
-   * They pinned the behaviour one commit earlier, when a silent reading beside
-   * a printed one BLOCKED the series and the only defect was the reason given
-   * for it. Adopting the printed unit removed that case, so nothing can reach
-   * `unit_missing` any more -- enumerated against the real function, not
-   * reasoned about.
-   *
-   * A test that pins a state the producer can no longer reach is a test that
-   * will be made to pass by reintroducing it. The behaviour that replaced it
-   * is pinned by `takes a reading that printed NO unit...` above, and the
-   * disagreement half by `will NOT let a silent reading resolve a real
-   * disagreement`.
-   */
 
   it('does not decide that two DIFFERENT units are equal', () => {
-    // g/dL and % are numerically close for some tests and are not the same
-    // quantity. This file knows no equivalences at all, deliberately.
     const out = buildLabSeries([
       snap('2026-01-01', [row('Quibblease concentration', '30.8', 'g/dL')]),
       snap('2026-02-01', [row('Quibblease concentration', '33.0', '%')]),
@@ -444,9 +313,6 @@ describe('labSeriesService - what is not a series', () => {
   });
 
   it('carries NO direction and NO classification, ever', () => {
-    // There is no polarity for these parameters and no stability band. A
-    // direction word here would be this platform interpreting a test it does
-    // not assess.
     const out = buildLabSeries([
       snap('2026-01-01', [row('Zorblex', '1', 'U/L')]),
       snap('2026-02-01', [row('Zorblex', '99', 'U/L')]),
@@ -459,16 +325,6 @@ describe('labSeriesService - what is not a series', () => {
   });
 });
 
-/**
- * THE PRINTED REFERENCE INTERVAL, WHICH SETS THE SCALE AND NOTHING ELSE.
- *
- * The shapes here are the ones the real reports produced, in the invented
- * vocabulary: two laboratories printing different ranges for the same test
- * (nine of ten parameters on this project's own reports), a one-sided range
- * (`< 6 mg/l` -> a high and no low), and a range that extracted to no numbers
- * at all (`F: 36 - 46 M: 40 - 50`, which cannot be reduced to one pair
- * without knowing whose report it is).
- */
 const printedFor = (byReport) =>
   new Map(
     Object.entries(byReport).map(([reportId, rows]) => [
@@ -486,9 +342,6 @@ const ref = (test_name, reference_low, reference_high, reference_range_raw = nul
 
 describe('labSeriesService - the printed reference interval', () => {
   it('joins per report and by the EXACT printed name, so two spellings both match', () => {
-    // The join that makes this work across reports: `Zorblex` is looked up in
-    // its own report and `ZORBLEX` in its own. Neither has to know about the
-    // other -- that they are the same TEST is nameKey's separate job.
     const out = buildLabSeries(
       [
         snap('2026-01-01', [row('Zorblex', '15', '%')], 'r1'),
@@ -508,10 +361,6 @@ describe('labSeriesService - the printed reference interval', () => {
   });
 
   it('takes the UNION when the two reports disagree about the range', () => {
-    // There is no single interval, and preferring one laboratory's would be
-    // asserting its assay applies to the other's reading. 22-45 and 20-40
-    // become 20-45: at least as wide as either, so nothing is excluded that
-    // one of the reader's own documents called usual.
     const out = buildLabSeries(
       [
         snap('2026-01-01', [row('Zorblex', '15', '%')], 'r1'),
@@ -528,8 +377,6 @@ describe('labSeriesService - the printed reference interval', () => {
   });
 
   it('keeps a one-sided range one-sided instead of inventing the other half', () => {
-    // `< 6 mg/l` is a high and no low. A fabricated zero would put a number
-    // on the scale that no laboratory printed.
     const out = buildLabSeries(
       [
         snap('2026-01-01', [row('Quibblease', '12.1', 'mg/L')], 'r1'),
@@ -545,8 +392,6 @@ describe('labSeriesService - the printed reference interval', () => {
   });
 
   it('reads NO bound from a range that extracted to no numbers, and keeps the text', () => {
-    // A sex-specific interval. The extraction deliberately declined to pick a
-    // pair; parsing the string here would be undoing that decision.
     const out = buildLabSeries(
       [
         snap('2026-01-01', [row('Frimbulator', '34.4', '%')], 'r1'),
@@ -562,7 +407,6 @@ describe('labSeriesService - the printed reference interval', () => {
     expect(s.points[1].labReferenceLow).toBeNull();
     expect(s.points[1].labReferenceHigh).toBeNull();
     expect(s.points[1].labReferenceRaw).toBe('F: 36 - 46 M: 40 - 50');
-    // One opinion and a silence is NOT agreement.
     expect(s.referenceAgreement).toBe('differ');
     expect(s.referenceCoverage).toEqual({ withBounds: 1, total: 2 });
   });
@@ -598,8 +442,6 @@ describe('labSeriesService - the printed reference interval', () => {
   });
 
   it('never parses a range out of a string bound', () => {
-    // Module 4 already decided what the printed text means. A string arriving
-    // in a numeric field is a contract violation, not an invitation to parse.
     expect(numericBound('22')).toBeNull();
     expect(numericBound(22)).toBe(22);
     expect(numericBound(null)).toBeNull();
@@ -608,8 +450,6 @@ describe('labSeriesService - the printed reference interval', () => {
   });
 
   it('gives a BLOCKED series no scale, so a mixed-unit union cannot be handed on', () => {
-    // Two units means two scales, and adding their intervals together would
-    // be the failure the blocking rule exists to prevent.
     const out = buildLabSeries(
       [
         snap('2026-01-01', [row('Zorblex', '101.9', 'U/L')], 'r1'),
@@ -623,7 +463,6 @@ describe('labSeriesService - the printed reference interval', () => {
 
     expect(out.series[0].blocked).not.toBeNull();
     expect(out.series[0].referenceScale).toBeNull();
-    // The per-point facts are still carried; only the union is withheld.
     expect(out.series[0].points[1].labReferenceLow).toBe(5);
   });
 
@@ -639,14 +478,11 @@ describe('labSeriesService - the printed reference interval', () => {
       })
     );
 
-    // Zorblex is blocked on units; only Quibblease is drawn and scaled.
     expect(out.blockedCount).toBe(1);
     expect(out.scaledCount).toBe(1);
   });
 
   it('degrades to NO scale, never a wrong one, when the caller supplies nothing', () => {
-    // An older caller -- or one whose extraction query found nothing -- gets
-    // exactly the behaviour this page had before the scale existed.
     for (const printed of [undefined, null, new Map(), printedFor({ other: [] })]) {
       const out = buildLabSeries(
         [
@@ -662,8 +498,6 @@ describe('labSeriesService - the printed reference interval', () => {
   });
 
   it('leaves a point unbounded when the extraction spells the name differently', () => {
-    // Not assumed away: the point simply has no bound and the coverage count
-    // says so, rather than borrowing the other report's range.
     const out = buildLabSeries(
       [
         snap('2026-01-01', [row('Zorblex', '1', 'U/L')], 'r1'),
@@ -677,18 +511,6 @@ describe('labSeriesService - the printed reference interval', () => {
   });
 });
 
-/**
- * THE PARAMETERS THAT CANNOT MAKE A SERIES ARE STILL ON THE REPORT.
- *
- * A reader holding two reports with 22 parameters between them saw twelve
- * panels and a line saying twenty-two had been "considered". They asked where
- * the rest were, which is the right question: a count of what was looked at is
- * not an answer about what was found.
- *
- * These carry readings and dates and NOTHING ELSE -- no line, no direction, no
- * scale. "We cannot draw this" is not a reason to withhold the laboratory's
- * own number.
- */
 describe('labSeriesService - readings that cannot be trended', () => {
   it('lists a parameter seen on only ONE report instead of only counting it', () => {
     const out = buildLabSeries([
@@ -696,9 +518,7 @@ describe('labSeriesService - readings that cannot be trended', () => {
       snap('2026-02-01', [row('Quibblease', '1.81', 'mg/L')], 'r2'),
     ]);
 
-    // Still counted, exactly as before -- the count did not become wrong.
     expect(out.singleReportCount).toBe(2);
-    // AND now visible.
     expect(out.readings.map((r) => r.name)).toEqual(['Quibblease', 'Zorblex']);
     expect(out.readings[1].rows).toEqual([
       expect.objectContaining({ valueRaw: '3.51', unit: 'ulU/mL', value: 3.51 }),
@@ -707,9 +527,6 @@ describe('labSeriesService - readings that cannot be trended', () => {
   });
 
   it('shows a NON-NUMERIC result as the laboratory printed it', () => {
-    // "Negative" is a result. Rendering it as a missing value, or as nothing,
-    // is this file's standing failure mode: an absence that reads as though
-    // there were nothing there.
     const out = buildLabSeries([
       snap('2026-01-01', [row('Zorblex', 'Pale Yellow', null)], 'r1'),
       snap('2026-02-01', [row('Zorblex', 'Negative', null)], 'r2'),
@@ -719,13 +536,10 @@ describe('labSeriesService - readings that cannot be trended', () => {
     expect(out.readings).toHaveLength(1);
     expect(out.readings[0].reason).toBe('not_numeric');
     expect(out.readings[0].rows.map((r) => r.valueRaw)).toEqual(['Pale Yellow', 'Negative']);
-    // A value that is not a number is not given one.
     expect(out.readings[0].rows.every((r) => r.value === null)).toBe(true);
   });
 
   it('gives a reading NO line, NO direction and NO scale', () => {
-    // The whole point of keeping these out of `series`: nothing downstream
-    // can draw a trend through a single point or an unordered word.
     const out = buildLabSeries([
       snap('2026-01-01', [row('Zorblex', '3.51', 'mg/L')], 'r1'),
       snap('2026-02-01', [row('Quibblease', '1.81', 'mg/L')], 'r2'),
@@ -740,8 +554,6 @@ describe('labSeriesService - readings that cannot be trended', () => {
   });
 
   it('never lists a parameter that DID make a series', () => {
-    // Otherwise the same test appears twice on one page, once as a chart and
-    // once as a reading, which reads as two different tests.
     const out = buildLabSeries([
       snap('2026-01-01', [row('Zorblex', '1', 'U/L')], 'r1'),
       snap('2026-02-01', [row('Zorblex', '2', 'U/L')], 'r2'),
@@ -762,8 +574,6 @@ describe('labSeriesService - readings that cannot be trended', () => {
   });
 
   it('accounts for EVERY considered parameter, in one bucket or another', () => {
-    // The identity a reader is entitled to: nothing looked at is unaccounted
-    // for. considered === plotted + blocked + listed.
     const out = buildLabSeries([
       snap('2026-01-01', [
         row('Zorblex', '1', 'U/L'),
@@ -785,15 +595,6 @@ describe('labSeriesService - readings that cannot be trended', () => {
   });
 });
 
-/**
- * THE STATUS A PARAMETER THIS PLATFORM DOES NOT ASSESS IS ALLOWED TO CARRY.
- *
- * A reader asked why these panels showed no status when the assessed ones say
- * improving, worsening or stable. Those three cannot be said here -- two need
- * polarity and one needs a stability band, and neither exists for a test this
- * platform does not assess. What IS available is arithmetic on the reader's
- * own numbers, and the laboratory's own marking.
- */
 describe('labSeriesService - movement and the laboratory\'s marking', () => {
   const flagged = (test_name, value_raw, unit, flag) => ({ test_name, value_raw, unit, flag });
 
@@ -815,16 +616,12 @@ describe('labSeriesService - movement and the laboratory\'s marking', () => {
     expect(falling.series[0].movement).toBe('fell');
     expect(flat.series[0].movement).toBe('same');
 
-    // THE GUARD THIS MODULE EXISTS FOR. None of the three clinical words may
-    // ever appear, under any key.
     for (const out of [rising, falling, flat]) {
       expect(JSON.stringify(out)).not.toMatch(/improving|worsening|stable/i);
     }
   });
 
   it('withholds movement from a BLOCKED series', () => {
-    // 101.9 U/L and 13 IU/L may be the same measurement twice. Saying "fell"
-    // would assert a change the same file refused to draw a line through.
     const out = buildLabSeries([
       snap('2026-01-01', [row('Zorblex', '101.9', 'U/L')], 'r1'),
       snap('2026-02-01', [row('Zorblex', '13', 'U/mL')], 'r2'),
@@ -835,23 +632,18 @@ describe('labSeriesService - movement and the laboratory\'s marking', () => {
   });
 
   it('carries the two readings the movement word is about', () => {
-    // The collapsed row prints these beside the word. They come from the same
-    // comparison that produced it, so the two cannot disagree.
     const out = buildLabSeries([
       snap('2026-01-01', [row('Zorblex', '12.1', 'mg/L')], 'r1'),
       snap('2026-02-01', [row('Zorblex', '20.0', 'mg/L')], 'r2'),
       snap('2026-03-01', [row('Zorblex', '38.9', 'mg/L')], 'r3'),
     ]);
 
-    // FIRST AND LATEST, never first and second.
     expect(out.series[0].movement).toBe('rose');
     expect(out.series[0].movementFrom).toBe(12.1);
     expect(out.series[0].movementTo).toBe(38.9);
   });
 
   it('carries a pair of zeroes rather than treating 0 as absent', () => {
-    // BASOPHILS is 0 on both of this account's real reports. A zero dropped
-    // as "missing" would put an empty pair beside the word "same".
     const out = buildLabSeries([
       snap('2026-01-01', [row('Zorblex', '0', '%')], 'r1'),
       snap('2026-02-01', [row('Zorblex', '0', '%')], 'r2'),
@@ -863,9 +655,6 @@ describe('labSeriesService - movement and the laboratory\'s marking', () => {
   });
 
   it('withholds the PAIR from a blocked series, not only the word', () => {
-    // 101.9 U/L and 13 IU/L beside each other with an arrow between them
-    // would assert the comparison this file refused to draw -- the word being
-    // absent is not enough if the numbers still claim it.
     const out = buildLabSeries([
       snap('2026-01-01', [row('Zorblex', '101.9', 'U/L')], 'r1'),
       snap('2026-02-01', [row('Zorblex', '13', 'U/mL')], 'r2'),
@@ -892,9 +681,6 @@ describe('labSeriesService - movement and the laboratory\'s marking', () => {
   });
 
   it('does NOT reach back for an older marking when the latest report has none', () => {
-    // PCV is the real case: the older report marked it low and the newer
-    // marked nothing. Presenting the older verdict as the current status
-    // would be a stale claim about the reading in the reader's hand.
     const out = buildLabSeries(
       [
         snap('2026-01-01', [row('Zorblex', '34.4', '%')], 'r1'),
@@ -921,8 +707,6 @@ describe('labSeriesService - movement and the laboratory\'s marking', () => {
   });
 
   it('leaves the marking null when the caller supplied no printed parameters', () => {
-    // Null is "not checked". It must never arrive as "normal", which is a
-    // laboratory saying it looked and the value was in range.
     const out = buildLabSeries([
       snap('2026-01-01', [row('Zorblex', '1', 'U/L')], 'r1'),
       snap('2026-02-01', [row('Zorblex', '2', 'U/L')], 'r2'),
@@ -933,14 +717,6 @@ describe('labSeriesService - movement and the laboratory\'s marking', () => {
   });
 });
 
-/**
- * MODULE 35'S VERDICTS, ATTACHED TO THE SERIES THEY BELONG TO.
- *
- * The classification itself happens in the ai-service, using Module 28's own
- * classifier. This half is only about which verdict lands on which panel, and
- * what happens when one does not arrive -- which, on a free-tier key, is the
- * common case rather than the edge case.
- */
 describe('labSeriesService - attaching a trend verdict', () => {
   const twoReports = () =>
     buildLabSeries([
@@ -961,8 +737,6 @@ describe('labSeriesService - attaching a trend verdict', () => {
     );
 
     const outbound = classifiableSeries(built);
-    // Quibblease is blocked on units: two units have not been shown to have
-    // moved at all, so there is no change to classify.
     expect(outbound.map((s) => s.test_name)).toEqual(['Zorblex']);
     expect(outbound[0]).toEqual(
       expect.objectContaining({
@@ -992,9 +766,6 @@ describe('labSeriesService - attaching a trend verdict', () => {
   });
 
   it('branches on OUTCOME, never on the presence of a trend word', () => {
-    // A payload carrying a direction without a classification is a
-    // contradiction, and §6z rendered the string "null" as a direction once
-    // on exactly this mistake. The unclassified reading wins.
     const out = attachVerdicts(twoReports(), [
       {
         test_name: 'Zorblex',
@@ -1008,9 +779,6 @@ describe('labSeriesService - attaching a trend verdict', () => {
   });
 
   it('leaves the series untouched when no verdict arrives', () => {
-    // THE DESIGNED DEGRADATION. A spent quota, an unconfigured key and a
-    // service that is down all land here, and the panel keeps the movement
-    // word it already had.
     for (const verdicts of [undefined, null, [], [{}], [{ test_name: 'Other' }]]) {
       const out = attachVerdicts(twoReports(), verdicts);
       expect(out.series[0].trend).toBeUndefined();
@@ -1019,9 +787,6 @@ describe('labSeriesService - attaching a trend verdict', () => {
   });
 
   it('never lands one test\'s verdict on another test\'s panel', () => {
-    // The worst failure this feature can have. Matched on the exact name that
-    // was sent; nothing is normalised, because a fuzzy match here would be
-    // silent and wrong.
     const out = attachVerdicts(twoReports(), [
       { test_name: 'zorblex', outcome: 'TREND_CLASSIFIED', trend: 'improving' },
       { test_name: 'Zorblex (total)', outcome: 'TREND_CLASSIFIED', trend: 'improving' },
@@ -1040,8 +805,6 @@ describe('labSeriesService - attaching a trend verdict', () => {
 
 describe('labSeriesService - order', () => {
   it('puts the oldest reading first, whatever order the history arrives in', () => {
-    // The history is assembled newest-first. A chart drawn from it unreversed
-    // runs backwards.
     const out = buildLabSeries([
       snap('2026-03-01', [row('Zorblex', '3', 'U/L')]),
       snap('2026-01-01', [row('Zorblex', '1', 'U/L')]),
@@ -1090,14 +853,10 @@ describe('labSeriesService - the comparison table for unassessed tests', () => {
     expect(only.previous).toBe(12.1);
     expect(only.current).toBe(38.9);
     expect(only.symbol).toBe('↑');
-    // It moved and nothing declared whether that is better -- which is what
-    // `changed_direction_only` means in report_comparator._category.
     expect(only.category).toBe('changed_direction_only');
   });
 
   it('keeps a parameter that is on only ONE of the two reports', () => {
-    // THE WHOLE REASON THIS EXISTS. These were absent from the card, so two
-    // reports carrying 28 parameters showed twelve rows.
     const built = buildLabSeries(pairOf([row('OldOnly', '5', '%')], [row('NewOnly', '9', '%')]));
     const rows = buildLabComparison(built, 'A', 'B').rows;
 
@@ -1110,8 +869,6 @@ describe('labSeriesService - the comparison table for unassessed tests', () => {
   });
 
   it('refuses to classify two different units, and carries BOTH of them', () => {
-    // 101.9 U/L against 13 IU/L. Hiding one unit would hide the reason the
-    // row cannot be classified.
     const built = buildLabSeries(pairOf([row('Zorblex', '101.9', 'U/L')], [row('Zorblex', '13', 'U/mL')]));
     const [only] = buildLabComparison(built, 'A', 'B').rows;
 
@@ -1129,20 +886,10 @@ describe('labSeriesService - the comparison table for unassessed tests', () => {
     ]);
     const [only] = buildLabComparison(withVerdict, 'A', 'B').rows;
 
-    // `worsening` on the timeline is `worsened` here. ONE vocabulary per
-    // table -- not a third set of words invented for these rows.
     expect(only.category).toBe('worsened');
   });
 
   it("lets the laboratory's own crossing outrank the change axis", () => {
-    // Module 29's documented precedence: a reference-interval crossing is the
-    // more consequential fact. This is the LABORATORY's marking, not ours.
-    //
-    // THE FLAG COMES FROM THE PRINTED EXTRACTION, NOT FROM THE UNMAPPED ROW.
-    // The first version of this test put `flag` on the row and asserted on it,
-    // and `buildLabSeries` never looks there -- it joins each point to its own
-    // report's extraction. The test failed with `previousFlag: null`, which is
-    // the producer telling the fixture it was wrong.
     const built = buildLabSeries(
       pairOf([row('Zorblex', '12.1', 'mg/L')], [row('Zorblex', '38.9', 'mg/L')]),
       printedFor({
@@ -1155,14 +902,10 @@ describe('labSeriesService - the comparison table for unassessed tests', () => {
     ]);
     const [only] = buildLabComparison(withVerdict, 'A', 'B').rows;
 
-    // `stable` would have given `unchanged`. The crossing outranks it.
     expect(only.category).toBe('newly_abnormal');
   });
 
   it('claims NO crossing when one report marked nothing', () => {
-    // PCV is the case that decides it: marked low on the older report and
-    // unmarked on the newer. Reading the absence as normal would invent a
-    // recovery the laboratory never stated.
     const built = buildLabSeries(
       pairOf([row('Zorblex', '34.4', '%')], [row('Zorblex', '37.9', '%')]),
       printedFor({
@@ -1178,9 +921,6 @@ describe('labSeriesService - the comparison table for unassessed tests', () => {
   });
 
   it('follows the REQUESTED pair, not the date order', () => {
-    // The picker allows an out-of-order pair and the card says so. Module 29
-    // keys its rows off the requested baseline, so these must too, or one
-    // table would have two ideas of which column is "previous".
     const built = buildLabSeries(pairOf([row('Zorblex', '12.1', 'mg/L')], [row('Zorblex', '38.9', 'mg/L')]));
     const [reversed] = buildLabComparison(built, 'B', 'A').rows;
 
@@ -1208,15 +948,6 @@ describe('labSeriesService - the comparison table for unassessed tests', () => {
 
 describe('labSeriesService - a row that restates an assessed feature', () => {
   it('does NOT trend it, so one change cannot get two opposite verdicts', () => {
-    // THE DEFECT THIS EXISTS FOR, and it was about to reach a reader:
-    //
-    //   HbA1c (average blood sugar)  5.9 % -> 7 %          worsening
-    //   AVERAGE BLOOD GLUCOSE        121.94 -> 154 mg/dL   improving
-    //
-    // Those are the same change -- eAG = 28.7 x HbA1c - 46.7 gives 122.6 and
-    // 154.2 -- and the reassuring one was the false one. It came from the
-    // extraction storing "151 - 180 - Average Control", a band from an HbA1c
-    // interpretation table, as this patient's reference interval.
     const out = buildLabSeries([
       snap('2026-01-01', [row('Estimated Average Glucose', '121.94', null)], 'A'),
       snap('2026-02-01', [row('AVERAGE BLOOD GLUCOSE', '154', 'mg/dL')], 'B'),
@@ -1227,9 +958,6 @@ describe('labSeriesService - a row that restates an assessed feature', () => {
   });
 
   it('still SHOWS it, with its readings and the feature it restates', () => {
-    // 6au's lesson: a row the reader can find on their document and not on the
-    // screen reads as missing, whatever the reason. Excluded from trending is
-    // not excluded from the page.
     const out = buildLabSeries([
       snap('2026-01-01', [row('AVERAGE BLOOD GLUCOSE', '121.94', 'mg/dL')], 'A'),
       snap('2026-02-01', [row('AVERAGE BLOOD GLUCOSE', '154', 'mg/dL')], 'B'),
@@ -1239,7 +967,6 @@ describe('labSeriesService - a row that restates an assessed feature', () => {
     expect(only.reason).toBe('restates_assessed_feature');
     expect(only.restates).toBe('hba1c');
     expect(only.rows.map((r) => r.valueRaw)).toEqual(['121.94', '154']);
-    // NO DIRECTION OF ITS OWN, by any route.
     expect(only.movement).toBeUndefined();
     expect(only.trend).toBeUndefined();
   });
@@ -1261,9 +988,6 @@ describe('labSeriesService - a row that restates an assessed feature', () => {
   });
 
   it('leaves every other parameter trending exactly as before', () => {
-    // The exclusion must be narrow. A glucose that is NOT a restatement --
-    // fasting, random -- is a measurement in its own right and the platform's
-    // refusal to trend those together is a separate and correct decision.
     const out = buildLabSeries([
       snap('2026-01-01', [row('RANDOM BLOOD GLUCOSE', '134', 'mg/dL'), row('ESR', '35', 'mm/hr')], 'A'),
       snap('2026-02-01', [row('RANDOM BLOOD GLUCOSE', '168', 'mg/dL'), row('ESR', '45', 'mm/hr')], 'B'),
@@ -1277,8 +1001,6 @@ describe('labSeriesService - a row that restates an assessed feature', () => {
     const { LAB_RESTATEMENTS } = require('../src/services/labRestatements');
     expect(LAB_RESTATEMENTS.length).toBeGreaterThan(0);
     for (const entry of LAB_RESTATEMENTS) {
-      // An entry may only claim a FIXED relationship, and must say how it was
-      // checked -- not merely that two tests are related.
       expect(entry.basis).toMatch(/CHECKED ON THIS ACCOUNT|CHECK AGAINST/);
       expect(entry.basis.length).toBeGreaterThan(60);
       expect(typeof entry.restates).toBe('string');
@@ -1288,18 +1010,12 @@ describe('labSeriesService - a row that restates an assessed feature', () => {
 });
 
 describe('labSeriesService - Module 36 name joining', () => {
-  // TWO INVENTED NAMES FOR ONE TEST, sharing no words, so `nameKey` cannot
-  // join them and only an alias can. The real pair this stands in for is
-  // NEUTROPHILS / Polymorphs.
   const twoNames = () => [
     snap('2026-01-01', [row('Zorblex Factor', '12.1', 'mg/L')], 'r1'),
     snap('2026-02-01', [row('Frimbulin', '38.9', 'mg/L')], 'r2'),
   ];
 
   it('leaves them as two readings when no aliases are supplied', () => {
-    // THE DEGRADATION, PINNED FIRST. This is what a spent quota, an
-    // unconfigured key and an older caller all get, and it must stay exactly
-    // what the endpoint returned before Module 36 existed.
     const out = buildLabSeries(twoNames());
 
     expect(out.series).toHaveLength(0);
@@ -1314,7 +1030,6 @@ describe('labSeriesService - Module 36 name joining', () => {
     expect(out.readings).toHaveLength(0);
     expect(out.series).toHaveLength(1);
     expect(out.series[0].points.map((p) => p.value)).toEqual([12.1, 38.9]);
-    // OLDEST FIRST, and the movement pair with it -- a join must not reorder.
     expect(out.series[0].movement).toBe('rose');
     expect(out.series[0].movementFrom).toBe(12.1);
     expect(out.series[0].movementTo).toBe(38.9);
@@ -1324,8 +1039,6 @@ describe('labSeriesService - Module 36 name joining', () => {
     const aliases = aliasMap([{ names: ['Zorblex Factor', 'Frimbulin'] }]);
     const out = buildLabSeries(twoNames(), undefined, aliases);
 
-    // The reader is holding the newer report. A panel titled with the words
-    // on it is findable; one titled with the older spelling is not.
     expect(out.series[0].name).toBe('Frimbulin');
   });
 
@@ -1333,14 +1046,10 @@ describe('labSeriesService - Module 36 name joining', () => {
     const aliases = aliasMap([{ names: ['Zorblex Factor', 'Frimbulin'] }]);
     const out = buildLabSeries(twoNames(), undefined, aliases);
 
-    // Their report says `Zorblex Factor` and this panel says `Frimbulin`.
-    // Without the list that reads as a parameter they never had.
     expect(out.series[0].joinedFrom).toEqual(['Zorblex Factor', 'Frimbulin']);
   });
 
   it('claims NO join when the group only restates one name', () => {
-    // A group of one key aliases nothing, and `joinedFrom` must not announce
-    // a merge that did not happen.
     const aliases = aliasMap([{ names: ['Zorblex Factor'] }]);
     expect(aliases.size).toBe(0);
 
@@ -1356,10 +1065,6 @@ describe('labSeriesService - Module 36 name joining', () => {
   });
 
   it('BLOCKS a join that unites two units instead of drawing across them', () => {
-    // THE SAFETY NET UNDER A WRONG JOIN. Even if the model were wrong about
-    // two names, a series whose units disagree is blocked, gets no scale, no
-    // movement word and no pair -- so the worst a bad join can produce is two
-    // numbers listed side by side, never a line.
     const aliases = aliasMap([{ names: ['Zorblex Factor', 'Frimbulin'] }]);
     const out = buildLabSeries(
       [
@@ -1383,16 +1088,11 @@ describe('labSeriesService - Module 36 name joining', () => {
       snap('2026-02-01', [row('Zorblex', '2', 'mg/L'), row('Quixotor', '9', 'mg/L')], 'r2'),
     ]);
 
-    // Zorblex is on both reports and already a series; it is NOT offered for
-    // joining, because merging an existing series would redraw a chart the
-    // reader has already looked at.
     expect(out.series.map((s) => s.name)).toEqual(['Zorblex']);
     expect(unjoinedNames(out).sort()).toEqual(['Frimbulin', 'Quixotor']);
   });
 
   it('picks a canonical key by a rule, so two calls agree', () => {
-    // `key` reaches React as a list key. A group whose identity depended on
-    // the order the model emitted it would remount panels between requests.
     const forwards = aliasMap([{ names: ['Zorblex Factor', 'Frimbulin'] }]);
     const backwards = aliasMap([{ names: ['Frimbulin', 'Zorblex Factor'] }]);
 
@@ -1400,9 +1100,6 @@ describe('labSeriesService - Module 36 name joining', () => {
   });
 
   it('keeps a name out of a second group rather than letting it migrate', () => {
-    // Module 36 already refuses an overlapping name. If a future producer
-    // stops, one test's readings must not land on another test's chart
-    // because of emission order.
     const aliases = aliasMap([
       { names: ['Zorblex Factor', 'Frimbulin'] },
       { names: ['Frimbulin', 'Quixotor'] },

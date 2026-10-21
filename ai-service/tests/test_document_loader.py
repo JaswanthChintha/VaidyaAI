@@ -1,9 +1,3 @@
-"""File intake: sniffing, limits, PDF rendering, corrupt-file handling.
-
-These are the paths an auditor will attack, so they are covered directly at
-the loader level as well as through the endpoint.
-"""
-
 from __future__ import annotations
 
 import io
@@ -29,11 +23,6 @@ from app.services.document_loader import (
 from tests.conftest import make_synthetic_pdf, make_synthetic_png
 
 
-# --------------------------------------------------------------------------
-# Content sniffing
-# --------------------------------------------------------------------------
-
-
 def test_sniff_detects_pdf(synthetic_pdf):
     assert sniff_mime_type(synthetic_pdf) == PDF_MIME
 
@@ -52,9 +41,9 @@ def test_sniff_detects_jpeg(synthetic_jpeg):
         b"",
         b"ab",
         b"not a document at all, just text",
-        b"GIF89a" + b"\x00" * 64,  # real format, unsupported
-        b"PK\x03\x04" + b"\x00" * 64,  # zip / docx
-        b"MZ\x90\x00" + b"\x00" * 64,  # windows executable
+        b"GIF89a" + b"\x00" * 64,
+        b"PK\x03\x04" + b"\x00" * 64,
+        b"MZ\x90\x00" + b"\x00" * 64,
         b"\x7fELF" + b"\x00" * 64,
     ],
 )
@@ -63,17 +52,10 @@ def test_sniff_rejects_unsupported_and_hostile_payloads(payload):
 
 
 def test_extension_is_never_trusted_over_content(settings):
-    """A .pdf filename on PNG bytes must be classified by content."""
     png = make_synthetic_png()
     doc = load_document(png, settings, filename="report.pdf", declared_mime=PDF_MIME)
     assert doc.mime_type == PNG_MIME
-    # And the mismatch is surfaced to the caller.
     assert any("did not match" in w for w in doc.warnings)
-
-
-# --------------------------------------------------------------------------
-# Size and page limits
-# --------------------------------------------------------------------------
 
 
 def test_empty_file_is_rejected(settings):
@@ -83,7 +65,7 @@ def test_empty_file_is_rejected(settings):
 
 
 def test_oversized_file_is_rejected(settings, synthetic_pdf):
-    settings.max_file_size_bytes = 100  # bytes
+    settings.max_file_size_bytes = 100
     with pytest.raises(PayloadTooLargeError) as exc:
         load_document(synthetic_pdf, settings)
     assert exc.value.code == ErrorCode.FILE_TOO_LARGE
@@ -111,11 +93,6 @@ def test_page_count_at_the_limit_is_accepted(settings):
     assert doc.page_count == 3
 
 
-# --------------------------------------------------------------------------
-# PDF rendering
-# --------------------------------------------------------------------------
-
-
 def test_single_page_pdf_renders_to_one_png(settings, synthetic_pdf):
     doc = load_document(synthetic_pdf, settings, filename="report.pdf")
     assert doc.mime_type == PDF_MIME
@@ -131,7 +108,6 @@ def test_multipage_pdf_renders_each_page_in_order(settings, synthetic_pdf_2pages
     doc = load_document(synthetic_pdf_2pages, settings)
     assert doc.page_count == 2
     assert [p.page_number for p in doc.pages] == [1, 2]
-    # Pages differ (page 2 has different header text), so bytes must differ.
     assert doc.pages[0].image_bytes != doc.pages[1].image_bytes
 
 
@@ -144,20 +120,13 @@ def test_rendered_page_respects_the_edge_cap(settings, synthetic_pdf):
 
 
 def test_rendered_page_carries_actual_content(settings, synthetic_pdf):
-    """Guard against rendering a blank page: the image must not be uniform."""
     doc = load_document(synthetic_pdf, settings)
     with Image.open(io.BytesIO(doc.pages[0].image_bytes)) as img:
         extrema = img.convert("L").getextrema()
     assert extrema[0] < extrema[1], "rendered page appears blank"
 
 
-# --------------------------------------------------------------------------
-# Corrupt / hostile documents
-# --------------------------------------------------------------------------
-
-
 def test_corrupt_pdf_is_rejected_cleanly(settings):
-    """Valid PDF magic, garbage body -> 422, not a 500."""
     corrupt = b"%PDF-1.4\n" + b"\xde\xad\xbe\xef" * 500
     with pytest.raises(UnprocessableDocumentError) as exc:
         load_document(corrupt, settings)
@@ -169,8 +138,6 @@ def test_corrupt_pdf_is_rejected_cleanly(settings):
 
 
 def test_recoverable_truncated_pdf_is_read_but_warned_about(settings, synthetic_pdf):
-    """MuPDF repairs mildly truncated PDFs. We accept the recovery, but the
-    caller must be told the input was not intact."""
     truncated = synthetic_pdf[: len(synthetic_pdf) // 3]
     doc = load_document(truncated, settings)
     assert doc.page_count >= 1
@@ -183,7 +150,6 @@ def test_intact_pdf_carries_no_recovery_warning(settings, synthetic_pdf):
 
 
 def test_severely_truncated_pdf_is_rejected_cleanly(settings, synthetic_pdf_2pages):
-    """Past the point MuPDF can repair, it must be a clean 422, not a 500."""
     truncated = synthetic_pdf_2pages[: len(synthetic_pdf_2pages) // 3]
     with pytest.raises((UnprocessableDocumentError, BadRequestError)) as exc:
         load_document(truncated, settings)
@@ -218,8 +184,6 @@ def test_encrypted_pdf_is_reported_as_such(settings):
 
 
 def test_pdf_with_zero_pages_is_rejected(settings):
-    # PyMuPDF refuses to *save* a zero-page document, so build one by hand:
-    # a valid catalog whose page tree is empty.
     empty = (
         b"%PDF-1.4\n"
         b"1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
@@ -235,11 +199,6 @@ def test_pdf_with_zero_pages_is_rejected(settings):
     }
 
 
-# --------------------------------------------------------------------------
-# Standalone image intake and normalisation
-# --------------------------------------------------------------------------
-
-
 def test_png_intake_produces_one_page(settings, synthetic_png):
     doc = load_document(synthetic_png, settings, filename="scan.png")
     assert doc.mime_type == PNG_MIME
@@ -249,14 +208,12 @@ def test_png_intake_produces_one_page(settings, synthetic_png):
 
 def test_jpeg_intake_is_converted_to_png(settings, synthetic_jpeg):
     doc = load_document(synthetic_jpeg, settings, filename="scan.jpg")
-    assert doc.mime_type == JPEG_MIME  # reported source type
-    # ...but the page handed to the model is normalised PNG.
+    assert doc.mime_type == JPEG_MIME
     assert doc.pages[0].mime_type == PNG_MIME
     assert doc.pages[0].image_bytes[:8] == b"\x89PNG\r\n\x1a\n"
 
 
 def test_transparency_is_flattened_onto_white(settings):
-    """Alpha left unflattened renders as black and destroys OCR accuracy."""
     img = Image.new("RGBA", (200, 120), (0, 0, 0, 0))
     buf = io.BytesIO()
     img.save(buf, format="PNG")

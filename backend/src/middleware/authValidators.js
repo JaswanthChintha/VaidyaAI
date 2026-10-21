@@ -7,22 +7,8 @@ const { ROLES } = require('../utils/roles');
 const PASSWORD_RULE =
   'Password must be at least 8 characters and include an uppercase letter, a lowercase letter, a number and a special character';
 
-// Shown to people: the limit is in BYTES (bcrypt), said in characters, with
-// the one case where the two differ named in plain words.
 const PASSWORD_BYTES_RULE = `Password is too long. Use at most ${config.maxPasswordBytes} characters (emoji and letters from some other alphabets count as more than one)`;
 
-/**
- * SECURITY: every chain below starts with `.isString().bail()`.
- *
- * A JSON body can carry arrays and objects, and neither hpp() (which only
- * touches query strings and urlencoded bodies) nor express-mongo-sanitize
- * (which strips `$`/`.` keys) turns those into strings. Without an explicit
- * type check a value such as `["a@example.com","b@example.com"]` reaches
- * Mongo, whose scalar-vs-array matching treats it as "any of these" - letting
- * one request spray a single password across many accounts. Type-check first,
- * and bail before any sanitizer (`.trim()`, `.normalizeEmail()`) that assumes
- * a string.
- */
 const stringField = (field, requiredMessage) =>
   body(field)
     .isString()
@@ -34,12 +20,6 @@ const passwordChain = (field = 'password') =>
     .isLength({ min: 8 })
     .withMessage(PASSWORD_RULE)
     .bail()
-    // bcrypt silently ignores everything past 72 BYTES, so a 100-byte password
-    // would authenticate against any string sharing its first 72 bytes.
-    // Measure bytes, not characters: one emoji is 4 bytes. This is also the
-    // only upper bound (bytes >= characters), so an over-long password is told
-    // it is too long -- it used to get the "at least 8 characters" rule, which
-    // says nothing about length from above.
     .custom((value) => Buffer.byteLength(value, 'utf8') <= config.maxPasswordBytes)
     .withMessage(PASSWORD_BYTES_RULE)
     .bail()
@@ -79,9 +59,6 @@ const registerValidator = [
     .withMessage('Name must be between 2 and 100 characters'),
   emailChain(),
   passwordChain('password'),
-  // Self-service signup may only create patient accounts. Clinician/admin
-  // accounts are provisioned by an administrator (see restrictTo usage).
-  // The controller additionally hard-codes the role, so this is defence in depth.
   body('role')
     .optional()
     .isString()
@@ -93,12 +70,6 @@ const registerValidator = [
 
 const loginValidator = [
   emailChain(),
-  // No complexity rules on login (they belong at registration), but the byte
-  // cap DOES apply to the submitted candidate. bcrypt truncates whatever it is
-  // given at 72 bytes, so for an account whose password is exactly 72 bytes,
-  // "<the password> + anything" would otherwise compare equal and authenticate.
-  // Registration can no longer produce a password longer than 72 bytes, so
-  // rejecting over-long candidates locks out nobody legitimate.
   stringField('password', 'Password is required')
     .notEmpty()
     .withMessage('Password is required')
@@ -115,11 +86,6 @@ const refreshValidator = [
 
 const logoutValidator = refreshValidator;
 
-/**
- * A password the user already has, re-typed to confirm a sensitive action.
- * No complexity rules (it was set under whatever rules applied then), but the
- * byte cap applies for the same reason as on login.
- */
 const currentPasswordChain = (field) =>
   stringField(field, 'Enter your current password')
     .notEmpty()
@@ -128,13 +94,11 @@ const currentPasswordChain = (field) =>
     .custom((value) => Buffer.byteLength(value, 'utf8') <= config.maxPasswordBytes)
     .withMessage(PASSWORD_BYTES_RULE);
 
-// POST /auth/change-password: the new password meets the registration rules.
 const changePasswordValidator = [
   currentPasswordChain('currentPassword'),
   passwordChain('newPassword'),
 ];
 
-// DELETE /auth/me: the account's own password, and nothing else.
 const deleteAccountValidator = [currentPasswordChain('password')];
 
 module.exports = {

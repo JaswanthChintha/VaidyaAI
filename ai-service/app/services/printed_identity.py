@@ -1,19 +1,3 @@
-"""The patient's sex and age AS PRINTED on a report, read -- never guessed.
-
-Module 4 copies `patient_sex` and `patient_age` exactly as printed. This reads
-them into the two feature values the analysis uses. The rules are the
-backend's (`backend/src/utils/printedIdentity.js`), restated here because
-Module 5 runs before the backend sees a feature:
-
-  sex   "Male", "M", "female", "F." ... -> "male" / "female". Anything else
-        ("Other", "M/F", a digit) is NOT read, and the profile is used.
-  age   "63 Years", "63Y", "63", "34Y 2M", "6 Months" -> whole years, rounded
-        DOWN (the catalogue's `age` is an integer, as the profile's is).
-        Nothing readable, or outside 0-130, is not read.
-
-NEVER A NAME. Module 4 does not copy one.
-"""
-
 from __future__ import annotations
 
 import math
@@ -41,7 +25,6 @@ def read_sex(raw: object) -> Optional[str]:
 
 
 def read_age_years(raw: object) -> Optional[int]:
-    """Whole years, or None when nothing could be read."""
     if not isinstance(raw, str) or not raw.strip():
         return None
     text = raw.strip()

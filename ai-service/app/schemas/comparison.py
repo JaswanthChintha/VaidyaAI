@@ -1,74 +1,3 @@
-"""The Module 29 (Smart Report Comparison) contract, pydantic v2.
-
-Module 29 answers ONE question, for one canonical feature at a time:
-
-    between THESE TWO reports -- a named baseline and a named comparison --
-    did this parameter become newly abnormal, become newly normal, improve,
-    worsen, or not move enough to count; or can none of that be told?
-
---------------------------------------------------------------------------
-WHAT MODULE 29 DOES **NOT** OWN
---------------------------------------------------------------------------
-
-It owns no clinical judgement at all. In particular it owns:
-
-* **no polarity table.** Whether a rise in creatinine is better or worse is
-  read from `app/data/trend_polarity.py`, the same table Module 28 reads, via
-  the same `polarity_for()` lookup.
-* **no stability threshold.** Whether a change is real is read from the same
-  file's `STABILITY` bands through Module 28's `_is_significant`.
-* **no second "is this significant" rule.** The whole improved / worsened /
-  unchanged decision is delegated to `trend_analyzer.analyse_feature()` run
-  over a TWO-report series. `improving`/`worsening`/`stable` come back and are
-  renamed to `improved`/`worsened`/`unchanged`; nothing is recomputed.
-
-Two tables that can disagree about whether rising creatinine is good is the
-defect class this project's audits keep finding, so there is deliberately only
-one table and only one arithmetic path.
-
---------------------------------------------------------------------------
-WHAT MODULE 29 **DOES** OWN
---------------------------------------------------------------------------
-
-1. **Pair selection.** Which two of the supplied reports are compared, and
-   saying so explicitly in the response.
-2. **The abnormality state transition** -- `newly_abnormal` and its mirror
-   `newly_normal`. Module 28 has no such notion: a trend is about numbers
-   moving, a transition is about a value crossing *that report's own stated
-   reference interval*. It therefore needs the per-report reference range or
-   printed flag, which is a different input from the number alone.
-3. **The templated comparison summary and table** the specification asks for.
-
---------------------------------------------------------------------------
-ABSENCE IS NEVER A VALUE, AND NEITHER IS IGNORANCE
---------------------------------------------------------------------------
-
-Two separate refusals live in this contract, and neither of them is
-`unchanged`:
-
-* A parameter present in one report and missing from the other is
-  `ONLY_IN_BASELINE` / `ONLY_IN_COMPARISON`, with the missing side's reason
-  code carried from Module 7's `unavailable` map. It is not "unchanged", and
-  `previous`/`current` in the table row are `null`, never `0`.
-* A parameter whose *abnormality* cannot be established in BOTH reports gets
-  `transition: null` with a `NOT_DETERMINABLE_*` code. It is never
-  `newly_abnormal`. Claiming a parameter "became abnormal" because the older
-  report simply printed no reference range would invent an alarming finding
-  out of missing metadata, so the bar is: known-normal-then, known-abnormal-now.
-
-`unchanged` is likewise EARNED. It is returned only when two usable readings
-exist and the net change failed to clear the declared stability band -- the
-same rule, in the same code, that makes Module 28's `stable` earned.
-
---------------------------------------------------------------------------
-NO MODEL, NO FREE TEXT
---------------------------------------------------------------------------
-
-Every string this module can emit is assembled from templates that are
-safety-scanned at import time in `app/services/report_comparator.py`. There is
-no LLM call and no free-text entry point.
-"""
-
 from __future__ import annotations
 
 from datetime import datetime
@@ -99,36 +28,18 @@ from app.schemas.timeline import (
     utcnow,
 )
 
-#: The stage identifier Module 29 stamps on its own warnings.
 STAGE_COMPARISON = "comparison"
 COMPARISON_MODULE = 29
 
 
-# --------------------------------------------------------------------------
-# Outcome vocabulary -- the change axis
-# --------------------------------------------------------------------------
-#
-# `outcome` is ALWAYS present and is the field a consumer branches on. Exactly
-# one value, CHANGE_CLASSIFIED, means `change_class` is set; every other value
-# means `change_class is None` and says why.
-
-#: The two reports both carried a usable reading and the change was classified
-#: against the declared polarity and stability band.
 COMPARISON_CHANGE_CLASSIFIED = "CHANGE_CLASSIFIED"
 
-#: Present in the baseline report only. NOT "unchanged" -- see the module
-#: docstring. The baseline value is still shown; the comparison side is null.
 COMPARISON_ONLY_IN_BASELINE = "ONLY_IN_BASELINE"
 
-#: Present in the comparison report only.
 COMPARISON_ONLY_IN_COMPARISON = "ONLY_IN_COMPARISON"
 
-#: Carried a usable reading in neither of the two chosen reports. Only
-#: reachable when the caller asked for the feature explicitly or asked for the
-#: whole catalogue.
 COMPARISON_IN_NEITHER = "IN_NEITHER"
 
-#: Module 29's own outcome codes.
 COMPARISON_OWN_OUTCOMES: Tuple[str, ...] = (
     COMPARISON_CHANGE_CLASSIFIED,
     COMPARISON_ONLY_IN_BASELINE,
@@ -136,16 +47,6 @@ COMPARISON_OWN_OUTCOMES: Tuple[str, ...] = (
     COMPARISON_IN_NEITHER,
 )
 
-#: Module 28's refusal codes, re-exported VERBATIM rather than re-declared.
-#:
-#: This tuple is DERIVED from `OUTCOME_VALUES`, not typed out again, so a
-#: refusal added to Module 28 cannot silently fail to appear here and a
-#: refusal removed there cannot linger. `TREND_CLASSIFIED` and
-#: `INSUFFICIENT_DATA` are the two that do not survive the translation:
-#: the first becomes `CHANGE_CLASSIFIED`, and the second is always refined
-#: into ONLY_IN_BASELINE / ONLY_IN_COMPARISON / IN_NEITHER, because in a
-#: two-report comparison "fewer than two usable points" is never the useful
-#: statement -- WHICH side is missing is.
 INHERITED_REFUSAL_OUTCOMES: Tuple[str, ...] = tuple(
     code
     for code in OUTCOME_VALUES
@@ -157,10 +58,6 @@ COMPARISON_OUTCOME_VALUES: Tuple[str, ...] = (
 )
 
 
-# --------------------------------------------------------------------------
-# The change axis
-# --------------------------------------------------------------------------
-
 CHANGE_IMPROVED = "improved"
 CHANGE_WORSENED = "worsened"
 CHANGE_UNCHANGED = "unchanged"
@@ -171,10 +68,6 @@ CHANGE_VALUES: Tuple[str, ...] = (
     CHANGE_UNCHANGED,
 )
 
-
-# --------------------------------------------------------------------------
-# The abnormality-transition axis -- Module 29's own contribution
-# --------------------------------------------------------------------------
 
 TRANSITION_NEWLY_ABNORMAL = "newly_abnormal"
 TRANSITION_NEWLY_NORMAL = "newly_normal"
@@ -188,8 +81,6 @@ TRANSITION_VALUES: Tuple[str, ...] = (
     TRANSITION_REMAINED_NORMAL,
 )
 
-#: `transition_outcome` -- ALWAYS present. `transition` is non-null for
-#: exactly one value of it.
 TRANSITION_CLASSIFIED = "TRANSITION_CLASSIFIED"
 NOT_DETERMINABLE_BASELINE = "NOT_DETERMINABLE_BASELINE"
 NOT_DETERMINABLE_COMPARISON = "NOT_DETERMINABLE_COMPARISON"
@@ -203,23 +94,12 @@ TRANSITION_OUTCOME_VALUES: Tuple[str, ...] = (
 )
 
 
-# --------------------------------------------------------------------------
-# How one report's abnormality was established
-# --------------------------------------------------------------------------
-
-#: The value was compared against the reference interval PRINTED ON THAT
-#: REPORT, in the unit the value is stored in.
 BASIS_REFERENCE_RANGE = "reference_range"
 
-#: Same, but the printed interval had to be carried through the SAME unit
-#: conversion that was applied to the value itself (recorded in
-#: `provenance.conversion`). See `report_comparator._reference_interval`.
 BASIS_REFERENCE_RANGE_CONVERTED = "reference_range_converted"
 
-#: No usable interval; the laboratory's own printed flag was used instead.
 BASIS_PRINTED_FLAG = "printed_flag"
 
-#: Nothing usable. `abnormal` is None.
 BASIS_NOT_DETERMINABLE = "not_determinable"
 
 ABNORMALITY_BASIS_VALUES: Tuple[str, ...] = (
@@ -229,17 +109,10 @@ ABNORMALITY_BASIS_VALUES: Tuple[str, ...] = (
     BASIS_NOT_DETERMINABLE,
 )
 
-#: Why abnormality could not be established for one report.
 ABN_NO_USABLE_VALUE = "NO_USABLE_VALUE"
 ABN_NO_REFERENCE_OR_FLAG = "NO_REFERENCE_RANGE_OR_FLAG"
 ABN_RANGE_UNIT_NOT_COMPARABLE = "REFERENCE_RANGE_UNIT_NOT_COMPARABLE"
 ABN_CENSORED_INCONCLUSIVE = "CENSORED_VALUE_INCONCLUSIVE"
-#: An interval WAS printed and IS in the value's unit, but states only one
-#: bound and the reading lies past no bound it states. Whether that counts as
-#: "inside" depends on whether anything is unfavourable on the missing side,
-#: which Module 28's polarity declaration answers -- and where it declines to,
-#: this is the honest answer. Distinct from CENSORED_VALUE_INCONCLUSIVE: that
-#: is uncertainty about the VALUE, this is incompleteness of the INTERVAL.
 ABN_ONE_SIDED_INTERVAL_INCONCLUSIVE = "ONE_SIDED_INTERVAL_INCONCLUSIVE"
 ABN_UNKNOWN_FLAG = "UNRECOGNISED_PRINTED_FLAG"
 
@@ -252,24 +125,6 @@ ABNORMALITY_REASON_CODES: Tuple[str, ...] = (
     ABN_UNKNOWN_FLAG,
 )
 
-
-# --------------------------------------------------------------------------
-# The single headline category the specification asks for
-# --------------------------------------------------------------------------
-#
-# The specification lists four categories plus "significant changes". This
-# project keeps significance as its own boolean (it is orthogonal: a parameter
-# can cross a reference bound with a change too small to be real), and adds
-# two labels the four cannot honestly absorb:
-#
-#   `newly_normal`            -- the mirror of newly_abnormal. Emitted only
-#                                where genuinely determinable.
-#   `changed_direction_only`  -- the value moved by more than the stability
-#                                band, but the polarity table declines to say
-#                                whether that is better or worse. Folding this
-#                                into `not_classifiable` would hide a real
-#                                measured change; folding it into
-#                                improved/worsened would invent a claim.
 
 CATEGORY_NEWLY_ABNORMAL = "newly_abnormal"
 CATEGORY_NEWLY_NORMAL = "newly_normal"
@@ -289,24 +144,11 @@ CATEGORY_VALUES: Tuple[str, ...] = (
     CATEGORY_NOT_CLASSIFIABLE,
 )
 
-#: How the pair was chosen.
 SELECTION_EXPLICIT = "explicit"
 SELECTION_FIRST_VS_LATEST = "first_vs_latest"
 
 
-# --------------------------------------------------------------------------
-# Request
-# --------------------------------------------------------------------------
-
-
 class ComparisonOptions(BaseModel):
-    """Analysis options. Every one of them narrows; none of them invents.
-
-    `features`, `include_all_canonical` and `exclude_questionable` mean exactly
-    what they mean in `TimelineOptions`, and are translated into a
-    `TimelineOptions` before Module 28 is called, so there is one definition of
-    each.
-    """
 
     model_config = ConfigDict(extra="ignore")
 
@@ -355,23 +197,6 @@ class ComparisonOptions(BaseModel):
 
 
 class ReportComparisonRequest(BaseModel):
-    """Compare two or more of one patient's reports.
-
-    The report snapshot shape is `TimelineReportInput`, Module 28's, reused
-    verbatim: there is deliberately no second way to pass a report's features
-    across this boundary.
-
-    WHICH TWO REPORTS. Either name both explicitly with `baseline_ref` and
-    `comparison_ref`, or name neither and get the first versus the latest by
-    `chrono_date`. Naming exactly one is a 422 -- guessing the other end of a
-    comparison from a single hint is precisely the sort of silent default this
-    codebase does not do.
-
-    An explicitly named pair is honoured in the order the CALLER named it, even
-    when `baseline_ref` turns out to carry the later date. Silently swapping
-    them would invert every improved/worsened label; instead the response
-    warns and `pair.chronological` is false.
-    """
 
     model_config = ConfigDict(extra="ignore")
 
@@ -402,7 +227,6 @@ class ReportComparisonRequest(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _unwrap(cls, value: Any) -> Any:
-        """Accept `{"data": {...}}` so a relayed envelope is not an empty run."""
         if not isinstance(value, dict):
             return value
         if "reports" in value:
@@ -458,36 +282,7 @@ class ReportComparisonRequest(BaseModel):
         return self
 
 
-# --------------------------------------------------------------------------
-# Response -- per-report abnormality
-# --------------------------------------------------------------------------
-
-
 class AbnormalityState(BaseModel):
-    """Was this parameter abnormal IN THIS ONE REPORT, and how do we know?
-
-    `abnormal` is TRI-STATE and the third state is load-bearing:
-
-        True   -- outside the interval stated on this report, or carrying a
-                  low/high/critical flag printed on this report.
-        False  -- inside the stated interval, or carrying a printed
-                  `normal` flag.
-        None   -- NOT DETERMINABLE. The report carried no usable value, or no
-                  reference interval and no flag for this parameter, or the
-                  interval could not be placed in the same unit as the value.
-
-    `None` must never be read as `False`. "We do not know whether it was
-    normal before" and "it was normal before" are different statements, and
-    collapsing them is what would turn a missing reference range into a
-    fabricated `newly_abnormal`.
-
-    NOTE the interval used is the one PRINTED ON THE REPORT ITSELF. The
-    clinical decision thresholds in `app/data/clinical_rules.py` and the
-    optimal intervals in `app/data/trend_polarity.py` are deliberately NOT
-    consulted here: those answer "is this value clinically concerning by this
-    platform's rules", which Module 8 already answers, not "did the issuing
-    laboratory consider this result out of range".
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -541,12 +336,6 @@ class AbnormalityState(BaseModel):
 
     @model_validator(mode="after")
     def _basis_matches_answer(self) -> "AbnormalityState":
-        """Structural half of "ignorance is not an answer".
-
-        A `not_determinable` basis carrying a True/False answer, or a real
-        basis carrying None, is a contradiction -- caught here rather than
-        shipped to a renderer that would draw it.
-        """
         if self.basis == BASIS_NOT_DETERMINABLE and self.abnormal is not None:
             raise ValueError("basis not_determinable requires abnormal=None")
         if self.basis != BASIS_NOT_DETERMINABLE and self.abnormal is None:
@@ -556,27 +345,12 @@ class AbnormalityState(BaseModel):
         return self
 
 
-# --------------------------------------------------------------------------
-# Response -- the specification's table row
-# --------------------------------------------------------------------------
-
-#: Arrow characters for the specification's `Trend` column. These are literal
-#: non-ASCII characters in this source file, which is UTF-8 (as
-#: `app/data/recommendation_catalog.py` already is). A renderer that cannot
-#: show them has `direction` alongside, carrying the same fact as an ASCII
-#: token.
 SYMBOL_UP = "↑"
 SYMBOL_DOWN = "↓"
 SYMBOL_LEVEL = "→"
 
 
 class ComparisonRow(BaseModel):
-    """One row of the specification's Parameter / Previous / Current / Trend table.
-
-    `previous` and `current` are `Optional[float]` and are `null` -- never
-    `0`, never carried forward from the other column -- when that report had no
-    usable reading. A renderer must print an empty cell for null.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -618,29 +392,7 @@ class ComparisonRow(BaseModel):
         return v
 
 
-# --------------------------------------------------------------------------
-# Response -- one parameter
-# --------------------------------------------------------------------------
-
-
 class ParameterComparison(BaseModel):
-    """The full answer for ONE canonical feature across the chosen pair.
-
-    THREE INDEPENDENT AXES, deliberately not collapsed into one:
-
-    * `outcome` + `change_class`  -- did the number move, and does the polarity
-      table call that better or worse? Computed entirely by Module 28.
-    * `transition_outcome` + `transition` -- did the value cross the interval
-      the report itself printed? Module 29's own contribution.
-    * `significant` -- did the move clear the declared stability band? A
-      parameter can cross a reference bound by a change too small to be real,
-      and a reader is entitled to see that rather than have one axis quietly
-      overrule the other.
-
-    `category` is the single label the specification asks for, derived from the
-    three by a fixed precedence documented on `CATEGORY_VALUES` and enforced by
-    the validator below.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -649,7 +401,6 @@ class ParameterComparison(BaseModel):
     value_type: str
     canonical_unit: Optional[str] = None
 
-    # ---- the change axis (Module 28) ----
     outcome: str = Field(description="Always present. See COMPARISON_OUTCOME_VALUES.")
     change_class: Optional[str] = Field(
         default=None, description="improved | worsened | unchanged | null."
@@ -672,7 +423,6 @@ class ParameterComparison(BaseModel):
     )
     stability: Optional[AppliedStability] = None
 
-    # ---- the abnormality axis (Module 29) ----
     baseline: AbnormalityState
     comparison: AbnormalityState
     transition_outcome: str = Field(description="See TRANSITION_OUTCOME_VALUES.")
@@ -682,7 +432,6 @@ class ParameterComparison(BaseModel):
         "remained_normal | null.",
     )
 
-    # ---- the single headline label ----
     category: str
     reason: str = Field(
         description="Deterministic, template-assembled explanation. No model "
@@ -736,13 +485,6 @@ class ParameterComparison(BaseModel):
 
     @model_validator(mode="after")
     def _axes_are_consistent(self) -> "ParameterComparison":
-        """The structural half of every "must be earned" rule in this module.
-
-        A future edit to the service cannot ship a `newly_abnormal` without a
-        classified transition, an `unchanged` that was not measured against a
-        stability band, or a `change_class` on a refusal outcome: each is a
-        contradiction and each raises here.
-        """
         classified = self.outcome == COMPARISON_CHANGE_CLASSIFIED
         if classified and self.change_class is None:
             raise ValueError("CHANGE_CLASSIFIED requires a change_class")
@@ -765,7 +507,6 @@ class ParameterComparison(BaseModel):
                 "transition=None"
             )
 
-        # `category` may not assert anything the axes above do not support.
         if self.category == CATEGORY_NEWLY_ABNORMAL:
             if self.transition != TRANSITION_NEWLY_ABNORMAL:
                 raise ValueError(
@@ -796,14 +537,12 @@ class ParameterComparison(BaseModel):
                 raise ValueError(
                     "category changed_direction_only requires change_class=None"
                 )
-        else:  # CATEGORY_NOT_CLASSIFIABLE
+        else:
             if self.change_class is not None:
                 raise ValueError(
                     "category not_classifiable cannot carry a change_class"
                 )
 
-        # The two newly_* categories outrank the change axis, so any OTHER
-        # category must not be masking one of them.
         if self.category not in (CATEGORY_NEWLY_ABNORMAL, CATEGORY_NEWLY_NORMAL):
             if self.transition in (
                 TRANSITION_NEWLY_ABNORMAL,
@@ -816,17 +555,7 @@ class ParameterComparison(BaseModel):
         return self
 
 
-# --------------------------------------------------------------------------
-# Response -- pair, series, summary, envelope
-# --------------------------------------------------------------------------
-
-
 class ComparisonPair(BaseModel):
-    """WHICH two reports were compared, and how they were chosen.
-
-    Always present when a comparison happened. A consumer that renders a
-    comparison without showing this is rendering an unattributed claim.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -866,13 +595,6 @@ class ComparisonPair(BaseModel):
 
 
 class FeatureSeries(BaseModel):
-    """One feature's full ordered series across EVERY supplied report.
-
-    For rendering only. The classification in `parameters` is between the two
-    reports named in `pair` and nothing here changes it. Points and gaps are
-    Module 28's own types, produced by Module 28's own collector, so a gap
-    still structurally cannot carry a value.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -882,13 +604,6 @@ class FeatureSeries(BaseModel):
 
 
 class ComparisonSummary(BaseModel):
-    """The concise comparison summary. Counts, plus templated prose.
-
-    `headline` and `lines` are assembled from a fixed template table that is
-    safety-scanned at import time. There is no generator and no free-text entry
-    point; the only things substituted in are feature names, numbers, units and
-    dates.
-    """
 
     model_config = ConfigDict(extra="forbid")
 

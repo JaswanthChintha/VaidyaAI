@@ -3,19 +3,6 @@ import { useMatch } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import Icon from './Icon';
 
-/**
- * The VaidyaAI chatbot (owner, 2026-10-09).
- *
- * A bubble on every signed-in page. It answers questions about using the
- * app, general lab-test and health questions, and -- on a report's own pages
- * -- questions about that report. The answers come from free OpenRouter
- * models through the ai-service, behind the same safety checker as every
- * other written explanation; Gemini is never used for chat.
- *
- * NOTHING IS STORED: the conversation lives in this component and is gone on
- * reload. It is cleared when the reader moves to a different report, so an
- * answer about one report never sits above a question about another.
- */
 
 export const MAX_QUESTION_CHARS = 300;
 
@@ -41,27 +28,18 @@ function errorText(err) {
   if (err instanceof ApiError && err.status === 422) {
     return `Please type a question of up to ${MAX_QUESTION_CHARS} characters.`;
   }
-  // The backend waited for a sleeping ai-service and it did not wake in time.
   if (err instanceof ApiError && err.code === 'ASSISTANT_WAKING') {
     return 'The assistant is waking up. Please try again in a minute.';
   }
-  // The ai-service was reached but failed, was busy, or took too long.
   if (err instanceof ApiError && /^AI_SERVICE_(ERROR|BUSY|TIMEOUT|UNAVAILABLE)$/.test(err.code)) {
     return 'The assistant could not answer just now. Please try again in a minute.';
   }
   return "Chat isn't available right now. Please try again later.";
 }
 
-/**
- * After this long, "Thinking…" says the assistant may be waking up: on the
- * free plan a sleeping service takes up to two minutes, and the backend waits
- * for it rather than failing (2026-10-09). Worded as "may", because the page
- * cannot tell a waking service from a slow answer.
- */
 export const SLOW_AFTER_MS = 10_000;
 
 export default function ChatBot() {
-  // A report's own pages: /reports/:id, /reports/:id/doctor-summary, ...
   const match = useMatch({ path: '/reports/:id/*', end: false });
   const reportId = match?.params?.id && /^[a-f0-9]{24}$/i.test(match.params.id) ? match.params.id : null;
 
@@ -73,7 +51,6 @@ export default function ChatBot() {
   const inputRef = useRef(null);
   const listRef = useRef(null);
 
-  // A different report, a fresh conversation.
   useEffect(() => {
     setMessages([]);
   }, [reportId]);
@@ -161,7 +138,6 @@ export default function ChatBot() {
           </div>
         ) : (
           messages.map((m, i) => (
-            // eslint-disable-next-line react/no-array-index-key
             <div key={i} className={`chatbot__msg chatbot__msg--${m.role}`}>
               <p>{m.text}</p>
               {m.role === 'bot' && m.sources?.length ? (

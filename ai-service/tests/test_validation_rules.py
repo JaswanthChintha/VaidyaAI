@@ -1,12 +1,3 @@
-"""The Module 6 rule table itself -- `app/data/validation_rules.py`.
-
-These tests protect the DATA, not the code: they assert that the two bands are
-coherent, that every catalog feature has a rule, and -- most importantly --
-that the plausible/implausible line is drawn where the specification says it
-must be. A silent edit that narrowed a possible band would start deleting real
-clinical findings, and would look like a passing build.
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -25,13 +16,7 @@ from app.data.validation_rules import (
 NUMERIC = [name for name, rule in RULES.items() if rule.is_numeric]
 
 
-# --------------------------------------------------------------------------
-# Coverage and coherence
-# --------------------------------------------------------------------------
-
-
 def test_every_catalog_feature_has_a_rule():
-    """A feature with no rule would escape validation entirely."""
     assert set(RULES) == set(FEATURES)
 
 
@@ -57,7 +42,6 @@ def test_numeric_features_have_a_possible_band(name):
 
 @pytest.mark.parametrize("name", sorted(NUMERIC))
 def test_the_extreme_band_sits_inside_the_possible_band(name):
-    """Otherwise a value could be 'clinically extreme' and 'impossible' at once."""
     rule = RULES[name]
     for bound in (rule.extreme_low, rule.extreme_high):
         if bound is not None:
@@ -66,7 +50,6 @@ def test_the_extreme_band_sits_inside_the_possible_band(name):
 
 @pytest.mark.parametrize("name", sorted(RULES))
 def test_every_rule_states_its_basis(name):
-    """A bound a clinician cannot audit is a bound nobody can challenge."""
     assert RULES[name].basis.strip()
 
 
@@ -77,43 +60,36 @@ def test_non_numeric_features_carry_no_range_band():
         assert rule.extreme_low is None and rule.extreme_high is None
 
 
-# --------------------------------------------------------------------------
-# The plausible-vs-implausible line, feature by feature
-# --------------------------------------------------------------------------
-
-#: (feature, value, must_be_possible) -- the clinically real extremes that MUST
-#: survive validation, and the extraction-error magnitudes that must not.
 BAND_CASES = [
-    # The specification's own worked example.
-    ("blood_glucose", 400.0, True),  # severe hyperglycaemia -- real
-    ("blood_glucose", 40000.0, False),  # OCR digit run -- impossible
-    ("blood_glucose", 2600.0, True),  # near the recorded human maximum
-    ("blood_glucose", 20.0, True),  # profound hypoglycaemia -- real
+    ("blood_glucose", 400.0, True),
+    ("blood_glucose", 40000.0, False),
+    ("blood_glucose", 2600.0, True),
+    ("blood_glucose", 20.0, True),
     ("blood_glucose", 0.0, False),
-    ("hba1c", 14.0, True),  # very poorly controlled diabetes
-    ("hba1c", 48.0, False),  # an unconverted IFCC mmol/mol value
+    ("hba1c", 14.0, True),
+    ("hba1c", 48.0, False),
     ("hba1c", 0.0, False),
-    ("hemoglobin", 2.0, True),  # documented survival
-    ("hemoglobin", 24.0, True),  # polycythaemia
-    ("hemoglobin", 142.0, False),  # a g/L value read as g/dL
-    ("creatinine", 15.0, True),  # untreated end-stage renal failure
-    ("creatinine", 884.0, False),  # a umol/L value read as mg/dL
+    ("hemoglobin", 2.0, True),
+    ("hemoglobin", 24.0, True),
+    ("hemoglobin", 142.0, False),
+    ("creatinine", 15.0, True),
+    ("creatinine", 884.0, False),
     ("creatinine", 0.0, False),
-    ("cholesterol", 800.0, True),  # homozygous familial hypercholesterolaemia
-    ("cholesterol", 25.0, True),  # abetalipoproteinaemia
+    ("cholesterol", 800.0, True),
+    ("cholesterol", 25.0, True),
     ("cholesterol", 19000.0, False),
-    ("triglycerides", 15000.0, True),  # published severe case reports
+    ("triglycerides", 15000.0, True),
     ("triglycerides", 100000.0, False),
-    ("vitamin_d", 0.0, True),  # genuinely undetectable
-    ("vitamin_d", 150.0, True),  # intoxication
+    ("vitamin_d", 0.0, True),
+    ("vitamin_d", 150.0, True),
     ("vitamin_d", 5000.0, False),
-    ("vitamin_b12", 20000.0, True),  # post-injection / hepatic
+    ("vitamin_b12", 20000.0, True),
     ("vitamin_b12", 900000.0, False),
-    ("bmi", 10.0, True),  # severe anorexia nervosa
-    ("bmi", 185.0, True),  # heaviest recorded human
+    ("bmi", 10.0, True),
+    ("bmi", 185.0, True),
     ("bmi", 5000.0, False),
-    ("age", 0.0, True),  # a neonate
-    ("age", 122.0, True),  # oldest verified human
+    ("age", 0.0, True),
+    ("age", 122.0, True),
     ("age", 900.0, False),
     ("age", -1.0, False),
 ]
@@ -129,15 +105,13 @@ def test_possible_band_separates_real_extremes_from_extraction_errors(
 
 
 def test_glucose_400_is_extreme_but_not_impossible():
-    """The exact distinction the specification calls out."""
     rule = RULES["blood_glucose"]
-    assert rule.possible_low <= 400.0 <= rule.possible_high  # believable
-    assert 400.0 >= rule.extreme_high  # but clinically extreme
-    assert 40000.0 > rule.possible_high  # not believable at all
+    assert rule.possible_low <= 400.0 <= rule.possible_high
+    assert 400.0 >= rule.extreme_high
+    assert 40000.0 > rule.possible_high
 
 
 def test_extreme_thresholds_do_not_reject_merely_abnormal_values():
-    """Abnormal is the point of the product; it must never be a rejection."""
     for feature, value in [
         ("hba1c", 9.0),
         ("blood_glucose", 250.0),
@@ -152,13 +126,7 @@ def test_extreme_thresholds_do_not_reject_merely_abnormal_values():
         assert rule.possible_low <= value <= rule.possible_high
 
 
-# --------------------------------------------------------------------------
-# Codes and the published document
-# --------------------------------------------------------------------------
-
-
 def test_clinically_extreme_is_not_a_questionable_flag():
-    """An extreme value is fully trusted -- it is merely alarming."""
     assert FlagCode.CLINICALLY_EXTREME_LOW not in QUESTIONABLE_FLAGS
     assert FlagCode.CLINICALLY_EXTREME_HIGH not in QUESTIONABLE_FLAGS
 

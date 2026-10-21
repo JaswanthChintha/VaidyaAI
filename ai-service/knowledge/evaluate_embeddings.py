@@ -1,47 +1,3 @@
-"""Measure retrieval quality. This is the evidence behind the embedding choice.
-
-    cd ai-service
-    python knowledge/evaluate_embeddings.py
-
-The Module 21 brief required the embedding approach to be CHOSEN BY
-MEASUREMENT rather than asserted. This script is that measurement, kept in the
-repository so the claim in the README can be re-checked rather than believed.
-
---------------------------------------------------------------------------
-THE EVALUATION SET
---------------------------------------------------------------------------
-`EVAL_QUERIES` below are realistic retrieval requests of the three kinds the
-platform actually issues:
-
-  * FINDING-DRIVEN -- the spec's own example shape: a canonical condition
-    and/or canonical features, as Module 23 will send after a fusion result.
-  * FREE TEXT -- a patient or Module 25 asking in their own words, including
-    lay phrasings that appear nowhere in the corpus ("sugar disease",
-    "thick blood", "why am I always tired").
-  * NEGATIVE -- off-topic and nonsense queries that MUST return nothing. These
-    are as important as the positives: a retriever that scores well on relevant
-    queries and also confidently returns chunks for "how do I fix my bicycle"
-    is not safe to ground an LLM with.
-
-`expect` names documents a clinician would consider relevant. It is a
-judgement, made once, written down, and open to challenge -- which is the point
-of committing it rather than eyeballing results.
-
---------------------------------------------------------------------------
-METRICS
---------------------------------------------------------------------------
-Recall@k   did at least one expected document appear in the top k?
-           The operative metric here: Module 23 needs SOME correct grounding,
-           not a perfectly ordered list.
-MRR        1/rank of the first expected document, averaged. Rewards putting a
-           relevant document first.
-Precision@3 what fraction of the top 3 were expected. Watches for padding
-           results with loosely-related chunks.
-
-For NEGATIVE queries the only thing measured is whether the retriever correctly
-returned nothing.
-"""
-
 from __future__ import annotations
 
 import sys
@@ -51,14 +7,14 @@ from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.rag.index import SIMILARITY_FLOOR, KnowledgeIndex  # noqa: E402
-from app.rag.query import build_query  # noqa: E402
+from app.rag.index import SIMILARITY_FLOOR, KnowledgeIndex
+from app.rag.query import build_query
 
 
 @dataclass(frozen=True)
 class EvalQuery:
     label: str
-    kind: str  # "finding" | "text" | "negative"
+    kind: str
     expect: Tuple[str, ...] = ()
     conditions: Tuple[str, ...] = ()
     features: Tuple[str, ...] = ()
@@ -66,7 +22,6 @@ class EvalQuery:
 
 
 EVAL_QUERIES: Tuple[EvalQuery, ...] = (
-    # ---------------------------------------------------- finding-driven ----
     EvalQuery(
         "spec example: Diabetes + HbA1c + glucose",
         "finding",
@@ -173,7 +128,6 @@ EVAL_QUERIES: Tuple[EvalQuery, ...] = (
         features=("vitamin_d",),
         expect=("cond_elevated_vitamin_d", "ref_vitamin_d_bands", "lab_vitamin_d"),
     ),
-    # --------------------------------------------------------- free text ----
     EvalQuery(
         "lay: what is HbA1c",
         "text",
@@ -270,7 +224,6 @@ EVAL_QUERIES: Tuple[EvalQuery, ...] = (
         text="can I get enough vitamin D from sunlight in winter",
         expect=("life_vitamin_d_sources", "cond_vitamin_d_deficiency"),
     ),
-    # ---------------------------------------------------------- negative ----
     EvalQuery("negative: bicycle", "negative",
               text="how do I fix a puncture on my bicycle tyre"),
     EvalQuery("negative: keyboard mash", "negative", text="asdfghjkl qwertyuiop"),
@@ -282,13 +235,7 @@ EVAL_QUERIES: Tuple[EvalQuery, ...] = (
 )
 
 
-# --------------------------------------------------------------------------
-# Scoring
-# --------------------------------------------------------------------------
-
-
 def _ranked_doc_ids(results) -> List[str]:
-    """Document ids in rank order, de-duplicated (a document may hit twice)."""
     seen: List[str] = []
     for r in results:
         if r.chunk.doc_id not in seen:
@@ -312,7 +259,6 @@ class Report:
 def evaluate(
     search: Callable[[EvalQuery, int], List[str]], name: str, verbose: bool = False
 ) -> Report:
-    """`search` maps (query, top_k) -> ranked doc ids."""
     report = Report(name=name)
     positives = [q for q in EVAL_QUERIES if q.kind != "negative"]
     negatives = [q for q in EVAL_QUERIES if q.kind == "negative"]
@@ -379,7 +325,6 @@ def print_report(r: Report) -> None:
 
 
 def sweep_floor(index: KnowledgeIndex) -> None:
-    """Show what each candidate floor costs and buys. Justifies the constant."""
     print("\n  similarity floor sweep")
     print(
         f"    {'floor':>7}  {'Recall@3':>8}  {'Prec@3':>7}  "

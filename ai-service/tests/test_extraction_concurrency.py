@@ -1,11 +1,3 @@
-"""Pages are read at the same time, and assembled in page order (2026-10-03).
-
-Before: one model round trip after another -- Test 3's two pages took ~17 s
-and ~19 s in sequence. The calls are independent; only the assembly depends
-on order, and that must not change: the first page's lab name, date, sex and
-age still win, and a later page that disagrees is still warned about.
-"""
-
 from __future__ import annotations
 
 import threading
@@ -38,9 +30,6 @@ def _payload(page: int, **extra):
 
 
 class _SlowClient:
-    """Page 1 is the SLOWEST, so a sequential reader would finish it first and
-    a concurrent one finishes it last -- the order of the output is then the
-    assembler's doing, not the timing's."""
 
     def __init__(self, delays, payloads=None, fail_pages=()):
         self.delays = delays
@@ -66,8 +55,6 @@ class _SlowClient:
 
 
 def _service(client, **overrides):
-    # No real pause before the one page retry (2026-10-10): what is under test
-    # here is concurrency and order, not the wait.
     overrides.setdefault("page_retry_delay_seconds", 0)
     return ExtractionService(Settings(_env_file=None, **overrides), client)
 
@@ -78,7 +65,6 @@ def test_pages_are_read_at_the_same_time():
     _service(client).extract(_document(3))
     elapsed = time.perf_counter() - started
     assert client.peak == 3
-    # Three 0.4 s pages in sequence would take 1.2 s.
     assert elapsed < 1.0
 
 

@@ -6,11 +6,6 @@ import Dashboard from '../src/pages/Dashboard';
 import { api, ApiError } from '../src/lib/api';
 import { friendlyPageError, friendlyStatus } from '../src/lib/friendlyErrors';
 
-/**
- * Plain words for analysis failures (owner, 2026-10-06). Seen live on Render:
- * "ANALYSIS_PARTIAL: Some analysis stages did not complete; see
- * analysis.stages" and "See GET /reports/:id/analysis ..." shown to a patient.
- */
 
 beforeEach(() => vi.restoreAllMocks());
 

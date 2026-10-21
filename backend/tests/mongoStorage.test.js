@@ -1,14 +1,5 @@
 'use strict';
 
-/**
- * STORAGE_DRIVER=mongo -- report files kept in MongoDB GridFS (2026-10-06).
- *
- * Added for Render's free plan, whose disk is wiped on every restart. These
- * tests drive the REAL upload, download, delete and account-deletion routes
- * with the driver switched on, and then look in the GridFS collections
- * themselves, so "the file is in Mongo" is checked where it lives rather than
- * through the adapter that claims it.
- */
 
 process.env.STORAGE_DRIVER = 'mongo';
 process.env.UPLOAD_MAX_BYTES = String(64 * 1024);
@@ -53,8 +44,6 @@ const binary = (res, callback) => {
   res.on('end', () => callback(null, Buffer.concat(parts)));
 };
 
-// tests/setup.js empties only the collections mongoose has MODELS for, and
-// GridFS's two are not among them, so they are emptied here.
 beforeEach(async () => {
   resetStorage();
   await filesCollection().deleteMany({});

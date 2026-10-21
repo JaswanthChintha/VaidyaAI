@@ -1,14 +1,3 @@
-"""The Module 7 HTTP surface -- `/api/v1/repository/*`.
-
-The in-process API is the primary interface (see `test_feature_repository.py`);
-this file covers the round trip through HTTP, the `{success, data}` envelope,
-pydantic v2 enforcement at the boundary, and the service-key requirement.
-
-MOUNTING: `app/main.py` is owned by the integrator, so the router is mounted
-here at test time. Once `app.include_router(routes_repository.router)` is added
-to `main.py` this fixture becomes a no-op -- it checks first.
-"""
-
 from __future__ import annotations
 
 import json
@@ -39,7 +28,6 @@ def _patient_url(patient_ref: str) -> str:
 
 @pytest.fixture(autouse=True)
 def _mounted():
-    """Mount the Module 7 router and start each test from an empty store."""
     from app.api import routes_repository
     from app.main import app
 
@@ -51,11 +39,6 @@ def _mounted():
     reset_default_backend()
     yield
     reset_default_backend()
-
-
-# --------------------------------------------------------------------------
-# Payload builders
-# --------------------------------------------------------------------------
 
 
 def vf(name: str, value: Any, **extra: Any) -> Dict[str, Any]:
@@ -125,11 +108,6 @@ def post_load(client, **kwargs: Any):
     }
     body.update(kwargs)
     return client.post(LOAD, json=body)
-
-
-# --------------------------------------------------------------------------
-# Round trip
-# --------------------------------------------------------------------------
 
 
 def test_load_then_read_back_round_trips(client):
@@ -226,11 +204,6 @@ def test_warnings_and_upstream_context_survive_the_boundary(client):
     assert data["summary"]["partial_document"] is True
 
 
-# --------------------------------------------------------------------------
-# Multiple snapshots per patient
-# --------------------------------------------------------------------------
-
-
 def test_a_patients_snapshots_are_listed_in_chronological_order(client):
     for value, date in ((6.8, "2024-09-01"), (6.1, "2024-01-15"), (6.4, "2024-05-20")):
         post_load(
@@ -246,22 +219,10 @@ def test_a_patients_snapshots_are_listed_in_chronological_order(client):
 
 
 def test_a_listing_carries_no_feature_values(client):
-    """A listing names its features but never carries their values.
-
-    The substring check is scoped to the SNAPSHOT rather than run against the
-    whole response body. Searching the raw body for "6.8" made this test
-    hostage to the wall clock: `stored_at` is an ISO timestamp, so any run
-    landing on a time like `...T11:00:26.858615Z` contains "6.8" in the seconds
-    field and the assertion failed for a reason that had nothing to do with
-    PHI. It failed roughly one run in a hundred, which is worse than a test
-    that always fails -- it trains people to re-run rather than to look.
-    """
     post_load(client)
     body = client.get(_patient_url("patient-1")).text
     listing = json.loads(body)["data"]["snapshots"][0]
 
-    # The real property: no feature VALUE appears anywhere in the entry, in any
-    # field the listing might grow later.
     assert "6.8" not in json.dumps(listing.get("available"))
     assert "6.8" not in json.dumps(listing.get("unavailable"))
     assert "values" not in listing and "features" not in listing
@@ -285,11 +246,6 @@ def test_reusing_a_snapshot_id_overwrites_over_http(client):
     post_load(client, snapshot_id="fixed", validated=validated_body({"hba1c": vf("hba1c", 6.8)}))
     assert client.get(_patient_url("patient-1")).json()["data"]["count"] == 1
     assert client.get(_snapshot_url("fixed")).json()["data"]["features"]["hba1c"]["value"] == 6.8
-
-
-# --------------------------------------------------------------------------
-# Accepted request shapes and refusals
-# --------------------------------------------------------------------------
 
 
 def test_module_5_output_is_accepted_and_validated_in_process(client):
@@ -381,11 +337,6 @@ def test_the_interface_document_is_served_and_carries_no_phi(client):
     assert "InMemory" in data["backend"]
 
 
-# --------------------------------------------------------------------------
-# Auth -- every route on this router is PHI-bearing
-# --------------------------------------------------------------------------
-
-
 ROUTES = [
     ("post", LOAD),
     ("get", _snapshot_url("anything")),
@@ -419,11 +370,6 @@ def test_every_repository_route_accepts_the_right_key(authed_client, method, pat
 
 
 def test_the_router_declares_the_auth_dependency_on_every_route():
-    """Mirrors tests/test_auth.py's walker, scoped to this router.
-
-    The dependency is declared once at router level, so every route on it --
-    including any added later -- inherits it.
-    """
     from app.api import routes_repository
     from app.core.auth import require_service_key
 

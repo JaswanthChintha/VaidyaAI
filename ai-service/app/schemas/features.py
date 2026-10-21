@@ -1,25 +1,3 @@
-"""The Module 5 output contract, enforced by pydantic v2.
-
-This schema is BINDING: Module 6 (Feature Validation) and Module 7 (Feature
-Repository) consume it, and Module 20 (Explainability) reads `provenance` to
-show a user which printed report line produced which feature.
-
-Contract rules encoded here:
-
-  * `features` is keyed by canonical feature name. A feature that could not be
-    produced is ABSENT from the map -- it is never present with a fabricated
-    value, and never defaulted to false/zero.
-  * `EngineeredFeature.canonical_unit` is False when the printed unit could not
-    be recognised. Consumers MUST check it before using `value` numerically;
-    an unrecognised unit is reported, never assumed to be canonical.
-  * `unmapped` preserves every extracted row that did not become a feature,
-    with its original name, its original raw value, and a machine-readable
-    reason. Nothing is silently dropped.
-  * `missing_features` lists every canonical feature with no value. For the
-    tri-state booleans (`hypertension`, `heart_disease`) appearing here means
-    UNKNOWN -- it does NOT mean false.
-"""
-
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Union
@@ -51,33 +29,15 @@ from app.schemas.extraction import (
     SourceInfo,
 )
 
-#: Stage identifiers used on every warning so its origin is never lost.
-STAGE_EXTRACTION = "extraction"  # Module 4
-STAGE_FEATURE_ENGINEERING = "feature_engineering"  # Module 5
+STAGE_EXTRACTION = "extraction"
+STAGE_FEATURE_ENGINEERING = "feature_engineering"
 
 STAGE_MODULE = {STAGE_EXTRACTION: 4, STAGE_FEATURE_ENGINEERING: 5}
 
-# Strict union, ordered so a bool never silently becomes 1 and an int never
-# silently becomes 1.0.
 FeatureValue = Union[StrictBool, StrictInt, StrictFloat, StrictStr]
 
 
-# --------------------------------------------------------------------------
-# Request
-# --------------------------------------------------------------------------
-
-
 class ExtractionInput(BaseModel):
-    """Module 4's `data` object. Post it verbatim; extra keys are ignored.
-
-    Everything the final clinical report (spec Module 17) will need is parsed
-    here and carried forward into `FeatureEngineeringData.upstream`.
-
-    `raw_text` is DELIBERATELY not carried forward: it is the full transcribed
-    report, i.e. bulk PHI, and no downstream consumer of the feature set needs
-    it. What matters for safety -- WHICH PAGES WERE UNREADABLE -- is carried as
-    `pages[].raw_text_available`, not as the text itself.
-    """
 
     model_config = ConfigDict(extra="ignore")
 
@@ -99,14 +59,6 @@ class ExtractionInput(BaseModel):
 
 
 class PatientProfileContext(BaseModel):
-    """Optional Module 2 profile context.
-
-    TRI-STATE BOOLEANS: `hypertension` and `heart_disease` are `true`, `false`,
-    or ABSENT/null meaning unknown. Absence is never collapsed to `false` --
-    that would fabricate a negative clinical finding.
-
-    Field names accept Module 2's camelCase as well as snake_case.
-    """
 
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
@@ -134,30 +86,6 @@ class PatientProfileContext(BaseModel):
 
 
 class FeatureEngineeringRequest(BaseModel):
-    """Accepts the extraction under `extraction`, or Module 4's whole envelope.
-
-    THE CANONICAL FORM the backend should send is:
-
-        {"extraction": <Module 4's `data` object>, "profile": {...}}
-
-    i.e. the caller UNWRAPS Module 4's `{"success": true, "data": {...}}` and
-    puts `data` under `extraction`.
-
-    Two other unambiguous forms are also accepted, because posting Module 4's
-    response straight through used to be silently accepted and produce an EMPTY
-    feature set -- a silent pipeline break:
-
-      * `{"success": ..., "data": {...}}`  -- Module 4's response envelope,
-        relayed verbatim. `data` is used as the extraction.
-      * `{"extracted_parameters": [...], ...}` -- a bare Module 4 `data` object
-        posted at the top level.
-
-    Precedence and ambiguity: an explicit `extraction` key always wins. Without
-    it, a body carrying BOTH `data` and a top-level `extracted_parameters` is
-    REJECTED as ambiguous rather than guessed at. Validation is not weakened:
-    whichever object is selected is validated against `ExtractionInput` exactly
-    as before.
-    """
 
     model_config = ConfigDict(extra="ignore")
 
@@ -170,7 +98,7 @@ class FeatureEngineeringRequest(BaseModel):
         if not isinstance(value, dict):
             return value
         if "extraction" in value:
-            return value  # Explicit wins.
+            return value
 
         envelope = value.get("data")
         has_envelope = isinstance(envelope, dict)
@@ -190,13 +118,7 @@ class FeatureEngineeringRequest(BaseModel):
         return value
 
 
-# --------------------------------------------------------------------------
-# Response
-# --------------------------------------------------------------------------
-
-
 class ConversionDetail(BaseModel):
-    """The exact arithmetic applied: `to = from * factor + offset`."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -209,7 +131,6 @@ class ConversionDetail(BaseModel):
 
 
 class FeatureProvenance(BaseModel):
-    """Everything Module 20 needs to point at the report line behind a value."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -307,7 +228,6 @@ class EngineeredFeature(BaseModel):
 
 
 class UnmappedItem(BaseModel):
-    """An extracted row that did not become a canonical feature."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -359,12 +279,6 @@ class DuplicateResolution(BaseModel):
 
 
 class StageWarning(BaseModel):
-    """A warning with its ORIGIN preserved.
-
-    Module 4's warnings and Module 5's warnings mean different things and are
-    actionable by different people. Merging them into one undifferentiated list
-    destroys that, so every warning carries the stage that raised it.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -377,13 +291,6 @@ class StageWarning(BaseModel):
 
 
 class UpstreamPage(BaseModel):
-    """Per-page readability, carried forward from Module 4.
-
-    `raw_text_available: false` means Module 4 COULD NOT READ that page. A lab
-    row on such a page is missing because it was unreadable, NOT because the
-    test was absent from the report -- a distinction the final report must keep.
-    The page text itself is deliberately NOT carried (bulk PHI).
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -392,11 +299,6 @@ class UpstreamPage(BaseModel):
 
 
 class UpstreamExtraction(BaseModel):
-    """Everything Module 5 received from Module 4 that the report will need.
-
-    Present with `provided: false` when the caller supplied only
-    `extracted_parameters` and no surrounding extraction context.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -421,8 +323,6 @@ class FeatureEngineeringSummary(BaseModel):
     feature_count: int = 0
     lab_feature_count: int = 0
     profile_feature_count: int = 0
-    #: Sex / age taken from the patient details PRINTED on the report, in
-    #: place of the profile's. Neither lab nor profile -- counted apart.
     report_details_feature_count: int = 0
     unmapped_count: int = 0
     conversion_count: int = 0
@@ -434,7 +334,6 @@ class FeatureEngineeringSummary(BaseModel):
 
 
 class FeatureEngineeringData(BaseModel):
-    """The `data` object of a successful feature-engineering response."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -493,7 +392,6 @@ class FeatureEngineeringResponse(BaseModel):
 
 
 def catalog_document() -> Dict[str, Any]:
-    """Machine-readable description of the canonical feature space."""
     from app.data.feature_catalog import FEATURES
     from app.data.unit_conversions import accepted_units
 

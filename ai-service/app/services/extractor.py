@@ -1,16 +1,3 @@
-"""Orchestration: loaded document -> per-page model calls -> the contract.
-
-Assembly rules live here (not in the model) so they are deterministic and
-testable:
-  * page numbers are stamped by the service, not trusted from the model
-  * document `raw_text` is the concatenation of page texts in order
-  * `extraction_confidence` aggregates page and row confidences
-  * warnings are collected from intake, the model, and service-side checks
-
-NOTHING in this module interprets results clinically. It transcribes and
-assembles only. Test-name normalisation is Module 5; validation is Module 6.
-"""
-
 from __future__ import annotations
 
 import contextvars
@@ -37,25 +24,10 @@ from app.services.gemini_client import GeminiClient
 
 logger = get_logger(__name__)
 
-# Guard against a model that ignores instructions and emits thousands of rows.
 MAX_PARAMETERS_PER_PAGE = 300
 
-# PAGES ARE READ AT THE SAME TIME, AT MOST THIS MANY AT ONCE (2026-10-03).
-# They were read one after another, so a two-page report waited for two full
-# model round trips (Test 3: ~17 s + ~19 s). The calls are independent; only
-# the ASSEMBLY below depends on page order, and it still runs in page order
-# over the collected results. Three keeps a long report from tripping the
-# free tier's per-minute limit in one burst.
 MAX_CONCURRENT_PAGES = 3
 
-# WHICH FAILED PAGES GET ONE MORE TRY (2026-10-10). Only failures a later
-# moment can fix: the provider unavailable (5xx), and an answer that came back
-# empty or garbled -- plus a page whose answer did not fit the schema, checked
-# separately. NOT a rate limit: the free tier's cap is daily, and asking again
-# twenty seconds later only spends the time. NOT a timeout: one more full
-# attempt chain on a page that already timed out would run past the backend's
-# own extraction deadline. NOT a safety block or truncation: those are
-# answers, and the same page gets the same answer.
 PAGE_RETRY_CODES = frozenset(
     {
         ErrorCode.MODEL_UNAVAILABLE,
@@ -77,13 +49,6 @@ class ExtractionService:
         self._client = client
 
     def _read_pages(self, pages: List[Any], total: int) -> List[Union[dict, ModelError]]:
-        """Each page's payload or ModelError, IN PAGE ORDER.
-
-        A single page is called inline -- no thread for nothing. Each worker
-        runs in a copy of the caller's context, so the request id carried by
-        `contextvars` still reaches every log line a page writes. Any error
-        that is not a ModelError propagates exactly as it did from the loop.
-        """
 
         def read(page: Any) -> Union[dict, ModelError]:
             prompt = build_page_prompt(page.page_number, total)
@@ -115,15 +80,6 @@ class ExtractionService:
     def _retry_failed_pages(
         self, pages: List[Any], outcomes: List[Union[dict, ModelError]], total: int
     ) -> List[Union[dict, ModelError]]:
-        """Read each page that failed in a fixable way ONCE more, after a pause.
-
-        Every model in the chain already retries within seconds, so a provider
-        outage longer than that took the page with it (Test 3, 2026-10-10: page
-        2 -- glucose, creatinine, SGPT -- skipped as MODEL_UNAVAILABLE, and the
-        report read "Healthy (partial assessment)"). One pause, one more read
-        of just those pages, and then whatever happens is final: a page that
-        fails again is skipped and reported exactly as before.
-        """
         retry_at = [i for i, outcome in enumerate(outcomes) if self._worth_another_try(outcome)]
         if not retry_at:
             return outcomes
@@ -166,9 +122,6 @@ class ExtractionService:
         failed_pages = 0
         total = len(document.pages)
 
-        # The model calls, concurrently. Each page's outcome is the payload or
-        # the ModelError it raised -- the same two outcomes the old loop
-        # branched on -- and nothing else is decided until every page is in.
         outcomes = self._read_pages(document.pages, total)
         outcomes = self._retry_failed_pages(document.pages, outcomes, total)
 
@@ -178,8 +131,6 @@ class ExtractionService:
                     raise outcome
                 payload = outcome
             except ModelError as exc:
-                # A single failed page degrades the result rather than failing
-                # the whole request -- unless every page fails (checked below).
                 failed_pages += 1
                 warnings.append(
                     f"Page {page.page_number} could not be processed by the "
@@ -195,8 +146,6 @@ class ExtractionService:
             try:
                 page_result = PageExtraction.model_validate(payload)
             except ValidationError:
-                # The top-level page object was unusable. Salvage nothing from
-                # it rather than emit half-validated data.
                 failed_pages += 1
                 warnings.append(
                     f"Page {page.page_number} returned a response that did not "
@@ -222,7 +171,6 @@ class ExtractionService:
                 rows = rows[:MAX_PARAMETERS_PER_PAGE]
 
             for row in rows:
-                # Page number is authoritative from the service, never the model.
                 row.page_number = page.page_number
                 parameters.append(row)
                 self._flag_row_warnings(row, warnings)
@@ -235,8 +183,6 @@ class ExtractionService:
                 if text:
                     warnings.append(f"Page {page.page_number}: {text}")
 
-            # First non-null wins for document-level metadata; a later page
-            # disagreeing is worth a warning (possible multi-report document).
             if page_result.lab_name:
                 if lab_name is None:
                     lab_name = page_result.lab_name
@@ -257,10 +203,6 @@ class ExtractionService:
                 patient_name_present = True
             elif patient_name_present is None:
                 patient_name_present = page_result.patient_name_present
-            # Same rule for the printed sex and age. A later page printing a
-            # DIFFERENT one is a document that may hold two people's results,
-            # which is exactly what these fields exist to catch -- so it is
-            # warned about, never silently merged.
             if page_result.patient_sex:
                 if patient_sex is None:
                     patient_sex = page_result.patient_sex
@@ -334,19 +276,12 @@ class ExtractionService:
         )
         return data
 
-    # -- helpers -------------------------------------------------------------
 
     def _aggregate_confidence(
         self,
         page_confidences: List[float],
         parameters: List[ExtractedParameter],
     ) -> Optional[float]:
-        """Combine page-level and row-level confidence into one number.
-
-        Rows are weighted equally with pages when both exist: a page can read
-        cleanly overall while individual rows are shaky, and Module 5 cares
-        most about the rows.
-        """
         row_confidences = [
             p.confidence for p in parameters if p.confidence is not None
         ]
@@ -367,7 +302,6 @@ class ExtractionService:
 
     @staticmethod
     def _flag_row_warnings(row: ExtractedParameter, warnings: List[str]) -> None:
-        """Service-side sanity checks. Observational only -- no clinical logic."""
         if row.reference_low is not None and row.reference_high is not None:
             if row.reference_low > row.reference_high:
                 warnings.append(

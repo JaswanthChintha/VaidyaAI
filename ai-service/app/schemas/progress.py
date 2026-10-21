@@ -1,66 +1,3 @@
-"""The Module 30 (Health Progress Analysis) contract, pydantic v2.
-
-Module 30 answers ONE question:
-
-    across the laboratory parameters that could actually be assessed between
-    two of a patient's reports, how much of the measured movement was in the
-    direction the polarity table records as favourable -- expressed as one
-    number on a stated scale, with the parameters it was built from and the
-    parameters it could not use listed beside it.
-
-==========================================================================
-WHAT MODULE 30 DOES **NOT** OWN
-==========================================================================
-
-Nothing clinical. In particular it owns:
-
-* **no polarity table.** Whether a rise in creatinine is better or worse is
-  read -- by Module 28, through Module 29 -- from `app/data/trend_polarity.py`.
-  Module 30 never performs that lookup.
-* **no stability threshold.** Whether a change is real is the reference change
-  value band in that same file.
-* **no notion of "improved".** Module 29's `category` arrives already decided;
-  Module 30 maps the finished label onto a point value.
-
-Module 30 calls `report_comparator.compare_reports()` and scores its output.
-A third table that could disagree with the other two is the defect class this
-project's audits keep finding, so there is deliberately only one polarity
-table and only one significance rule in the service.
-
-==========================================================================
-WHAT MODULE 30 **DOES** OWN
-==========================================================================
-
-1. **The scale**, in `app/data/progress_scoring.py`: five equally spaced
-   ordinal positions for five of Module 29's seven categories, equal weights,
-   five labelled bands, and a stated basis for every one of them.
-2. **Coverage honesty.** How many parameters the score was built from, which
-   ones, which ones were excluded, and why -- plus a refusal to emit a score
-   at all below a declared minimum contributing count.
-3. **The copy** that says what the number is and is not.
-
-==========================================================================
-THE RULE THIS MODULE EXISTS TO OBEY
-==========================================================================
-
-**ABSENCE IS NEVER A VALUE.** A parameter that Module 29 could not classify
-contributes nothing at all -- not a neutral 50, not a reduced weight, not a
-smaller share. It is listed in `coverage.excluded` with its Module 29 outcome
-and a reason code, and it lowers `coverage.contributing_count`.
-
-When nothing could be assessed, `score` is `null` and `outcome` is
-`NOTHING_ASSESSED`. There is no band, no headline that reads like steady
-progress, and no 50. This is the same rule `RiskLevel.highest([])` obeys by
-returning None rather than LOW, that Module 18 obeys by refusing to report a
-healthy status when nothing was assessed, and that Module 28 obeys by
-refusing `stable` for a series with fewer than two readings.
-
-**BRANCH ON `outcome`.** `score` is non-null for exactly one value of it,
-`SCORE_COMPUTED`. Every other value means `score is None` and says why. A
-consumer that renders `score` without checking `outcome` will eventually
-render a blank where a refusal belongs.
-"""
-
 from __future__ import annotations
 
 from datetime import datetime
@@ -88,34 +25,16 @@ from app.schemas.timeline import (
     utcnow,
 )
 
-#: The stage identifier Module 30 stamps on its own warnings.
 STAGE_PROGRESS = "progress"
 PROGRESS_MODULE = 30
 
 
-# --------------------------------------------------------------------------
-# Outcome vocabulary
-# --------------------------------------------------------------------------
-#
-# `outcome` is ALWAYS present. Exactly one value carries a score.
-
-#: Enough parameters contributed, and a score was computed.
 PROGRESS_SCORE_COMPUTED = "SCORE_COMPUTED"
 
-#: Fewer than two reports were supplied, so there is no pair to compare and
-#: nothing to score. NOT a score of 50.
 PROGRESS_NO_PAIR = "NO_PAIR"
 
-#: A pair was compared, but NOT ONE parameter could be placed on the scale.
-#: Every parameter examined was excluded, and `coverage.excluded` says why for
-#: each. NOT a score of 50 and NOT "no change".
 PROGRESS_NOTHING_ASSESSED = "NOTHING_ASSESSED"
 
-#: At least one parameter contributed, but fewer than
-#: `MINIMUM_CONTRIBUTING_PARAMETERS`. A number here would print with exactly
-#: the confidence of a well-covered one, so none is printed. The contributions
-#: that WERE found are still returned in full, so a reader can see what little
-#: was available -- they are simply not averaged into a headline number.
 PROGRESS_INSUFFICIENT_COVERAGE = "INSUFFICIENT_COVERAGE"
 
 PROGRESS_OUTCOME_VALUES: Tuple[str, ...] = (
@@ -147,24 +66,7 @@ PROGRESS_OUTCOME_DESCRIPTIONS: Dict[str, str] = {
 }
 
 
-# --------------------------------------------------------------------------
-# Request
-# --------------------------------------------------------------------------
-
-
 class ProgressOptions(BaseModel):
-    """Analysis options. Every one of them narrows; none of them invents.
-
-    `features` and `exclude_questionable` mean exactly what they mean in
-    `ComparisonOptions` and `TimelineOptions`, and are translated into a
-    `ComparisonOptions` before Module 29 is called, so there is one definition
-    of each.
-
-    There is deliberately NO option to lower the minimum contributing count,
-    to change a weight, or to move a band boundary. Those are declared in
-    `app/data/progress_scoring.py`, where a reviewer can see them, and a
-    caller cannot talk the service into a more flattering score.
-    """
 
     model_config = ConfigDict(extra="ignore")
 
@@ -206,17 +108,6 @@ class ProgressOptions(BaseModel):
 
 
 class HealthProgressRequest(BaseModel):
-    """Score one patient's progress between two of their reports.
-
-    The report snapshot shape is `TimelineReportInput`, Module 28's, reused
-    verbatim -- the same shape Module 29 takes. There is deliberately no
-    second way to pass a report's features across this boundary.
-
-    WHICH TWO REPORTS: identical rules to Module 29, because the pair
-    selection IS Module 29's. Name both `baseline_ref` and `comparison_ref`,
-    or name neither and get the earliest versus the latest by `chrono_date`.
-    Naming exactly one is a 422.
-    """
 
     model_config = ConfigDict(extra="ignore")
 
@@ -247,7 +138,6 @@ class HealthProgressRequest(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _unwrap(cls, value: Any) -> Any:
-        """Accept `{"data": {...}}` so a relayed envelope is not an empty run."""
         if not isinstance(value, dict):
             return value
         if "reports" in value:
@@ -303,18 +193,7 @@ class HealthProgressRequest(BaseModel):
         return self
 
 
-# --------------------------------------------------------------------------
-# Response -- the scale itself
-# --------------------------------------------------------------------------
-
-
 class ProgressBand(BaseModel):
-    """One labelled interval of the scale, echoed from the scoring table.
-
-    Present in `scale.bands` always -- the bands describe the INSTRUMENT, not
-    the patient, so they are returned even when no score was computed. The
-    patient's own band is `band`, which is null exactly when `score` is null.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -326,12 +205,6 @@ class ProgressBand(BaseModel):
 
 
 class ProgressScale(BaseModel):
-    """What the number means and which way it points. Never omitted.
-
-    A one-dimensional score whose direction the reader has to infer is worse
-    than no score, so `direction` and `direction_text` are mandatory fields
-    rather than documentation.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -356,18 +229,7 @@ class ProgressScale(BaseModel):
     bands: List[ProgressBand] = Field(default_factory=list)
 
 
-# --------------------------------------------------------------------------
-# Response -- what went into the score, and what did not
-# --------------------------------------------------------------------------
-
-
 class ParameterContribution(BaseModel):
-    """ONE parameter's contribution to the score.
-
-    Everything here except `points`, `weight` and `weighted_points` is
-    Module 29's, carried through unchanged so a reader can join the number
-    back to the comparison it came from.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -439,13 +301,6 @@ class ParameterContribution(BaseModel):
 
 
 class ExcludedParameter(BaseModel):
-    """ONE parameter that was examined and contributed NOTHING.
-
-    HAS NO `points`, `weight` OR `weighted_points` FIELD, deliberately and
-    structurally -- the same guarantee `TimelineGap` makes by having no
-    `value`. An exclusion can never be read as a neutral contribution, and no
-    code path can later 'fill it in' with 50.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -477,12 +332,6 @@ class ExcludedParameter(BaseModel):
 
 
 class ProgressCoverage(BaseModel):
-    """How much of the picture the score actually saw. NEVER omitted.
-
-    A score computed from two parameters is not the same claim as one computed
-    from nine, and the only thing that keeps the two apart on a rendered page
-    is this object. It is present on every response, including the refusals.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -519,7 +368,6 @@ class ProgressCoverage(BaseModel):
 
     @model_validator(mode="after")
     def _counts_agree(self) -> "ProgressCoverage":
-        """Structural half of "the score is honest about its coverage"."""
         if self.contributing_count != len(self.contributing):
             raise ValueError("contributing_count must equal len(contributing)")
         if self.excluded_count != len(self.excluded):
@@ -535,13 +383,6 @@ class ProgressCoverage(BaseModel):
 
 
 class ProgressCounts(BaseModel):
-    """How many CONTRIBUTING parameters fell in each scored category.
-
-    These count contributions only. The excluded parameters are counted in
-    `coverage`, deliberately apart, so that a reader adding these five up and
-    comparing with `features_examined` sees the shortfall rather than being
-    reassured by a total that silently absorbed it.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -564,12 +405,6 @@ class ProgressCounts(BaseModel):
 
 
 class ProgressSummary(BaseModel):
-    """Counts turned into templated prose. No generator, no model.
-
-    `headline` and `lines` are assembled from a fixed template table that is
-    safety-scanned at import time. The only things substituted in are feature
-    names, numbers, dates and code constants.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -649,14 +484,6 @@ class HealthProgressData(BaseModel):
 
     @model_validator(mode="after")
     def _score_matches_outcome(self) -> "HealthProgressData":
-        """Structural half of "absence is never a value".
-
-        A refusal carrying a number, or a computed outcome carrying none, is a
-        contradiction -- caught here rather than shipped to a renderer that
-        would draw it. This is the one invariant that makes it impossible for
-        a future edit to publish 50 out of 100 for a patient nothing could be
-        told about.
-        """
         if self.outcome == PROGRESS_SCORE_COMPUTED:
             if self.score is None:
                 raise ValueError("SCORE_COMPUTED requires a score")

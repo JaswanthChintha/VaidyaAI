@@ -1,16 +1,3 @@
-"""Module 22 content -- MEDICAL TERMINOLOGY.
-
-The health-literacy layer. Spec Module 25 (Medical Terminology Explainer) will
-read these documents directly rather than generating definitions, which is the
-point: a definition an LLM invents is not auditable, and a definition retrieved
-from here carries a basis a reader can check.
-
-Documents here define WORDS. `lab_tests.py` describes TESTS and
-`reference_information.py` gives NUMBERS. A reader who asks "what does eGFR
-mean" and a reader who asks "what is my creatinine" want different documents,
-and separating them is what lets retrieval give each the right one.
-"""
-
 from __future__ import annotations
 
 from typing import Tuple
@@ -416,16 +403,6 @@ a diagnosis.
             "app/schemas/decisions.py."
         ),
     ),
-    # ------------------------------------------------------------------
-    # LIVER ENZYMES (owner, 2026-10-04). Spec Module 25 names SGPT, and the
-    # corpus had nothing on it, so the term was refused. These two documents
-    # describe the TESTS; the numbers live in `ref_liver_bands`.
-    #
-    # LATER THE SAME DAY ALT and AST became assessed features (the Liver
-    # Disease topic), so these documents now carry their feature tags and are
-    # the features' own "what is this test" documents. Their bodies still
-    # hold no number, so a cut-off has one home.
-    # ------------------------------------------------------------------
     KnowledgeDocument(
         doc_id="term_alt_sgpt",
         title="ALT (SGPT), a liver enzyme test",

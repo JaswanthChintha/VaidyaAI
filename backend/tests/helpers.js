@@ -13,20 +13,17 @@ const validUser = {
   password: 'Str0ng!Passw0rd',
 };
 
-/** Register a user through the public API and return { res, tokens, user }. */
 async function registerUser(overrides = {}) {
   const payload = { ...validUser, ...overrides };
   const res = await request(app).post(`${BASE}/register`).send(payload);
   return { res, payload, body: res.body };
 }
 
-/** Create a user directly in the DB with an arbitrary role (bypasses signup rules). */
 async function createUserWithRole(role, overrides = {}) {
   const payload = { ...validUser, ...overrides, role };
   return User.create(payload);
 }
 
-/** Log in and return the token pair. */
 async function login(email, password) {
   const res = await request(app).post(`${BASE}/login`).send({ email, password });
   return res;

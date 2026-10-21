@@ -1,67 +1,3 @@
-"""Module 23 -- LLM-based patient-friendly explanation.
-
-    Structured findings + retrieved knowledge
-        -> LLM
-        -> Safety Validation (Module 24)
-        -> Approved response
-
-and NEVER
-
-    LLM output -> shown to patient
-
-This is the first component in VaidyaAI that puts UNREVIEWED PROSE in front of
-a patient. Everything before it emits structured objects, or text a human wrote
-into `app/data/`. The file is written accordingly.
-
-==========================================================================
-THE ONE PROPERTY THIS FILE MUST HAVE
-==========================================================================
-
-`PatientExplanation.explanation` is assigned in exactly one place in this
-module: from `GuardedGenerationResult.approved_text`, inside
-`_result_from_guarded`. There is no other constructor, no other assignment,
-and the model's raw output is never stored on the object at all -- not in a
-debug field, not in a "candidate" field, not in the sources. A rejected
-generation is discarded inside `guarded_generation` and this module never sees
-it.
-
-`tests/test_explanation.py` checks this three ways: by asserting that a
-planted unsafe sentence never appears anywhere in the serialised response, by
-asserting the safety layer is called on every path that calls the model, and by
-reading this source file for a second assignment.
-
-==========================================================================
-WHY GENERATION IS REFUSED BEFORE IT STARTS, IN TWO CASES
-==========================================================================
-
-1. NO RETRIEVAL, NO GENERATION. If Module 21 returns nothing above its
-   similarity floor, the model is not called. A model asked to explain a
-   finding with no supporting knowledge will still answer -- from its
-   pre-training, which is exactly the ungrounded medical claim the whole
-   architecture exists to prevent. `SafetyContext(require_grounding=True)` is
-   set as well, so even a coding error here fails closed.
-
-2. NO MODEL, NO GENERATION. With no `GEMINI_API_KEY` the model is not called
-   and the caller is told the explanation is unavailable. This is what makes
-   the whole test suite runnable offline, and it is also the production
-   behaviour on a credential outage: the structured report still renders.
-
-In both cases the patient gets `safe_fallback()` -- the structured,
-catalogue-sourced findings -- with `generated_explanation_available: false`.
-Never an empty screen, never a silent substitution.
-
-==========================================================================
-RETRIES
-==========================================================================
-
-`guarded_generation(attempts=2)`. The second attempt is only ever made when
-the first was REFUSED BY THE SAFETY LAYER, and it is made with a DIFFERENT
-prompt: the violated codes, reasons and offending spans are quoted back (see
-`explanation_prompt._feedback_block`). A transport failure is NOT retried
-here, because `GeminiTextClient` already retried it with backoff; retrying
-again would only multiply the outage.
-"""
-
 from __future__ import annotations
 
 import os
@@ -96,20 +32,10 @@ logger = get_logger(__name__)
 
 EXPLANATION_VERSION = "1.0.0"
 
-#: How many grounding chunks are put in front of the model. More is not better:
-#: every extra chunk widens the set of numbers the model may legitimately write
-#: and dilutes the ones that actually concern the finding.
 GROUNDING_TOP_K = 4
 
-#: Caller-supplied interpretation labels are STRUCTURED OUTPUT from Modules
-#: 8/16, not user text. Bounded anyway -- a long "label" is a malfunction or an
-#: injection attempt, and neither should reach the prompt intact.
 MAX_INTERPRETATION_CHARS = 240
 
-
-# --------------------------------------------------------------------------
-# Outcomes
-# --------------------------------------------------------------------------
 
 OUTCOME_GENERATED = "generated"
 OUTCOME_WITHHELD_BY_SAFETY = "withheld_by_safety"
@@ -125,8 +51,6 @@ OUTCOMES: Tuple[str, ...] = (
     OUTCOME_UNKNOWN_SUBJECT,
 )
 
-#: Fixed, reviewed wording for the two refusals that are NOT safety
-#: rejections. `FALLBACK_NOTICE` covers the safety case and is not restated.
 NOT_GROUNDED_NOTICE = (
     "No reviewed medical knowledge in this platform covers this finding "
     "closely enough to explain it, so no explanation was written. The "
@@ -156,13 +80,7 @@ EXPLANATION_POLICY = (
 )
 
 
-# --------------------------------------------------------------------------
-# Returned shapes
-# --------------------------------------------------------------------------
-
-
 class ExplanationSource(BaseModel):
-    """One cited grounding chunk. Module 20's chain, applied to retrieval."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -178,7 +96,6 @@ class ExplanationSource(BaseModel):
 
 
 class SafetyOutcome(BaseModel):
-    """What the safety layer did. Codes and counts only -- never the text."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -196,13 +113,6 @@ class SafetyOutcome(BaseModel):
 
 
 class PatientExplanation(BaseModel):
-    """One explanation, or the reason there is not one.
-
-    `explanation` is the ONLY string here a caller may show a patient, and it
-    is populated exclusively from `guarded_generation().approved_text`. When it
-    is None the caller renders `fallback` and `notice`; `outcome` says which
-    case this is.
-    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -214,9 +124,7 @@ class PatientExplanation(BaseModel):
     conditions: Tuple[str, ...] = ()
     outcome: str
     explanation: Optional[str] = None
-    #: Present on EVERY non-generated outcome. Never None when explanation is.
     fallback: Optional[SafeFallback] = None
-    #: Plain wording for the reader saying an explanation could not be made.
     notice: Optional[str] = None
     grounding_available: bool = False
     sources: Tuple[ExplanationSource, ...] = ()
@@ -226,7 +134,6 @@ class PatientExplanation(BaseModel):
 
 
 class ReportExplanationSet(BaseModel):
-    """Explanations attached to one clinical report."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -235,13 +142,7 @@ class ReportExplanationSet(BaseModel):
     explanations: Tuple[PatientExplanation, ...] = ()
     generated_count: int = 0
     withheld_count: int = 0
-    #: Features present in the report that were not explained, and why.
     skipped: Tuple[Dict[str, str], ...] = ()
-
-
-# --------------------------------------------------------------------------
-# Grounding
-# --------------------------------------------------------------------------
 
 
 def _to_source(scored: Any) -> ExplanationSource:
@@ -259,9 +160,6 @@ def _to_source(scored: Any) -> ExplanationSource:
     )
 
 
-#: Public name for the same conversion. `app/services/terminology.py` builds
-#: its own `ScoredChunk`s from exact document selection and cites them through
-#: this, so both modules produce byte-identical citation shapes.
 to_explanation_source = _to_source
 
 
@@ -279,25 +177,13 @@ def _to_extract(scored: Any) -> KnowledgeExtract:
 def _ground(
     *, features: Sequence[str], conditions: Sequence[str], top_k: int
 ) -> List[Any]:
-    """Retrieve grounding for a CANONICAL finding.
-
-    Note what is NOT passed: free text. Module 23 always retrieves from the
-    catalogue vocabulary, which is why it is insulated from the TF-IDF
-    coverage problem that `app/services/terminology.py` has to handle
-    explicitly -- a canonical feature is in the corpus by construction.
-    """
     try:
         return list(retrieve(features=features, conditions=conditions, top_k=top_k))
-    except Exception:  # noqa: BLE001 -- a retrieval failure is "no grounding"
+    except Exception:
         logger.warning(
             "explanation_retrieval_failed %s", safe_meta(module=23, outcome="no_grounding")
         )
         return []
-
-
-# --------------------------------------------------------------------------
-# Findings rendering -- structured in, flat lines out
-# --------------------------------------------------------------------------
 
 
 def _clean_label(text: Optional[str]) -> Optional[str]:
@@ -332,7 +218,7 @@ def _finding_lines(
     lines: List[str] = []
     if definition is not None:
         lines.append(f"Parameter: {feature} -- {definition.description}")
-    else:  # pragma: no cover -- guarded by the caller
+    else:
         lines.append(f"Parameter: {feature}")
     if value is not None:
         rendered = _format_value(value)
@@ -345,11 +231,6 @@ def _finding_lines(
     if reference_low is not None or reference_high is not None:
         low = "not stated" if reference_low is None else _format_value(reference_low)
         high = "not stated" if reference_high is None else _format_value(reference_high)
-        # "printed on the report" would be false for a converted parameter:
-        # the bounds are the report's own interval carried into the value's
-        # unit by Module 5 (`feature_engineer._reference_bounds`), so they are
-        # comparable with the value above but are not always the printed
-        # digits. Say what is true of every case.
         lines.append(
             f"The reference interval for this parameter, in the same unit as "
             f"the value above: {low} to {high}"
@@ -376,23 +257,6 @@ def _permitted(
     reference_high: Optional[float],
     extra: Sequence[float],
 ) -> Tuple[float, ...]:
-    """The numbers the explanation may state.
-
-    ONLY the patient's own validated value, that report's reference bounds in
-    the value's own unit, and whatever the caller explicitly vouched for.
-    Numbers found in the retrieved knowledge are permitted automatically by
-    Module 24 because the chunks are handed to it as `grounding_sources`; they
-    are deliberately not duplicated here.
-
-    THE BOUNDS AND THE VALUE ARE IN ONE UNIT SYSTEM, which is what makes this
-    set correct. Module 5 converts the reference interval alongside the value
-    (`feature_engineer._reference_bounds`), so whitelisting the bounds
-    whitelists numbers that are genuinely this patient's range as stated to
-    the model. Before that fix the bounds arrived in the report's printed unit
-    while the value was canonical, and this control -- designed to stop a
-    fabricated number -- was licensing prose that quoted a range 60x off. The
-    control was never wrong; its input was.
-    """
     out: List[float] = []
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         out.append(float(value))
@@ -402,27 +266,13 @@ def _permitted(
     for number in extra or ():
         if isinstance(number, (int, float)) and not isinstance(number, bool):
             out.append(float(number))
-    # Stable order, no duplicates.
     seen: Dict[float, None] = {}
     for number in out:
         seen.setdefault(float(number), None)
     return tuple(seen)
 
 
-# --------------------------------------------------------------------------
-# The guarded call
-# --------------------------------------------------------------------------
-
-
 class _Generator:
-    """Calls the model, records why an attempt failed, refuses futile retries.
-
-    Kept as a class rather than a closure so the failure reason survives the
-    call and `explain_*` can distinguish "the safety layer refused it" from
-    "the model never answered" -- `guarded_generation` deliberately swallows
-    generator exceptions, which is right for safety and useless for
-    diagnostics.
-    """
 
     def __init__(self, llm: Any, build_prompt: Any) -> None:
         self._llm = llm
@@ -432,13 +282,9 @@ class _Generator:
 
     def __call__(self, feedback: Any = None) -> Optional[str]:
         if self.transport_error is not None:
-            # The client already retried transient failures with backoff. A
-            # second round here would multiply an outage, and there is nothing
-            # different to ask.
             return None
         triples = _feedback_triples(feedback)
         if feedback is not None and not triples:
-            # A retry with nothing to say back is the same prompt again.
             return None
         self.calls += 1
         prompt = self._build_prompt(triples)
@@ -451,7 +297,7 @@ class _Generator:
                 safe_meta(module=23, error_code=getattr(exc, "code", None)),
             )
             return None
-        except Exception as exc:  # noqa: BLE001 -- never an approval
+        except Exception as exc:
             self.transport_error = exc
             logger.warning(
                 "explanation_model_failed %s",
@@ -484,12 +330,6 @@ def _result_from_guarded(
     permitted_numbers: Sequence[float],
     findings: Sequence[str],
 ) -> PatientExplanation:
-    """THE ONLY PLACE `explanation` IS EVER ASSIGNED.
-
-    `guarded.approved_text` is None unless Module 24 approved the text, so
-    there is no branch here that could return model output the safety layer
-    did not clear.
-    """
     verdict = guarded.verdict
     safety = SafetyOutcome(
         validated=generator.calls > 0,
@@ -519,7 +359,7 @@ def _result_from_guarded(
         notice = MODEL_UNAVAILABLE_NOTICE
     else:
         outcome = OUTCOME_WITHHELD_BY_SAFETY
-        notice = None  # `fallback.notice` is the reviewed wording for this case
+        notice = None
     return PatientExplanation(
         subject=subject,
         feature=feature,
@@ -546,7 +386,6 @@ def _refused(
     sources: Sequence[ExplanationSource] = (),
     grounding_available: bool = False,
 ) -> PatientExplanation:
-    """A refusal decided BEFORE any generation. No model call was made."""
     return PatientExplanation(
         subject=subject,
         feature=feature,
@@ -562,13 +401,6 @@ def _refused(
 
 
 def _resolve_llm(llm: Any, settings: Optional[Settings]) -> Optional[Any]:
-    """The text client, or None when generation is not possible at all.
-
-    An injected `llm` is always used -- that is how the offline suite runs.
-    Otherwise a client is built only if a key is configured; constructing one
-    without a key would turn a configuration state into an exception on every
-    request.
-    """
     if llm is not None:
         return llm
     resolved = settings or get_settings()
@@ -577,11 +409,6 @@ def _resolve_llm(llm: Any, settings: Optional[Settings]) -> Optional[Any]:
     from app.services.gemini_text import build_text_client
 
     return build_text_client(resolved)
-
-
-# --------------------------------------------------------------------------
-# Module 23's public entry points -- framework-independent
-# --------------------------------------------------------------------------
 
 
 def explain_feature(
@@ -599,20 +426,6 @@ def explain_feature(
     settings: Optional[Settings] = None,
     top_k: int = GROUNDING_TOP_K,
 ) -> PatientExplanation:
-    """Explain ONE canonical parameter to the patient whose value it is.
-
-    The spec's own example: `HbA1c = 6.8%` becomes prose covering what HbA1c
-    represents, why it matters, how the value relates to the interpretation the
-    analysis reached, and what to raise with a professional.
-
-    `feature` MUST be canonical. An unknown name is refused rather than
-    retrieved on -- see `app/services/terminology.py` for why guessing from
-    free text is the specific thing this platform will not do.
-
-    `additional_permitted_numbers` is for rule-table thresholds the caller
-    already holds. Everything passed here becomes a number the model is
-    allowed to state, so a caller must only pass values it can vouch for.
-    """
     subject = f"the {feature} result"
     if feature not in FEATURES:
         return _refused(
@@ -715,13 +528,6 @@ def explain_terminology_entry(
     llm: Any = None,
     settings: Optional[Settings] = None,
 ) -> PatientExplanation:
-    """Module 25's generated path, gated identically to Module 23's.
-
-    Lives here rather than in `terminology.py` so that there is ONE guarded
-    generation implementation in the service and one place where an
-    `explanation` field is assigned. `terminology.py` decides WHETHER the term
-    may be explained at all; this decides nothing and only generates.
-    """
     subject = f"the medical term {term}"
     if not scored_chunks:
         return _refused(
@@ -761,8 +567,6 @@ def explain_terminology_entry(
         generator,
         context=SafetyContext(
             grounding_sources=grounding_texts,
-            # No patient value is involved in a terminology answer, so the only
-            # numbers the model may write are ones the corpus already prints.
             permitted_numbers=(),
             require_grounding=True,
             require_referral=True,
@@ -783,66 +587,8 @@ def explain_terminology_entry(
     )
 
 
-# --------------------------------------------------------------------------
-# Report-level convenience
-# --------------------------------------------------------------------------
-
-#: Each explanation is one model call, so this stays a bound rather than
-#: "however many rows arrived" -- one request must not be able to become
-#: dozens of round trips.
-#:
-#: RAISED FROM 6 TO 10 (2026-09-11) so an ordinary report is explained in full.
-#: At 6, a report carrying eight laboratory values left two of them with no
-#: explanation and the reader was not told which -- and the two that lost were
-#: whichever came last in the row order, not the least important.
-#:
-#: RAISED FROM 10 TO 24 (2026-09-19), AND THE 2026-09-11 NOTE PREDICTED THIS
-#: EXACTLY: "10 covers every printed value with headroom for two more before
-#: anyone has to think about this again." The complete blood count added
-#: TWELVE laboratory features in one commit, taking `LAB_FEATURES` from 8 to
-#: 20, and the cap went straight back to dropping results -- six of them on
-#: `Test 3.pdf`, which maps sixteen:
-#:
-#:     "neutrophils, lymphocytes, monocytes, eosinophils, basophils and
-#:      platelet_count have no explanation above."
-#:
-#: The same failure shape as at 6: whichever came LAST in row order lost, not
-#: the least important, and the whole blood count differential happens to sit
-#: at the end.
-#:
-#: 24 IS `LAB_FEATURES` PLUS FOUR. It is deliberately not a round number: it
-#: is derived from the catalogue, so the next person to add features can see
-#: what it was derived from. `test_the_cap_covers_every_laboratory_feature`
-#: fails if the catalogue outgrows it again, which is the check that should
-#: have existed the first time this was raised.
-#:
-#: ⚠ WHAT IT COSTS, BECAUSE IT IS NOT FREE. Each explanation is one model
-#: call, so a fully-mapped report is now up to 24 calls instead of 10. They
-#: are made ONCE PER ANALYSIS and stored, not per page view, so a reader
-#: re-opening the dashboard spends nothing -- but on the free tiers this
-#: platform runs against (Gemini ~20/day/model, OpenRouter 50/day account
-#: wide) a single re-analysis of a large report can now be most of a day's
-#: budget. `_EXPLANATION_CONCURRENCY` below is the other half of that
-#: arithmetic.
 DEFAULT_MAX_EXPLANATIONS = 24
 
-#: How many per-feature generations may be in flight at once.
-#:
-#: MEASURED, not guessed. Sequentially, six usable values at ~25s each ran past
-#: the backend's 120s stage timeout and the patient got nothing. At 4 the wall
-#: time fell to ~40s but the free-tier key returned MODEL_RATE_LIMITED for
-#: several features -- a timeout traded for a 429, which is not a win.
-#:
-#: 2 is the setting that produced explanations for every feature without
-#: tripping the limiter. Raise it only against a key whose quota you have
-#: actually checked; `AI_EXPLANATION_CONCURRENCY` exists so that does not
-#: require a code change.
-#:
-#: Note the failure is GRACEFUL either way: a rate-limited generation yields no
-#: text, Module 24 rejects the empty string as UNANALYSABLE_INPUT (fail-closed,
-#: working as designed), and that feature falls back to catalogue guidance while
-#: the others still explain. Concurrency tuning changes how MANY explanations a
-#: patient gets, never whether an unvalidated one can reach them.
 _EXPLANATION_CONCURRENCY = max(
     1, int(os.environ.get("AI_EXPLANATION_CONCURRENCY", "2"))
 )
@@ -854,9 +600,6 @@ def _report_field(report: Any, name: str) -> Any:
     return getattr(report, name, None)
 
 
-#: The value of `laboratory_values[].source` that means "the laboratory
-#: printed this". Anything else is context the assessment used, not a result
-#: the reader is holding.
 SOURCE_LAB_REPORT = "lab_report"
 
 
@@ -868,15 +611,6 @@ def explain_report(
     max_explanations: int = DEFAULT_MAX_EXPLANATIONS,
     features: Optional[Sequence[str]] = None,
 ) -> ReportExplanationSet:
-    """Attach patient-friendly explanations to a Module 17 clinical report.
-
-    Accepts a `ClinicalReport` or the same thing as a dict, so the Node backend
-    and Modules 27/32 can call it either way.
-
-    Only USABLE laboratory values are explained. A rejected value is one the
-    validator refused to trust, and writing a friendly paragraph about a number
-    the system does not believe would be the worst kind of fluency.
-    """
     values = _report_field(report, "laboratory_values") or []
     conditions = _report_field(report, "conditions") or []
 
@@ -898,14 +632,6 @@ def explain_report(
         feature = str(feature)
         if wanted is not None and feature not in wanted:
             continue
-        # ELIGIBILITY IS DECIDED BEFORE THE BUDGET, not after.
-        #
-        # With the limit checked first, every row past the cap was reported as
-        # `explanation_limit_reached` -- including rows that were never
-        # eligible at all. A rejected value would be blamed on the budget, and
-        # a caller could not tell "we ran out of explanations" from "there was
-        # nothing here to explain". These three reasons are answers to
-        # different questions and the order made them one.
         if not _report_field(row, "usable"):
             skipped.append({"feature": feature, "reason": "value_not_usable"})
             continue
@@ -913,26 +639,6 @@ def explain_report(
             skipped.append({"feature": feature, "reason": "not_a_canonical_feature"})
             continue
 
-        # A PROFILE ANSWER IS NOT A RESULT, and must not consume the budget.
-        #
-        # `laboratory_values` carries the age, sex and BMI the assessment used
-        # alongside the values the laboratory printed. They were candidates
-        # here, so on an eleven-row report three model calls could be spent
-        # writing "this test measures your age" -- which is not a sentence any
-        # reader is waiting for -- while a real cholesterol result went
-        # unexplained for want of budget.
-        #
-        # `source` is the field to branch on. NOT `origin`: the ai-service
-        # stamps `report_transcription` on profile-derived rows (MEMORY.md 6w,
-        # still open at source), so `origin` says the opposite of the truth
-        # here.
-        #
-        # POSITIVE PROOF ONLY. `source` is `Optional[str] = None` on the
-        # schema, so a row can genuinely arrive without one -- from an older
-        # stored report, or a caller that builds rows by hand. Requiring it to
-        # EQUAL "lab_report" would skip every such row and explain nothing at
-        # all; a missing field is not evidence that a value came from the
-        # profile. Excluded only when the row says outright that it did.
         source = _report_field(row, "source")
         if source is not None and source != SOURCE_LAB_REPORT:
             skipped.append({"feature": feature, "reason": "not_a_laboratory_value"})
@@ -952,28 +658,8 @@ def explain_report(
                 conditions=tuple(dict.fromkeys(by_feature.get(feature, ()))),
             )
         )
-        explanations.append(None)  # placeholder, filled in below
+        explanations.append(None)
 
-    # ---- run the per-feature generations CONCURRENTLY -------------------
-    #
-    # Each explanation is an independent model call: it retrieves on its own
-    # feature, grounds on its own numbers, and is validated on its own. Running
-    # them one after another made the whole endpoint O(n) in a round trip that
-    # is inherently slow, because `gemini-3.6-flash` is a THINKING model and
-    # spends reasoning tokens before emitting any prose.
-    #
-    # That was not a tuning nicety, it was a live end-to-end failure: six
-    # usable values at roughly 25s each ran past the backend's 120s stage
-    # timeout, so the analyze pipeline recorded
-    # `explanation: {ok: false, AI_SERVICE_TIMEOUT}` and the patient received
-    # the fallback instead of an explanation. Concurrently the wall time is
-    # about that of the slowest single call.
-    #
-    # Order is preserved by writing each result back into its own slot, so the
-    # response still follows the report's laboratory-value order rather than
-    # whichever call happened to finish first. Bounded deliberately: this is a
-    # third-party API with rate limits, and an unbounded pool would turn a long
-    # report into a burst.
     if planned:
         max_workers = min(len(planned), _EXPLANATION_CONCURRENCY)
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
@@ -1004,7 +690,6 @@ def explain_report(
 
 
 def explanation_policy_document() -> Dict[str, Any]:
-    """Machine-readable statement of what this module does and refuses to do."""
     return {
         "module": 23,
         "version": EXPLANATION_VERSION,

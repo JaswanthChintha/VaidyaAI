@@ -1,21 +1,3 @@
-"""Module 11 -- the Heart Disease Predictor.
-
-THESE TESTS LOAD THE PERSISTED ARTIFACT. They never fit a model. If
-`ml/artifacts/heart_rf_v1.joblib` is missing, run `python ml/train_heart.py`;
-training inside a test run would make these numbers unfalsifiable.
-
-No API key and no network are needed.
-
-The central tests here are the two that catch SILENT defects:
-
-  * the mg/dL -> ordinal band mapping, asserted at its exact boundaries.
-    Feeding a 212 mg/dL value to a forest trained on 1/2/3 would not raise --
-    it would quietly flatten the feature to a constant.
-  * the tri-state smoking history, asserted on the ACTUAL DataFrame handed to
-    the pipeline. "Nobody asked" silently becoming "does not smoke" produces a
-    perfectly plausible-looking prediction.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -52,10 +34,6 @@ from app.schemas.decisions import (
 
 pytestmark = pytest.mark.filterwarnings("ignore::UserWarning")
 
-
-# --------------------------------------------------------------------------
-# Fixtures -- small hand-written feature maps. NOT training data.
-# --------------------------------------------------------------------------
 
 HIGH_RISK = {
     "age": 62,
@@ -95,11 +73,6 @@ def _frame(predictor: HeartPredictor, features: dict):
     return variant, frame, trace
 
 
-# --------------------------------------------------------------------------
-# The artifact exists, is loadable, and matches its metrics document
-# --------------------------------------------------------------------------
-
-
 def test_the_committed_artifact_loads(predictor, bundle):
     assert predictor.is_available() is True
     assert predictor.unavailable_reason() is None
@@ -107,7 +80,6 @@ def test_the_committed_artifact_loads(predictor, bundle):
 
 
 def test_the_metrics_document_describes_the_committed_model():
-    """A metrics file that does not match the shipped model is worse than none."""
     metrics = load_metrics(HEART_METRICS_FILE)
     assert metrics is not None, "the heart metrics artifact is missing"
 
@@ -127,7 +99,6 @@ def test_the_metrics_document_and_the_model_agree_on_thresholds(bundle):
 
 
 def test_the_full_spec_metric_set_is_recorded(bundle):
-    """Spec section 11 asks for all of these, plus ROC-AUC and PR-AUC."""
     for name, spec in bundle.variants.items():
         metrics = spec["metrics"]
         assert 0.5 < metrics["roc_auc"] < 1.0
@@ -136,29 +107,17 @@ def test_the_full_spec_metric_set_is_recorded(bundle):
             assert key in metrics["positive_class"], (name, key)
         assert len(metrics["confusion_matrix"]["matrix"]) == 2
         assert "accuracy" in metrics
-        # Reported next to its baseline, deliberately.
         assert "majority_class_baseline_accuracy" in metrics
         assert metrics["cross_validation"]["folds"] == 5
         assert len(metrics["cross_validation"]["roc_auc"]["per_fold"]) == 5
 
 
 def _variant_columns(variant_name):
-    """The model-matrix columns the LOADED artifact declares for a variant."""
     spec = load_model(HEART_MODEL_FILE).variants[variant_name]
     return list(spec["numeric_features"]) + list(spec["categorical_features"])
 
 
 def test_provenance_is_recorded_so_a_prediction_can_be_traced(bundle):
-    """Every prediction must be traceable to a specific file and fit.
-
-    These assertions describe the SHAPE of provenance, not one dataset's
-    figures. An earlier version pinned `rows_raw == 70000`, `delimiter == ";"`
-    and `n_estimators == 300` -- all true of cardio_train and none of them the
-    property being protected, so retraining on any other corpus failed the test
-    without anything being wrong. What must hold is that the corpus is
-    identified by digest, its size is stated, nothing was synthesised, and the
-    fit records the library and the hyperparameters it used.
-    """
     dataset = bundle.get("dataset")
     assert dataset["sha256"] and len(dataset["sha256"]) == 64
     assert dataset["rows_raw"] > 0
@@ -170,43 +129,23 @@ def test_provenance_is_recorded_so_a_prediction_can_be_traced(bundle):
 
 
 def test_no_synthetic_or_resampled_rows_were_used(bundle):
-    """The user's standing instruction, asserted rather than trusted."""
     dataset = bundle.get("dataset")
     assert dataset["synthetic_rows"] == 0
     assert "none" in dataset["resampling"]
 
 
-# --------------------------------------------------------------------------
-# DECISION 2 -- age arrives in DAYS and must not stay that way
-# --------------------------------------------------------------------------
-
-
 def test_the_age_units_are_stated_and_the_model_sees_years(bundle):
-    """Age must reach the model in YEARS, and the source units must be stated.
-
-    The trap this guards is real: cardio_train stores age in days, where 18,393
-    means 50 years, and a silent pass-through would feed the model a number 365
-    times too large. What matters is not that a given corpus uses days -- NHANES
-    reports whole years already -- but that the artifact SAYS which it was and
-    records any conversion. An artifact that states nothing is the failure.
-    """
     dataset = bundle.get("dataset")
     units = dataset["age_units_raw"]
     assert units in ("days", "years"), units
     if units == "days":
         assert "365" in dataset["age_conversion"]
-    # Either way the recorded span must be human ages, not raw day counts.
     assert dataset.get("age_conversion")
 
 
 def test_the_model_receives_age_in_years_not_days(predictor):
     _, frame, _ = _frame(predictor, dict(HIGH_RISK, age=62))
     assert frame["age"].iloc[0] == 62.0
-
-
-# --------------------------------------------------------------------------
-# DECISION 3 -- the mg/dL -> ordinal band mapping, at its boundaries
-# --------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -216,10 +155,10 @@ def test_the_model_receives_age_in_years_not_days(predictor):
         (120.0, 1),
         (199.0, 1),
         (199.999, 1),
-        (200.0, 2),  # ATP III: 200-239 is borderline high
+        (200.0, 2),
         (239.0, 2),
         (239.999, 2),
-        (240.0, 3),  # ATP III: 240 and above is high
+        (240.0, 3),
         (600.0, 3),
     ],
 )
@@ -237,7 +176,6 @@ def test_an_unusable_cholesterol_is_none_rather_than_a_guessed_band(junk):
 
 
 def test_a_boolean_is_never_read_as_a_cholesterol_value():
-    """isinstance(True, int) is True in Python; the guard must be explicit."""
     assert cholesterol_band(True) is None
     assert cholesterol_band(False) is None
 
@@ -245,18 +183,6 @@ def test_a_boolean_is_never_read_as_a_cholesterol_value():
 def test_cholesterol_reaches_the_model_in_the_space_it_was_trained_on(
     predictor, bundle
 ):
-    """THE defect the cholesterol handling exists to prevent.
-
-    A raw 268 mg/dL in a column the forest was trained on as 1/2/3 would put
-    every patient beyond the largest split point and silently flatten the
-    feature. The reverse is equally wrong: feeding a 1/2/3 band to a forest
-    trained on mg/dL collapses everyone into the bottom of the range.
-
-    So the assertion is not "it must be banded" -- that was true only of the
-    cardio_train artifact -- but that the column the model receives is the one
-    the LOADED artifact declares, and that the patient's real value survives
-    into the evidence either way.
-    """
     _, frame, trace = _frame(predictor, dict(HIGH_RISK, cholesterol=268.0))
     declared = set()
     for spec in bundle.variants.values():
@@ -271,16 +197,10 @@ def test_cholesterol_reaches_the_model_in_the_space_it_was_trained_on(
         assert frame["cholesterol"].iloc[0] == 268.0
         assert trace["cholesterol"]["status"] == "observed"
 
-    # Either way the evidence cites the value the patient actually has.
     assert trace["cholesterol"]["value"] == 268.0
 
 
 def test_the_artifact_records_its_cholesterol_semantics(bundle):
-    """Whichever space is used, the artifact must say which it is.
-
-    Silence here is the dangerous state: a reader cannot tell a 3 meaning
-    "well above normal" from a 3 mg/dL, and neither can a future trainer.
-    """
     dataset = bundle.get("dataset")
     semantics = dataset["cholesterol_semantics"]
     banded = any(
@@ -296,14 +216,6 @@ def test_the_artifact_records_its_cholesterol_semantics(bundle):
 
 
 def test_banding_is_lossy_and_the_artifact_is_consistent_about_it(predictor, bundle):
-    """Two values inside one band are indistinguishable IF the model bands.
-
-    205 and 235 mg/dL are both "above normal". A banding model literally cannot
-    tell them apart, and that consequence is asserted so nobody is surprised by
-    it. A model trained on the real number CAN tell them apart -- that is the
-    information banding throws away -- so the same test states the opposite
-    expectation rather than being deleted when the artifact changes.
-    """
     banded = any(
         "cholesterol_band" in spec["numeric_features"]
         for spec in bundle.variants.values()
@@ -316,26 +228,11 @@ def test_banding_is_lossy_and_the_artifact_is_consistent_about_it(predictor, bun
         assert a.confidence == pytest.approx(b.confidence, abs=1e-12)
         assert c.confidence != pytest.approx(a.confidence, abs=1e-6)
     else:
-        # Same band, different value -> the model is allowed to separate them,
-        # and a crossing into the next band is not a special event.
         assert a.confidence is not None and b.confidence is not None
         assert c.confidence is not None
 
 
-# --------------------------------------------------------------------------
-# DECISION 4 -- the gender inference
-# --------------------------------------------------------------------------
-
-
 def test_the_gender_mapping_is_recorded_with_its_basis(bundle):
-    """A 1/2 sex code is meaningless without a stated mapping AND its basis.
-
-    cardio_train documents neither, so v1 had to INFER the mapping from height
-    and smoking rates and had to say so. NHANES publishes RIAGENDR in a
-    codebook, so the mapping is DOCUMENTED. Both are acceptable; asserting one
-    particular direction is not, because the correct mapping is a property of
-    the corpus. What must never happen is a mapping asserted with no basis.
-    """
     dataset = bundle.get("dataset")
     mapping = dataset["gender_mapping"]
     assert sorted(mapping.values()) == ["female", "male"]
@@ -343,11 +240,6 @@ def test_the_gender_mapping_is_recorded_with_its_basis(bundle):
     basis = dataset["gender_mapping_basis"]
     assert "INFERRED" in basis or "DOCUMENTED" in basis, basis
     assert sorted(dataset["gender_levels"]) == ["female", "male"]
-
-
-# --------------------------------------------------------------------------
-# DECISION 6 -- the tri-state smoking history. ASSERTED ON THE REAL MATRIX.
-# --------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("token,expected", [
@@ -369,7 +261,6 @@ def test_an_ambiguous_or_absent_smoking_history_is_unknown(token):
 
 
 def test_an_unknown_smoking_history_is_absent_from_the_model_matrix(predictor):
-    """THE test. An unanswered question must not become a stated negative."""
     for token in (None, "no_info", "ever"):
         features = dict(HIGH_RISK)
         if token is None:
@@ -380,10 +271,6 @@ def test_an_unknown_smoking_history_is_absent_from_the_model_matrix(predictor):
         assert variant == "without_smoking", token
         assert "smoking_current" not in frame.columns, token
         assert trace[TRI_STATE_SMOKING]["status"] == "not_asserted", token
-        # And most importantly: no 0 anywhere in the row that stands for it.
-        # The column list comes from the ARTIFACT, so this keeps asserting the
-        # real point -- smoking is absent -- rather than pinning one corpus's
-        # cholesterol representation.
         expected = [
             c
             for c in _variant_columns("without_smoking")
@@ -393,7 +280,6 @@ def test_an_unknown_smoking_history_is_absent_from_the_model_matrix(predictor):
 
 
 def test_a_stated_non_smoker_IS_included_as_a_real_answer(predictor):
-    """'never' is information. Collapsing it into absence is the mirror bug."""
     variant, frame, trace = _frame(predictor, dict(HIGH_RISK, smoking_history="never"))
     assert variant == "with_smoking"
     assert frame["smoking_current"].iloc[0] == 0.0
@@ -422,11 +308,6 @@ def test_the_absent_smoking_history_still_appears_in_evidence_saying_so(predicto
     assert "without it rather than assuming an answer" in (item.note or "")
 
 
-# --------------------------------------------------------------------------
-# Unseen and unsupported categories
-# --------------------------------------------------------------------------
-
-
 @pytest.mark.parametrize("gender", ["other", "prefer_not_to_say", "Prefer Not To Say"])
 def test_an_unsupported_gender_asserts_no_category_and_does_not_crash(
     predictor, gender
@@ -448,7 +329,6 @@ def test_an_absent_gender_uses_the_sentinel_not_the_majority_category(predictor)
 
 
 def test_an_unseen_category_is_encoded_as_all_zeros(predictor, bundle):
-    """handle_unknown='ignore' behaviour, asserted on the real encoder."""
     variant, frame, _ = _frame(predictor, dict(HIGH_RISK, gender="prefer_not_to_say"))
     pipeline = bundle.pipelines[variant]
     encoded = pipeline.named_steps["preprocess"].transform(frame)
@@ -460,11 +340,6 @@ def test_an_unseen_category_is_encoded_as_all_zeros(predictor, bundle):
         "an unsupported gender must encode as all zeros -- 'no category "
         "asserted' -- never as the majority category"
     )
-
-
-# --------------------------------------------------------------------------
-# Information sufficiency
-# --------------------------------------------------------------------------
 
 
 def test_required_features_are_the_three_the_model_is_built_on(predictor):
@@ -483,7 +358,6 @@ def test_missing_any_required_feature_yields_insufficient_data(predictor, missin
 
 
 def test_all_three_required_present_is_the_sufficiency_boundary(predictor):
-    """One either side of the line, so the boundary itself is pinned."""
     enough = {"age": 62, "bmi": 34.5, "cholesterol": 268.0}
     decision = predictor.predict(enough)
     assert decision.status is not DecisionStatus.INSUFFICIENT_DATA
@@ -516,11 +390,6 @@ def test_an_unavailable_model_skips_rather_than_predicting_or_crashing():
     assert decision.metadata["skipped_reason"] == "model_unavailable"
 
 
-# --------------------------------------------------------------------------
-# Risk bands
-# --------------------------------------------------------------------------
-
-
 def test_band_boundaries_are_inclusive_at_the_lower_edge(predictor):
     borderline, indicated = 0.2847, 0.6732
 
@@ -543,18 +412,11 @@ def test_band_boundaries_are_inclusive_at_the_lower_edge(predictor):
 
 
 def test_the_shipped_thresholds_are_the_ones_the_bands_use(predictor, bundle):
-    """The cut-offs come from the artifact, not from a constant in the code."""
     for name, spec in bundle.variants.items():
         borderline = spec["thresholds"]["borderline"]
         indicated = spec["thresholds"]["indicated"]
         assert 0.0 < borderline < indicated < 1.0
-        # Derived, not round: an exactly-round cut-off would suggest it was
-        # picked rather than measured.
         assert round(indicated, 2) != indicated
-        # HOW they were chosen must be recorded -- a cut-off with no stated
-        # basis cannot be challenged. The specific constants below belong to
-        # v1's precision-lift procedure; an artifact that selects differently
-        # records its own `threshold_basis` instead of carrying them.
         assert spec.get("threshold_basis") or (
             "precision_lift_indicated" in spec["thresholds"]
         )
@@ -564,18 +426,15 @@ def test_the_shipped_thresholds_are_the_ones_the_bands_use(predictor, bundle):
             assert spec["thresholds"]["target_precision_reachable"] is True
         else:
             assert "OUT-OF-FOLD" in spec["threshold_basis"]
-            # And the achieved figures at the shipped cut-off are recorded.
             assert 0.0 <= spec["thresholds"]["indicated_precision_achieved"] <= 1.0
             assert 0.0 <= spec["thresholds"]["indicated_recall_achieved"] <= 1.0
 
 
 def test_the_bands_are_not_degenerate(bundle):
-    """A band nobody lands in is not a band. Measured, not assumed."""
     for name, spec in bundle.variants.items():
         bands = spec["metrics"]["risk_bands_on_test"]
         for label in ("low", "medium", "high"):
             assert bands[label]["patients"] > 0, (name, label)
-        # And they are ordered by observed positive rate.
         assert (
             bands["low"]["observed_positive_rate"]
             < bands["medium"]["observed_positive_rate"]
@@ -591,25 +450,12 @@ def test_a_high_risk_profile_scores_above_a_low_risk_one(predictor):
 
 
 def test_predictions_are_deterministic(predictor):
-    """Same inputs, same decision.
-
-    The probability is compared with a tolerance rather than for exact
-    equality, and that is not laziness: the forest sums 300 tree votes across
-    worker threads (`n_jobs=-1`), so the accumulation ORDER can differ between
-    calls and the last bit of the float with it. The BAND -- which is what a
-    reader sees -- must be identical, and is asserted exactly.
-    """
     first = predictor.predict(dict(HIGH_RISK))
     second = predictor.predict(dict(HIGH_RISK))
     assert first.confidence == pytest.approx(second.confidence, abs=1e-12)
     assert first.status is second.status
     assert first.risk is second.risk
     assert first.metadata["risk_band"] == second.metadata["risk_band"]
-
-
-# --------------------------------------------------------------------------
-# The decision contract
-# --------------------------------------------------------------------------
 
 
 def test_the_model_reports_the_canonical_condition_byte_for_byte(predictor):
@@ -631,18 +477,7 @@ def test_confidence_is_the_probability_of_the_positive_class(predictor):
     assert decision.metadata["confidence_semantics"] == "probability_of_positive_class"
 
 
-# --------------------------------------------------------------------------
-# THE FUSION-DISAMBIGUATION KEY (integration audit, MEMORY.md 6h)
-# --------------------------------------------------------------------------
-
-
 def test_every_decision_says_it_is_a_likelihood_not_a_risk_factor_count(predictor):
-    """Module 8 emits the SAME condition string from a risk-factor tally.
-
-    Module 16 fuses by condition name, so without this key a reader could see a
-    burden count and a probability merged into one card with no way to tell
-    them apart.
-    """
     for features in (HIGH_RISK, LOW_RISK, {}):
         decision = predictor.predict(dict(features))
         assert decision.metadata[ASSESSMENT_KIND_KEY] == ASSESSMENT_KIND_LIKELIHOOD
@@ -650,13 +485,6 @@ def test_every_decision_says_it_is_a_likelihood_not_a_risk_factor_count(predicto
 
 
 def test_the_decision_carries_module_16s_own_basis_vocabulary(predictor):
-    """Module 16 defaults an ML decision to `model_probability`; state it anyway.
-
-    A default is an assumption. Stamping the key explicitly means a change to
-    Module 16's default cannot silently re-classify these decisions -- and the
-    SKIP path says `not_assessed`, because no model ran and claiming a
-    probability there would be a lie about a model that never executed.
-    """
     from app.schemas.fusion import BASIS_MODEL_PROBABILITY, BASIS_NOT_ASSESSED
 
     assessed = predictor.predict(dict(HIGH_RISK))
@@ -667,7 +495,6 @@ def test_the_decision_carries_module_16s_own_basis_vocabulary(predictor):
 
 
 def test_the_rule_engine_decision_for_the_same_condition_carries_no_such_key():
-    """The other half of the contract: a missing key means 'risk-factor burden'."""
     from app.services.rule_engine import evaluate_rules
 
     result = evaluate_rules(
@@ -687,13 +514,7 @@ def test_the_rule_engine_decision_for_the_same_condition_carries_no_such_key():
         assert ASSESSMENT_KIND_KEY not in decision.metadata
 
 
-# --------------------------------------------------------------------------
-# Evidence
-# --------------------------------------------------------------------------
-
-
 def test_evidence_names_the_features_the_spec_calls_for(predictor):
-    """Spec Module 11: age, gender, BMI, cholesterol, smoking history."""
     decision = predictor.predict(dict(HIGH_RISK))
     features = set(decision.evidence_features())
     assert {"age", "gender", "bmi", "cholesterol", "smoking_history"} <= features
@@ -716,7 +537,6 @@ def test_evidence_carries_the_actual_values_and_canonical_units(predictor):
 
 
 def test_ml_evidence_carries_no_threshold(predictor):
-    """decisions.py reserves `threshold` for rule producers."""
     decision = predictor.predict(dict(HIGH_RISK))
     for item in decision.evidence:
         assert item.threshold is None
@@ -740,7 +560,6 @@ def test_feature_importance_is_labelled_global_and_never_per_patient(predictor):
 
 
 def test_importance_is_keyed_by_canonical_feature_not_model_column(predictor):
-    """Otherwise the evidence ordering silently degrades to alphabetical."""
     decision = predictor.predict(dict(HIGH_RISK))
     importance = decision.metadata["global_feature_importance"]
     assert "cholesterol" in importance
@@ -754,11 +573,6 @@ def test_questionable_input_is_carried_into_evidence_and_recommendations(predict
     decision = predictor.predict(dict(HIGH_RISK), context=context)
     assert decision.metadata["questionable_features_used"] == ["cholesterol"]
     assert "INPUT_QUALITY_CAVEAT" in [r.code for r in decision.recommendations]
-
-
-# --------------------------------------------------------------------------
-# Metadata and honesty about the model
-# --------------------------------------------------------------------------
 
 
 def test_metadata_records_the_variant_and_its_reason(predictor):
@@ -778,17 +592,6 @@ def test_metadata_carries_model_provenance(predictor):
 
 
 def test_the_blood_pressure_exclusion_is_stated_and_its_cost_measured(bundle):
-    """DECISION 1. The number is recorded so the trade-off can be challenged.
-
-    The SIZE of the cost is deliberately not asserted. It was once pinned above
-    0.05 because cardio_train put it near 0.10 -- but that is a property of that
-    corpus, where blood pressure carried most of the signal and the remaining
-    features carried little. On NHANES the same measurement comes out near
-    0.007. A floor here would force a future trainer either to fail or to
-    quietly overstate the figure, which is the opposite of what this test is
-    for. What must hold is that a reference model was actually fitted, scored
-    on the same rows, and its cost recorded with a sign.
-    """
     reference = bundle.get("blood_pressure_reference_model")
     assert reference["shipped"] is False
     assert reference["roc_auc"] > 0.5
@@ -800,15 +603,6 @@ def test_the_blood_pressure_exclusion_is_stated_and_its_cost_measured(bundle):
 
 
 def test_the_decision_does_not_overstate_the_model_it_actually_shipped(predictor):
-    """The caveat must match the MEASURED strength, not a remembered one.
-
-    This asserted `roc_auc < 0.8` and the word "WEAK" -- both true of the
-    cardio_train model. Frozen that way, the test would pass a genuinely weak
-    model forever and fail an improved one, which is backwards. The invariant
-    is that the honest_read characterises whatever was measured, and that a
-    discriminator short of excellent is never described without a limiting
-    word.
-    """
     decision = predictor.predict(dict(HIGH_RISK))
     reference = decision.metadata["model_performance_reference"]
     roc_auc = reference["roc_auc"]
@@ -818,7 +612,6 @@ def test_the_decision_does_not_overstate_the_model_it_actually_shipped(predictor
     if roc_auc < 0.75:
         assert "WEAK" in honest
     else:
-        # Still nowhere near diagnostic, and it must say so.
         assert any(word in honest for word in ("WEAK", "COARSE")), honest
     assert "never a finding" in honest or "coarse" in honest.lower()
 
@@ -830,14 +623,6 @@ def test_band_meaning_states_the_measured_positive_rate(predictor):
 
 
 def test_the_cleaning_rule_and_its_effect_are_recorded(bundle):
-    """DECISION 5. What was removed, by which bound, and whether any was.
-
-    cardio_train needed height/weight/BMI bands to drop values incompatible
-    with an adult, and the count removed had to be stated. A corpus that needs
-    no cleaning is also legitimate -- NHANES publishes examined, quality-
-    controlled measurements -- but it must SAY so rather than omit the field,
-    because an absent cleaning rule and a deliberate no-op look identical.
-    """
     dataset = bundle.get("dataset")
     rule = dataset["cleaning_rule"]
     removed = rule["removed"]["rows_removed_total"]
@@ -846,15 +631,10 @@ def test_the_cleaning_rule_and_its_effect_are_recorded(bundle):
         assert removed == 0
         assert rule["basis"]
     else:
-        assert rule["bmi"] == [8.0, 200.0]  # Module 6's own possible band
+        assert rule["bmi"] == [8.0, 200.0]
         assert rule["height_cm"] == [120.0, 220.0]
         assert removed > 0
         assert dataset["rows_used"] == dataset["rows_raw"] - removed
-
-
-# --------------------------------------------------------------------------
-# Recommendations -- catalogue codes only
-# --------------------------------------------------------------------------
 
 
 def test_every_recommendation_resolves_to_a_catalogue_code(predictor):
@@ -873,13 +653,6 @@ def test_every_decision_carries_the_not_a_diagnosis_disclaimer(predictor):
 
 
 def test_a_model_of_this_precision_does_not_issue_an_urgency_instruction(predictor):
-    """Precision at the INDICATED cut-off is far short of certainty.
-
-    The status this profile reaches is NOT the invariant -- it moves with the
-    cut-offs, which are re-derived for each artifact -- so asserting INDICATED
-    here only pinned one model's thresholds. What must hold is that a flagged
-    result routes the patient to a clinician and never manufactures urgency.
-    """
     high = predictor.predict(dict(HIGH_RISK))
     assert high.status in (DecisionStatus.INDICATED, DecisionStatus.BORDERLINE)
     codes = [r.code for r in high.recommendations]
@@ -899,7 +672,6 @@ def test_smoking_cessation_is_offered_only_on_a_stated_current_smoker(predictor)
 
 
 def test_all_user_facing_note_fragments_pass_the_safety_scanner():
-    """No medication, no dosage, no diagnostic assertion, no certainty claim."""
     for fragment in HEART_NOTE_FRAGMENTS + BASE_NOTE_FRAGMENTS:
         assert scan_text(fragment) == [], fragment
 
@@ -910,11 +682,6 @@ def test_the_decision_never_asserts_a_diagnosis(predictor):
         assert scan_text(item.note or "") == []
     for recommendation in decision.recommendations:
         assert scan_text(recommendation.text) == []
-
-
-# --------------------------------------------------------------------------
-# Serialisation and privacy
-# --------------------------------------------------------------------------
 
 
 def test_decisions_round_trip_through_json(predictor):
@@ -932,11 +699,6 @@ def test_metadata_contains_no_raw_report_text(predictor):
     blob = json.dumps(decision.metadata)
     for forbidden in ("raw_text", "patient_name", "NORTHFIELD"):
         assert forbidden not in blob
-
-
-# --------------------------------------------------------------------------
-# Module 13 -- the registry now carries three predictors
-# --------------------------------------------------------------------------
 
 
 def test_the_registry_carries_all_three_shipped_predictors():
@@ -957,7 +719,6 @@ def test_the_default_singleton_carries_them_too():
 
 
 def test_every_registered_predictor_covers_a_fusion_condition():
-    """A predictor whose condition string drifted would never fuse."""
     for predictor in build_default_registry():
         assert predictor.condition in C.FUSION_CONDITIONS
         assert C.is_canonical_condition(predictor.condition)
@@ -973,14 +734,6 @@ def test_the_registry_describes_the_new_predictors_without_phi():
         assert entry["source_kind"] == "machine_learning"
 
 
-# --------------------------------------------------------------------------
-# The note's audience
-# --------------------------------------------------------------------------
-
-#: Vocabulary that belongs to whoever trained the model, not to the clinician
-#: the doctor summary is addressed to. `honest_read` is rendered VERBATIM on
-#: that page (Module 32), so this is the only layer that can keep it readable:
-#: a check in the frontend runs against a fixture and cannot see this string.
 MODEL_REVIEWER_VOCABULARY = (
     "roc-auc",
     "roc auc",
@@ -998,13 +751,6 @@ MODEL_REVIEWER_VOCABULARY = (
 
 
 def test_the_honest_read_is_written_for_a_clinician(predictor):
-    """The caveat is worth nothing to a reader who stops at the vocabulary.
-
-    It is rendered verbatim on the document a patient hands to a clinician, and
-    a clinician is not obliged to know what a ROC-AUC is. Every FACT stays --
-    the dataset size, the easy separation, the fragility of the test split --
-    only the register changed.
-    """
     decision = predictor.predict(dict(HIGH_RISK))
     honest = decision.metadata["model_performance_reference"]["honest_read"]
     lowered = honest.lower()
@@ -1012,7 +758,5 @@ def test_the_honest_read_is_written_for_a_clinician(predictor):
     offenders = [word for word in MODEL_REVIEWER_VOCABULARY if word in lowered]
     assert not offenders, f"{offenders} in: {honest}"
 
-    # ...and the substance did not go with the jargon: what a flag is worth,
-    # and the predictor this platform does not collect.
     assert "never a finding" in honest
     assert "Blood pressure" in honest

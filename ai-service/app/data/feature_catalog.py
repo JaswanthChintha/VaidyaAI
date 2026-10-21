@@ -1,24 +1,3 @@
-"""Canonical feature definitions and the medical test-name synonym table.
-
-This is the CLINICIAN-AUDITABLE data file for Module 5. Everything a reviewer
-needs in order to check "does this printed test name really mean this feature?"
-lives here, in plain tables, with no control flow.
-
-Two independent things are defined:
-
-1. `FEATURES` -- the canonical feature set of VaidyaAI, its canonical unit, its
-   value type, and where the value comes from (lab report vs patient profile).
-2. `FEATURE_SYNONYMS` -- every printed test name that maps onto a lab feature.
-
-Also here, because they are clinical judgements rather than code:
-
-* `NON_BLOOD_SPECIMEN_TOKENS` -- a urine/CSF/saliva result is NOT the same
-  analyte as the serum one (urine creatinine != serum creatinine), so those
-  rows are never mapped.
-* `DISTINCT_ANALYTE_TOKENS` -- HDL/LDL/VLDL cholesterol are separate analytes
-  and are not folded into `cholesterol` (which means TOTAL cholesterol).
-"""
-
 from __future__ import annotations
 
 import re
@@ -26,19 +5,9 @@ import unicodedata
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
-# --------------------------------------------------------------------------
-# Sources
-# --------------------------------------------------------------------------
 
 SOURCE_LAB_REPORT = "lab_report"
 SOURCE_PATIENT_PROFILE = "patient_profile"
-#: The patient's SEX or AGE as PRINTED in the report's patient details
-#: (2026-09-25). On the owner's decision it REPLACES the profile's value when
-#: it could be read -- the report describes the person whose blood it is; the
-#: profile describes whoever owns the account. It is a patient DETAIL, not a
-#: measurement: every consumer that separates measured results from
-#: everything else must treat it like `patient_profile`, never like
-#: `lab_report`. Use `NOT_MEASURED_SOURCES` for that test.
 SOURCE_REPORT_DETAILS = "report_details"
 NOT_MEASURED_SOURCES = frozenset({SOURCE_PATIENT_PROFILE, SOURCE_REPORT_DETAILS})
 
@@ -47,16 +16,13 @@ NOT_MEASURED_SOURCES = frozenset({SOURCE_PATIENT_PROFILE, SOURCE_REPORT_DETAILS}
 class FeatureDefinition:
     name: str
     canonical_unit: Optional[str]
-    value_type: str  # "number" | "integer" | "boolean" | "category"
+    value_type: str
     source: str
     description: str
     categories: Tuple[str, ...] = field(default_factory=tuple)
 
 
-# The 13 features named in the specification, plus `gender`, which Module 2
-# stores and Module 11 (heart-disease predictor) consumes.
 FEATURES: Dict[str, FeatureDefinition] = {
-    # ---- from the laboratory report (Module 4 input) ----
     "hba1c": FeatureDefinition(
         "hba1c", "%", "number", SOURCE_LAB_REPORT, "Glycated haemoglobin, NGSP %"
     ),
@@ -81,20 +47,7 @@ FEATURES: Dict[str, FeatureDefinition] = {
     "triglycerides": FeatureDefinition(
         "triglycerides", "mg/dl", "number", SOURCE_LAB_REPORT, "Triglycerides"
     ),
-    # ---- the complete blood count (Module 31 population tables, cycle J) ----
-    #
-    # `description` IS A LABEL, rendered to readers and fed to the RAG
-    # retriever as a search term -- see the note further down this file. These
-    # twelve are named the way a report prints them, not the way NHANES codes
-    # them.
-    #
-    # ALL TWELVE ARE `POLARITY_UNDECLARED`: each is harmful at BOTH extremes,
-    # which is the same reason `hemoglobin` above is undeclared. They are
-    # trendable -- direction and magnitude are reported -- but this service
-    # does not say which way is better.
     "hematocrit": FeatureDefinition(
-        # Printed as `PCV` (packed cell volume) on both real reports. Same
-        # measurement, and the synonym table carries both spellings.
         "hematocrit", "%", "number", SOURCE_LAB_REPORT, "Haematocrit (PCV)"
     ),
     "rbc_count": FeatureDefinition(
@@ -116,9 +69,6 @@ FEATURES: Dict[str, FeatureDefinition] = {
     "wbc_count": FeatureDefinition(
         "wbc_count", "10^3/ul", "number", SOURCE_LAB_REPORT, "White blood cell count"
     ),
-    # The five differentials are PERCENTAGES of the white cell count, because
-    # that is what the reports print. A percentage of a total can move because
-    # its own population changed or because another one did.
     "neutrophils": FeatureDefinition(
         "neutrophils", "%", "number", SOURCE_LAB_REPORT, "Neutrophils"
     ),
@@ -137,11 +87,6 @@ FEATURES: Dict[str, FeatureDefinition] = {
     "platelet_count": FeatureDefinition(
         "platelet_count", "10^3/ul", "number", SOURCE_LAB_REPORT, "Platelet count"
     ),
-    # ---- the liver panel (owner, 2026-10-04) ----
-    #
-    # ALT and AST are enzymes, printed in U/L (IU/L is the same unit). TOTAL
-    # bilirubin only: direct / indirect / conjugated / unconjugated are
-    # different analytes and are refused by `FEATURE_DISTINCT_TOKENS` below.
     "alt": FeatureDefinition(
         "alt", "u/l", "number", SOURCE_LAB_REPORT, "ALT (SGPT)"
     ),
@@ -151,32 +96,15 @@ FEATURES: Dict[str, FeatureDefinition] = {
     "bilirubin_total": FeatureDefinition(
         "bilirubin_total", "mg/dl", "number", SOURCE_LAB_REPORT, "Total bilirubin"
     ),
-    # ---- from the patient profile (Module 2 input) ----
     "bmi": FeatureDefinition(
         "bmi", "kg/m2", "number", SOURCE_PATIENT_PROFILE, "Body mass index"
     ),
     "age": FeatureDefinition(
         "age", "years", "integer", SOURCE_PATIENT_PROFILE, "Age in whole years"
     ),
-    # `description` IS A LABEL. It is rendered to readers -- the comparison
-    # table, the clinician summary, the progress table -- and it is also fed
-    # to the RAG retriever as a search term. The nine laboratory entries above
-    # treat it that way ("Serum creatinine", "25-hydroxyvitamin D"); these
-    # four did not, and printed an internal note instead:
-    #
-    #     "Self-described gender as stored by Module 2."
-    #     "Smoking history, diabetes-dataset categories."
-    #     "Known hypertension. TRI-STATE: true / false / absent(unknown)."
-    #
-    # A reader comparing two reports was shown a module number, the name of a
-    # training dataset, and an implementation contract. The facts those notes
-    # carried are real and are kept -- as comments, which is where a note to a
-    # maintainer belongs.
     "hypertension": FeatureDefinition(
         "hypertension",
         None,
-        # TRI-STATE: true / false / absent meaning unknown. Enforced by the
-        # schema and the validator, not by this string.
         "boolean",
         SOURCE_PATIENT_PROFILE,
         "Known high blood pressure",
@@ -184,7 +112,6 @@ FEATURES: Dict[str, FeatureDefinition] = {
     "heart_disease": FeatureDefinition(
         "heart_disease",
         None,
-        # TRI-STATE, as above. Absent is never a stated "no".
         "boolean",
         SOURCE_PATIENT_PROFILE,
         "Known heart disease",
@@ -194,8 +121,6 @@ FEATURES: Dict[str, FeatureDefinition] = {
         None,
         "category",
         SOURCE_PATIENT_PROFILE,
-        # The six categories below are the diabetes dataset's vocabulary; the
-        # `categories` tuple states that far better than a label could.
         "Smoking history",
         categories=("never", "former", "current", "ever", "not_current", "no_info"),
     ),
@@ -204,9 +129,6 @@ FEATURES: Dict[str, FeatureDefinition] = {
         None,
         "category",
         SOURCE_PATIENT_PROFILE,
-        # "Self-described" is kept deliberately: it is the patient's own
-        # answer, not a clinical determination, and that distinction is worth
-        # a reader's attention. Only the module number goes.
         "Self-described gender",
         categories=("male", "female", "other", "prefer_not_to_say"),
     ),
@@ -221,14 +143,6 @@ PROFILE_FEATURES: Tuple[str, ...] = tuple(
 )
 
 
-# --------------------------------------------------------------------------
-# Synonym table
-# --------------------------------------------------------------------------
-
-# `preference` breaks ties when two rows of the same report map to the same
-# feature (see the duplicate-resolution policy in the service). Higher wins.
-# It encodes SPECIFICITY, not "better": a fasting glucose is the measurement
-# the diabetes models are trained on, so it outranks a post-prandial one.
 PREFERENCE_DEFAULT = 2
 
 
@@ -243,7 +157,6 @@ def _s(*terms: str) -> Tuple[Synonym, ...]:
 
 
 FEATURE_SYNONYMS: Dict[str, Tuple[Synonym, ...]] = {
-    # ------------------------------------------------------------- hba1c --
     "hba1c": _s(
         "HbA1c",
         "Hb A1c",
@@ -266,11 +179,6 @@ FEATURE_SYNONYMS: Dict[str, Tuple[Synonym, ...]] = {
         "HbA1c NGSP",
         "Average Blood Glucose HbA1c",
     ),
-    # ----------------------------------------------------- blood_glucose --
-    # preference 3 = fasting (what the diabetes models expect)
-    # preference 2 = unqualified glucose
-    # preference 1 = random
-    # preference 0 = post-prandial / post-load
     "blood_glucose": (
         Synonym("Glucose", 2),
         Synonym("Blood Glucose", 2),
@@ -302,7 +210,6 @@ FEATURE_SYNONYMS: Dict[str, Tuple[Synonym, ...]] = {
         Synonym("2 Hour Postprandial Glucose", 0),
         Synonym("Blood Sugar Post Prandial", 0),
     ),
-    # -------------------------------------------------------- hemoglobin --
     "hemoglobin": _s(
         "Hemoglobin",
         "Haemoglobin",
@@ -315,7 +222,6 @@ FEATURE_SYNONYMS: Dict[str, Tuple[Synonym, ...]] = {
         "Haemoglobin (Hb)",
         "Blood Hemoglobin",
     ),
-    # --------------------------------------------------------- vitamin_d --
     "vitamin_d": _s(
         "Vitamin D",
         "Vitamin D3",
@@ -333,7 +239,6 @@ FEATURE_SYNONYMS: Dict[str, Tuple[Synonym, ...]] = {
         "25 Hydroxycholecalciferol",
         "Calcidiol",
     ),
-    # ------------------------------------------------------- vitamin_b12 --
     "vitamin_b12": _s(
         "Vitamin B12",
         "Vitamin B-12",
@@ -345,7 +250,6 @@ FEATURE_SYNONYMS: Dict[str, Tuple[Synonym, ...]] = {
         "Vitamin B12 (Cobalamin)",
         "Serum Vitamin B12",
     ),
-    # -------------------------------------------------------- creatinine --
     "creatinine": _s(
         "Creatinine",
         "Serum Creatinine",
@@ -356,9 +260,6 @@ FEATURE_SYNONYMS: Dict[str, Tuple[Synonym, ...]] = {
         "Creatinine (Jaffe)",
         "Plasma Creatinine",
     ),
-    # ------------------------------------------------------- cholesterol --
-    # TOTAL cholesterol only. HDL/LDL/VLDL are separate analytes -- see
-    # DISTINCT_ANALYTE_TOKENS below.
     "cholesterol": _s(
         "Cholesterol",
         "Total Cholesterol",
@@ -370,7 +271,6 @@ FEATURE_SYNONYMS: Dict[str, Tuple[Synonym, ...]] = {
         "TC",
         "Cholesterol (Total)",
     ),
-    # ----------------------------------------------------- triglycerides --
     "triglycerides": _s(
         "Triglycerides",
         "Triglyceride",
@@ -381,14 +281,6 @@ FEATURE_SYNONYMS: Dict[str, Tuple[Synonym, ...]] = {
         "Trig",
         "Triglycerides (TG)",
     ),
-    # ================================ the complete blood count ==============
-    #
-    # EVERY SPELLING BELOW THAT APPEARS ON `Test 2.pdf` OR `Test 3.pdf` IS
-    # TAKEN FROM THE STORED EXTRACTION, not invented: the two reports print
-    # the same analytes differently ("T.RBC" vs "RBC COUNT", "Polymorphs" vs
-    # "NEUTROPHILS", "Platelet count" vs "PLATELET COUNT"), which is exactly
-    # the variation this table exists to absorb.
-    # ------------------------------------------------------- hematocrit --
     "hematocrit": _s(
         "PCV",
         "P.C.V",
@@ -400,7 +292,6 @@ FEATURE_SYNONYMS: Dict[str, Tuple[Synonym, ...]] = {
         "PCV (Packed Cell Volume)",
         "Haematocrit (PCV)",
     ),
-    # -------------------------------------------------------- rbc_count --
     "rbc_count": _s(
         "RBC Count",
         "RBC COUNT",
@@ -412,18 +303,12 @@ FEATURE_SYNONYMS: Dict[str, Tuple[Synonym, ...]] = {
         "RBC",
         "Erythrocyte Count",
     ),
-    # -------------------------------------------------------------- mcv --
     "mcv": _s(
         "MCV",
         "M.C.V",
         "Mean Corpuscular Volume",
         "Mean Cell Volume",
     ),
-    # -------------------------------------------------------------- mch --
-    # NOTE the ordering hazard: `MCHC` must never be read as `MCH`. The
-    # synonym matcher folds whole words, so "MCHC" is a different key and
-    # does not collide -- but a SUBSTRING matcher added later would break
-    # this pair first.
     "mch": _s(
         "MCH",
         "M.C.H",
@@ -432,7 +317,6 @@ FEATURE_SYNONYMS: Dict[str, Tuple[Synonym, ...]] = {
         "Mean Cell Haemoglobin",
         "Mean Cell Hemoglobin",
     ),
-    # ------------------------------------------------------------- mchc --
     "mchc": _s(
         "MCHC",
         "M.C.H.C",
@@ -441,7 +325,6 @@ FEATURE_SYNONYMS: Dict[str, Tuple[Synonym, ...]] = {
         "Mean Cell Haemoglobin Concentration",
         "Mean Cell Hemoglobin Concentration",
     ),
-    # -------------------------------------------------------- wbc_count --
     "wbc_count": _s(
         "WBC Count",
         "WBC COUNT",
@@ -456,8 +339,6 @@ FEATURE_SYNONYMS: Dict[str, Tuple[Synonym, ...]] = {
         "Leucocyte Count",
         "Leukocyte Count",
     ),
-    # ------------------------------------------------------ neutrophils --
-    # `Polymorphs` is what Test 2 prints. It is the same cell line.
     "neutrophils": _s(
         "Neutrophils",
         "NEUTROPHILS",
@@ -468,7 +349,6 @@ FEATURE_SYNONYMS: Dict[str, Tuple[Synonym, ...]] = {
         "Neutrophils %",
         "Neutrophil Percentage",
     ),
-    # ------------------------------------------------------ lymphocytes --
     "lymphocytes": _s(
         "Lymphocytes",
         "LYMPHOCYTES",
@@ -477,7 +357,6 @@ FEATURE_SYNONYMS: Dict[str, Tuple[Synonym, ...]] = {
         "Lymphocytes %",
         "Lymphocyte Percentage",
     ),
-    # -------------------------------------------------------- monocytes --
     "monocytes": _s(
         "Monocytes",
         "MONOCYTES",
@@ -485,7 +364,6 @@ FEATURE_SYNONYMS: Dict[str, Tuple[Synonym, ...]] = {
         "Monocytes %",
         "Monocyte Percentage",
     ),
-    # ------------------------------------------------------ eosinophils --
     "eosinophils": _s(
         "Eosinophils",
         "EOSINOPHILS",
@@ -493,7 +371,6 @@ FEATURE_SYNONYMS: Dict[str, Tuple[Synonym, ...]] = {
         "Eosinophils %",
         "Eosinophil Percentage",
     ),
-    # -------------------------------------------------------- basophils --
     "basophils": _s(
         "Basophils",
         "BASOPHILS",
@@ -501,7 +378,6 @@ FEATURE_SYNONYMS: Dict[str, Tuple[Synonym, ...]] = {
         "Basophils %",
         "Basophil Percentage",
     ),
-    # --------------------------------------------------- platelet_count --
     "platelet_count": _s(
         "Platelet Count",
         "PLATELET COUNT",
@@ -512,11 +388,6 @@ FEATURE_SYNONYMS: Dict[str, Tuple[Synonym, ...]] = {
         "PLT",
         "Platelet Count (PLT)",
     ),
-    # ================================ the liver panel (2026-10-04) ==========
-    #
-    # `S.G.P.T` normalises to "s g p t", and a leading "s" is a strippable
-    # qualifier -- the dotted spellings are listed so they match whole, first.
-    # ------------------------------------------------------------- alt --
     "alt": _s(
         "ALT",
         "SGPT",
@@ -534,7 +405,6 @@ FEATURE_SYNONYMS: Dict[str, Tuple[Synonym, ...]] = {
         "Serum Glutamic Pyruvic Transaminase",
         "SGPT (Alanine Aminotransferase)",
     ),
-    # ------------------------------------------------------------- ast --
     "ast": _s(
         "AST",
         "SGOT",
@@ -552,7 +422,6 @@ FEATURE_SYNONYMS: Dict[str, Tuple[Synonym, ...]] = {
         "Serum Glutamic Oxaloacetic Transaminase",
         "SGOT (Aspartate Aminotransferase)",
     ),
-    # ------------------------------------------------- bilirubin_total --
     "bilirubin_total": _s(
         "Total Bilirubin",
         "Bilirubin Total",
@@ -568,13 +437,6 @@ FEATURE_SYNONYMS: Dict[str, Tuple[Synonym, ...]] = {
     ),
 }
 
-#: TOKENS THAT MAKE A NAME A DIFFERENT ANALYTE OF ONE FEATURE ONLY.
-#:
-#: `direct` is a strippable METHOD qualifier for most tests ("Glucose direct"),
-#: so it cannot join `DISTINCT_ANALYTE_TOKENS` -- but for bilirubin it names a
-#: different fraction. Without this, "Bilirubin Direct" lost its qualifier and
-#: was read as TOTAL bilirubin. Checked whenever the name also carries the
-#: feature's own word.
 FEATURE_DISTINCT_TOKENS: Dict[str, Tuple[str, Tuple[str, ...]]] = {
     "bilirubin_total": (
         "bilirubin",
@@ -583,11 +445,6 @@ FEATURE_DISTINCT_TOKENS: Dict[str, Tuple[str, Tuple[str, ...]]] = {
 }
 
 
-# --------------------------------------------------------------------------
-# Guards -- clinical judgements about what must NOT be mapped
-# --------------------------------------------------------------------------
-
-# A result from these specimens is a different analyte from the blood one.
 NON_BLOOD_SPECIMEN_TOKENS: Tuple[str, ...] = (
     "urine",
     "urinary",
@@ -607,7 +464,6 @@ NON_BLOOD_SPECIMEN_TOKENS: Tuple[str, ...] = (
     "sweat",
 )
 
-# Lipid sub-fractions are distinct analytes; `cholesterol` means TOTAL.
 DISTINCT_ANALYTE_TOKENS: Tuple[str, ...] = (
     "hdl",
     "ldl",
@@ -616,8 +472,6 @@ DISTINCT_ANALYTE_TOKENS: Tuple[str, ...] = (
     "chylomicron",
 )
 
-# Whole tokens that are safe to strip from either end of a test name because
-# they qualify HOW/WHERE a test was run, not WHAT was measured.
 STRIPPABLE_QUALIFIERS: Tuple[str, ...] = (
     "serum",
     "plasma",
@@ -640,12 +494,6 @@ STRIPPABLE_QUALIFIERS: Tuple[str, ...] = (
 )
 
 
-# --------------------------------------------------------------------------
-# Name normalisation + the lookup index
-# --------------------------------------------------------------------------
-
-# British -> American spellings applied to the normalised key. Applied as whole
-# substrings, e.g. "haemoglobin" -> "hemoglobin", "glycaemia" -> "glycemia".
 SPELLING_NORMALISATIONS: Tuple[Tuple[str, str], ...] = (
     ("haemo", "hemo"),
     ("haemato", "hemato"),
@@ -660,11 +508,6 @@ _NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
 
 
 def normalize_test_name(name: str) -> str:
-    """Squeeze a printed test name into a comparison key.
-
-    Case, punctuation, hyphenation, accents and British/American spelling are
-    all removed. `"Vitamin D (25-OH)"` -> `"vitamin d 25 oh"`.
-    """
     text = unicodedata.normalize("NFKD", name or "")
     text = "".join(c for c in text if not unicodedata.combining(c))
     text = text.lower()
@@ -679,7 +522,6 @@ def strip_parentheticals(name: str) -> str:
 
 
 def strip_qualifiers(normalised: str) -> str:
-    """Remove leading/trailing method or specimen-container qualifier tokens."""
     tokens = normalised.split()
     changed = True
     while changed and len(tokens) > 1:
@@ -728,7 +570,6 @@ def _build_index() -> Dict[str, SynonymMatch]:
 SYNONYM_INDEX: Dict[str, SynonymMatch] = _build_index()
 
 
-# Reasons a printed test name was not turned into a canonical feature.
 class UnmappedReason:
     NO_SYNONYM = "no_canonical_feature"
     NON_BLOOD_SPECIMEN = "unsupported_specimen"
@@ -740,16 +581,6 @@ class UnmappedReason:
 
 
 def _agreeing_segment_match(segments: List[str]) -> Optional[SynonymMatch]:
-    """One feature from several name fragments, or nothing.
-
-    THE SEGMENTS MUST AGREE, and that is the whole safety of every caller.
-    Two segments naming different features is a name this module does not
-    understand, and picking either one would be a guess.
-
-    Never `exact`: the printed name is not the synonym, a PART of it is, and a
-    consumer weighing two candidates for the same feature must be able to
-    prefer the one that matched outright.
-    """
     found: Dict[str, SynonymMatch] = {}
     for segment in segments:
         normalised = normalize_test_name(segment)
@@ -771,11 +602,6 @@ def _agreeing_segment_match(segments: List[str]) -> Optional[SynonymMatch]:
 
 
 def lookup_test_name(name: str) -> Tuple[Optional[SynonymMatch], Optional[str]]:
-    """Map a printed test name to a canonical feature.
-
-    Returns `(match, None)` on success, or `(None, reason)` where reason is an
-    `UnmappedReason`. Never guesses: an unknown name is reported, not mapped.
-    """
     if not name or not name.strip():
         return None, UnmappedReason.EMPTY_TEST_NAME
 
@@ -817,26 +643,6 @@ def lookup_test_name(name: str) -> Tuple[Optional[SynonymMatch], Optional[str]]:
                 None,
             )
 
-    # A PARENTHETICAL WHOSE GOOD HALF IS THE ONE INSIDE THE BRACKETS.
-    #
-    # Every candidate above either keeps the parenthetical or THROWS IT AWAY --
-    # `strip_parentheticals` discards it and nothing ever tries its contents.
-    # That is fine while the outer half is the valid synonym, which is the case
-    # the comment below assumed. It fails the other way round, and a real
-    # report found it: "GLYSOLATED HAEMOGLOBIN ( HBA1C)" is a laboratory's
-    # misspelling of GLYCOSYLATED, so the outer half matches nothing and the
-    # inner "( HBA1C)" -- an exact synonym -- was thrown away with it.
-    #
-    # The cost was not a missing row. `hba1c` came back `state: unavailable`
-    # while the same report's unassessed list carried the test at 5.9% flagged
-    # HIGH by the laboratory, so the dashboard told a reader with a
-    # prediabetic-range result that the test was NOT ON THEIR REPORT. An
-    # absence reported as a fact about the document, on a test that was in it.
-    #
-    # Same agreement rule as the comma branch, and the same reason. Lipid
-    # sub-fractions never reach here: `DISTINCT_ANALYTE_TOKENS` is checked
-    # against the whole name above and returns first, so "Cholesterol (LDL)"
-    # is refused before any segment is tried.
     if _PARENTHETICAL_RE.search(name or ""):
         segments = [strip_parentheticals(name)]
         segments += _PARENTHETICAL_RE.findall(name or "")
@@ -844,24 +650,6 @@ def lookup_test_name(name: str) -> Tuple[Optional[SynonymMatch], Optional[str]]:
         if match is not None:
             return match, None
 
-    # A COMMA-SEPARATED QUALIFIER, which is how many laboratories print the
-    # same thing a parenthetical says.
-    #
-    # `strip_parentheticals` already handles "Glycosylated Hemoglobin (HbA1c)".
-    # The comma form was not handled at all, so a real report printing
-    # "GLYCOSYLATED HEMOGLOBIN, HbA1c" mapped to NOTHING -- even though both
-    # halves are independently valid synonyms of `hba1c`. On a report whose
-    # only test was that one, the result was an analysis with zero features
-    # and a dashboard on which every row read "Not measured", which a reader
-    # reasonably took to mean the platform had lost their results.
-    #
-    # THE SEGMENTS MUST AGREE, and that is the whole safety of this branch.
-    # Two segments naming different features is a name this function does not
-    # understand, and picking either one would be a guess. Lipid
-    # sub-fractions -- the case where a wrong guess would be clinically
-    # serious, mapping an LDL value into TOTAL cholesterol -- never reach
-    # here: `DISTINCT_ANALYTE_TOKENS` is checked against the whole name above
-    # and returns before any candidate is tried.
     if "," in (name or ""):
         found: Dict[str, SynonymMatch] = {}
         for segment in name.split(","):
@@ -881,10 +669,6 @@ def lookup_test_name(name: str) -> Tuple[Optional[SynonymMatch], Optional[str]]:
                     preference=hit.preference,
                     matched_term=hit.matched_term,
                     matched_key=hit.matched_key,
-                    # Never `exact`: the printed name is not the synonym, a
-                    # part of it is, and a consumer weighing two candidates
-                    # for the same feature must be able to prefer the one
-                    # that matched outright.
                     exact=False,
                 ),
                 None,
@@ -893,11 +677,6 @@ def lookup_test_name(name: str) -> Tuple[Optional[SynonymMatch], Optional[str]]:
     return None, UnmappedReason.NO_SYNONYM
 
 
-# --------------------------------------------------------------------------
-# Patient-profile categorical vocabularies
-# --------------------------------------------------------------------------
-
-# Module 2's exact smoking categories (the diabetes-dataset vocabulary).
 SMOKING_CATEGORIES: Tuple[str, ...] = FEATURES["smoking_history"].categories
 
 SMOKING_ALIASES: Dict[str, str] = {
@@ -963,8 +742,6 @@ def normalize_gender(value: str) -> Optional[str]:
     return GENDER_ALIASES.get(key)
 
 
-# Values that mean "this boolean is UNKNOWN". They must never collapse to
-# False -- absent/unknown and an explicit negative are different findings.
 BOOLEAN_UNKNOWN_TOKENS: Tuple[str, ...] = (
     "",
     "unknown",
@@ -982,11 +759,6 @@ BOOLEAN_FALSE_TOKENS: Tuple[str, ...] = ("false", "no", "n", "0", "absent", "neg
 
 
 def normalize_tristate_boolean(value: object) -> Tuple[Optional[bool], bool]:
-    """Return `(value_or_None, recognised)`.
-
-    `(None, True)` means "explicitly unknown" -- which is a legitimate state,
-    not an error. `(None, False)` means the token could not be understood.
-    """
     if value is None:
         return None, True
     if isinstance(value, bool):
@@ -1004,36 +776,10 @@ def normalize_tristate_boolean(value: object) -> Tuple[Optional[bool], bool]:
     return None, False
 
 
-# --------------------------------------------------------------------------
-# Type-aware value admission (integration audit D1)
-# --------------------------------------------------------------------------
-#
-# WHY THIS LIVES HERE. `FEATURES` is the single place that declares what kind
-# of thing each feature IS. Before this function existed, every consumer that
-# wanted to know "is this a usable value for this feature?" answered it with
-# `value is not None`, which admits the string "Negative" as a creatinine.
-# Downstream, an sklearn ColumnTransformer coerces such a value to NaN and the
-# numeric imputer median-fills it from the training cohort -- so a feature
-# nobody measured arrives at the model wearing a plausible number.
-#
-# The catalogue therefore owns the answer, and consumers ask it.
-
-#: `math` is only needed for the finiteness guard.
-import math as _math  # noqa: E402
+import math as _math
 
 
 def is_finite_number(value: object) -> bool:
-    """True only for a real, finite number (or a string that is exactly one).
-
-    `bool` is EXCLUDED deliberately: `isinstance(True, int)` is True in Python,
-    so without this guard a tri-state clinical answer would be admitted as a
-    laboratory measurement and silently become 1.0.
-
-    `NaN` and `inf` are excluded because they are not measurements. `NaN` in
-    particular is the exact value an imputer replaces, so admitting it as
-    "present" would defeat the sufficiency gate in the one case that leaves no
-    trace.
-    """
     if isinstance(value, bool) or value is None:
         return False
     if isinstance(value, (int, float)):
@@ -1050,11 +796,6 @@ def is_finite_number(value: object) -> bool:
 
 
 def normalize_category_value(name: str, value: object) -> Optional[str]:
-    """The canonical category for `value` under feature `name`, or None.
-
-    Uses the feature-specific normaliser where one exists (smoking history and
-    gender both have alias tables) and falls back to the declared vocabulary.
-    """
     definition = FEATURES.get(name)
     if definition is None or definition.value_type != "category":
         return None
@@ -1069,13 +810,6 @@ def normalize_category_value(name: str, value: object) -> Optional[str]:
 
 
 def is_valid_value(name: str, value: object) -> bool:
-    """Does `value` satisfy the DECLARED type of feature `name`?
-
-    Returns False for an unrecognised feature name only when the value is
-    itself empty; an out-of-catalogue name has no declared type, so this
-    function has no basis on which to refuse a non-empty value and does not
-    pretend to.
-    """
     if value is None:
         return False
     if isinstance(value, str) and not value.strip():
@@ -1088,10 +822,7 @@ def is_valid_value(name: str, value: object) -> bool:
     if definition.value_type in ("number", "integer"):
         return is_finite_number(value)
     if definition.value_type == "boolean":
-        # TRI-STATE. Only a real `bool` is an answer; every "unknown" token and
-        # every unrecognised token means the patient never said, and the
-        # predictors' own `_tri_state()` helpers agree by construction.
         return isinstance(value, bool)
     if definition.value_type == "category":
         return normalize_category_value(name, value) is not None
-    return True  # pragma: no cover - no other value_type exists
+    return True

@@ -1,83 +1,3 @@
-"""Module 16 -- the Hybrid Decision Fusion Engine.
-
-Spec: "This is one of the key components of the VaidyaAI architecture." It is
-the thing that makes VaidyaAI a hybrid AI system rather than several models run
-side by side. Two analyses of the same condition stop being two unrelated cards
-and become one decision that says a rule AND a model agreed -- which is
-stronger evidence than either alone.
-
-    collect_decisions()  ─>  fuse_decisions()  ─>  Modules 17-20
-        Module 15               Module 16
-
-Framework-independent: importable and callable in-process by Module 17.
-
-==========================================================================
-THE SIX BEHAVIOURS THE SPEC ASKS FOR
-==========================================================================
-
-1. CONDITION -- decisions about the same condition are grouped. Grouping is by
-   EXACT STRING, which is why `ClinicalDecision` now rejects a condition that
-   is not in `app/data/conditions.py`: a drift such as "diabetes mellitus"
-   would not raise, it would just quietly stop fusing.
-
-2. RISK -- `Low < Medium < High`, highest retained. Implemented as
-   `RiskLevel.highest()`, the type's own ordering, never a local if/elif.
-   `highest([])` is None, not LOW: "no decisions" must never become "low risk".
-
-3. CONFIDENCE -- the strongest available. See `CONFIDENCE_RULE` in
-   `decision_engine.py`: `None` (no probability produced) is ABSENT from the
-   maximum, `0.0` (a model that ran and was maximally unconfident) TAKES PART.
-   Conflating them would let a deterministic rule read as a confident negative.
-
-4. EVIDENCE -- combined across sources, de-duplicated by
-   `EvidenceItem.dedup_key()`.
-
-5. RECOMMENDATIONS -- consolidated, de-duplicated by `Recommendation.dedup_key()`
-   (the catalogue code). Only ever unioned, never invented: fusion cannot
-   introduce advice that was not already approved upstream.
-
-6. SOURCE -- the contributing analytical sources are identified, and
-   DE-DUPLICATED. A condition backed by one rule engine firing twice has ONE
-   source, not two. `hybrid` is True only when a rule and a model BOTH
-   assessed, because that is what makes the evidence stronger.
-
-==========================================================================
-STATUS FUSION -- NOT DICTATED BY THE SPEC, SO IT IS SPELLED OUT
-==========================================================================
-
-See `STATUS_FUSION_RULE`. In short:
-
-  * If NO contributing decision actually assessed the condition, the fused
-    decision is INSUFFICIENT_DATA with `risk=None`. A fused decision must never
-    present as assessed when nothing assessed it.
-
-  * Otherwise the status is the most severe status among the decisions that DID
-    assess, and the risk is the highest among them. A predictor that skipped
-    for lack of data does NOT drag the result down to "insufficient data" --
-    a rule that fired is a real finding and hiding it behind the model's
-    abstention would be the more dangerous error.
-
-  * But the abstention is never silently discarded. It is named in
-    `unassessed_sources`, flagged by `partially_assessed`, recorded in the
-    fused decision's own metadata, and raised as a warning that reaches Module
-    17's validation warnings. "The rule engine flagged this; the model could
-    not assess it" is a materially different statement from "both agreed", and
-    the reader is entitled to the difference.
-
-==========================================================================
-THE `Heart Disease` SEMANTIC HAZARD
-==========================================================================
-
-The composite clinical rule emits `Heart Disease` from a COUNT OF RECORDED RISK
-FACTORS; Module 11's predictor emits it as an ESTIMATED LIKELIHOOD. Renaming
-either would break fusion -- the one thing this module exists to do -- so
-neither is renamed. Instead each contribution carries its `assessment_basis`
-and its producer's own band wording, and a fused decision whose contributions
-answer different questions sets `basis_conflict=True` and carries
-`BASIS_CONFLICT_NOTE`. Module 17 renders those contributions side by side
-rather than as one blended claim.
-"""
-
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -120,7 +40,6 @@ from app.services.decision_engine import (
     unique,
 )
 
-#: Bumped when THIS layer's behaviour changes.
 FUSION_ENGINE_VERSION = "1.0.0"
 
 FUSION_POLICY = (
@@ -142,17 +61,7 @@ _RISK_PRIORITY: Dict[Optional[RiskLevel], int] = {
 }
 
 
-# --------------------------------------------------------------------------
-# Fusing one condition
-# --------------------------------------------------------------------------
-
-
 def _fuse_one(condition: str, groups: Sequence[DecisionGroup]) -> FusedDecision:
-    """Fuse every ``(condition, source)`` group for ONE condition.
-
-    `groups` has already been collapsed by Module 15, so there is exactly one
-    entry per source here and `sources` cannot repeat.
-    """
     ordered = list(groups)
     per_source = [g.decision for g in ordered]
     merged = merge_decision_set(per_source)
@@ -162,9 +71,6 @@ def _fuse_one(condition: str, groups: Sequence[DecisionGroup]) -> FusedDecision:
 
     sources = unique(g.source for g in ordered)
     source_kinds = unique(g.source_kind for g in ordered)
-    # HYBRID means a rule AND a model both ASSESSED. A model that abstained
-    # contributed the fact of its abstention, not corroboration, and calling
-    # that "hybrid" would overstate the strength of the finding.
     hybrid = len({g.source_kind for g in assessed_groups}) > 1
 
     bases = unique(
@@ -173,11 +79,6 @@ def _fuse_one(condition: str, groups: Sequence[DecisionGroup]) -> FusedDecision:
         if g.assessment_basis != BASIS_NOT_ASSESSED
     )
     families = {BASIS_FAMILY.get(b, b) for b in bases}
-    # See CONFLICTING_FAMILY: a threshold comparison and a model probability are
-    # two methods of answering ONE question and must NOT be flagged -- that is
-    # the normal hybrid case and caveating it would caveat everything. Only a
-    # risk-factor BURDEN sitting beside a different kind of claim is the
-    # `Heart Disease` hazard.
     basis_conflict = CONFLICTING_FAMILY in families and len(families) > 1
 
     contributions = [
@@ -273,20 +174,7 @@ def _fuse_one(condition: str, groups: Sequence[DecisionGroup]) -> FusedDecision:
     )
 
 
-# --------------------------------------------------------------------------
-# The engine
-# --------------------------------------------------------------------------
-
-
 def fuse_decisions(collection: Any) -> DecisionFusionData:
-    """Fuse a collection of clinical decisions, one fused decision per condition.
-
-    `collection` is Module 15's `DecisionCollectionData`, OR a bare sequence of
-    `ClinicalDecision` (which is grouped here first, so the two entry points
-    cannot diverge). Accepting the bare list is what lets a caller fuse
-    decisions that came from somewhere else -- a stored analysis, a test -- and
-    is how Module 17 will re-fuse a persisted set without re-running the models.
-    """
     collection = _as_collection(collection)
 
     by_condition: Dict[str, List[DecisionGroup]] = {}
@@ -334,11 +222,6 @@ def run_decision_fusion(
     engineered: Any = None,
     registry: Any = None,
 ) -> DecisionFusionData:
-    """Collect (Module 15) then fuse (Module 16). The endpoint's whole body.
-
-    Kept as one call so a caller cannot accidentally fuse a collection that was
-    produced from different input than it thinks.
-    """
     return fuse_decisions(
         collect_decisions(validated, engineered=engineered, registry=registry)
     )
@@ -357,21 +240,9 @@ def _as_collection(value: Any) -> DecisionCollectionData:
     )
 
 
-# --------------------------------------------------------------------------
-# Warnings
-# --------------------------------------------------------------------------
-
-
 def _fusion_warnings(
     fused: Sequence[FusedDecision], collection: DecisionCollectionData
 ) -> List[str]:
-    """Module 16's own warnings.
-
-    Every one of these exists because a fused decision hides something a reader
-    needs: that a source abstained, or that two sources answered different
-    questions. Silence there is exactly the "quietly worse product" this
-    architecture keeps guarding against.
-    """
     warnings: List[str] = []
     for item in fused:
         if item.partially_assessed:
@@ -401,20 +272,7 @@ def _join(names: Sequence[str]) -> str:
     return ", ".join(names[:-1]) + " and " + names[-1]
 
 
-# --------------------------------------------------------------------------
-# Summary -- Modules 17, 18 and 19, without re-deriving anything
-# --------------------------------------------------------------------------
-
-
 def rests_on_lab_result(decision: Any) -> bool:
-    """Does this decision use at least one TEST RESULT read from the report?
-
-    A laboratory feature (catalogue source `lab_report`) with a value. Not a
-    profile detail (BMI, age, sex, smoking), and not an input a model was NOT
-    given -- an imputed or absent model input carries no value. The one
-    spelling of "this came from the lab", shared by Module 16 here and Module
-    18 in `report_builder.overall_status`, so the two cannot disagree.
-    """
     for item in getattr(decision, "evidence", None) or []:
         definition = FEATURES.get(getattr(item, "feature", None))
         if (
@@ -433,14 +291,6 @@ def _summarise(
     flagged = [f for f in fused if f.decision.is_flagged]
     assessed = [f for f in fused if f.decision.was_assessed]
     unassessed = [f for f in fused if not f.decision.was_assessed]
-    # NO HEALTHY WITHOUT A TEST RESULT (2026-10-06). A résumé uploaded on the
-    # live site read 0 results, yet Obesity / Underweight (from BMI) and the
-    # heart model (from age and sex) were "assessed" and found nothing -- and
-    # the report said "Healthy, Overall risk: Low". Nothing in it came from the
-    # report. A clean result now needs at least one decision that rests on a
-    # test result; without one there is no overall status and no overall risk.
-    # A FLAGGED profile finding (a high BMI) is still a finding and still
-    # reported -- it is only the reassurance that needs a lab behind it.
     lab_backed = any(rests_on_lab_result(f.decision) for f in assessed)
     clean_without_lab = bool(assessed) and not flagged and not lab_backed
 
@@ -450,15 +300,6 @@ def _summarise(
         else RiskLevel.highest([f.risk for f in fused if f.risk is not None])
     )
 
-    # ---- Module 18 -----------------------------------------------------
-    # Spec: no abnormal findings -> Healthy; abnormal but no High -> Needs
-    # Monitoring; abnormal + High -> Needs Medical Attention.
-    #
-    # The fourth case the spec does not name is the dangerous one: NOTHING was
-    # assessed. "No abnormal findings" is then vacuously true, and rendering
-    # "Healthy" for a report whose every test was unreadable is precisely the
-    # failure `decisions.py` calls the most dangerous this type can have. So
-    # `overall_status` is None there, and `any_assessed` says why.
     if not assessed or clean_without_lab:
         overall_status: Optional[str] = None
     elif not flagged:
@@ -468,10 +309,6 @@ def _summarise(
     else:
         overall_status = STATUS_NEEDS_MONITORING
 
-    # ---- Module 19 -----------------------------------------------------
-    # ONE ROW PER CONDITION. Ordering by risk then canonical rank means the
-    # dashboard emphasises the most important finding first without counting
-    # a condition twice because two of its rules fired.
     prioritized = [
         PrioritizedCondition(
             condition=f.condition,
@@ -501,8 +338,6 @@ def _summarise(
         collapsed_decision_count=max(raw_count - len(fused), 0),
         overall_status=overall_status,
         overall_risk=overall_risk,
-        # False whenever there is no overall status -- including a clean
-        # result with no test result behind it (see `clean_without_lab`).
         any_assessed=bool(assessed) and not clean_without_lab,
         assessment_incomplete=bool(unassessed)
         or bool(collection.summary.sources_failed)

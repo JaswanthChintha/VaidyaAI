@@ -1,29 +1,3 @@
-"""Module 22 content -- LIFESTYLE GUIDANCE (Module 26's corpus).
-
-Spec Module 26 is explicit that this layer is "pre-approved educational
-guidance rather than unrestricted AI-generated treatment advice". These
-documents ARE that pre-approved material, in retrievable form.
-
-THE HARD LINE THIS FILE HOLDS
------------------------------
-General population guidance, never personal instruction.
-
-    ALLOWED   "General dietary guidance describes ... "
-              "Population guidance suggests ... across the week"
-    REFUSED   "You should eat ... ", "take ... ", any quantity of any
-              substance, any named preparation
-
-The import-time scanner enforces the refused side mechanically, and the
-documents are written in the third person throughout so that an LLM grounded on
-them reproduces the register as well as the content. A grounded model copies
-tone; a corpus that instructs will produce a model that instructs.
-
-Each document pairs with a code in `app/data/recommendation_catalog.py` (the
-GENERAL_* family). The catalogue emits one approved SENTENCE; this corpus
-supplies the paragraphs behind it, so Module 23 can explain a recommendation
-without inventing the explanation. The pairing is named in each `basis`.
-"""
-
 from __future__ import annotations
 
 from typing import Tuple

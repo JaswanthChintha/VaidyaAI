@@ -1,27 +1,3 @@
-"""Module 22 content -- PROFILE FEATURES (educational explanations).
-
-`app/data/feature_catalog.py` splits its features by source: eight come from the
-laboratory report and six come from the Module 2 patient profile (`bmi`, `age`,
-`hypertension`, `heart_disease`, `smoking_history`, `gender`). The lab features
-have documents in `lab_tests.py`. These are the other six.
-
-WHY THEY NEED THEIR OWN DOCUMENTS
----------------------------------
-They are inputs to decisions exactly as laboratory values are -- Module 11 reads
-`gender` and `age`, Module 8's composite cardiovascular rule counts
-`hypertension`, `smoking_history` and `heart_disease` -- so when Module 20
-explains why a finding was reached, these will appear in the evidence. A reader
-shown "your recorded smoking history contributed to this" deserves a retrievable
-explanation of what that meant, on the same footing as one about HbA1c.
-
-THE TRI-STATE POINT IS LOAD-BEARING
------------------------------------
-`hypertension` and `heart_disease` are TRI-STATE: true, false, or absent. The
-platform treats an absent answer as unknown and never as "no". Two of the
-documents below say so in plain language, because a reader who assumes a blank
-means "no" will misread every finding that rests on one.
-"""
-
 from __future__ import annotations
 
 from typing import Tuple

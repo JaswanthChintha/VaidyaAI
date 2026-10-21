@@ -1,22 +1,3 @@
-"""Opt-in live test of Module 23 against the real Gemini API.
-
-SKIPPED BY DEFAULT. It runs only when BOTH are true:
-    RUN_LIVE_TESTS=1
-    GEMINI_API_KEY=<a real key>
-
-Run it with:
-    RUN_LIVE_TESTS=1 pytest tests/test_live_explanation.py -v -s
-
-It costs a small number of API tokens and requires network access. It uses an
-INVENTED value for a fictional reader -- no real medical data -- and it asserts
-the thing that actually matters: that real, unrehearsed model output clears
-Module 24. A mocked test can only ever prove the wiring; this proves the prompt
-is narrow enough that the gate is not doing all the work.
-
-The test is deliberately intolerant. If the live model routinely fails the
-safety layer, that is a finding about the prompt, not a flaky test to retry.
-"""
-
 from __future__ import annotations
 
 import os
@@ -85,7 +66,6 @@ def test_a_real_explanation_passes_the_safety_layer(live_settings):
 @pytest.mark.live
 @live_only
 def test_a_real_explanation_is_approved_on_the_first_attempt(live_settings):
-    """A prompt that only works after a safety retry is not a good prompt."""
     from app.services.explanation import explain_feature
 
     result = explain_feature(
@@ -108,7 +88,6 @@ def test_a_real_explanation_is_approved_on_the_first_attempt(live_settings):
 @pytest.mark.live
 @live_only
 def test_a_real_explanation_states_no_ungrounded_number(live_settings):
-    """The control that a mock cannot exercise honestly."""
     from app.services.explanation import explain_feature
 
     result = explain_feature(
@@ -133,6 +112,4 @@ def test_the_live_terminology_simplification_is_approved(live_settings):
     print("\n--- terminology outcome:", answer.outcome, answer.source_kind)
     print("--- explanation:\n", answer.explanation)
     assert answer.explanation
-    # Either the model was approved, or the curated text was served. Both are
-    # correct; what must never happen is an empty answer for a covered term.
     assert answer.outcome in ("generated", "served_from_knowledge_base")

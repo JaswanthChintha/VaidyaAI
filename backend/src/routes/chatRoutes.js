@@ -10,12 +10,6 @@ const { chatValidator } = require('../middleware/chatValidators');
 
 const router = express.Router();
 
-/**
- * The chatbot - /api/v1/chat (2026-10-09).
- *
- * Signed-in users only, then the per-USER chat budget (`chatLimiter`, keyed on
- * the user, so it must come after `protect`), then input validation.
- */
 router.use(protect);
 router.use(chatLimiter);
 

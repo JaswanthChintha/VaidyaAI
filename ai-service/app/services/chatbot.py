@@ -1,39 +1,3 @@
-"""The VaidyaAI chatbot (owner, 2026-10-09).
-
-Answers three kinds of question, in plain words:
-
-  * how to use the app        -- grounded in `app/data/app_help.py`
-  * general lab-test / health -- grounded in the reviewed knowledge base when
-                                 the question names a test or topic it covers
-  * the user's own report     -- grounded in that report's results, sent by the
-                                 backend only from the report's own dashboard
-
-THE MODEL IS OPENROUTER'S, NOT GEMINI'S. Gemini's daily quota is what reads
-reports and writes the dashboard explanations; a chat must never spend it. If
-no OpenRouter key is configured the chat says it is unavailable -- it does not
-fall back to Gemini.
-
-THE SAFETY ORDER, and why each step is where it is:
-
-  1. Fixed replies BEFORE any model call, for an emergency, a request for a
-     diagnosis, and a request about medicines or doses. These are the answers
-     that must never vary and never depend on a model behaving.
-  2. The model is told to answer only from the material given, never to
-     diagnose or name a medicine, and to reply OFF_TOPIC to anything outside
-     health, lab tests and this app.
-  3. Every answer goes through Module 24 (`guarded_generation`) with the
-     material as its grounding -- so a number in the answer must come from the
-     report or the notes -- and with a professional referral required for any
-     health answer. Two failed attempts -> a fixed, safe reply.
-  4. With NO grounding at all (a general health question the knowledge base
-     does not cover), an answer may not contain a number: Module 24's numeric
-     check only runs when there is grounding to check against, so this file
-     closes that gap itself rather than let an unsourced figure through.
-
-Nothing here logs the question, the report or the answer -- outcomes and
-counts only, through `safe_meta`.
-"""
-
 from __future__ import annotations
 
 import re
@@ -58,18 +22,12 @@ OUTCOME_OFF_TOPIC = "off_topic"
 OUTCOME_WITHHELD = "withheld"
 OUTCOME_UNAVAILABLE = "unavailable"
 
-# --------------------------------------------------------------------------
-# Fixed replies -- reviewed wording, never composed at runtime
-# --------------------------------------------------------------------------
 
 REPLY_EMERGENCY = (
     "This could need urgent care. Please call 112 (India's emergency number) or "
     "your local emergency number now, or go to the nearest hospital. A qualified "
     "healthcare professional should see you as soon as possible."
 )
-# Worded so Module 24 itself approves them (tests/test_chatbot.py checks):
-# the first drafts named "diagnosis" and "medicines, doses or treatment" and
-# were REJECTED by the very checker every other answer has to pass.
 REPLY_DIAGNOSIS = (
     "I can only explain what lab results mean in general. Whether a result "
     "points to a health condition is for a qualified healthcare professional "
@@ -99,8 +57,6 @@ FIXED_REPLIES = {
     "unavailable": REPLY_UNAVAILABLE,
 }
 
-# Patterns are on lower-cased text. Kept to clear requests; anything subtler is
-# Module 24's job on the answer, not a guess about the question.
 _EMERGENCY = re.compile(
     r"\b(chest pain|can'?t breathe|cannot breathe|difficulty breathing|"
     r"unconscious|fainted|stroke|heart attack|suicid\w*|kill myself|"
@@ -119,10 +75,6 @@ _MEDICATION = re.compile(
 OFF_TOPIC_TOKEN = "OFF_TOPIC"
 _DIGIT = re.compile(r"\d")
 
-#: Words that make a question plausibly about health, lab tests or a report.
-#: A question with NONE of these, and no help note or knowledge match, is
-#: redirected WITHOUT a model call: live (2026-10-09), "write me a poem about
-#: cricket" was answered with a poem despite the OFF_TOPIC instruction.
 _HEALTH_WORDS = re.compile(
     r"\b(health\w*|blood|tests?|testing|lab|labs|laborator\w*|results?|reports?|"
     r"range|levels?|values?|normal|high|low|sugar|glucose|hba1c|a1c|cholesterol|"
@@ -137,7 +89,6 @@ _HEALTH_WORDS = re.compile(
 
 
 def classify(question: str) -> Optional[str]:
-    """A fixed-reply category, or None to answer with the model."""
     q = (question or "").lower()
     if _EMERGENCY.search(q):
         return "emergency"
@@ -146,11 +97,6 @@ def classify(question: str) -> Optional[str]:
     if _MEDICATION.search(q):
         return "medication"
     return None
-
-
-# --------------------------------------------------------------------------
-# Data shapes
-# --------------------------------------------------------------------------
 
 
 class ReportResult(BaseModel):
@@ -169,7 +115,6 @@ class ReportTopic(BaseModel):
 
 
 class ReportContext(BaseModel):
-    """What the backend sends from ONE report's stored analysis."""
 
     model_config = ConfigDict(extra="forbid")
     results: List[ReportResult] = Field(default_factory=list, max_length=80)
@@ -178,7 +123,7 @@ class ReportContext(BaseModel):
 
 
 class ChatSource(BaseModel):
-    kind: str  # "report" | "app_help" | "knowledge"
+    kind: str
     title: str
 
 
@@ -187,11 +132,6 @@ class ChatAnswer(BaseModel):
     answer: str
     sources: List[ChatSource] = Field(default_factory=list)
     model_used: bool = False
-
-
-# --------------------------------------------------------------------------
-# Grounding
-# --------------------------------------------------------------------------
 
 
 def _report_lines(report: ReportContext) -> List[str]:
@@ -203,9 +143,6 @@ def _report_lines(report: ReportContext) -> List[str]:
         if r.value is not None:
             parts.append(f"= {r.value}{(' ' + r.unit) if r.unit else ''}")
         if r.reference:
-            # The range carries the result's unit when it has none of its own:
-            # live (2026-10-09), "13.0 - 17.0" beside an HbA1c in % came back as
-            # "13.0 - 17.0%" for haemoglobin -- the model supplied a unit.
             reference = r.reference
             if r.unit and not re.search(r"[A-Za-z%]", reference):
                 reference = f"{reference} {r.unit}"
@@ -219,12 +156,11 @@ def _report_lines(report: ReportContext) -> List[str]:
 
 
 def _knowledge(question: str) -> List[Dict[str, Any]]:
-    """Reviewed knowledge chunks for a question, anchored to the catalogue."""
     try:
         from app.rag.retriever import retrieve
 
         return [s.to_dict() for s in retrieve(text=question, top_k=3)]
-    except Exception:  # noqa: BLE001 -- no grounding is a valid answer
+    except Exception:
         return []
 
 
@@ -277,11 +213,6 @@ def _prompt(question: str, help_notes, chunks, report_lines) -> str:
     return f"{material}\n\nQUESTION: {question}"
 
 
-# --------------------------------------------------------------------------
-# The entry point
-# --------------------------------------------------------------------------
-
-
 def _fixed(kind: str, outcome: str) -> ChatAnswer:
     logger.info("chat_answer %s", safe_meta(outcome=outcome, kind=kind, model=False))
     return ChatAnswer(outcome=outcome, answer=FIXED_REPLIES[kind])
@@ -293,7 +224,6 @@ def answer_question(
     report: Optional[ReportContext] = None,
     llm: Any = None,
 ) -> ChatAnswer:
-    """Answer one question. Never raises; every failure is a fixed reply."""
     q = (question or "").strip()[:MAX_QUESTION_CHARS]
     if not q:
         return _fixed("off_topic", OUTCOME_OFF_TOPIC)
@@ -306,13 +236,10 @@ def answer_question(
     chunks = _knowledge(q)
     app_question = bool(help_notes) and not chunks
 
-    # Nothing about health, tests, a report or the app: redirect, no model.
     if not help_notes and not chunks and not _HEALTH_WORDS.search(q.lower()):
         return _fixed("off_topic", OUTCOME_OFF_TOPIC)
 
     def note_answer() -> ChatAnswer:
-        """The best-matching reviewed note, word for word -- the app-question
-        fallback. Already Module-24-approved (tests/test_chatbot.py)."""
         note = help_notes[0]
         logger.info("chat_answer %s", safe_meta(outcome=OUTCOME_ANSWERED, kind="app_help", model=False))
         return ChatAnswer(
@@ -324,11 +251,6 @@ def answer_question(
     if llm is None:
         return note_answer() if app_question else _fixed("unavailable", OUTCOME_UNAVAILABLE)
 
-    # AN APP QUESTION (owner, 2026-10-09): the model answers the EXACT question
-    # ("where can we go to check timeline?" -- a note that said only WHAT the
-    # Timeline is did not answer it) from the site map plus the matching notes.
-    # If its wording is refused, or anything else goes wrong, the reviewed
-    # note is shown instead, so an app question never ends in "unavailable".
     if app_question and SITE_MAP not in help_notes:
         help_notes = help_notes + [SITE_MAP]
 
@@ -340,8 +262,6 @@ def answer_question(
 
     context = SafetyContext(
         grounding_sources=tuple(grounding),
-        # An app-only answer ("press Upload") needs no referral appended; any
-        # answer touching health does.
         require_referral=health_question,
         purpose="chat_answer",
     )
@@ -349,8 +269,6 @@ def answer_question(
     off_topic = {"seen": False}
 
     def generate(feedback=None):
-        # A retry is told, in general terms, why the last answer was refused --
-        # never the refused text itself.
         retry_note = (
             "\n\nYOUR PREVIOUS ANSWER WAS NOT ALLOWED. Answer again more "
             "carefully: hedged wording ('can', 'may'), no numbers that are not "
@@ -366,8 +284,7 @@ def answer_question(
         )
         if isinstance(text, str) and text.strip().strip(".").upper() == OFF_TOPIC_TOKEN:
             off_topic["seen"] = True
-            raise ValueError("off topic")  # ends this attempt; handled below
-        # No grounding -> no numbers: Module 24 cannot check them (header, 4).
+            raise ValueError("off topic")
         if not grounding and isinstance(text, str) and _DIGIT.search(text):
             raise ValueError("ungrounded number")
         return text
@@ -384,7 +301,6 @@ def answer_question(
     sources: List[ChatSource] = []
     if report_lines:
         sources.append(ChatSource(kind="report", title="This report's results"))
-    # The site map is cited only when it is all there was.
     cited = [n for n in help_notes if n is not SITE_MAP] or help_notes
     sources += [ChatSource(kind="app_help", title=n.title) for n in cited]
     seen_docs = set()

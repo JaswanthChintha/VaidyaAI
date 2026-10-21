@@ -4,9 +4,6 @@ import { api, ApiError } from '../src/lib/api';
 import { AuthProvider } from '../src/lib/auth';
 import AccountSettings from '../src/components/AccountSettings';
 
-/**
- * Change password and delete account (2026-10-02), on the "Your details" page.
- */
 function renderAccount() {
   return render(
     <MemoryRouter initialEntries={['/profile']}>

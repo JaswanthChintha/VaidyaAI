@@ -1,13 +1,5 @@
 'use strict';
 
-/**
- * The sex and age a report PRINTS -- read, compared, never guessed.
- *
- * 2026-09-24: `01-all-normal.pdf` ("34 Years / Female") and
- * `03-renal-anaemia-deficiency.pdf` ("63 Years / Male") were compared as one
- * person's history, and both were analysed as the profile's "20, male". See
- * `src/utils/printedIdentity.js`.
- */
 
 const mongoose = require('mongoose');
 
@@ -120,9 +112,6 @@ describe('comparePair -- could these be one person?', () => {
 });
 
 describe('compareWithProfile -- the report against the PROFILE, and what was used', () => {
-  // 2026-09-25: the printed sex and age are USED in place of the profile's,
-  // so the comparison is with the profile itself and `used` reports what the
-  // analysis took, and from where.
   const features = (age, gender, source) => ({
     features: {
       age: { value: age, source },

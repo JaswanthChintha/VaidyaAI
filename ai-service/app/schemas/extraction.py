@@ -1,20 +1,3 @@
-"""The Module 4 output contract, enforced by pydantic v2.
-
-This schema is BINDING: Module 5 (Medical Feature Engineering) consumes it.
-Do not rename or retype fields without coordinating with Module 5.
-
-Contract rules encoded here:
-  * `test_name` is the name EXACTLY as printed on the report. Module 4 does
-    not normalise to canonical feature names -- that is Module 5's job.
-  * `value_numeric` is None for non-numeric results ("Negative", "Trace").
-    `value_raw` always preserves what was printed.
-  * `flag` is one of low | normal | high | critical | None, and is only set
-    when the report states it or the reference range makes it unambiguous.
-    No clinical inference happens here. A `normal` flag beside printed text
-    this schema refuses as not-an-interval is dropped -- see the gate below.
-  * Every field is nullable except `test_name` and `value_raw`.
-"""
-
 from __future__ import annotations
 
 import re
@@ -24,66 +7,11 @@ from typing import List, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
-# --------------------------------------------------------------------------
-# THE PRINTED RANGE MUST BE ONLY A RANGE
-# --------------------------------------------------------------------------
-#
-# `reference_low` and `reference_high` are emitted BY THE MODEL. There is no
-# parser here and never was: the model reads the report and returns two
-# numbers, and `coerce_numeric` only coerces them. So the only place this
-# service can refuse a reading of the printed text is here, after the answer
-# arrives -- the same shape as every other model boundary in this codebase.
-#
-# WHAT WENT WRONG. One of the reader's reports prints, against average blood
-# glucose:
-#
-#     "151 - 180 - Average Control"
-#
-# That is a row from an HbA1c INTERPRETATION TABLE -- a band mapped to a
-# control category -- and the model returned `low=151, high=180` as though it
-# were this patient's reference interval. Everything downstream then judged
-# the reading against a target of 151-180, so a RISE in average glucose read
-# as an improvement toward the healthy range. An average glucose of 154 mg/dL
-# is an HbA1c around 7 %, which is worse control, and the timeline was one
-# page-read away from telling a reader their diabetes had improved while the
-# HbA1c row beside it said worsening.
-#
-# THE MODEL ALREADY REFUSES THE FULL TABLES. Both multi-line HbA1c
-# interpretation blocks on these reports come back `null/null`, and so do the
-# sex-specific ranges -- `"F: 36 - 46 M: 40 - 50"` -- which cannot be reduced
-# to one pair without knowing whose report it is. It accepted exactly one
-# shape: a SINGLE band row with a label after it.
-#
-# THE RULE. The printed text must be ONLY an interval: an optional comparator,
-# one or two numbers, and at most a unit. Anything else and the numbers are
-# refused -- `reference_range_raw` is kept exactly as printed, because the
-# reader's own document is not wrong, and only this service's reduction of it
-# to two numbers was.
-#
-# VALIDATED AGAINST EVERY DISTINCT PRINTED RANGE ON THE REAL REPORTS, 46 of
-# them, before being written -- plus four labelled-band shapes that do not
-# appear in the data and must also be refused. 50 of 50.
-#
-# REFUSING IS THE SAFE DIRECTION. A range this gate does not recognise loses
-# its bounds and keeps its text; the parameter is still shown, still carries
-# its value, and simply is not judged against an interval nobody could parse.
-# That is what already happens for the sex-specific ranges.
-#
-# IT ALSO LOSES A `normal` FLAG, AND ONLY A `normal` ONE. Reading the report
-# on 2026-09-18 established that it prints no markings at all, so the flag on
-# that row had been inferred against the very band refused above. Dropping an
-# inferred `normal` cannot under-warn a reader; dropping a `high` would remove
-# a warning, so high/low/critical stand. The argument is in full on
-# `_refuse_bounds_from_text_that_is_not_only_a_range`.
-
 _COMPARATOR = (
     r"(?:<=|>=|<|>|≤|≥|up\s*to|upto|less\s+than|greater\s+than|more\s+than)"
 )
 _NUMBER = r"\d+(?:\.\d+)?"
 _RANGE_SEP = r"(?:-|–|—|to)"
-#: A unit token carries NO WHITESPACE. Every unit printed beside a range on
-#: the real reports is one token -- `g/dL`, `pg`, `%`, `cells/cumm`,
-#: `mill/cu.mm`, `fL` -- while a category label is words.
 _UNIT_TOKEN = r"[A-Za-z%µμ][A-Za-z0-9/%^.µμ]*"
 
 _ONLY_AN_INTERVAL = re.compile(
@@ -93,23 +21,10 @@ _ONLY_AN_INTERVAL = re.compile(
     re.IGNORECASE,
 )
 
-#: A purely alphabetic trailing token longer than this is prose, not a unit.
-#:
-#: Every alphabetic-only unit printed beside a range on the real reports is two
-#: characters (`pg`, `fL`); every longer alphabetic remainder seen or imagined
-#: is a category label (`Average`, `Control`, `Normal`, `Desirable`). Without
-#: this, `"151 - 180 Normal"` -- the same defect with the dash omitted -- would
-#: pass, because a single word fills the unit slot.
 _MAX_ALPHABETIC_UNIT = 4
 
 
 def printed_range_is_only_a_range(raw: object) -> bool:
-    """Is this printed text an interval and nothing else?
-
-    True when there is nothing printed -- the gate has no evidence and no
-    opinion, and a model that supplied bounds without text is not made wrong
-    by this function.
-    """
     if raw is None:
         return True
     if not isinstance(raw, str) or not raw.strip():
@@ -130,24 +45,16 @@ class Flag(str, Enum):
     CRITICAL = "critical"
 
 
-# Accepts "6.8", "-1.2", "1.5e3", "1,234.5", and leading comparators/symbols
-# that labs print such as "<0.01", ">120", "~5.0".
 _NUMERIC_RE = re.compile(r"^[<>~=]?\s*[+-]?(\d{1,3}(,\d{3})+|\d*)(\.\d+)?([eE][+-]?\d+)?$")
 
 
 def coerce_numeric(value: object) -> Optional[float]:
-    """Best-effort numeric coercion. Returns None when not cleanly numeric.
-
-    Deliberately conservative: anything ambiguous becomes None rather than a
-    guessed number, per the contract's "never invent" rule.
-    """
     if value is None:
         return None
     if isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
         f = float(value)
-        # NaN / inf are not valid JSON numbers and are not real lab values.
         if f != f or f in (float("inf"), float("-inf")):
             return None
         return f
@@ -171,7 +78,6 @@ def coerce_numeric(value: object) -> Optional[float]:
 
 
 class ExtractedParameter(BaseModel):
-    """One test row read off the report."""
 
     model_config = ConfigDict(extra="ignore", use_enum_values=True)
 
@@ -202,13 +108,10 @@ class ExtractedParameter(BaseModel):
     page_number: Optional[int] = Field(default=None, ge=1)
     confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
 
-    # --- normalisation of model output ---
 
     @field_validator("test_name", "value_raw", mode="before")
     @classmethod
     def _require_text(cls, v: object) -> object:
-        # The model may emit a bare number for value_raw; stringify it so the
-        # required-field contract holds rather than failing the whole row.
         if v is None:
             return v
         if isinstance(v, (int, float)) and not isinstance(v, bool):
@@ -224,7 +127,6 @@ class ExtractedParameter(BaseModel):
     def _blank_to_none(cls, v: object) -> object:
         if isinstance(v, str):
             s = v.strip()
-            # Models like to write these instead of emitting null.
             if s == "" or s.lower() in {"null", "none", "n/a", "na", "-", "--"}:
                 return None
             return s
@@ -244,7 +146,6 @@ class ExtractedParameter(BaseModel):
             s = v.strip().lower()
             if s in {"", "null", "none", "n/a", "na", "-"}:
                 return None
-            # Common lab shorthand -> contract vocabulary.
             alias = {
                 "l": "low",
                 "lo": "low",
@@ -253,7 +154,7 @@ class ExtractedParameter(BaseModel):
                 "n": "normal",
                 "wnl": "normal",
                 "within normal limits": "normal",
-                "abnormal": None,  # not specific enough to place
+                "abnormal": None,
                 "c": "critical",
                 "crit": "critical",
                 "panic": "critical",
@@ -262,7 +163,6 @@ class ExtractedParameter(BaseModel):
                 return alias[s]
             if s in {"low", "normal", "high", "critical"}:
                 return s
-            # Unrecognised -> do not guess.
             return None
         return v
 
@@ -287,66 +187,8 @@ class ExtractedParameter(BaseModel):
     def _refuse_bounds_from_text_that_is_not_only_a_range(
         self,
     ) -> "ExtractedParameter":
-        """Drop `reference_low`/`high`, and a `normal` flag, when the printed
-        text says more than an interval.
-
-        See `printed_range_is_only_a_range` above for what went wrong and what
-        was validated against. THE RAW TEXT IS KEPT: the reader's document is
-        not wrong, only this service's reduction of it to two numbers was, and
-        a consumer that wants to show what was printed still can.
-
-        ======================================================================
-        AND A `normal` FLAG GOES WITH THE BOUNDS. ONLY `normal`.
-        ======================================================================
-
-        This paragraph used to say `flag` was left alone, because a flag is
-        the laboratory's own marking when the report states one, and "a flag
-        the model inferred FROM a refused range" was named here as a separate
-        question. IT WAS SETTLED BY READING THE REPORT, on 2026-09-18:
-
-          * `Test 3.pdf` PRINTS NO MARKINGS AT ALL -- four columns, name,
-            value, unit, range, and not one H, L or asterisk on either page,
-            including on rows well outside their printed interval. Its 18
-            stored flags are therefore ALL inferred.
-          * So `AVERAGE BLOOD GLUCOSE 154 mg/dL flag=normal` could only have
-            been inferred, and the only thing available to infer it from was
-            `"151 - 180 - Average Control"` -- the band THIS GATE REFUSES. A
-            conclusion whose premise this function withdraws.
-          * The chip it produced said `In range` for an average glucose of
-            154 mg/dL, attributed in the markup to "your laboratory's own
-            marking, from the range printed on that report". Both halves were
-            false.
-
-        WHY ONLY `normal`, AND THE ASYMMETRY IS THE WHOLE ARGUMENT. This gate
-        cannot tell an inferred flag from a printed one -- a laboratory may
-        print both a band table and an `H`. So the question is which way to
-        err, and the two directions are not equivalent:
-
-          * dropping `normal` cannot under-warn anyone. A row with no flag
-            renders as "not checked", never as reassurance -- `LabStatus`
-            gives a null flag no chip and the dashboard's `labFlagVerdict`
-            falls through to the same "not checked" the assessed rows show.
-            That is this project's own standing rule: an absence must not
-            become a negative result.
-          * dropping `high`/`low`/`critical` would REMOVE A WARNING, which is
-            the one error this tool must not make. They stand, even here.
-
-        NOT THE WHOLE OF THE PROBLEM, and the rest is recorded rather than
-        guessed at: the honest fix is for the model to say WHICH source a flag
-        came from -- a printed marking or a numeric comparison, which the
-        extraction prompt already distinguishes in words -- so that every flag
-        carries its provenance instead of one class of them being repaired
-        here. That is a schema and prompt change plus a migration for the
-        flags already stored without it, and it is deliberately not attempted
-        in this function.
-        """
         if printed_range_is_only_a_range(self.reference_range_raw):
             return self
-        # NOT AN `elif`, AND NOT BEHIND THE EARLY RETURN THAT USED TO STAND
-        # HERE. The bounds being already absent says nothing about the flag: a
-        # model that returns `normal` against a band and no numbers at all
-        # reaches this line, and the old `return self` on two null bounds
-        # would have carried that flag straight through.
         if self.reference_low is not None or self.reference_high is not None:
             object.__setattr__(self, "reference_low", None)
             object.__setattr__(self, "reference_high", None)
@@ -384,13 +226,6 @@ class ReportMetadata(BaseModel):
         description="Whether a patient name appears. The name itself is NOT "
         "extracted -- Module 4 does not lift identifiers off the report.",
     )
-    # THE PRINTED SEX AND AGE, AS PRINTED. Added 2026-09-24: every analysis
-    # used the ACCOUNT PROFILE's age and sex, never the report's, so a
-    # 34-year-old woman's report on a "20, male" account was judged with male
-    # thresholds and compared with a 63-year-old man's as one person's
-    # history. Not parsed here -- the backend reads them, as it reads
-    # `report_date` -- and still NO NAME: sex and age are what the analysis
-    # depends on, and a name is not.
     patient_sex: Optional[str] = Field(
         default=None,
         description="Patient sex exactly as printed (e.g. 'Male', 'F'). Null if absent.",
@@ -412,7 +247,6 @@ class ReportMetadata(BaseModel):
 
 
 class ExtractionData(BaseModel):
-    """The `data` object of a successful extraction response."""
 
     model_config = ConfigDict(extra="ignore")
 
@@ -432,18 +266,7 @@ class ExtractionResponse(BaseModel):
     data: ExtractionData
 
 
-# --------------------------------------------------------------------------
-# Model-facing schema
-# --------------------------------------------------------------------------
-# What we ask Gemini to return for a single page. Kept separate from the
-# response contract on purpose: the model is asked for a per-page payload, and
-# the service assembles the final document-level contract. That keeps the
-# model's job small and keeps assembly logic (page offsets, confidence
-# aggregation) in Python where it is testable.
-
-
 class PageExtraction(BaseModel):
-    """Per-page payload as returned by the vision model."""
 
     model_config = ConfigDict(extra="ignore")
 
@@ -465,8 +288,6 @@ class PageExtraction(BaseModel):
             if s == "" or s.lower() in {"null", "none", "n/a", "na", "-"}:
                 return None
             return s[:32]
-        # A bare number is an age printed without a unit ("63"); anything
-        # else that is not text is not something printed on a report.
         if isinstance(v, (int, float)) and not isinstance(v, bool):
             return str(v)
         return None
@@ -497,13 +318,6 @@ class PageExtraction(BaseModel):
 
 
 def gemini_response_schema() -> dict:
-    """JSON schema handed to Gemini for structured output.
-
-    Hand-written rather than derived from `PageExtraction.model_json_schema()`
-    because the Gemini schema dialect is a restricted subset of OpenAPI: it
-    rejects `$defs`/`$ref`, `anyOf`-with-null nullability, and most of what
-    pydantic emits. Keep this in sync with `PageExtraction`.
-    """
     return {
         "type": "object",
         "properties": {

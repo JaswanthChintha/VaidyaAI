@@ -1,21 +1,3 @@
-"""Module 31 policy: reason codes, copy, and the DELIBERATE exclusions.
-
-This file is the reviewable data layer for population context, in the same
-spirit as `app/data/clinical_rules.py` and `app/data/feature_catalog.py`:
-tables and strings, no control flow, so a clinician can check what the patient
-is going to be told without reading any Python logic.
-
-THE RULE THIS MODULE EXISTS TO OBEY
------------------------------------
-A percentile shown to a patient is a factual claim about a real population. If
-there is no real, published distribution for a parameter, this module says so.
-It does not estimate, interpolate, borrow a neighbouring age band, rescale
-another population, or "reasonably approximate" anything. `EXCLUDED_FEATURES`
-below is the list of canonical VaidyaAI features that are deliberately NOT
-covered, each with the reason -- because a module that silently omits a feature
-is indistinguishable from one that forgot it.
-"""
-
 from __future__ import annotations
 
 from typing import Dict, Tuple
@@ -24,49 +6,21 @@ MODULE = 31
 VERSION = "1.0.0"
 
 
-# --------------------------------------------------------------------------
-# Reason codes -- why a feature has no population context
-# --------------------------------------------------------------------------
-
-
 class PopulationReason:
-    """Stable, machine-readable codes. A consumer may branch on these."""
 
-    #: The name is not a canonical VaidyaAI feature at all.
     UNKNOWN_FEATURE = "UNKNOWN_FEATURE"
-    #: Canonical, but not a continuous measurement (boolean / category / age).
     FEATURE_NOT_CONTINUOUS = "FEATURE_NOT_CONTINUOUS"
-    #: Canonical and continuous, but no verified published distribution exists.
     NO_VERIFIED_DISTRIBUTION = "NO_VERIFIED_DISTRIBUTION"
 
-    #: No age was supplied, so no age-matched group can be chosen.
     AGE_NOT_PROVIDED = "AGE_NOT_PROVIDED"
-    #: An age outside every band the table covers -- never extrapolated.
     AGE_OUTSIDE_TABLE_RANGE = "AGE_OUTSIDE_TABLE_RANGE"
-    #: Under the table's minimum age. Called out separately from the above
-    #: because scoring a child against an adult table is a clinical error and
-    #: deserves its own, unambiguous code.
     AGE_BELOW_ADULT_TABLE = "AGE_BELOW_ADULT_TABLE"
 
-    #: Gender absent, or `other` / `prefer_not_to_say`. The published tables
-    #: are male/female only and a person's stated gender is NEVER coerced.
     SEX_COHORT_NOT_AVAILABLE = "SEX_COHORT_NOT_AVAILABLE"
 
-    #: The (sex, age band) cell exists in principle but was not published
-    #: because too few people were observed in it.
     COHORT_TOO_SMALL_TO_PUBLISH = "COHORT_TOO_SMALL_TO_PUBLISH"
 
-    #: Value problems.
     VALUE_NOT_NUMERIC = "VALUE_NOT_NUMERIC"
-    #: A finite number, but outside the physiologically possible band Module 6
-    #: already publishes for this feature. This endpoint accepts raw
-    #: measurements rather than a validated snapshot, so a value that Module 6
-    #: would have REJECTED as an extraction error can otherwise reach the
-    #: lookup and come back with a perfectly well-formed band: an audit got
-    #: "below the 1st percentile" out of an HbA1c of -3 %. The statement is
-    #: technically true and carries no clinical claim, which is exactly what
-    #: makes it bad -- it launders a nonsense input into something that reads
-    #: like a finding.
     VALUE_NOT_PHYSIOLOGICALLY_PLAUSIBLE = "VALUE_NOT_PHYSIOLOGICALLY_PLAUSIBLE"
     UNIT_NOT_PROVIDED = "UNIT_NOT_PROVIDED"
     UNIT_NOT_RECOGNISED = "UNIT_NOT_RECOGNISED"
@@ -77,16 +31,6 @@ REASON_CODES: Tuple[str, ...] = tuple(
     v for k, v in vars(PopulationReason).items() if k.isupper()
 )
 
-
-# --------------------------------------------------------------------------
-# Canonical features deliberately NOT covered, and why.
-#
-# Every canonical feature that is not backed by a table in
-# `datasets/population/distributions/` MUST appear here. `app/population/
-# tables.py` asserts that at import time, so adding a feature to
-# feature_catalog.py without deciding what Module 31 does about it fails fast
-# instead of silently vanishing from the response.
-# --------------------------------------------------------------------------
 
 EXCLUDED_FEATURES: Dict[str, Dict[str, str]] = {
     "blood_glucose": {
@@ -111,10 +55,6 @@ EXCLUDED_FEATURES: Dict[str, Dict[str, str]] = {
             "honestly."
         ),
     },
-    # THE LIVER PANEL (2026-10-04). NHANES 2017-2018 (BIOPRO_J, already in
-    # this repository's git history) holds ALT, AST and total bilirubin, so a
-    # verified table is possible -- but none has been built or checked yet,
-    # and an unverified percentile is worse than none.
     "alt": {
         "reason_code": PopulationReason.NO_VERIFIED_DISTRIBUTION,
         "message": (
@@ -175,16 +115,6 @@ EXCLUDED_FEATURES: Dict[str, Dict[str, str]] = {
 }
 
 
-# --------------------------------------------------------------------------
-# Copy. Deliberately flat, non-clinical language.
-#
-# Module 31 makes NO clinical claim, so none of this text may contain a risk
-# word, a recommendation, a normal/abnormal judgement, or a comparison against
-# a reference range. Module 8 owns "is this value in range"; Module 31 owns
-# only "how common is this value". Those are different questions and the copy
-# must keep them apart.
-# --------------------------------------------------------------------------
-
 WHAT_THIS_MEANS = (
     "A percentile says how common a value is in a group of people of similar "
     "age and sex. It is a description of that group, nothing more."
@@ -199,14 +129,6 @@ WHAT_THIS_DOES_NOT_MEAN = (
     "qualified clinician -- not for this comparison."
 )
 
-#: The patient-facing sentence for every reason code that is NOT specific to
-#: one feature. The per-feature refusals live in `EXCLUDED_FEATURES` above and
-#: carry their own wording; these cover the refusals that depend on the
-#: REQUEST rather than on which parameter was asked about.
-#:
-#: `tables.py` checks at import time that this dict covers every code in
-#: `REASON_CODES` that is not already answered by an `EXCLUDED_FEATURES` entry,
-#: so a new reason code cannot ship without wording a patient can read.
 REASON_MESSAGES: Dict[str, str] = {
     PopulationReason.UNKNOWN_FEATURE: (
         "No population comparison is offered, because this is not one of the "
@@ -276,25 +198,6 @@ REASON_MESSAGES: Dict[str, str] = {
 }
 
 
-#: SAY "AT OR BELOW", NOT "LOWER". The two are not the same number here, and
-#: the difference is large enough to mislead.
-#:
-#: The published cut-points are `min{x : P(X <= x) >= p}` and the band is found
-#: with `bisect_right`, so a band is a statement about the share AT OR BELOW a
-#: value. Laboratory results cluster hard at one decimal place, so the share
-#: STRICTLY below is much smaller. Measured against the raw NHANES microdata
-#: for men aged 20-29, HbA1c:
-#:
-#:     5.2 % (the modal value)  reported 50th-75th   strictly below 40.9 %
-#:     5.8 %                    reported 97.5th-99th strictly below 95.0 %
-#:     4.6 %                    reported 5th-10th    strictly below  2.4 %
-#:
-#: An audit found this wording telling a 25-year-old man with an entirely
-#: ordinary 5.2 that he was between the 50th and 75th percentile of people with
-#: a LOWER result, when only 41% are lower. The banding arithmetic was correct
-#: throughout; this sentence was written for a point percentile and never
-#: revised for the band design. The band is defensible under "at or below", so
-#: that is what it now says.
 PER_FEATURE_MEANS = (
     "Of people of this age and sex in the survey, this is the share whose "
     "{label} was at or below yours. People whose result equals yours are "

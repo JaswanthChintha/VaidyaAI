@@ -1,32 +1,3 @@
-"""Generate realistic one-page lab-report PDFs with KNOWN expected outcomes.
-
-WHY THIS EXISTS. Uploading a real report tells you the app did not crash. It
-does not tell you the app was RIGHT, because nobody knows what the answer
-should have been. These fixtures carry their answer with them: every value is
-chosen against the thresholds in `app/data/clinical_rules.py`, and the expected
-status for each condition is written out by hand next to it.
-
-THE HAND-WRITTEN EXPECTATION IS THE POINT. This script also runs the same
-values through the real rule engine and REFUSES TO GENERATE if the two
-disagree. That makes the fixtures useful in both directions:
-
-  * if the engine changes behaviour, generation fails and you find out here;
-  * if extraction misreads a PDF, the end-to-end result stops matching the
-    expectation file and you find out there.
-
-Deriving the expectations from the engine instead would have been easier and
-worthless -- a fixture that agrees with the code by construction cannot catch
-the code being wrong.
-
-EVERY DOCUMENT IS MARKED SYNTHETIC, on the page and in its metadata. These are
-test fixtures, not medical records; the laboratory, the patients, the doctors
-and the identifiers are all invented. Nothing here describes a real person.
-
-    python tools/make_test_reports.py
-
-Writes PDFs and `expected.json` to `backend/storage/samples/generated/`.
-"""
-
 from __future__ import annotations
 
 import json
@@ -46,35 +17,8 @@ SYNTHETIC_BANNER = (
     "SYNTHETIC TEST DOCUMENT — GENERATED DATA, NOT A REAL PATIENT RECORD"
 )
 
-#: One row of the printed table: (printed test name, value, printed unit).
-#:
-#: NO REFERENCE INTERVAL IS PRINTED, deliberately.
-#:
-#: Many real reports do print one, and when they do the pipeline reads it. But
-#: a fixture that supplies the interval cannot tell you whether the verdict came
-#: from the service's OWN clinical thresholds or was simply copied off the page.
-#: Withholding it forces the rule engine to decide on its own authority, which
-#: is the thing under test -- and it exercises the "no range printed" path that
-#: real reports genuinely hit.
-#:
-#: The printed name is deliberately NOT the canonical feature key: matching a
-#: lab's wording to a feature is Module 4's job and these fixtures exercise it.
 Row = Tuple[str, str, str]
 
-#: One row for a test this platform does NOT assess:
-#: (printed name, value, unit, printed reference interval, printed flag).
-#:
-#: THESE ROWS DO PRINT AN INTERVAL AND A FLAG, and that is not a contradiction
-#: of the rule above -- it is the same rule. An interval on an ASSESSED test
-#: would let the verdict be copied off the page instead of decided by the
-#: service's own thresholds. An interval on an UNASSESSED test cannot do that,
-#: because the service has no threshold for it and reaches no verdict at all.
-#: The laboratory's own marking is the ONLY judgement that will ever exist for
-#: these rows, so a fixture that omits it cannot exercise the path that carries
-#: it -- and MEMORY.md section 6u records that path being silently dropped on a
-#: real report, burying nine results the laboratory itself had flagged.
-#:
-#: The flag is "H", "L" or "" exactly as a laboratory prints it.
 UnassessedRow = Tuple[str, str, str, str, str]
 
 
@@ -101,38 +45,12 @@ class Report:
         self.age = age
         self.sex = sex
         self.rows = rows
-        #: canonical feature key -> (value, unit) AS PRINTED. Used for the
-        #: engine cross-check; the pipeline gets these from OCR instead.
         self.features = features
-        #: condition -> expected DecisionStatus value, written by hand.
         self.expect = expect
         self.note = note
-        #: Rows the pipeline will read, list, and NOT assess. They exist so the
-        #: unassessed section of the dashboard has something real in it.
         self.unassessed = list(unassessed or [])
-        #: The printed names that MUST come back with a description. Only
-        #: laboratory-flagged rows are ever asked about -- describing every
-        #: unassessed test is what exhausts a free-tier day's quota -- so this
-        #: is the flagged subset, written by hand for the same reason `expect`
-        #: is: a list derived from the selector cannot catch the selector.
         self.expect_described = list(expect_described or [])
-        #: (heading, paragraph) pairs. When present the page is rendered as
-        #: NARRATIVE TEXT instead of a table, and `rows` describes the values
-        #: buried in that narrative rather than a printed table.
-        #:
-        #: WHY THIS LAYOUT EXISTS. Every fixture so far prints a tidy
-        #: three-column table, and extraction was only ever proven against
-        #: that. Real documents are not all tables: consultant notes,
-        #: discharge summaries and many small-laboratory reports state results
-        #: inside sentences. A pipeline that reads tables perfectly and prose
-        #: not at all would look completely healthy on this fixture set, and
-        #: the failure would be invisible in exactly the way that matters --
-        #: a value not extracted is not an abnormal value, it is no value, and
-        #: the dashboard renders it as "not measured".
         self.prose = list(prose or [])
-        #: The table fixture this one must produce identical verdicts to. The
-        #: values are the same; only the LAYOUT differs, so any divergence is
-        #: an extraction defect and nothing else.
         self.paired_with = paired_with
 
 
@@ -278,18 +196,12 @@ REPORTS: List[Report] = [
             "hemoglobin": (13.0, "g/dl"),
         },
         expect={
-            # `>=` bands: the value sits exactly ON the boundary and MUST fire.
             "Diabetes": "Borderline",
             "High Cholesterol": "Borderline",
             "High Triglycerides": "Borderline",
-            # `<` bands: 29 < 30 and 250 < 300, so both are borderline.
             "Vitamin D Deficiency": "Borderline",
             "Vitamin B12 Deficiency": "Borderline",
-            # STRICT `>` for creatinine: 1.35 is NOT > 1.35, so this must stay
-            # quiet. An off-by-one here would tell a healthy man his kidneys
-            # are failing.
             "Kidney Disease": "Not Indicated",
-            # STRICT `<` for anaemia: 13.0 is NOT < 13.0 (male cut-off).
             "Anemia": "Not Indicated",
         },
         note="THE MOST VALUABLE FIXTURE. Every value sits exactly on a "
@@ -323,10 +235,6 @@ REPORTS: List[Report] = [
             "vitamin_b12": (310.0, "pmol/l"),
         },
         expect={
-            # THE SAME PATIENT AS 02, in the units a European lab would print.
-            # Every verdict must match 02 exactly. If they differ, unit
-            # conversion is wrong -- and MEMORY.md already records one
-            # unit-handling defect that reached the patient-facing prompt.
             "Diabetes": "Indicated",
             "High Cholesterol": "Indicated",
             "High Triglycerides": "Indicated",
@@ -354,28 +262,12 @@ REPORTS: List[Report] = [
             ("25-Hydroxy Vitamin D", "34", "ng/mL"),
             ("Vitamin B-12 (Cyanocobalamin)", "420", "pg/mL"),
         ],
-        # THE FOUR ROWS THIS PLATFORM CANNOT ASSESS, AND THE POINT OF THIS
-        # FIXTURE. There is no feature definition, no threshold and no
-        # knowledge document for any of them, so the pipeline will read them,
-        # list them, and reach no verdict -- exactly as it should. What it must
-        # NOT do is lose the laboratory's own marking on the way, which is what
-        # MEMORY.md section 6u found it doing on a real report.
-        #
-        # Blood urea and potassium are chosen deliberately: both are raised
-        # here while serum creatinine, the ONE renal marker this platform does
-        # assess, is 1.1 and correctly produces no kidney finding. That is the
-        # real shape of the defect -- corroborating evidence sitting on the
-        # same page as a verdict, dropped in silence.
         unassessed=[
             ("LDL Cholesterol, Direct", "160", "mg/dL", "< 100", "H"),
             ("HDL Cholesterol", "44", "mg/dL", "> 40", ""),
             ("Blood Urea", "53", "mg/dL", "15 - 40", "H"),
             ("Potassium, Serum", "5.2", "mmol/L", "3.5 - 5.1", "H"),
         ],
-        # Only the flagged three. HDL is in range, so nothing asks about it and
-        # nothing describes it -- if a description appears for HDL, the
-        # selector has widened and a sixty-parameter report will exhaust a
-        # day's quota on results nobody needs explained.
         expect_described=[
             "LDL Cholesterol, Direct",
             "Blood Urea",
@@ -392,10 +284,6 @@ REPORTS: List[Report] = [
             "vitamin_b12": (420.0, "pg/ml"),
         },
         expect={
-            # The assessed panel is 02's, value for value, so the four extra
-            # rows are the ONLY difference between the two fixtures. If a
-            # verdict here differs from 02, an unassessed parameter has
-            # influenced an assessed decision -- which it must never do.
             "Diabetes": "Indicated",
             "High Cholesterol": "Indicated",
             "High Triglycerides": "Indicated",
@@ -420,11 +308,6 @@ REPORTS: List[Report] = [
         age=58,
         sex="male",
         paired_with="02-diabetes-and-lipids",
-        # THE SAME EIGHT VALUES AS FIXTURE 02, VALUE FOR VALUE. Nothing about
-        # the medicine differs; only the LAYOUT does. So the expectation is not
-        # written independently -- it is 02's, and any divergence between the
-        # two is an extraction defect on narrative text and cannot be anything
-        # else.
         rows=[
             ("Glycosylated Haemoglobin", "8.4", "%"),
             ("Fasting Blood Sugar", "186", "mg/dL"),
@@ -506,11 +389,6 @@ REPORTS: List[Report] = [
         age=34,
         sex="female",
         paired_with="01-all-normal",
-        # 01's values, in prose. This is the direction the abnormal pair
-        # cannot test: prose that must produce NO finding. A misread decimal
-        # point or a number picked up from the surrounding sentence would
-        # invent a condition in a healthy person, and 07 would never show it
-        # because 07 is expected to flag.
         rows=[
             ("Glycated Haemoglobin", "5.2", "%"),
             ("Fasting Glucose", "88", "mg/dL"),
@@ -580,11 +458,7 @@ REPORTS: List[Report] = [
 ]
 
 
-# --------------------------------------------------------------------------
-# Rendering
-# --------------------------------------------------------------------------
-
-W, H = 595, 842  # A4 points
+W, H = 595, 842
 LEFT, RIGHT = 44, W - 44
 
 
@@ -593,12 +467,6 @@ def _line(page, y: float, colour=(0.72, 0.75, 0.79), width=0.7) -> None:
 
 
 def _finish(doc, page, report: Report, text) -> None:
-    """The footer and metadata every layout carries, written once.
-
-    The synthetic marker is not optional and is not decoration: these files
-    sit in a directory beside real uploads, and the one thing that must be
-    true of all of them is that nobody can mistake one for a patient record.
-    """
     text(LEFT, H - 46,
          "Results relate only to the specimen tested. This is a generated "
          "document for software testing.",
@@ -640,9 +508,6 @@ def render(report: Report) -> Path:
     text(LEFT, y, "Laboratory Investigation Report", size=7.6,
          colour=(0.42, 0.46, 0.52))
 
-    # The synthetic marker stays -- these must never be mistakable for a real
-    # record -- but it lives in the footer and the metadata rather than in a
-    # banner across the top, so the page reads as a report.
     y += 14
     _line(page, y)
     y += 15
@@ -675,20 +540,6 @@ def render(report: Report) -> Path:
          colour=(0.05, 0.25, 0.42))
     y += 16
 
-    # The interval and flag columns exist only on a page that has something to
-    # put in them. A blank "REF. INTERVAL" heading over eight empty
-    # cells would tell a reader the laboratory printed no range for any test,
-    # which on these fixtures happens to be true but is not what an empty
-    # column means anywhere else.
-    # ---- NARRATIVE LAYOUT --------------------------------------------------
-    #
-    # No table, no columns, no aligned numbers. Each result is stated inside a
-    # sentence, which is how a consultation note or a discharge summary
-    # actually reads and is a shape this fixture set could not previously
-    # produce. `insert_textbox` flows the paragraph and returns a negative
-    # number if the text did not fit, which is checked rather than ignored:
-    # silently clipping a paragraph would drop a value off the page and turn
-    # this fixture into a different, weaker test without saying so.
     if report.prose:
         for heading, paragraph in report.prose:
             text(LEFT, y, heading.upper(), size=8.2, bold=True,
@@ -705,8 +556,6 @@ def render(report: Report) -> Path:
                     "page. Shorten it rather than letting it clip -- a clipped "
                     "paragraph silently removes a value from the fixture."
                 )
-            # `used` is the space LEFT OVER in the box, so the consumed height
-            # is the box height minus it.
             y += (box.height - used) - 9 + 12
 
         y += 6
@@ -744,8 +593,6 @@ def render(report: Report) -> Path:
         if interval:
             text(cols[3], y, interval, size=9.0, colour=(0.35, 0.39, 0.45))
         if flag:
-            # Printed in the laboratory's own convention, and in the colour a
-            # laboratory uses, because that is what extraction has to read.
             text(cols[4], y, flag, size=9.4, bold=True, colour=(0.65, 0.12, 0.12))
         y += 11
         _line(page, y - 3, colour=(0.90, 0.92, 0.94), width=0.5)
@@ -770,20 +617,7 @@ def render(report: Report) -> Path:
     return _save(doc, report)
 
 
-# --------------------------------------------------------------------------
-# Cross-check: the hand-written expectation vs the real rule engine
-# --------------------------------------------------------------------------
-
-
 def engine_verdicts(report: Report) -> Tuple[Dict[str, str], List[str]]:
-    """Run the shipped pipeline over this report's PRINTED rows.
-
-    The rows are fed in as Module 4 extraction output -- printed test name,
-    printed value, printed unit -- rather than as canonical features. That is
-    deliberate: it exercises the synonym lookup and the unit conversion, which
-    is exactly what fixture 05 exists to test. Handing the engine clean
-    canonical keys would skip both.
-    """
     from app.services.feature_engineer import engineer_features
     from app.services.rule_engine import evaluate_rules
 
@@ -793,21 +627,12 @@ def engine_verdicts(report: Report) -> Tuple[Dict[str, str], List[str]]:
             "value_raw": printed_value,
             "value_numeric": float(printed_value),
             "unit": printed_unit,
-            # No reference interval: the page does not print one, so neither
-            # does the extraction. The verdict must come from the service's own
-            # thresholds.
             "reference_range_raw": None,
             "page_number": 1,
             "confidence": 0.99,
         }
         for printed_name, printed_value, printed_unit in report.rows
     ]
-    # THE UNASSESSED ROWS GO IN TOO, and that is the assertion. They are on the
-    # page, so extraction will hand them over, and the engine must reach the
-    # same verdicts it reaches without them. A fixture that fed the engine only
-    # the rows it understands could not catch an unassessed parameter leaking
-    # into an assessed decision -- which is precisely what 06 exists to rule
-    # out, and why its `expect` is 02's, value for value.
     parameters += [
         {
             "test_name": printed_name,
@@ -832,17 +657,9 @@ def engine_verdicts(report: Report) -> Tuple[Dict[str, str], List[str]]:
     for decision in getattr(decisions, "decisions", decisions):
         status = getattr(decision.status, "value", decision.status)
         condition = decision.condition
-        # Several rules can name one condition (HbA1c and glucose both say
-        # Diabetes). The strongest verdict is the one the dashboard shows.
         if rank.get(status, 0) >= rank.get(out.get(condition, ""), 0):
             out[condition] = status
 
-    # WHICH ROWS THE ENGINE SET ASIDE, so a fixture claiming to carry
-    # unassessed tests cannot quietly stop doing so. If a feature definition is
-    # ever added for one of these analytes -- LDL is the obvious candidate --
-    # this list shrinks, generation fails, and whoever added it is told that
-    # fixture 06 now needs a different unassessed row rather than finding out
-    # when the dashboard section it exercises silently empties.
     skipped = [
         name for name in (
             getattr(item, "test_name", None) for item in engineered.unmapped
@@ -876,17 +693,6 @@ def main() -> int:
         if mismatches:
             failures.append(f"{report.slug}: {mismatches}")
 
-        # THE PROSE AND THE ROWS MUST NOT DRIFT APART.
-        #
-        # In a table layout the rendered page IS `rows`, so they cannot
-        # disagree. In a narrative layout the paragraphs are written by hand
-        # and `rows` is the machine-readable statement of what is buried in
-        # them -- two representations of one fact, which is exactly the shape
-        # that rots. Edit a sentence, forget the row, and the fixture quietly
-        # starts asserting a verdict for a value no longer on the page.
-        #
-        # So every row's printed value must appear somewhere in the prose,
-        # and generation fails if one does not.
         if report.prose:
             body = " ".join(paragraph for _heading, paragraph in report.prose)
             for name, value, unit in report.rows:
@@ -897,10 +703,6 @@ def main() -> int:
                         "expectation have drifted apart."
                     )
 
-        # A FIXTURE THAT STOPS TESTING WHAT IT CLAIMS MUST SAY SO. If a feature
-        # definition is added for one of these analytes the row becomes
-        # assessed, this fixture's unassessed section quietly empties, and
-        # nothing else would notice.
         not_skipped = [
             name for name, _v, _u, _i, _f in report.unassessed if name not in skipped
         ]
@@ -932,11 +734,6 @@ def main() -> int:
                 "extraction defect and cannot be a clinical one."
             )
         if report.unassessed:
-            # Kept under its own key rather than merged into `printed_values`:
-            # these rows are on the same page but they are a different kind of
-            # thing, and one dictionary holding both would erase which was
-            # which -- the reader could no longer tell what the platform
-            # assessed from what it only listed.
             entry["unassessed_tests"] = {
                 name: {
                     "printed": f"{value} {unit}",

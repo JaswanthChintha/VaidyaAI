@@ -1,15 +1,3 @@
-"""Module 6 -- `app.services.validator.validate_features()`.
-
-Framework-independent tests: no HTTP, no API key, no network.
-
-The themes, in order of how dangerous getting them wrong would be:
-
-1. Abnormal is never rejected; impossible always is.
-2. An absent tri-state boolean stays UNKNOWN and never becomes false.
-3. Upstream warnings survive with their origin intact.
-4. A value is never invented, repaired or rescaled.
-"""
-
 from __future__ import annotations
 
 from typing import Any, Dict, Optional
@@ -29,11 +17,6 @@ from app.services.validator import (
     usable_features,
     validate_features,
 )
-
-
-# --------------------------------------------------------------------------
-# Builders -- a Module 5 `data` object, assembled by hand
-# --------------------------------------------------------------------------
 
 
 def feature(
@@ -80,23 +63,17 @@ def with_features(*features: Dict[str, Any], **overrides: Any) -> Dict[str, Any]
     )
 
 
-# --------------------------------------------------------------------------
-# 1. The plausible-vs-implausible line
-# --------------------------------------------------------------------------
-
-
 def test_glucose_400_is_valid_and_flagged_clinically_extreme():
-    """The specification's worked example: implausibly high but clinically real."""
     result = validate_features(
         with_features(feature("blood_glucose", 400.0, "mg/dl"))
     )
     assert "blood_glucose" in result.valid
     assert "blood_glucose" not in result.rejected
     entry = result.valid["blood_glucose"]
-    assert entry.value == 400.0  # untouched
+    assert entry.value == 400.0
     assert entry.clinically_extreme is True
     assert entry.extreme_direction == "high"
-    assert entry.questionable is False  # extreme is NOT a quality doubt
+    assert entry.questionable is False
     assert result.clinically_extreme == ["blood_glucose"]
     assert any(f.code == FlagCode.CLINICALLY_EXTREME_HIGH for f in entry.flags)
 
@@ -108,7 +85,7 @@ def test_glucose_40000_is_rejected_as_an_extraction_error():
     assert "blood_glucose" not in result.valid
     rejection = result.rejected["blood_glucose"]
     assert rejection.reason_code == RejectionCode.IMPLAUSIBLE_VALUE_HIGH
-    assert rejection.value == 40000.0  # ORIGINAL value preserved
+    assert rejection.value == 40000.0
     assert rejection.findings[0].bound == "possible_high"
     assert rejection.findings[0].limit == 3000.0
     assert rejection.findings[0].basis
@@ -164,7 +141,6 @@ def test_physiologically_impossible_values_are_rejected(name, value, unit, code)
     ],
 )
 def test_possible_band_boundaries_are_inclusive(name, unit, attr):
-    """Exactly ON the bound is possible; a hair outside is not."""
     from app.data.validation_rules import RULES
 
     bound = getattr(RULES[name], attr)
@@ -214,18 +190,12 @@ def test_age_has_no_extreme_band_so_a_centenarian_is_not_flagged():
     assert result.valid["age"].clinically_extreme is False
 
 
-# --------------------------------------------------------------------------
-# 2. Unit consistency
-# --------------------------------------------------------------------------
-
-
 def test_a_non_canonical_unit_is_rejected_and_never_range_checked():
-    """Module 5's `canonical_unit: false` -- the value was NOT converted."""
     result = validate_features(
         with_features(
             feature(
                 "creatinine",
-                1.0,  # perfectly plausible AS A NUMBER -- and that is the trap
+                1.0,
                 "flurbs",
                 canonical_unit=False,
                 unit_recognised=False,
@@ -245,7 +215,6 @@ def test_a_non_canonical_unit_is_not_converted_or_guessed():
             feature("cholesterol", 5.2, "mmol/L-ish", canonical_unit=False)
         )
     )
-    # 5.2 mmol/L is 201 mg/dL. We must NOT have done that arithmetic.
     assert result.rejected["cholesterol"].value == 5.2
 
 
@@ -276,11 +245,6 @@ def test_unitless_features_ignore_the_canonical_unit_check():
     assert "gender" in result.valid
 
 
-# --------------------------------------------------------------------------
-# 3. Data-type and numeric validation
-# --------------------------------------------------------------------------
-
-
 @pytest.mark.parametrize("value", ["6.8", None, [1], {"a": 1}])
 def test_a_non_numeric_value_in_a_numeric_feature_is_rejected(value):
     result = validate_features(with_features(feature("hba1c", value, "%")))
@@ -288,7 +252,6 @@ def test_a_non_numeric_value_in_a_numeric_feature_is_rejected(value):
 
 
 def test_a_boolean_in_a_numeric_feature_is_rejected_not_measured():
-    """In Python True == 1. A bool must never be silently measured."""
     result = validate_features(with_features(feature("hba1c", True, "%")))
     assert result.rejected["hba1c"].reason_code == RejectionCode.NOT_A_NUMBER
 
@@ -304,7 +267,7 @@ def test_a_fractional_age_is_rejected_not_rounded():
         with_features(feature("age", 45.5, "years", source="patient_profile"))
     )
     assert result.rejected["age"].reason_code == RejectionCode.NOT_AN_INTEGER
-    assert result.rejected["age"].value == 45.5  # NOT rounded to 45 or 46
+    assert result.rejected["age"].value == 45.5
 
 
 def test_an_integral_float_age_is_accepted_unchanged():
@@ -320,11 +283,6 @@ def test_an_unknown_feature_name_is_rejected_not_passed_through():
     result = validate_features(data)
     assert result.rejected["cortisol"].reason_code == RejectionCode.UNKNOWN_FEATURE
     assert "cortisol" not in result.valid
-
-
-# --------------------------------------------------------------------------
-# 4. Categorical features -- Module 2's vocabularies
-# --------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -351,7 +309,7 @@ def test_every_module_2_gender_category_is_valid(value):
     "name,value",
     [
         ("smoking_history", "sometimes"),
-        ("smoking_history", "Never"),  # not normalised here -- Module 5's job
+        ("smoking_history", "Never"),
         ("smoking_history", 1),
         ("gender", "man"),
         ("gender", True),
@@ -366,18 +324,12 @@ def test_a_token_outside_the_vocabulary_is_rejected(name, value):
 
 
 def test_no_info_is_a_real_category_not_a_missing_value():
-    """Module 2 stores 'no_info' deliberately; it must survive validation."""
     result = validate_features(
         with_features(
             feature("smoking_history", "no_info", None, source="patient_profile")
         )
     )
     assert result.valid["smoking_history"].value == "no_info"
-
-
-# --------------------------------------------------------------------------
-# 5. TRI-STATE BOOLEANS -- the recurring hazard
-# --------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("name", ["hypertension", "heart_disease"])
@@ -399,7 +351,6 @@ def test_tristate_explicit_false_survives_as_false(name):
 
 @pytest.mark.parametrize("name", ["hypertension", "heart_disease"])
 def test_tristate_unknown_stays_unknown_and_never_becomes_false(name):
-    """ABSENT means UNKNOWN. It must not appear anywhere as a value."""
     data = module_5_data(missing_features=[name])
     result = validate_features(data)
     assert name not in result.valid
@@ -417,13 +368,7 @@ def test_a_non_boolean_tristate_value_is_rejected_never_coerced(name, value):
     )
     assert result.rejected[name].reason_code == RejectionCode.NOT_A_BOOLEAN
     assert name not in result.valid
-    # And, critically, it did not silently become False anywhere.
     assert usable_features(result).get(name) is None
-
-
-# --------------------------------------------------------------------------
-# 6. Questionable flags
-# --------------------------------------------------------------------------
 
 
 def test_unit_assumed_makes_a_feature_questionable_but_usable():
@@ -437,7 +382,6 @@ def test_unit_assumed_makes_a_feature_questionable_but_usable():
     assert entry.status == STATUS_QUESTIONABLE
     assert "hemoglobin" in result.questionable
     assert any(f.code == FlagCode.UNIT_ASSUMED for f in entry.flags)
-    # Still usable.
     assert usable_features(result)["hemoglobin"] == 14.2
 
 
@@ -450,7 +394,7 @@ def test_a_censored_value_is_flagged_and_kept_at_the_detection_limit():
         )
     )
     entry = result.valid["vitamin_d"]
-    assert entry.value == 3.0  # unchanged
+    assert entry.value == 3.0
     assert entry.questionable is True
     assert any(f.code == FlagCode.CENSORED_VALUE for f in entry.flags)
 
@@ -504,7 +448,6 @@ def test_a_value_attributed_to_an_unreadable_page_is_flagged():
 
 
 def test_a_clean_page_in_a_partially_unreadable_document_is_not_flagged():
-    """An unreadable page ELSEWHERE does not taint a cleanly-read row."""
     data = with_features(
         feature("hba1c", 6.8, "%", page_number=1),
         upstream={
@@ -519,7 +462,6 @@ def test_a_clean_page_in_a_partially_unreadable_document_is_not_flagged():
     result = validate_features(data)
     assert result.valid["hba1c"].questionable is False
     assert result.valid["hba1c"].status == STATUS_VALID
-    # ...but the document-level caveat IS raised.
     assert any("partially readable" in w for w in result.warnings)
     assert any("UNREAD rather than absent" in w for w in result.warnings)
 
@@ -533,11 +475,6 @@ def test_an_extreme_value_is_not_questionable():
     assert entry.questionable is False
     assert entry.status == STATUS_VALID
     assert "blood_glucose" not in result.questionable
-
-
-# --------------------------------------------------------------------------
-# 7. The output partition
-# --------------------------------------------------------------------------
 
 
 def test_questionable_is_a_subset_of_valid_and_disjoint_from_rejected():
@@ -594,11 +531,6 @@ def test_summary_counts_match_the_partition():
     assert s.missing_count == 1
 
 
-# --------------------------------------------------------------------------
-# 8. Warning propagation -- origins must not be flattened
-# --------------------------------------------------------------------------
-
-
 def test_upstream_warnings_survive_with_their_origins():
     data = with_features(
         feature("hba1c", 6.8, "%"),
@@ -640,15 +572,10 @@ def test_module_6_warnings_are_stamped_with_the_validation_stage():
     assert own
     assert all(w.module == 6 for w in own)
     assert any("rejected" in w.message for w in own)
-    # Module 6's own list is NOT polluted with upstream messages.
     assert result.warnings == [w.message for w in own]
 
 
 def test_upstream_warnings_are_rebuilt_when_all_warnings_was_dropped():
-    """A caller forwarding only the two component lists must not lose them.
-
-    This is the exact bug that was found and fixed once on the 4->5 boundary.
-    """
     data = with_features(
         feature("hba1c", 6.8, "%"),
         upstream_warnings=[
@@ -675,11 +602,6 @@ def test_no_upstream_warning_is_edited_or_dropped():
         f"warning {i}" for i in range(5)
     ]
     assert result.summary.upstream_warning_count == 5
-
-
-# --------------------------------------------------------------------------
-# 9. Preservation of everything else
-# --------------------------------------------------------------------------
 
 
 def test_unmapped_missing_and_upstream_are_carried_forward():
@@ -718,7 +640,6 @@ def test_unmapped_missing_and_upstream_are_carried_forward():
 
 
 def test_a_rejected_feature_is_not_added_to_missing_features():
-    """'We read a value and refused it' is not 'there was no value'."""
     result = validate_features(
         with_features(
             feature("blood_glucose", 40000.0, "mg/dl"), missing_features=["bmi"]
@@ -736,11 +657,6 @@ def test_low_overall_extraction_confidence_raises_a_document_warning():
         )
     )
     assert any("Overall extraction confidence" in w for w in result.warnings)
-
-
-# --------------------------------------------------------------------------
-# 10. Degenerate inputs
-# --------------------------------------------------------------------------
 
 
 def test_empty_input_is_valid_and_produces_an_empty_partition():
@@ -771,7 +687,6 @@ def test_an_all_invalid_input_yields_an_empty_valid_set_and_a_warning():
 
 
 def test_features_missing_provenance_are_still_validated():
-    """A caller that trimmed provenance must not get a 500 or a free pass."""
     result = validate_features({"features": {"hba1c": {"value": 6.8, "unit": "%"}}})
     assert result.valid["hba1c"].value == 6.8
     assert result.valid["hba1c"].provenance.source == "lab_report"
@@ -788,13 +703,7 @@ def test_output_is_deterministic_in_catalog_order():
     assert list(result.valid) == ["hba1c", "blood_glucose", "gender"]
 
 
-# --------------------------------------------------------------------------
-# 11. End to end from Module 5's real output
-# --------------------------------------------------------------------------
-
-
 def test_it_consumes_engineer_features_output_directly():
-    """Module 5 -> Module 6 in-process, with no HTTP and no dict round trip."""
     engineered = engineer_from_extraction(
         {
             "source": {"filename": "report.pdf", "mime_type": "application/pdf"},
@@ -853,11 +762,9 @@ def test_it_consumes_engineer_features_output_directly():
     assert result.valid["blood_glucose"].clinically_extreme is True
     assert result.rejected["creatinine"].reason_code == RejectionCode.NON_CANONICAL_UNIT
     assert [u.test_name for u in result.unmapped] == ["Urine Ketones"]
-    # hypertension and heart_disease were never supplied: UNKNOWN, not false.
     assert "hypertension" in result.missing_features
     assert "hypertension" not in result.valid
     assert "hypertension" not in result.rejected
-    # Module 4's warning is still there, with its origin.
     assert any(
         w.stage == STAGE_EXTRACTION and "PDF repairer" in w.message
         for w in result.all_warnings

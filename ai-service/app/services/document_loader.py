@@ -1,21 +1,10 @@
-"""File intake: type sniffing, validation, and rasterisation to page images.
-
-Responsibilities
-  * detect the real file type from CONTENT (magic bytes), not the extension
-  * enforce max file size and max page count
-  * render PDF pages to PNG via PyMuPDF (pure-Python wheel; no Poppler)
-  * normalise standalone images (EXIF orientation, downscale, RGB, PNG)
-
-PRIVACY: nothing in this module logs image bytes or decoded text.
-"""
-
 from __future__ import annotations
 
 import io
 from dataclasses import dataclass
 from typing import List, Optional
 
-import pymupdf  # PyMuPDF (the `fitz` alias is deprecated as of 1.28)
+import pymupdf
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from app.config import Settings
@@ -39,7 +28,6 @@ SUPPORTED_MIME_TYPES = {PDF_MIME, PNG_MIME, JPEG_MIME}
 
 @dataclass
 class PageImage:
-    """A single page rendered to PNG bytes, ready for the vision model."""
 
     page_number: int
     image_bytes: bytes
@@ -57,24 +45,15 @@ class LoadedDocument:
 
 
 def sniff_mime_type(data: bytes) -> Optional[str]:
-    """Identify the file type from magic bytes. Returns None if unrecognised.
-
-    Extensions and client-supplied Content-Type headers are attacker- or
-    mistake-controlled, so they are never trusted for this decision.
-    """
     if len(data) < 4:
         return None
 
-    # PDF: "%PDF-" must appear near the start. Some producers emit junk bytes
-    # before the header, and readers tolerate it, so scan a small window.
     if data[:5] == b"%PDF-" or b"%PDF-" in data[:1024]:
         return PDF_MIME
 
-    # PNG signature
     if data[:8] == b"\x89PNG\r\n\x1a\n":
         return PNG_MIME
 
-    # JPEG: SOI marker, and JFIF/Exif/raw variants all start FF D8 FF
     if data[:3] == b"\xff\xd8\xff":
         return JPEG_MIME
 
@@ -94,15 +73,6 @@ def _validate_size(data: bytes, settings: Settings) -> None:
 
 
 def _normalise_image(data: bytes, settings: Settings) -> bytes:
-    """Decode, orient, downscale and re-encode a standalone image as PNG.
-
-    Light preprocessing only. The vision model handles contrast and noise far
-    better than a fixed threshold/denoise pipeline would, and aggressive
-    binarisation destroys faint print on lab scans. What genuinely helps:
-      * honouring EXIF orientation (phone photos are frequently rotated)
-      * flattening transparency onto white (alpha reads as black otherwise)
-      * capping resolution so payloads stay reasonable
-    """
     try:
         with Image.open(io.BytesIO(data)) as img:
             img = ImageOps.exif_transpose(img)
@@ -133,7 +103,6 @@ def _normalise_image(data: bytes, settings: Settings) -> bytes:
             "truncated."
         ) from exc
     except (OSError, ValueError, MemoryError) as exc:
-        # Pillow raises OSError for truncated files and decompression issues.
         raise UnprocessableDocumentError(
             "The uploaded image could not be processed; it may be corrupt or "
             "truncated."
@@ -144,7 +113,7 @@ def _render_pdf(data: bytes, settings: Settings) -> tuple[List[PageImage], List[
     warnings: List[str] = []
     try:
         doc = pymupdf.open(stream=data, filetype="pdf")
-    except Exception as exc:  # PyMuPDF raises bare Exception subclasses
+    except Exception as exc:
         raise UnprocessableDocumentError(
             "The PDF could not be opened; it may be corrupt or not a valid PDF."
         ) from exc
@@ -156,10 +125,6 @@ def _render_pdf(data: bytes, settings: Settings) -> tuple[List[PageImage], List[
                 code=ErrorCode.ENCRYPTED_PDF,
             )
 
-        # MuPDF silently repairs damaged/truncated PDFs and renders what it can
-        # recover. That is the behaviour we want -- a slightly damaged scan
-        # should still be read -- but the caller must know the input was not
-        # intact, since recovered pages may be missing content.
         if getattr(doc, "is_repaired", False):
             warnings.append(
                 "The PDF was damaged or truncated and was recovered "
@@ -179,8 +144,6 @@ def _render_pdf(data: bytes, settings: Settings) -> tuple[List[PageImage], List[
                 code=ErrorCode.TOO_MANY_PAGES,
             )
 
-        # Cap the render DPI so a page with an enormous MediaBox cannot blow
-        # up memory. PyMuPDF renders at 72dpi * zoom.
         zoom = settings.pdf_render_dpi / 72.0
         matrix = pymupdf.Matrix(zoom, zoom)
 
@@ -192,7 +155,6 @@ def _render_pdf(data: bytes, settings: Settings) -> tuple[List[PageImage], List[
                 pixmap = page.get_pixmap(matrix=matrix, alpha=False)
                 png = pixmap.tobytes("png")
             except Exception:
-                # One bad page must not sink the whole document.
                 warnings.append(
                     f"Page {page_number} could not be rendered and was skipped."
                 )
@@ -202,7 +164,6 @@ def _render_pdf(data: bytes, settings: Settings) -> tuple[List[PageImage], List[
                 )
                 continue
 
-            # A rendered page can still exceed the edge cap at high DPI.
             if max(pixmap.width, pixmap.height) > settings.max_image_edge_pixels:
                 png = _normalise_image(png, settings)
 
@@ -225,11 +186,6 @@ def load_document(
     filename: Optional[str] = None,
     declared_mime: Optional[str] = None,
 ) -> LoadedDocument:
-    """Validate an uploaded file and rasterise it into page images.
-
-    `declared_mime` (the client's Content-Type) is accepted for reporting but
-    is NOT trusted for the type decision -- content sniffing wins.
-    """
     _validate_size(data, settings)
 
     mime = sniff_mime_type(data)
@@ -252,7 +208,6 @@ def load_document(
         pages, render_warnings = _render_pdf(data, settings)
         warnings.extend(render_warnings)
     else:
-        # A single image is one page. Enforce the page cap for consistency.
         if settings.max_page_count < 1:
             raise BadRequestError(
                 "Page limit configuration rejects all documents.",

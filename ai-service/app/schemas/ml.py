@@ -1,42 +1,3 @@
-"""The Module 9/10 (ML Prediction Engine) request/response contract.
-
-Like Module 8, this module emits `ClinicalDecision[]` -- the shared type in
-`app/schemas/decisions.py`, which is NOT redefined, subclassed or wrapped here.
-
-==========================================================================
-THE REQUEST SHAPE IS INHERITED FROM MODULE 8 ON PURPOSE
-==========================================================================
-
-`MLPredictionRequest` SUBCLASSES `RuleEvaluationRequest` and adds nothing.
-
-That is the whole trick. The rule engine and the ML engine consume the same
-Module 6 output, and a caller relaying a response verbatim must get the same
-answer from both. Re-implementing the unwrap logic here would let the two
-tolerances drift -- and the failure mode of a drift is not an error, it is an
-HTTP 200 carrying `decisions: []`, which is exactly the silent-success bug
-recorded in MEMORY.md section 6f. Inheriting makes drift impossible.
-
-So every shape `POST /api/v1/rules/evaluate` accepts, `POST /api/v1/ml/predict`
-accepts identically, with the same 422s:
-
-    {"validated":  <Module 6 data>}          canonical
-    {"engineered": <Module 5 data>}          validated in-process first
-    {"success":.., "data": {...}}            either module's envelope, relayed
-    a BARE data object at the top level      classified by `valid` vs `features`
-
-and ambiguity is a 422, never a guess:
-
-    an envelope AND a bare object together
-    an object carrying both `valid` and `features`
-
-`validated` beats `engineered` when both are named, for the same documented
-reason: validated input is strictly better information.
-
-Note that `ValidatedFeaturesInput` HAS NO `rejected` FIELD. The ML layer
-inherits that property too: a value Module 6 rejected as physiologically
-impossible cannot reach a model, because there is no attribute to read it from.
-"""
-
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
@@ -48,25 +9,16 @@ from app.schemas.features import StageWarning, UpstreamExtraction
 from app.schemas.rules import RuleEvaluationRequest
 from app.schemas.validation import FeatureValidationSummary
 
-#: The stage identifier Module 9 stamps on its own warnings.
 STAGE_ML = "ml"
 ML_MODULE = 9
 
 
 class MLPredictionRequest(RuleEvaluationRequest):
-    """Byte-for-byte the same accepted shapes as Module 8. See the docstring."""
 
     model_config = ConfigDict(extra="ignore")
 
 
 class PredictorRunSummary(BaseModel):
-    """What one registered predictor did on this request.
-
-    Present for EVERY registered predictor, including the ones that skipped, so
-    "the kidney model was never registered" is distinguishable from "the kidney
-    model ran and found nothing" -- the same reasoning that makes the three
-    fusion conditions `always_assessed` in `app/data/conditions.py`.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -124,7 +76,6 @@ class MLPredictionSummary(BaseModel):
 
 
 class MLPredictionData(BaseModel):
-    """The `data` object of a successful ML-prediction response."""
 
     model_config = ConfigDict(extra="forbid")
 

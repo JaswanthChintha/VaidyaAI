@@ -1,14 +1,3 @@
-"""The Module 7 storage-backend contract and its in-memory implementation.
-
-The point of the contract is that a SECOND implementation can satisfy it and
-nothing above it changes. So the contract tests below are parametrised over two
-independent backends: the shipped `InMemoryRepositoryBackend`, and a
-deliberately different second implementation written here (list-based, and
-storing JSON rather than model objects, the way a persistent backend would).
-If the interface were secretly assuming the in-memory internals, the second one
-would fail.
-"""
-
 from __future__ import annotations
 
 import json
@@ -29,17 +18,7 @@ from app.services.repository_backend import (
 )
 
 
-# --------------------------------------------------------------------------
-# A second, deliberately different implementation of the same interface
-# --------------------------------------------------------------------------
-
-
 class JsonListBackend(RepositoryBackend):
-    """Stores JSON documents in a list. Nothing in common with the shipped one.
-
-    This is roughly the shape a persistent backend takes: serialise on write,
-    deserialise on read, no shared object identity with the caller.
-    """
 
     def __init__(self) -> None:
         self._rows: List[Dict[str, Any]] = []
@@ -102,11 +81,6 @@ def backend(request) -> RepositoryBackend:
     return request.param()
 
 
-# --------------------------------------------------------------------------
-# Helpers
-# --------------------------------------------------------------------------
-
-
 def make(
     value: float = 6.8,
     *,
@@ -130,11 +104,6 @@ def make(
     return build_snapshot(
         payload, patient_ref=patient, report_date=date, snapshot_id=snapshot_id
     )
-
-
-# --------------------------------------------------------------------------
-# The contract -- every backend must satisfy all of this
-# --------------------------------------------------------------------------
 
 
 def test_put_then_get_round_trips_the_snapshot(backend):
@@ -219,7 +188,6 @@ def test_count_contains_and_len(backend):
 
 
 def test_a_backend_never_shares_mutable_state_with_its_caller(backend):
-    """A caller mutating what it got back must not corrupt the store."""
     original = make(6.8)
     stored = backend.put(original)
     original.features.pop("hba1c")
@@ -244,7 +212,6 @@ def test_ordering_falls_back_to_record_time_when_undated(backend):
 
 
 def test_a_dated_snapshot_sorts_by_its_report_date_not_its_record_time(backend):
-    """`report_date` is the ordering key; load order must not decide."""
     backend.put(make(6.8, date="2024-09-01"))
     backend.put(make(6.1, date="2024-01-15"))
     assert [s.features["hba1c"].value for s in backend.for_patient("p1")] == [6.1, 6.8]
@@ -254,11 +221,6 @@ def test_the_sort_key_is_total_and_stable(backend):
     same = "2024-03-12"
     ids = [backend.put(make(v, date=same)).identity.snapshot_id for v in (1.0, 2.0, 3.0)]
     assert [s.identity.snapshot_id for s in backend.for_patient("p1")] == ids
-
-
-# --------------------------------------------------------------------------
-# The in-memory implementation's own behaviour
-# --------------------------------------------------------------------------
 
 
 def test_clear_drops_everything():
@@ -305,27 +267,21 @@ def test_concurrent_writes_do_not_lose_snapshots():
     assert len(store.for_patient("p1")) == 25
 
 
-# --------------------------------------------------------------------------
-# The interface really is abstract
-# --------------------------------------------------------------------------
-
-
 def test_the_backend_interface_cannot_be_instantiated_directly():
     with pytest.raises(TypeError):
-        RepositoryBackend()  # type: ignore[abstract]
+        RepositoryBackend()
 
 
 def test_an_incomplete_implementation_is_refused():
     class Half(RepositoryBackend):
-        def put(self, snapshot):  # pragma: no cover - never constructed
+        def put(self, snapshot):
             return snapshot
 
     with pytest.raises(TypeError):
-        Half()  # type: ignore[abstract]
+        Half()
 
 
 def test_the_service_layer_works_unchanged_over_a_foreign_backend():
-    """The swappability claim, exercised rather than asserted."""
     foreign = JsonListBackend()
     load_features(
         {"valid": {"hba1c": {"name": "hba1c", "value": 6.1, "source": "lab_report",

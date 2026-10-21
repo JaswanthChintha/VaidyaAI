@@ -1,11 +1,3 @@
-"""The clinical rule table (app/data/clinical_rules.py) as a DATA artefact.
-
-These tests check the table's integrity -- that it agrees with the feature
-catalog, that every threshold cites a basis, that its import-time self-check is
-real. Threshold BEHAVIOUR (each rule on both sides of, and exactly on, its
-threshold) is exercised in tests/test_rule_engine.py against the engine.
-"""
-
 from __future__ import annotations
 
 import dataclasses
@@ -21,11 +13,6 @@ from app.schemas.decisions import DecisionStatus, RiskLevel
 
 def all_rules():
     return list(cr.THRESHOLD_RULES) + list(cr.COMPOSITE_RULES)
-
-
-# --------------------------------------------------------------------------
-# Agreement with the rest of the system
-# --------------------------------------------------------------------------
 
 
 def test_every_rule_targets_a_canonical_numeric_feature():
@@ -49,7 +36,6 @@ def test_smoking_categories_come_from_the_catalog_vocabulary():
 
 
 def test_tri_state_features_are_only_ever_read_as_boolean_true():
-    """Absent must never be readable as a stated negative."""
     for rule in cr.COMPOSITE_RULES:
         for factor in rule.factors:
             if FEATURES[factor.feature].value_type == "boolean":
@@ -82,17 +68,11 @@ def test_the_spec_named_features_are_all_covered_by_some_rule():
         "smoking_history",
     ):
         if name == "gender":
-            # Read as CONTEXT for sex-specific thresholds, not as a rule target.
             assert any(
                 "gender" in rule.context_features for rule in cr.THRESHOLD_RULES
             )
             continue
         assert name in covered, name
-
-
-# --------------------------------------------------------------------------
-# Every threshold cites a basis
-# --------------------------------------------------------------------------
 
 
 def test_every_rule_and_every_band_cites_a_clinical_basis():
@@ -113,8 +93,6 @@ def test_every_band_recommendation_resolves_to_the_catalogue():
 
 
 def test_no_band_is_insufficient_data():
-    """A band ran a comparison, so it assessed something. Only the ENGINE may
-    emit INSUFFICIENT_DATA, and only when it had nothing to compare."""
     for rule in all_rules():
         for band in rule.bands:
             assert band.status is not DecisionStatus.INSUFFICIENT_DATA
@@ -134,11 +112,6 @@ def test_bands_are_ordered_most_severe_first():
     for rule in cr.THRESHOLD_RULES:
         ranks = [severity[band.risk] for band in rule.bands]
         assert ranks == sorted(ranks), rule.id
-
-
-# --------------------------------------------------------------------------
-# Contextual thresholds
-# --------------------------------------------------------------------------
 
 
 def test_unknown_sex_threshold_is_always_one_of_the_two_known_ones():
@@ -173,11 +146,6 @@ def test_resolve_threshold_passes_a_plain_number_through():
     assert cr.resolve_threshold(None, None, None) == (None, None)
 
 
-# --------------------------------------------------------------------------
-# Sample timing
-# --------------------------------------------------------------------------
-
-
 @pytest.mark.parametrize(
     "name,expected",
     [
@@ -197,11 +165,6 @@ def test_resolve_threshold_passes_a_plain_number_through():
 )
 def test_sample_timing_is_never_guessed_as_fasting(name, expected):
     assert cr.sample_timing(name) == expected
-
-
-# --------------------------------------------------------------------------
-# The import-time self-check is real
-# --------------------------------------------------------------------------
 
 
 def test_self_check_rejects_a_rule_on_an_unknown_feature(monkeypatch):

@@ -1,18 +1,3 @@
-"""eGFR -- the CKD-EPI 2021 equation and the rule that reads it (2026-10-04).
-
-Three things are pinned here:
-
-1. THE EQUATION. Anchored by its own algebra (at creatinine == kappa both
-   power terms are 1, leaving 142 x 0.9938^age, x 1.012 for women) rather than
-   only by numbers this file computed itself, plus fixed values across both
-   branches so a changed constant cannot pass.
-2. NO ESTIMATE ON AN ASSUMED VALUE. No age, under 18, sex not male/female,
-   non-positive creatinine -> None, and the rule does not fire. The
-   creatinine rule still reports, so the topic is never silent.
-3. EVERY BAND, ON AND EITHER SIDE of its cut-off, on the rounded number the
-   reader is shown -- by solving for the creatinine that produces each eGFR.
-"""
-
 from __future__ import annotations
 
 from typing import Optional
@@ -50,7 +35,6 @@ def kidney(creatinine: float, age: Optional[float], sex: Optional[str], **kw):
 
 
 def creatinine_for(target: float, age: float, sex: str) -> float:
-    """The creatinine whose UNROUNDED eGFR is `target` (eGFR falls as it rises)."""
     low, high = 0.05, 30.0
     for _ in range(200):
         mid = (low + high) / 2
@@ -61,14 +45,8 @@ def creatinine_for(target: float, age: float, sex: str) -> float:
     return (low + high) / 2
 
 
-# --------------------------------------------------------------------------
-# 1. The equation
-# --------------------------------------------------------------------------
-
-
 @pytest.mark.parametrize("age", [18, 40, 63, 90])
 def test_at_kappa_the_equation_reduces_to_its_age_term(age):
-    """Inker 2021: at Scr == kappa, min and max are both 1."""
     assert ckd_epi_2021(0.9, age, "male") == pytest.approx(142 * 0.9938**age)
     assert ckd_epi_2021(0.7, age, "female") == pytest.approx(
         142 * 0.9938**age * 1.012
@@ -82,7 +60,7 @@ def test_at_kappa_the_equation_reduces_to_its_age_term(age):
         (1.2, 60, "female", 51.82),
         (2.0, 65, "male", 36.36),
         (4.0, 55, "female", 12.61),
-        (0.5, 25, "female", 133.40),  # below kappa: the alpha branch
+        (0.5, 25, "female", 133.40),
         (1.0, 75, "female", 58.75),
     ],
 )
@@ -90,11 +68,6 @@ def test_fixed_values_on_both_branches(creatinine, age, sex, expected):
     assert ckd_epi_2021(creatinine, age, sex) == pytest.approx(expected, abs=0.01)
 
 
-#: INDEPENDENT REFERENCE: the National Kidney Foundation's own calculator
-#: (kidney.org/professionals/gfr_calculator, "CKD-EPI creatinine equation
-#: (2021)", mg/dL, standardised assay, no BSA adjustment), read 2026-10-04 for
-#: made-up inputs. Whole numbers, as NKF shows them. Covers both sexes, both
-#: sides of kappa, every KDIGO band, and the 59 that flags at the < 60 edge.
 NKF_CALCULATOR = [
     (1.0, 50, "male", 92),
     (1.2, 60, "female", 52),
@@ -149,11 +122,6 @@ def test_rounding_is_half_up_on_the_number_shown():
     assert reported_egfr(60.4) == 60
 
 
-# --------------------------------------------------------------------------
-# 2. The rule fires only on a real estimate
-# --------------------------------------------------------------------------
-
-
 def test_the_rule_is_a_derived_kidney_rule_on_creatinine():
     rule = cr.rule_by_id(RULE)
     assert rule.condition == "Kidney Disease"
@@ -172,7 +140,6 @@ def test_no_age_or_no_binary_sex_means_no_egfr_decision_but_creatinine_still_rep
     assert for_rule(data, RULE) is None
     assert for_rule(data, "RULE_KIDNEY_CREATININE") is not None
     assert any(RULE in w and "not applied" in w for w in data.warnings)
-    # Never a fall-through to "at or above 60".
     assert not any(e.feature == EGFR_FEATURE for d in data.decisions for e in d.evidence)
 
 
@@ -189,12 +156,7 @@ def test_no_creatinine_no_decision():
     assert for_rule(data, RULE) is None
 
 
-# --------------------------------------------------------------------------
-# 3. Bands, on and either side, on the rounded value
-# --------------------------------------------------------------------------
-
 BANDS = [
-    # (cut-off, status below it, risk below it)
     (15, DecisionStatus.INDICATED, RiskLevel.HIGH),
     (30, DecisionStatus.INDICATED, RiskLevel.HIGH),
     (45, DecisionStatus.INDICATED, RiskLevel.MEDIUM),
@@ -207,12 +169,10 @@ BANDS = [
 def test_each_band_on_and_either_side(cutoff, status, risk, sex):
     age = 55
 
-    # Exactly AT the cut-off: "<" does not fire, so it falls to the next band.
     at = for_rule(kidney(creatinine_for(cutoff, age, sex), age, sex), RULE)
     assert at.metadata["derived_value"] == cutoff
     assert at.metadata["threshold"] is None or at.metadata["threshold"] > cutoff
 
-    # Shown as one below: fires this band.
     below = for_rule(kidney(creatinine_for(cutoff - 0.6, age, sex), age, sex), RULE)
     assert below.metadata["derived_value"] == cutoff - 1
     assert below.metadata["threshold"] == float(cutoff)
@@ -221,7 +181,6 @@ def test_each_band_on_and_either_side(cutoff, status, risk, sex):
 
 
 def test_59_point_6_is_shown_as_60_and_not_flagged():
-    """The reader must never see "60" beside "below 60"."""
     decision = for_rule(kidney(creatinine_for(59.6, 55, "male"), 55, "male"), RULE)
     assert decision.metadata["derived_value"] == 60
     assert decision.status is DecisionStatus.NOT_INDICATED
@@ -229,19 +188,12 @@ def test_59_point_6_is_shown_as_60_and_not_flagged():
 
 
 def test_low_egfr_flags_kidney_even_with_creatinine_inside_its_interval():
-    """Owner's decision 2026-10-04: a 75-year-old woman, creatinine 1.0
-    (female upper limit 1.04) -> eGFR 59 -> flagged."""
     data = kidney(1.0, 75, "female")
     assert for_rule(data, "RULE_KIDNEY_CREATININE").status is DecisionStatus.NOT_INDICATED
     egfr = for_rule(data, RULE)
     assert egfr.status is DecisionStatus.INDICATED
     assert egfr.risk is RiskLevel.MEDIUM
     assert egfr.metadata["derived_value"] == 59
-
-
-# --------------------------------------------------------------------------
-# 4. What the decision says about itself
-# --------------------------------------------------------------------------
 
 
 def test_evidence_is_marked_calculated_with_its_method_and_inputs():
@@ -289,7 +241,6 @@ def test_the_published_rule_table_carries_the_derived_unit():
 
 
 def test_kidney_fuses_to_the_more_severe_of_the_two_rules():
-    """Module 15/16 take the most severe status and highest risk per topic."""
     from app.services.decision_engine import merge_decision_set
 
     data = kidney(1.0, 75, "female")

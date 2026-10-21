@@ -1,42 +1,3 @@
-"""POST /api/v1/report/generate -- the Module 17-20 endpoint.
-
-Thin HTTP wrapper. All logic lives in `app.services.report_builder`, whose
-`generate_report`, `overall_status`, `prioritise` and `build_explainability`
-are importable and callable in-process -- which is how Module 27 (dashboard),
-Module 32 (doctor summary) and the Node backend will use them, exactly as
-`evaluate_rules`, `predict_all` and `fuse_decisions` are used today.
-
-The router lives in its own file and carries its own prefix so it can be
-mounted alongside the other routers without either module owning the other.
-
-AUTH: this endpoint receives medical feature values and returns a clinical
-report about them, so it is PHI-bearing and carries the same service-key
-dependency as `routes_rules.py`, `routes_ml.py` and `routes_decisions.py`.
-`tests/test_auth.py` walks the route tree recursively and fails if any
-`/api/v1` route lacks it.
-
-INPUT TOLERANCE is inherited, not re-implemented: `ClinicalReportRequest`
-subclasses `DecisionFusionRequest`, which subclasses `RuleEvaluationRequest`,
-so every shape `/rules/evaluate`, `/ml/predict` and `/decisions/fuse` accept is
-accepted identically here and every ambiguity is the same 422. Nothing is ever
-guessed -- a wrong guess here would not raise, it would return HTTP 200
-carrying an empty report, which is the worst possible failure mode for this
-particular endpoint.
-
-WHY THE RAW BODY IS READ AS WELL
---------------------------------
-Module 6's `rejected` map is deliberately NOT parsed by the decision chain's
-request models (see `app/schemas/rules.py`: that absence is what makes "a
-clinical rule can never read a rejected value" structural rather than
-disciplinary). Modules 17 and 20 DO need it, to say "we found this value but
-could not trust its unit" instead of the factually wrong "it wasn't there".
-
-So the route reads the already-buffered request body and lifts the map out with
-`extract_rejected_features`. The decision chain still receives exactly what it
-received before -- a `ValidatedFeaturesInput` with no `rejected` attribute to
-read -- and only the report layer sees the refused values.
-"""
-
 from __future__ import annotations
 
 from typing import Any
@@ -72,16 +33,9 @@ router = APIRouter(
 
 
 async def _raw_body(request: Request) -> Any:
-    """The already-buffered JSON body, or None.
-
-    FastAPI has read and cached the body before this handler runs, so this is a
-    read of memory rather than a second read of the stream. Any failure is
-    swallowed: the rejected-feature join is an ENRICHMENT, and the worst case
-    of not finding the map is the behaviour the service has today.
-    """
     try:
         return await request.json()
-    except Exception:  # noqa: BLE001 -- see the docstring
+    except Exception:
         return None
 
 
@@ -94,10 +48,6 @@ async def _raw_body(request: Request) -> Any:
 async def generate(
     payload: ClinicalReportRequest, request: Request
 ) -> ClinicalReportResponse:
-    # `validated` is preferred; `engineered` is accepted so the report is
-    # usable before Module 6 has been run over HTTP -- the builder then runs
-    # Module 6 in-process, so the report's laboratory values and its rejected
-    # map are the real ones and cannot diverge from what the rules saw.
     rejected = payload.rejected_features or extract_rejected_features(
         await _raw_body(request)
     )
@@ -114,13 +64,6 @@ async def generate(
     summary="How the clinical report, overall status, priority and evidence are built",
 )
 async def policy() -> dict:
-    """The report rules, in machine-readable form.
-
-    Exposed for the same reason the rule table, the model metrics and the
-    fusion policy are: a documented rule nobody can retrieve from the running
-    service is not an accountability mechanism. Shape and policy only -- no
-    PHI, no values.
-    """
     return {
         "success": True,
         "data": {

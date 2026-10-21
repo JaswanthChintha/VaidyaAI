@@ -1,68 +1,3 @@
-"""Module 36 -- which of these printed test names are the SAME test.
-
-WHAT THIS IS FOR. `labSeriesService` groups a report's laboratory rows by
-`nameKey`, a sorted word set, so `CRP (C-REACTIVE PROTEIN)` and
-`C-REACTIVE PROTEIN(CRP)` join as one test. Word-set equality cannot join names
-that use DIFFERENT words for one test, and on this account's two real reports
-that leaves ten parameters stranded as single readings which are really five
-tests measured twice:
-
-    AVERAGE BLOOD GLUCOSE   |  Estimated Average Glucose
-    TOTAL WBC COUNT         |  WBC Count
-    RBC COUNT               |  T.RBC
-    TSH                     |  TSH (Thyroid Stim Hormone)
-    NEUTROPHILS             |  Polymorphs
-
-A single reading has no first and no latest, so none of them can carry a trend
-at all -- not because anything refused, but because a change needs two numbers.
-Joining them is the only way those rows get a direction.
-
-==========================================================================
-WHY THIS IS NOT "LETTING THE LLM MATCH MEDICAL DATA"
-==========================================================================
-
-`NEUTROPHILS` and `Polymorphs` are the same cell line under two names. That is
-clinical knowledge, and the alternatives to asking for it are both worse:
-subset matching would make `Free Frimbulator` match `Frimbulator`, and free
-versus total hormone are DIFFERENT TESTS; a hand-written synonym table only
-ever covers the spellings someone has already seen, and this platform has no
-list of known tests anywhere by design.
-
-So the question is narrowed the way Module 27b and Module 35 narrow theirs:
-
-  1. THE PROMPT CONTAINS NAMES AND NOTHING ELSE. No value, no unit, no date,
-     no flag, no reference range, no age, no sex, no report. The answer is
-     therefore a statement about VOCABULARY -- true for every laboratory that
-     prints those words -- and the model is not in a position to know that a
-     patient exists, let alone reason about one.
-
-  2. THE MODEL PROPOSES; THIS MODULE DISPOSES. Every group comes back through
-     five local gates below. A name the model invented, a name sent twice, a
-     group of one, and a group that contrasts `free` with `total` are all
-     dropped HERE, by code a reviewer can read, not by trusting the answer.
-
-  3. A JOIN IS ONLY EVER A REGROUPING. It merges two rows the reader already
-     has into one series. It creates no value, edits no number and converts no
-     unit -- and when the two rows turn out to disagree about units,
-     `labSeriesService` blocks the series and draws no line, which is the
-     behaviour that already exists for that case.
-
-  4. THE WORST OUTCOME IS NAMED AND GUARDED. A wrong join puts two different
-     tests on one chart and could show a trend that never happened. That is
-     why `_CONTRASTS` exists, why echo validation is unconditional, and why
-     anything the model is unsure about is expected to be left out rather than
-     guessed -- the prompt says so explicitly.
-
-  5. NOTHING IS JOINED SILENTLY. Every accepted group is returned with the
-     names it merged, so the caller can show a reader that two rows on their
-     report were treated as one test, and a reviewer can see what was decided.
-
-WHAT IT DELIBERATELY DOES NOT DO. It does not convert units, it does not pick
-which name is "correct" beyond choosing the longest for display, and it does
-not decide that two tests are DIFFERENT -- a name left out of every group is
-simply not joined, which is exactly what happens today.
-"""
-
 from __future__ import annotations
 
 import json
@@ -80,31 +15,8 @@ logger = get_logger(__name__)
 
 LAB_NAME_MATCH_VERSION = "1.0.0"
 
-#: Names accepted in one request. A real report's unjoined tail is a handful of
-#: rows; this is a ceiling on the prompt, and going over it is REPORTED rather
-#: than truncating in silence -- §6at's lesson, and Module 35 does the same.
 MAX_NAMES = 40
 
-#: WORDS THAT CHANGE WHAT IS MEASURED, not merely how it is spelled.
-#:
-#: THE RULE IS EQUALITY, AND THE FIRST VERSION OF IT WAS TOO WEAK. It was a set
-#: of contrast pairs refused only when BOTH names carried a different member --
-#: which caught `Free Frimbulator` against `Total Frimbulator` and let
-#: `Free T3` against `T3` straight through, because `T3` carries no member at
-#: all. Free T3 and total T3 are different tests, and 6au names that exact pair
-#: as the reason not to subset-match. Leaving it to the prompt would be a
-#: control living in an instruction, which this project has learned twice is
-#: not a control.
-#:
-#: So: the qualifiers present in the two names must be THE SAME SET. One name
-#: carrying `free` and the other carrying nothing is a difference, and refused.
-#:
-#: `total` IS DELIBERATELY ABSENT. It is a clarifier rather than a qualifier --
-#: `TOTAL WBC COUNT` and `WBC Count` are one test, as are `Total Cholesterol`
-#: and `Cholesterol` -- and it is exactly the join this module was built for.
-#: The asymmetry is real: adding `free` selects a different analyte, while
-#: adding `total` names the whole of the one already meant. A name carrying
-#: `total` against one carrying `free` is still refused, because `free` differs.
 _QUALIFIERS: frozenset = frozenset(
     {
         "free",
@@ -122,8 +34,6 @@ _QUALIFIERS: frozenset = frozenset(
     }
 )
 
-#: One answer about vocabulary serves every reader, so the cache is keyed on the
-#: NAME SET and holds nothing patient-specific by construction.
 _CACHE: Dict[str, "NameMatchData"] = {}
 _CACHE_LOCK = threading.Lock()
 
@@ -131,16 +41,10 @@ _WORD = re.compile(r"[a-z0-9]+")
 
 
 class NameGroup(BaseModel):
-    """Names the model asserted are one test, after every gate below."""
 
     model_config = ConfigDict(extra="forbid")
 
-    #: The name shown to the reader. The LONGEST of the group, because a
-    #: longer printed name is the more explicit one (`TSH (Thyroid Stim
-    #: Hormone)` over `TSH`) and because picking by length is a rule rather
-    #: than a judgement.
     display_name: str
-    #: Every name merged into it, INCLUDING the display name, as printed.
     names: List[str] = Field(default_factory=list)
 
 
@@ -151,7 +55,6 @@ class NameMatchData(BaseModel):
     requested: int = 0
     proposed: int = 0
     accepted: int = 0
-    #: Groups the model proposed and the gates below threw out, by reason.
     refused_unknown_name: int = 0
     refused_too_small: int = 0
     refused_overlapping: int = 0
@@ -218,7 +121,6 @@ _JSON_OBJECT = re.compile(r"\{.*\}", re.DOTALL)
 
 
 def _parse(text: str) -> Optional[dict]:
-    """The JSON object in the answer, or None. Same tolerance as Module 35."""
     match = _JSON_OBJECT.search(text or "")
     if match is None:
         return None
@@ -230,7 +132,6 @@ def _parse(text: str) -> Optional[dict]:
 
 
 def _fold(name: str) -> str:
-    """A name reduced for COMPARISON ONLY. Never shown and never stored."""
     return " ".join(_WORD.findall(str(name or "").lower()))
 
 
@@ -239,25 +140,12 @@ def _words(name: str) -> frozenset:
 
 
 def contrasts(first: str, second: str) -> bool:
-    """Do these two names qualify the measurement DIFFERENTLY?
-
-    True means refuse the join. The 6au example, enforced in both its shapes:
-    `Free Frimbulator` against `Total Frimbulator` AND `Free T3` against `T3`.
-    `TOTAL WBC COUNT` against `WBC Count` is allowed, because `total` is not a
-    qualifier and neither name carries one.
-    """
     return (_words(first) & _QUALIFIERS) != (_words(second) & _QUALIFIERS)
 
 
 def _accept(
     raw_groups: Any, names: Sequence[str], data: NameMatchData
 ) -> List[NameGroup]:
-    """Every gate, applied to what the model proposed.
-
-    THE COUNTS ARE KEPT PER REASON, because "the model proposed nine groups and
-    we took five" is a different fact from "it proposed five", and a stage that
-    cannot say which is a stage nobody can tell has started failing.
-    """
     if not isinstance(raw_groups, list):
         return []
 
@@ -270,9 +158,6 @@ def _accept(
             continue
         data.proposed += 1
 
-        # ECHO VALIDATION, UNCONDITIONAL. A name the model did not receive is
-        # a name it made up, and folding is comparison only -- the name kept
-        # is the one the report printed.
         resolved: List[str] = []
         invented = False
         for item in entry:
@@ -293,7 +178,6 @@ def _accept(
             data.refused_too_small += 1
             continue
 
-        # THE CONTRAST GUARD, over every pair in the group.
         if any(
             contrasts(a, b)
             for i, a in enumerate(unique)
@@ -310,10 +194,6 @@ def _accept(
             claimed[name] = claimed.get(name, 0) + 1
         candidates.append(unique)
 
-    # A NAME IN TWO GROUPS INVALIDATES BOTH, not just the second one. There is
-    # no basis for preferring whichever the model happened to emit first, and
-    # putting one test's readings on another test's chart is the worst thing
-    # this module can do.
     accepted: List[NameGroup] = []
     for unique in candidates:
         if any(claimed[name] > 1 for name in unique):
@@ -335,15 +215,7 @@ def _cache_key(names: Sequence[str]) -> str:
 
 
 def match_names(names: Sequence[str], client: Any) -> NameMatchData:
-    """Group the names that are one test. Never raises; refuses instead.
-
-    An empty result means "nothing was joined", which is exactly the behaviour
-    before this module existed -- so a spent quota, an unconfigured key and a
-    model that recognised nothing all land on the same safe outcome.
-    """
     cleaned = [str(n).strip() for n in (names or []) if str(n or "").strip()]
-    # Deduplicated on the FOLDED form so one report's `TSH` and another's `tsh`
-    # do not consume two slots, while the printed spelling is what is sent.
     deduped: Dict[str, str] = {}
     for name in cleaned:
         deduped.setdefault(_fold(name), name)
@@ -379,10 +251,6 @@ def match_names(names: Sequence[str], client: Any) -> NameMatchData:
     result = guarded_generation(
         generate,
         context=SafetyContext(
-            # NOTHING IS GROUNDED AND NOTHING SHOULD BE. The answer is a list
-            # of names, carries no figure at all, and any number appearing in
-            # it would be the model adding something to a name it was told to
-            # echo -- which echo validation then throws out.
             grounding_sources=(),
             permitted_numbers=(),
             require_grounding=False,
@@ -410,6 +278,5 @@ def match_names(names: Sequence[str], client: Any) -> NameMatchData:
 
 
 def reset_cache() -> None:
-    """Test hook. Never called by the service."""
     with _CACHE_LOCK:
         _CACHE.clear()

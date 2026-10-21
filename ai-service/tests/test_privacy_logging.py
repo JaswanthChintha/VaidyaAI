@@ -1,9 +1,3 @@
-"""Medical-data privacy: nothing sensitive may reach the logs.
-
-This service handles PHI. Report text, extracted values, patient identifiers
-and the API key must never appear in log output.
-"""
-
 from __future__ import annotations
 
 import io
@@ -14,8 +8,6 @@ from tests.conftest import WELL_FORMED_PAGE_PAYLOAD, FakeGeminiClient
 
 URL = "/api/v1/ocr/extract"
 
-# Distinctive strings planted in the mocked model response. If any of these
-# turn up in the logs, something is logging report content.
 CANARIES = [
     "CANARY-PATIENT-NAME",
     "CANARY-RAW-TEXT",
@@ -78,9 +70,7 @@ def test_no_report_content_reaches_the_logs(
             },
         )
     assert response.status_code == 200
-    # The canaries must be in the RESPONSE...
     assert "CANARY-TEST-NAME" in response.text
-    # ...and absent from the LOGS.
     logged = caplog.text
     for canary in CANARIES:
         assert canary not in logged, f"{canary} leaked into logs"
@@ -123,7 +113,6 @@ def test_failure_paths_do_not_log_document_content(
             },
         )
     assert response.status_code == 500
-    # The exception message itself must not be logged -- only its type.
     assert "CANARY-RAW-TEXT" not in caplog.text
 
 
@@ -139,15 +128,12 @@ def test_settings_repr_redacts_the_key():
 def test_patient_name_is_never_extracted_only_its_presence(
     client_factory, synthetic_pdf
 ):
-    """The contract reports patient_name_present, never the name itself."""
     client = client_factory()
     metadata = client.post(
         URL,
         files={"file": ("r.pdf", io.BytesIO(synthetic_pdf), "application/pdf")},
     ).json()["data"]["report_metadata"]
 
-    # Printed sex and age were added 2026-09-24, deliberately and alone: the
-    # analysis depends on them and not on a name. No key may carry a name.
     assert set(metadata) == {
         "lab_name", "report_date", "patient_name_present", "patient_sex", "patient_age",
     }

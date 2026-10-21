@@ -1,16 +1,5 @@
 'use strict';
 
-/**
- * Change password and permanent account deletion (2026-10-02).
- *
- *   POST   /api/v1/auth/change-password
- *   DELETE /api/v1/auth/me
- *
- * Both re-check the current password; both act on the caller only. Deletion
- * removes the account, the profile, every report row and every uploaded file,
- * and leaves another user's data alone. Real files are written to a throwaway
- * directory under the OS temp dir.
- */
 
 const fs = require('fs');
 const os = require('os');
@@ -73,7 +62,6 @@ const changePassword = (token, body) =>
 const deleteAccount = (token, body) =>
   request(app).delete(`${BASE}/me`).set(auth(token)).send(body);
 
-// =========================================================================
 describe('POST /auth/change-password', () => {
   it('changes the password: the new one signs in, the old one does not', async () => {
     const u = await makeUser('change.ok@example.com');
@@ -89,7 +77,6 @@ describe('POST /auth/change-password', () => {
   it('refuses a wrong current password with 400 (not 401), and changes nothing', async () => {
     const u = await makeUser('change.wrong@example.com');
     const res = await changePassword(u.token, { currentPassword: 'Wr0ng!Password', newPassword: NEW_PASSWORD });
-    // 401 would make the client refresh and resend: a second password guess.
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('INVALID_CURRENT_PASSWORD');
     expect((await login(u.email, PASSWORD)).status).toBe(200);
@@ -113,20 +100,15 @@ describe('POST /auth/change-password', () => {
     const u = await makeUser('change.sessions@example.com');
     const other = (await login(u.email, PASSWORD)).body.data;
 
-    // Token times are whole seconds and the model backdates the change by one
-    // second, so wait past both before changing.
     await new Promise((r) => setTimeout(r, 2200));
     const res = await changePassword(u.token, { currentPassword: PASSWORD, newPassword: NEW_PASSWORD });
     expect(res.status).toBe(200);
 
-    // The old refresh tokens -- this device's and the other device's -- are dead.
     for (const rt of [u.refreshToken, other.refreshToken]) {
       const r = await request(app).post(`${BASE}/refresh`).send({ refreshToken: rt });
       expect(r.status).toBe(401);
     }
-    // Old access tokens stop working too.
     expect((await request(app).get(`${BASE}/me`).set(auth(other.accessToken))).status).toBe(401);
-    // The fresh pair works.
     expect((await request(app).get(`${BASE}/me`).set(auth(res.body.data.accessToken))).status).toBe(200);
   });
 
@@ -144,7 +126,6 @@ describe('POST /auth/change-password', () => {
   });
 });
 
-// =========================================================================
 describe('DELETE /auth/me', () => {
   it('removes the account, the profile, every report and every file', async () => {
     const u = await makeUser('delete.all@example.com');
@@ -165,7 +146,6 @@ describe('DELETE /auth/me', () => {
     expect(await Report.countDocuments({ user: u.id })).toBe(0);
     expect(listStoredFiles()).toEqual([]);
 
-    // Nothing of the account still works.
     expect((await login(u.email, PASSWORD)).status).toBe(401);
     expect((await request(app).get(`${BASE}/me`).set(auth(u.token))).status).toBe(401);
     expect((await request(app).post(`${BASE}/refresh`).send({ refreshToken: u.refreshToken })).status).toBe(401);

@@ -6,10 +6,6 @@ import App from '../src/App';
 import { AuthProvider } from '../src/lib/auth';
 import { api, ApiError } from '../src/lib/api';
 
-/**
- * The chatbot panel (2026-10-09). A bubble on signed-in pages; general
- * questions anywhere, questions about THE report on a report's own pages.
- */
 
 const REPORT_ID = 'abcdefabcdefabcdefabcdef';
 
@@ -94,8 +90,6 @@ describe('the chat bubble and panel', () => {
   });
 
   it('any other failure -> "not available right now"', async () => {
-    // Was AI_SERVICE_ERROR until 2026-10-09; that code now has its own words
-    // (below), so an unrelated server error stands in for "anything else".
     vi.spyOn(api, 'chat').mockRejectedValue(new ApiError(500, 'INTERNAL_ERROR', 'boom'));
     mountAt('/reports');
     fireEvent.click(screen.getByRole('button', { name: 'Open chat' }));

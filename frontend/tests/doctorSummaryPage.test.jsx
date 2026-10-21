@@ -3,11 +3,6 @@ import { MemoryRouter, Route, Routes, Link } from 'react-router-dom';
 import DoctorSummary from '../src/pages/DoctorSummary';
 import { api, ApiError } from '../src/lib/api';
 
-/**
- * 2026-10-02: moving from one report's clinical summary to another kept the
- * first one's error on screen. React Router keeps the page mounted when only
- * `:id` changes, and nothing cleared the old state.
- */
 const SUMMARY = {
   overall: { status_label: 'Healthy', clean_bill_of_health: true },
   attribution: { report_date: '2026-09-07T04:00:14.776000Z' },

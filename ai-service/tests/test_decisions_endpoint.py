@@ -1,24 +1,3 @@
-"""POST /api/v1/decisions/fuse -- the Module 15/16 HTTP contract.
-
-Response shapes must match the rest of the service: `{success, data}` on
-success and `{success, error: {code, message}}` on failure.
-
-MOUNTING NOTE: the decisions router lives in its own file so it can be mounted
-without editing `app/main.py` concurrently with another module. Until the
-coordinator adds
-
-    app.include_router(routes_decisions.router)
-
-to `app/main.py`, this module mounts it itself, at import time, idempotently --
-the same pattern `tests/test_ml_endpoint.py` already uses. Once the line is in
-`main.py` the guard below makes this a no-op, so nothing gets double-registered.
-Mounting at import time also means the route is present for
-`tests/test_auth.py::test_every_phi_route_declares_the_auth_dependency`, which
-is exactly the coverage we want.
-
-NO TRAINING, no API key, no network.
-"""
-
 from __future__ import annotations
 
 from typing import Any, Dict
@@ -62,11 +41,6 @@ def api(client_factory) -> TestClient:
     return client_factory()
 
 
-# --------------------------------------------------------------------------
-# Payloads -- hand-written, invented values, no real patient data
-# --------------------------------------------------------------------------
-
-
 def engineered_payload() -> Dict[str, Any]:
     return {
         "engineered": {
@@ -96,11 +70,6 @@ def post(api: TestClient, payload: Dict[str, Any]):
     return api.post(ENDPOINT, json=payload)
 
 
-# --------------------------------------------------------------------------
-# The happy path
-# --------------------------------------------------------------------------
-
-
 def test_a_realistic_feature_set_returns_fused_decisions(api):
     response = post(api, engineered_payload())
     assert response.status_code == 200
@@ -118,7 +87,6 @@ def test_the_fused_object_carries_everything_module_17_needs(api):
     data = post(api, engineered_payload()).json()["data"]
     summary = data["summary"]
 
-    # Module 18
     assert summary["overall_status"] in (
         "Healthy",
         "Needs Monitoring",
@@ -126,16 +94,12 @@ def test_the_fused_object_carries_everything_module_17_needs(api):
     )
     assert "overall_risk" in summary
     assert summary["any_assessed"] is True
-    # Module 17's report sections
     assert "critical_conditions" in summary
     assert "abnormal_conditions" in summary
     assert "normal_conditions" in summary
     assert "unassessed_conditions" in summary
-    # Module 19
     assert summary["prioritized"]
-    # Module 17's validation warnings
     assert isinstance(data["all_warnings"], list)
-    # Module 20's provenance
     assert data["collection"]["collected"]
     assert all(item["decision_id"] for item in data["collection"]["collected"])
 
@@ -180,11 +144,6 @@ def test_an_empty_body_assesses_nothing_and_does_not_claim_health(api):
     assert summary["overall_risk"] is None
 
 
-# --------------------------------------------------------------------------
-# Input tolerance -- identical to Modules 8 and 9, by inheritance
-# --------------------------------------------------------------------------
-
-
 def test_a_relayed_module_5_envelope_is_accepted(api):
     payload = {"success": True, "data": engineered_payload()["engineered"]}
     response = post(api, payload)
@@ -224,7 +183,6 @@ def test_ambiguous_requests_are_422_and_never_guessed(api, payload):
 
 
 def test_all_three_decision_endpoints_agree_on_what_is_ambiguous(api):
-    """Drift between the tolerances would be a silent 200 with `fused: []`."""
     for payload in (
         {"valid": {}, "features": {}},
         {"data": {"valid": {}}, "valid": {}},
@@ -234,11 +192,6 @@ def test_all_three_decision_endpoints_agree_on_what_is_ambiguous(api):
         rules = api.post("/api/v1/rules/evaluate", json=payload).status_code
         ml = api.post("/api/v1/ml/predict", json=payload).status_code
         assert fusion == rules == ml == 422, payload
-
-
-# --------------------------------------------------------------------------
-# Introspection
-# --------------------------------------------------------------------------
 
 
 def test_the_fusion_policy_is_retrievable_from_the_running_service(api):
@@ -254,15 +207,9 @@ def test_the_fusion_policy_is_retrievable_from_the_running_service(api):
 
 
 def test_the_policy_endpoint_exposes_no_values(api):
-    """Shape and policy only -- it is reachable with any valid key, always."""
     blob = api.get(POLICY_ENDPOINT).text
     for value in ("6.8", "112", "31.4", "patient"):
         assert value not in blob
-
-
-# --------------------------------------------------------------------------
-# Auth -- the same dependency as every other PHI-bearing route
-# --------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -290,7 +237,6 @@ def test_the_correct_service_key_is_accepted(authed_client):
 
 
 def test_every_decisions_route_declares_the_auth_dependency():
-    """Local guard, in addition to the service-wide one in test_auth.py."""
     from app.core.auth import require_service_key
 
     routes = [
@@ -304,11 +250,6 @@ def test_every_decisions_route_declares_the_auth_dependency():
         assert any(d.call is require_service_key for d in dependencies), route.path
 
 
-# --------------------------------------------------------------------------
-# The framework-independent surface Module 17 will use
-# --------------------------------------------------------------------------
-
-
 def test_collect_and_fuse_are_callable_without_http():
     from app.services.decision_engine import collect_decisions
     from app.services.fusion_engine import fuse_decisions
@@ -320,7 +261,6 @@ def test_collect_and_fuse_are_callable_without_http():
 
 
 def test_the_endpoint_and_the_in_process_call_agree():
-    """The HTTP layer must be a wrapper, not a second implementation."""
     from fastapi.testclient import TestClient
 
     from app.services.fusion_engine import run_decision_fusion

@@ -9,14 +9,12 @@ const PROFILE = `${config.apiPrefix}/profile/me`;
 
 const PASSWORD = 'Str0ng!Passw0rd';
 
-/** Register a fresh user and return their access token + id. */
 async function makeUser(email) {
   const { res } = await registerUser({ email, name: 'Test User' });
   expect(res.status).toBe(201);
   return { token: res.body.data.accessToken, id: res.body.data.user.id, email };
 }
 
-/** Create a user with a privileged role and log in as them. */
 async function makePrivilegedUser(role, email) {
   const user = await createUserWithRole(role, { email, password: PASSWORD });
   const res = await login(email, PASSWORD);
@@ -48,7 +46,6 @@ const FULL_PROFILE = {
 };
 
 describe('Module 2 - Patient Profile Management', () => {
-  // ---------------------------------------------------------------- CRUD ----
   describe('CRUD on the caller\'s own profile', () => {
     let user;
     beforeEach(async () => {
@@ -99,11 +96,6 @@ describe('Module 2 - Patient Profile Management', () => {
     });
 
     it('survives a concurrent duplicate-create race with exactly one profile', async () => {
-      // The pre-check in the controller cannot win a race on its own: all five
-      // requests can pass it before any of them writes. The unique index on
-      // `user` is what actually holds, and the existing 11000 handler turns the
-      // losers into a 409 rather than a 500. Make sure the index is built
-      // before firing, otherwise this asserts nothing.
       await Profile.init();
 
       const responses = await Promise.all(
@@ -127,7 +119,6 @@ describe('Module 2 - Patient Profile Management', () => {
       const replaced = await send('put', user.token, { age: 31 });
       expect(replaced.status).toBe(200);
       expect(replaced.body.data.profile.age).toBe(31);
-      // Replace semantics: omitted fields are cleared.
       expect(replaced.body.data.profile.heightCm).toBeUndefined();
       expect(await Profile.countDocuments({ user: user.id })).toBe(1);
     });
@@ -167,7 +158,6 @@ describe('Module 2 - Patient Profile Management', () => {
     });
   });
 
-  // ------------------------------------------------------ authentication ----
   describe('authentication', () => {
     it.each(['get', 'post', 'put', 'patch', 'delete'])(
       '%s /profile/me without a token returns 401',
@@ -184,7 +174,6 @@ describe('Module 2 - Patient Profile Management', () => {
     });
   });
 
-  // ----------------------------------------------------------- ownership ----
   describe('ownership - user A cannot touch user B\'s profile', () => {
     let alice;
     let bob;
@@ -266,7 +255,6 @@ describe('Module 2 - Patient Profile Management', () => {
       const del = await send('delete', admin.token);
       expect(del.status).toBe(404);
 
-      // A's profile is untouched, and the admin's own PUT made a separate doc.
       const aliceView = await send('get', alice.token);
       expect(aliceView.body.data.profile.age).toBe(41);
     });
@@ -279,7 +267,6 @@ describe('Module 2 - Patient Profile Management', () => {
     });
   });
 
-  // ----------------------------------------------------------------- BMI ----
   describe('BMI is derived, never trusted', () => {
     let user;
     beforeEach(async () => {
@@ -289,7 +276,7 @@ describe('Module 2 - Patient Profile Management', () => {
     it('computes BMI from heightCm and weightKg', async () => {
       const res = await send('post', user.token, { heightCm: 180, weightKg: 81 });
       expect(res.status).toBe(201);
-      expect(res.body.data.profile.bmi).toBe(25); // 81 / 1.8^2
+      expect(res.body.data.profile.bmi).toBe(25);
     });
 
     it('rounds to two decimal places', async () => {
@@ -328,7 +315,6 @@ describe('Module 2 - Patient Profile Management', () => {
     });
   });
 
-  // ---------------------------------------------------------- validation ----
   describe('physiological bounds', () => {
     let token;
     beforeEach(async () => {
@@ -566,7 +552,6 @@ describe('Module 2 - Patient Profile Management', () => {
     });
   });
 
-  // -------------------------------------------------------- completeness ----
   describe('completeness', () => {
     it('reports which ML-relevant fields are missing', async () => {
       const { token } = await makeUser('complete@example.com');

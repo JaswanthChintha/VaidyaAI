@@ -1,124 +1,3 @@
-"""Module 32 -- Doctor-Friendly Clinical Summary.
-
-    Module 17 clinical report ─┐
-    Module 28 trends           ├─> build_doctor_summary() ─> a clinician
-    Module 29 comparison       │
-    Modules 21/22 knowledge  ──┘
-
-Framework-independent, exactly as `generate_report`, `analyse_trends` and
-`compare_reports` are: `app/api/routes_doctor_summary.py` is a thin HTTP
-wrapper and the Node backend calls this function in-process or over HTTP.
-
-==========================================================================
-THIS MODULE CALLS NO LANGUAGE MODEL AND WRITES NO PROSE
-==========================================================================
-
-`build_doctor_summary` makes ZERO model calls. Not a guarded one, not a
-gated one, not an optional one. There is no import of `gemini_client`,
-`gemini_text`, `app.services.explanation` or `app.safety.validator`'s
-generation guard anywhere in this file, and no branch that could add one at
-runtime.
-
-Every sentence this module emits comes from `_TEMPLATES` below -- a fixed
-table scanned by the Module 24 safety scanner at import time, in `_self_check`
-at the bottom of this file. The only things substituted into a template are:
-
-    * canonical condition names from `app/data/conditions.py`
-    * canonical feature names from `app/data/feature_catalog.py`
-    * this module's own code constants (section reason codes, basis names)
-
-NO NUMBER AND NO UNIT IS EVER SUBSTITUTED INTO A NARRATIVE TEMPLATE. Numbers
-live in structured fields. That is a deliberate second belt: the Module 24
-audit's D8 defect was numeric grounding, and the `dose_quantity` safety
-pattern turns on a digit next to a unit token, so a template that never
-carries a digit next to a unit cannot produce either failure. It also means
-the import-time scan of the literal templates is a COMPLETE scan of this
-module's narrative output, rather than a scan of the parts around the holes.
-
-WHY, AND NOT JUST HOW. The Module 24 audit (MEMORY.md §6k) rated the whole
-Module 1->26 flow FAIL because free model prose reached a patient carrying a
-fabricated diagnosis. Module 26 had already concluded that "recommendation
-text has no free-text entry point" is the property worth keeping, and
-declined to add a generator to the module most likely to drift into advice. A
-clinician-facing document is a higher-stakes surface than a patient-facing
-one, because a clinician may act on it. So: assemble, do not generate.
-
-==========================================================================
-WHAT DOES COME FROM OUTSIDE THIS SERVICE, AND WHAT HAPPENS TO IT
-==========================================================================
-
-Three families of string reach this document without being written here.
-None of them is model-generated interpretation, and none of them is ever
-spliced into a sentence -- they are carried in named `TranscribedText`
-fields, scanned with the Module 24 scanner, and WITHHELD on a hit:
-
-  report_transcription  A test name, unit or reference range exactly as
-                        printed on the patient's own document, transcribed by
-                        Module 4. A clinician needs these to check a row back
-                        against the source page. A submitted document is an
-                        untrusted input; a clinician's page is the wrong place
-                        to find that out.
-  knowledge_corpus      Module 22 passages. Already import-time scanned in the
-                        corpus loader; re-scanned here rather than trusted at
-                        a distance.
-  model_artifact        A model's own `honest_read`, plus Module 8 band labels
-                        and Module 20's fixed explanations. Reviewer-authored,
-                        held in `app/ml/*.py` and `app/data/*.py`.
-
-A withheld string is replaced by a state code, never by a substitute value,
-and never echoed back in the refusal -- Module 24 audit D6 was exactly an
-echo of injected text inside a refusal.
-
-The SOURCE report's own text is not rewritten here at all. It is inspected:
-`report_builder.report_text_violations` is run over it and the result is
-published in `integrity`, field paths only.
-
-==========================================================================
-ABSENCE, ON A PAGE A CLINICIAN READS
-==========================================================================
-
-The repeated hazard of this project has a sharper edge here, because a
-clinician reads a blank cell as a negative result:
-
-  * `overall.any_assessed == False` produces `clean_bill_of_health: false`
-    (enforced by a model validator, not by this function's discipline) and an
-    `assessment_reading` that says an absence of findings is not a finding.
-  * An unassessed condition keeps its own category and its own reading note.
-    It is never merged into `normal_findings`, and `include_normal_findings:
-    false` never hides it.
-  * A laboratory row with no usable value is `value: null`, `position:
-    not_determinable`, with a reason code. `LabRow` refuses to validate a
-    not-determinable position that carries no reason.
-  * Trends and comparison are absent WITH A REASON CODE when there is not
-    enough history. `SectionStatus` refuses an unexplained absence.
-
-==========================================================================
-THE REFERENCE INTERVAL IS PLACED IN THE VALUE'S UNIT, ONCE
-==========================================================================
-
-`feature_engineer.py` now converts `reference_low`/`reference_high` WITH the
-value, into the same canonical unit, and marks that with
-`provenance.reference_converted` (fixed 2026-09-04; it previously copied the
-printed bounds through unchanged, which made every converted creatinine read
-as "low" in a table row).
-
-This module calls `report_comparator.reference_interval` -- Module 29's
-function, aliased for this module in that file -- which returns
-already-converted bounds untouched and only applies `provenance.conversion`
-itself for a carrier that does not report `reference_converted`. There is no
-second conversion path here, and nothing is converted twice. When the interval
-cannot be placed in the value's unit, `reference_basis` is
-`not_comparable_with_value` and the bounds are OMITTED; `LabRow` refuses to
-validate a row that carries them anyway.
-
-==========================================================================
-LOGGING
-==========================================================================
-
-Counts only, through `safe_meta`. No laboratory value, feature value, patient
-attribute, condition name or document text is ever written to a log line.
-"""
-
 from __future__ import annotations
 
 import math
@@ -206,18 +85,12 @@ from app.services.trend_analyzer import TREND_ANALYZER_VERSION, analyse_trends
 
 logger = get_logger(__name__)
 
-#: Bumped when this module's own assembly behaviour changes.
 DOCTOR_SUMMARY_VERSION = "1.0.0"
 
-#: Origins for `TranscribedText`. Not free text: three fixed constants.
 ORIGIN_REPORT = "report_transcription"
 ORIGIN_CORPUS = "knowledge_corpus"
 ORIGIN_ARTIFACT = "model_artifact"
 
-#: Flags that place a reading on a side of its interval. The RECOGNISED set is
-#: `FLAG_ABNORMAL`, Module 29's table, so there is one answer to "is this a
-#: flag this service understands". This map only says which SIDE, which
-#: Module 29 does not need and this module does.
 _FLAG_POSITION: Dict[str, str] = {
     "normal": POSITION_WITHIN,
     "low": POSITION_BELOW,
@@ -225,15 +98,6 @@ _FLAG_POSITION: Dict[str, str] = {
     "critical": POSITION_ABOVE,
 }
 
-
-# --------------------------------------------------------------------------
-# EVERY user-facing string this module can emit
-# --------------------------------------------------------------------------
-#
-# Scanned by the Module 24 recommendation safety scanner at import time (see
-# `_self_check` at the bottom). Substituted values are canonical condition
-# names, canonical feature names and this module's own code constants --
-# never a number, never a unit, never anything a caller supplied.
 
 DISCLAIMER = (
     "This summary is a communication aid between a patient and a qualified "
@@ -297,7 +161,6 @@ HOW_TO_READ: Tuple[str, ...] = (
 )
 
 _TEMPLATES: Dict[str, str] = {
-    # ---- attribution ------------------------------------------------
     "attribution_known": (
         "Assembled from one clinical report identified by the calling system, "
         "on the date shown."
@@ -308,13 +171,11 @@ _TEMPLATES: Dict[str, str] = {
         "be shown. The generation timestamp below is when this summary was "
         "assembled, not when the laboratory report was produced."
     ),
-    # ---- patient ----------------------------------------------------
     "patient_context": (
         "Clinical context used by the analysis. This service holds no name, "
         "date of birth or contact detail. A field marked as not supplied was "
         "not recorded; it is not a record of absence."
     ),
-    # ---- laboratory -------------------------------------------------
     "laboratory_note": (
         "Every parameter the analysis received. Reference intervals are the "
         "ones printed on the source report, placed in the same unit as the "
@@ -366,13 +227,10 @@ _TEMPLATES: Dict[str, str] = {
         "Supplied from the patient's own profile rather than read from a "
         "laboratory report."
     ),
-    # 2026-09-25: the sex / age printed in the report's patient details, used
-    # in place of the profile's. A patient detail, not a measured result.
     "lab_from_report_details": (
         "Taken from the patient details printed on the report, in place of "
         "the patient's profile. A patient detail, not a measured result."
     ),
-    # ---- overall status ---------------------------------------------
     "overall_nothing_assessed": (
         "Nothing in this report could be assessed, so no overall status is "
         "given. This is not a normal result and must not be read as one: an "
@@ -395,7 +253,6 @@ _TEMPLATES: Dict[str, str] = {
         "thresholds. A flag marks a topic for a clinician to consider; it "
         "asserts nothing about whether any condition is present."
     ),
-    # ---- assessments ------------------------------------------------
     "condition_unassessed": (
         "{condition} could not be assessed from this report. This is an open "
         "question, not a negative result, and it is deliberately ranked above "
@@ -414,7 +271,6 @@ _TEMPLATES: Dict[str, str] = {
         "{condition} was assessed and nothing was flagged against this "
         "platform's configured thresholds."
     ),
-    # ---- what each basis actually answered ---------------------------
     "basis_threshold": (
         "This source compared measured laboratory values against fixed "
         "thresholds. It answers whether a value crossed a stated cut-off."
@@ -433,7 +289,6 @@ _TEMPLATES: Dict[str, str] = {
         "This source did not assess the topic and contributed no finding. Its "
         "silence carries no information either way."
     ),
-    # ---- model limitations, selected BY the recorded numbers ---------
     "model_no_metrics": (
         "No recorded performance figures accompanied this model's output, so "
         "how well it discriminates on held-out data cannot be shown here. "
@@ -475,7 +330,6 @@ _TEMPLATES: Dict[str, str] = {
         "training time. They are properties of the model, not of this "
         "patient."
     ),
-    # ---- evidence ----------------------------------------------------
     "evidence_note": (
         "The chain from input to evidence to decision, for every source that "
         "contributed. A line marked as found but not trusted means the value "
@@ -489,7 +343,6 @@ _TEMPLATES: Dict[str, str] = {
         "One line per value each source cited, with how that value reached "
         "the analysis."
     ),
-    # ---- optional sections -------------------------------------------
     "trends_present": (
         "Direction of change per parameter across the reports supplied, "
         "classified against declared stability bands. Arithmetic and declared "
@@ -574,13 +427,11 @@ _TEMPLATES: Dict[str, str] = {
         "platform's own vocabulary first, and a topic that resolves to "
         "nothing returns nothing rather than the nearest-looking passage."
     ),
-    # ---- data quality -------------------------------------------------
     "quality_note": (
         "What the analysis could and could not read in the source document, "
         "and every warning raised at every stage. Read this before reading "
         "any absence above as a negative result."
     ),
-    # ---- integrity ------------------------------------------------------
     "narrative_source": (
         "Every sentence in this summary comes from a fixed template table in "
         "app/services/doctor_summary.py, scanned by the Module 24 safety "
@@ -595,31 +446,13 @@ _TEMPLATES: Dict[str, str] = {
 }
 
 
-# --------------------------------------------------------------------------
-# Small helpers
-# --------------------------------------------------------------------------
-
-
 def _is_number(value: object) -> bool:
-    """Finite int/float that is NOT a bool.
-
-    The bool guard matters: `hypertension` is a tri-state boolean and
-    `isinstance(True, int)` is True in Python, so without it a tri-state
-    would be positioned against a numeric reference interval.
-    """
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return False
     return math.isfinite(float(value))
 
 
 def _transcribe(text: object, origin: str) -> TranscribedText:
-    """Carry a string this service did not author, with its scan result.
-
-    Empty and non-string inputs are ABSENT, not withheld: nothing was
-    refused. A scanner hit withholds the text and records the pattern NAMES
-    only -- `scan_text` returns names, never offsets or excerpts, so the
-    refusal cannot echo the input back (Module 24 audit D6).
-    """
     if not isinstance(text, str) or not text.strip():
         return TranscribedText(text=None, state=TRANSCRIPT_ABSENT, origin=origin)
     hits = scan_text(text)
@@ -654,37 +487,12 @@ def _str_or_none(value: object) -> Optional[str]:
     return text or None
 
 
-# --------------------------------------------------------------------------
-# Laboratory rows
-# --------------------------------------------------------------------------
-
-
 def _lab_position(
     value: LaboratoryValue,
     low: Optional[float],
     high: Optional[float],
     interval_basis: Optional[str],
 ) -> Tuple[str, Optional[str], Optional[str]]:
-    """`(position, position_basis, reason_code)` for one laboratory row.
-
-    Order of preference, and why:
-
-    1. THE INTERVAL PRINTED ON THE REPORT, once it has been placed in the
-       value's unit by `reference_interval`. `outside_interval` settles it,
-       including the censored cases, so this module contains no second
-       censoring rule.
-    2. THE MARKER PRINTED BESIDE THE RESULT, when no usable interval exists.
-       `FLAG_ABNORMAL` (Module 29's table) decides whether the marker is one
-       this service recognises; `_FLAG_POSITION` says which side. An
-       unrecognised marker is NOT read as normal -- it falls through.
-    3. Otherwise `not_determinable` with a reason code.
-
-    The platform's own clinical thresholds in `app/data/clinical_rules.py` are
-    deliberately NOT consulted. Those answer "is this concerning by this
-    platform's rules", which the assessment section already answers with full
-    provenance. This column answers a narrower question: did the issuing
-    laboratory consider the result out of its own stated range.
-    """
     if not value.usable or value.value is None:
         return POSITION_NOT_DETERMINABLE, None, POS_NO_USABLE_VALUE
 
@@ -692,9 +500,6 @@ def _lab_position(
     flag = _str_or_none(value.flag)
 
     if not _is_number(value.value):
-        # Categorical or boolean features (gender, smoking_history, the
-        # tri-state comorbidities) have no position on a numeric interval.
-        # A printed marker can still settle it, so the flag branch is tried.
         if flag in FLAG_ABNORMAL:
             return _FLAG_POSITION[flag], POSITION_BY_FLAG, None
         return POSITION_NOT_DETERMINABLE, None, POS_VALUE_NOT_NUMERIC
@@ -702,14 +507,9 @@ def _lab_position(
     if low is not None or high is not None:
         outside = outside_interval(float(value.value), low, high, censored)
         if outside is None:
-            # Only `outside_interval`'s censored branches return None.
             return POSITION_NOT_DETERMINABLE, None, POS_CENSORED
         if not outside:
             return POSITION_WITHIN, POSITION_BY_INTERVAL, None
-        # WHICH SIDE. Every branch of `outside_interval` that returns True
-        # did so for one of exactly two reasons -- the value is under `low`,
-        # or it is over `high` -- so re-testing those two bounds recovers the
-        # side without repeating the censoring logic.
         if low is not None and float(value.value) < low:
             return POSITION_BELOW, POSITION_BY_INTERVAL, None
         return POSITION_ABOVE, POSITION_BY_INTERVAL, None
@@ -725,12 +525,6 @@ def _lab_position(
 
 
 def _lab_note(value: LaboratoryValue, reference_basis: str) -> str:
-    """The row's caveats, assembled from whole template sentences.
-
-    Nothing is substituted in. Each clause is a complete reviewed sentence
-    selected by a boolean on the row, so the note cannot carry a number, a
-    unit, or anything a caller supplied.
-    """
     parts: List[str] = []
     if value.status == "rejected":
         parts.append(_TEMPLATES["lab_rejected"])
@@ -761,23 +555,6 @@ def _lab_note(value: LaboratoryValue, reference_basis: str) -> str:
 
 
 def _lab_row(value: LaboratoryValue) -> LabRow:
-    """One `LaboratoryValue` -> one printable row, with its interval placed.
-
-    THE UNIT HAZARD IS HANDLED HERE AND NOWHERE ELSE IN THIS MODULE.
-    `reference_interval` is Module 29's function. It reads `reference_low`,
-    `reference_high`, `unit_converted` and `conversion` by `getattr`, so:
-
-      * with a `provenance`, it uses the recorded conversion arithmetic;
-      * without one, the `LaboratoryValue` itself is passed, which carries
-        the first three attributes and NOT `conversion`. On an unconverted
-        value that is correct (interval and value are in the same printed
-        unit). On a converted value the missing `conversion` sends it down the
-        refusal branch, which is the conservative answer -- the interval is
-        omitted rather than shown in the wrong unit.
-
-    That fallback is a deliberate use of the function's documented duck
-    typing, not an accident of it.
-    """
     carrier: Any = value.provenance if value.provenance is not None else value
     low, high, basis, formula = reference_interval(carrier)
 
@@ -790,8 +567,6 @@ def _lab_row(value: LaboratoryValue) -> LabRow:
     elif basis == "reference_range_converted":
         reference_basis = REFERENCE_CONVERTED
     elif had_printed_interval:
-        # An interval WAS printed and could not be carried into the value's
-        # unit. Saying "none printed" here would misdescribe the document.
         reference_basis = REFERENCE_NOT_COMPARABLE
     else:
         reference_basis = REFERENCE_NONE_PRINTED
@@ -859,39 +634,12 @@ def _laboratory_section(report: ClinicalReport) -> LaboratorySection:
         position_not_determinable=sum(
             1 for r in rows if r.position == POSITION_NOT_DETERMINABLE
         ),
-        # Catalogue order, so the list does not depend on the request.
         features_not_present=[f for f in CANONICAL_FEATURES if f not in present],
         note=_TEMPLATES["laboratory_note"],
     )
 
 
-# --------------------------------------------------------------------------
-# Model limitations -- read from the artifact's own recorded numbers
-# --------------------------------------------------------------------------
-
-
 def _model_limitations(ml: Optional[MLExplanation]) -> ModelLimitations:
-    """What this model can and cannot support, in its own recorded figures.
-
-    EVERY number here comes from the model artifact, by this route:
-
-        app/ml/<model>.py  metadata["model_performance_reference"] and
-                           metadata["thresholds"], both built from the
-                           artifact's metrics JSON
-          -> ClinicalDecision.metadata
-          -> report_builder._explain_ml
-          -> MLExplanation.performance_reference / .thresholds
-          -> here
-
-    Nothing in this function is a metric typed by hand. The two CUT-OFFS that
-    select caveats (`WEAK_DISCRIMINATION_ROC_AUC`, `LOW_DETECTION_RECALL`) are
-    this module's own declared constants, published on `GET /policy`; they
-    decide which sentence to show, never what any number is.
-
-    An ABSENT performance record is stated, not passed over. A clinician
-    reading a probability with no performance figures beside it would
-    reasonably assume the figures were unremarkable.
-    """
     performance: Mapping[str, Any] = ml.performance_reference if ml else {}
     thresholds: Mapping[str, Any] = ml.thresholds if ml else {}
     if not isinstance(performance, Mapping):
@@ -904,13 +652,6 @@ def _model_limitations(ml: Optional[MLExplanation]) -> ModelLimitations:
     precision = _float_or_none(thresholds.get("indicated_precision_achieved"))
     metrics_available = bool(performance)
 
-    # A RECORD THAT IS PRESENT BUT SILENT ON THE OPERATING POINT IS NOT A
-    # COMPLETE RECORD, and must not read as one. ROC-AUC describes ranking
-    # across all thresholds; it says nothing about how much this model misses
-    # at the one cut-off it actually applies. Reporting `metrics_available:
-    # True` with recall absent is how Module 10 shipped a probability against a
-    # 0.795 threshold with no statement that it catches ~70% of true positives,
-    # and nothing in the document said so.
     operating_point_known = recall is not None or precision is not None
     metrics_absent_code = None
     if not metrics_available:
@@ -918,10 +659,6 @@ def _model_limitations(ml: Optional[MLExplanation]) -> ModelLimitations:
     elif not operating_point_known:
         metrics_absent_code = METRICS_OPERATING_POINT_INCOMPLETE
 
-    # `model_probability_meaning` explains a figure. A SKIPPED model shows no
-    # figure, so attaching it there describes something that is not on the
-    # page -- harmless-looking, and still a false statement in a clinical
-    # document.
     showed_a_probability = ml is not None and not ml.skipped and ml.probability is not None
     caveats: List[str] = (
         [_TEMPLATES["model_probability_meaning"]] if showed_a_probability else []
@@ -966,10 +703,6 @@ def _model_limitations(ml: Optional[MLExplanation]) -> ModelLimitations:
         caveats=caveats,
     )
 
-
-# --------------------------------------------------------------------------
-# Assessments -- one block per condition, one basis per contributing source
-# --------------------------------------------------------------------------
 
 _BASIS_TEMPLATE: Dict[str, str] = {
     "threshold_comparison": "basis_threshold",
@@ -1030,14 +763,6 @@ def _assessment_basis(
     contribution: ContributionView,
     source: Optional[SourceExplanation],
 ) -> AssessmentBasis:
-    """One contributing source, kept whole and kept separate.
-
-    `what_this_source_answered` is chosen by Module 16's own
-    `assessment_basis`, so a risk-factor tally and a model probability arrive
-    at the reader already labelled as different questions. That is what
-    Module 16 stamped the field for; flattening them into one "finding" is
-    what it exists to prevent.
-    """
     key = _BASIS_TEMPLATE.get(contribution.assessment_basis, "basis_not_assessed")
     return AssessmentBasis(
         source=contribution.source,
@@ -1056,7 +781,6 @@ def _assessment_basis(
 
 
 def _reading_note(condition: ReportedCondition) -> str:
-    """The sentence that stops an absence being read as a negative result."""
     if not condition.assessed:
         return _TEMPLATES["condition_unassessed"].format(condition=condition.condition)
     parts: List[str] = []
@@ -1072,22 +796,12 @@ def _reading_note(condition: ReportedCondition) -> str:
 def _assessments(
     report: ClinicalReport, options: DoctorSummaryOptions
 ) -> List[ConditionAssessment]:
-    """One block per condition, in Module 19's priority order.
-
-    `report.conditions` is already in that order -- flagged findings, then
-    OPEN QUESTIONS, then settled normal findings -- and this module does not
-    re-sort it. Re-deriving the order here would be a second prioritisation
-    that could disagree with the one on the patient's own report.
-    """
     explanations: Dict[str, ConditionExplanation] = {
         item.condition: item for item in report.explainability.conditions
     }
 
     out: List[ConditionAssessment] = []
     for condition in report.conditions:
-        # An unassessed condition is NEVER hidden. `include_normal_findings`
-        # hides settled findings only: "we looked and found nothing" can be
-        # collapsed, "we could not look" cannot.
         if not options.include_normal_findings and condition.normal:
             continue
 
@@ -1125,13 +839,6 @@ def _assessments(
 
 
 def _overall(report: ClinicalReport) -> OverallStatusView:
-    """Module 18's status, with the fourth and fifth cases carried intact.
-
-    `clean_bill_of_health` is computed here and then RE-CHECKED by
-    `OverallStatusView`'s own validator. The duplication is deliberate: the
-    guarantee belongs at the lowest layer (MEMORY.md §11), so the type refuses
-    the dangerous combination whether or not this function got it right.
-    """
     overall = report.overall
     clean = bool(
         overall.any_assessed
@@ -1170,22 +877,9 @@ def _overall(report: ClinicalReport) -> OverallStatusView:
     )
 
 
-# --------------------------------------------------------------------------
-# Evidence
-# --------------------------------------------------------------------------
-
-
 def _evidence_section(
     report: ClinicalReport, options: DoctorSummaryOptions
 ) -> EvidenceSection:
-    """Module 20's chain, source-attributed and de-duplicated.
-
-    Lines are taken from the per-SOURCE evidence rather than the condition
-    roll-up, because a clinician-facing line without an attribution is an
-    unattributed claim. `(condition, source, feature)` is the identity: the
-    same feature legitimately appears under two sources for one condition and
-    both are kept, because they are two sources citing it.
-    """
     if not options.include_evidence:
         return EvidenceSection(
             status=_absent(SECTION_DISABLED, "evidence_disabled"),
@@ -1232,29 +926,7 @@ def _evidence_section(
     )
 
 
-# --------------------------------------------------------------------------
-# Trends and historical comparison -- OPTIONAL, and absent with a reason
-# --------------------------------------------------------------------------
-
-
 def _subject_missing_from_history(request: DoctorSummaryRequest) -> bool:
-    """Is the report this document is ABOUT absent from the series supplied?
-
-    A trend or a comparison computed over a series that does not contain its
-    own subject is a claim about OTHER reports wearing this report's name. An
-    audit found two live routes to it, both in the caller rather than here:
-    a subject excluded by the caller's own inclusion rule, and a subject that
-    fell outside a capped history window. In the second case the caller's
-    response said `excludedCount: 0` -- nothing named the subject as missing.
-
-    So the check lives HERE, at the layer that actually renders the claim,
-    where no caller's accounting bug can route around it.
-
-    Answers False when there is no `report_ref` to check: absence of an
-    identifier is not evidence of a mismatch, and the caller that omits one
-    has told us nothing either way. That is a deliberate limit, not an
-    oversight -- see the `report_ref` field description.
-    """
     ref = request.report_ref
     if not ref:
         return False
@@ -1264,13 +936,6 @@ def _subject_missing_from_history(request: DoctorSummaryRequest) -> bool:
 def _trend_section(
     request: DoctorSummaryRequest, warnings: List[str]
 ) -> Tuple[SectionStatus, Optional[Any]]:
-    """Module 28, or a stated reason there is no trend.
-
-    NEVER "stable". Module 28 reserves that word for a change measured
-    against a declared stability band; a single report has produced no
-    measurement at all, and saying "unchanged" of it would be a fabrication
-    with a clinical reading.
-    """
     if not request.options.include_trends:
         return _absent(SECTION_DISABLED, "trends_disabled"), None
     if not request.history:
@@ -1278,7 +943,6 @@ def _trend_section(
     if len(request.history) < 2:
         return _absent(SECTION_SINGLE_REPORT, "trends_single_report"), None
     if _subject_missing_from_history(request):
-        # Refuse rather than render. See `_subject_missing_from_history`.
         warnings.append(_TEMPLATES["subject_not_in_history"])
         return (
             _absent(SECTION_SUBJECT_NOT_IN_HISTORY, "trends_subject_missing"),
@@ -1292,7 +956,7 @@ def _trend_section(
                 options=TimelineOptions(),
             )
         )
-    except Exception:  # noqa: BLE001 - a refused section must not lose the document
+    except Exception:
         logger.warning(
             "doctor_summary.trends_refused %s",
             safe_meta(module=DOCTOR_SUMMARY_MODULE, reports=len(request.history)),
@@ -1305,7 +969,6 @@ def _trend_section(
 def _comparison_section(
     request: DoctorSummaryRequest, warnings: List[str]
 ) -> Tuple[SectionStatus, Optional[Any]]:
-    """Module 29, or a stated reason there is no comparison."""
     if not request.options.include_comparison:
         return _absent(SECTION_DISABLED, "comparison_disabled"), None
     if not request.history:
@@ -1313,7 +976,6 @@ def _comparison_section(
     if len(request.history) < 2:
         return _absent(SECTION_SINGLE_REPORT, "comparison_single_report"), None
     if _subject_missing_from_history(request):
-        # Refuse rather than render. See `_subject_missing_from_history`.
         warnings.append(_TEMPLATES["subject_not_in_history"])
         return (
             _absent(SECTION_SUBJECT_NOT_IN_HISTORY, "comparison_subject_missing"),
@@ -1328,7 +990,7 @@ def _comparison_section(
                 comparison_ref=request.options.comparison_ref,
             )
         )
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.warning(
             "doctor_summary.comparison_refused %s",
             safe_meta(module=DOCTOR_SUMMARY_MODULE, reports=len(request.history)),
@@ -1338,34 +1000,15 @@ def _comparison_section(
     return _present("comparison_present"), data
 
 
-# --------------------------------------------------------------------------
-# Retrieved reference information (Modules 21/22)
-# --------------------------------------------------------------------------
-
-
 def _knowledge_section(
     report: ClinicalReport, options: DoctorSummaryOptions
 ) -> KnowledgeSection:
-    """Reference passages for the topics this report raised.
-
-    RETRIEVAL IS ON CANONICAL NAMES ONLY. `retrieve(conditions=..., features=
-    ...)` takes exact catalogue names; no free text from the report, the
-    document or the caller is passed to the retriever. That matters because
-    Module 21's free-text path is the one the Module 24 audit found returning
-    confidently wrong grounding (D7), and it is not used here at all.
-
-    The passages themselves are Module 22 corpus text -- reviewed, and
-    import-time scanned by the corpus loader. They are re-scanned here and
-    carried as `TranscribedText`; a hit withholds the passage.
-    """
     if not options.include_knowledge or options.knowledge_per_condition == 0:
         return KnowledgeSection(
             status=_absent(SECTION_DISABLED, "knowledge_disabled"),
             note=_TEMPLATES["knowledge_disabled"],
         )
 
-    # Flagged conditions first, then unassessed ones -- an open question is
-    # exactly the sort of thing a clinician may want reference material for.
     wanted: List[str] = [
         c.condition
         for c in report.conditions
@@ -1384,7 +1027,7 @@ def _knowledge_section(
 
     try:
         from app.rag.retriever import SIMILARITY_FLOOR, retrieve
-    except Exception:  # noqa: BLE001 - reference material never blocks the document
+    except Exception:
         return KnowledgeSection(
             status=_absent(SECTION_RETRIEVAL_UNAVAILABLE, "knowledge_unavailable"),
             note=_TEMPLATES["knowledge_unavailable"],
@@ -1408,7 +1051,7 @@ def _knowledge_section(
                 features=features,
                 top_k=options.knowledge_per_condition,
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.warning(
                 "doctor_summary.retrieval_unavailable %s",
                 safe_meta(module=DOCTOR_SUMMARY_MODULE),
@@ -1458,25 +1101,7 @@ def _knowledge_section(
     )
 
 
-# --------------------------------------------------------------------------
-# Data quality and integrity
-# --------------------------------------------------------------------------
-
-
 def _unmapped_count(report: ClinicalReport) -> int:
-    """How many extracted parameters this tool does not assess.
-
-    `document.unmapped_count` IS 0 ON EVERY REPORT STORED BEFORE THE
-    `report_builder` FIX, and 0 here is not an absent number -- it is a claim
-    that nothing on the document was set aside. `Test 2.pdf` and `Test 3.pdf`
-    both say 0 and both carry seventeen.
-
-    The feature stage's own count rides through the fusion payload untouched,
-    which is why §6u's dashboard fix reads it there, and it is CORRECT in the
-    two stored reports. Preferring it repairs every report already in the
-    database without a re-analysis; `document` is the fallback, and it agrees
-    from now on.
-    """
     upstream = getattr(getattr(report, "fusion", None), "upstream_summary", None)
     counted = getattr(upstream, "unmapped_count", None)
     if isinstance(upstream, Mapping):
@@ -1510,12 +1135,6 @@ def _data_quality(report: ClinicalReport) -> DataQualitySection:
 
 
 def _narrative_strings(summary: DoctorSummary) -> List[Tuple[str, str]]:
-    """Every narrative field this module assembled, for the self-scan.
-
-    `(where, text)` pairs. This walks THIS MODULE'S OWN output only --
-    transcriptions are already scanned at the point they are carried, and the
-    source report is inspected separately by `report_text_violations`.
-    """
     out: List[Tuple[str, str]] = [
         ("purpose.purpose", summary.purpose.purpose),
         ("purpose.title", summary.purpose.title),
@@ -1563,11 +1182,6 @@ def _narrative_strings(summary: DoctorSummary) -> List[Tuple[str, str]]:
 
 
 def _count_withheld(summary: DoctorSummary) -> int:
-    """How many outside-origin strings the scanner refused.
-
-    Counted from the assembled document rather than from a running tally, so
-    the number cannot drift away from what the document actually contains.
-    """
     total = 0
 
     def count(item: object) -> None:
@@ -1597,19 +1211,7 @@ def _count_withheld(summary: DoctorSummary) -> int:
     return total
 
 
-# --------------------------------------------------------------------------
-# The public entry point
-# --------------------------------------------------------------------------
-
-
 def build_doctor_summary(request: DoctorSummaryRequest) -> DoctorSummary:
-    """Assemble the clinician-oriented summary. No model call, no free prose.
-
-    Deterministic apart from `generated_at`: same request in, same document
-    out. The only I/O is loading the committed knowledge index, and a failure
-    there removes the reference section with a stated reason rather than
-    failing the document.
-    """
     report = request.report
     options = request.options
     warnings: List[str] = []
@@ -1668,9 +1270,6 @@ def build_doctor_summary(request: DoctorSummaryRequest) -> DoctorSummary:
         disclaimer=DISCLAIMER,
     )
 
-    # The integrity block is computed from the ASSEMBLED document, after the
-    # fact. A claim in a docstring is not a guarantee (MEMORY.md §11); these
-    # are the checks actually run, with their actual results.
     source_violations = report_text_violations(report)
     assembled = [
         (where, text)
@@ -1708,12 +1307,6 @@ def build_doctor_summary(request: DoctorSummaryRequest) -> DoctorSummary:
 
 
 def doctor_summary_document() -> Dict[str, object]:
-    """This module's own policy, machine-readable. No patient data.
-
-    Served by `GET /api/v1/doctor-summary/policy`, so what the document does
-    and does not contain is reviewable without sending a patient's report
-    through it.
-    """
     return {
         "summary_version": DOCTOR_SUMMARY_VERSION,
         "module": DOCTOR_SUMMARY_MODULE,
@@ -1796,22 +1389,7 @@ def doctor_summary_document() -> Dict[str, object]:
     }
 
 
-# --------------------------------------------------------------------------
-# Import-time enforcement
-# --------------------------------------------------------------------------
-
-
 def _self_check() -> None:
-    """Every emittable string is scanned by the Module 24 safety scanner.
-
-    This is a COMPLETE scan of this module's narrative output, not a partial
-    one, and that is a property of the template design rather than of this
-    function: the only substitutions any template takes are canonical
-    condition names (`{condition}`), and those are validated against
-    `app/data/conditions.py` below. No number, unit, caller string or
-    document transcription is ever substituted into a template, so there is
-    no runtime-composed string for the scanner to miss.
-    """
     for key, template in _TEMPLATES.items():
         assert_safe(template, f"doctor summary template {key}")
     assert_safe(DISCLAIMER, "doctor summary disclaimer")
@@ -1824,11 +1402,6 @@ def _self_check() -> None:
     for index, text in enumerate(HOW_TO_READ):
         assert_safe(text, f"doctor summary how_to_read[{index}]")
 
-    # The four condition templates are the ONLY ones that take a substitution,
-    # and it is always a canonical condition name. Formatting each of them
-    # with every canonical name and scanning the result proves the
-    # substitution cannot introduce a banned phrase -- rather than asserting
-    # in a comment that it cannot.
     for key in (
         "condition_unassessed",
         "condition_partial",
@@ -1841,9 +1414,6 @@ def _self_check() -> None:
                 f"doctor summary {key} for {name}",
             )
 
-    # Every `assessment_basis` Module 16 can stamp must have a sentence here.
-    # A missing one would silently fall back to the not-assessed wording,
-    # which would describe a real finding as an abstention.
     from app.schemas.fusion import BASIS_FAMILY
 
     missing = [basis for basis in BASIS_FAMILY if basis not in _BASIS_TEMPLATE]
@@ -1853,10 +1423,6 @@ def _self_check() -> None:
             "Module 32 renders Module 16's bases; it never invents one."
         )
 
-    # Every flag Module 29 recognises must have a side here, and no flag may
-    # have a side without being recognised. A flag with a side but no entry in
-    # FLAG_ABNORMAL could place a reading using a marker this service has not
-    # agreed to trust.
     if set(_FLAG_POSITION) != set(FLAG_ABNORMAL):
         raise ValueError(
             "the recognised-flag table and the flag-side table have drifted; "

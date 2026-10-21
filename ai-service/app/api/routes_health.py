@@ -1,5 +1,3 @@
-"""GET /api/v1/health -- liveness and configuration readiness."""
-
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
@@ -12,7 +10,6 @@ router = APIRouter(prefix="/api/v1", tags=["health"])
 
 @router.get("/health", summary="Service health and readiness")
 async def health(settings: Settings = Depends(get_settings)) -> dict:
-    # Reports WHETHER a key is configured, never the key itself.
     return {
         "success": True,
         "data": {

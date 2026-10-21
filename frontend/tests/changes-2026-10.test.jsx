@@ -10,17 +10,11 @@ import { AuthProvider } from '../src/lib/auth';
 import { api, ApiError, isSessionRejected, refreshSession } from '../src/lib/api';
 import { readableName } from '../src/lib/displayName';
 
-/**
- * The changes of 2026-10-02 / 10-03, each pinned on the property the owner
- * asked for -- found by reading the real screens, so each test names the
- * screen it came from.
- */
 
 beforeEach(() => {
   vi.restoreAllMocks();
 });
 
-// ------------------------------------------------------------ readableName
 
 describe('readableName -- printed capitals, as a reader would write them', () => {
   it.each([
@@ -47,7 +41,6 @@ describe('readableName -- printed capitals, as a reader would write them', () =>
   });
 });
 
-// ------------------------------------------------------------ clinician page
 
 const LAB_ROW = (feature, printed, value, unit, flag = null) => ({
   feature,
@@ -82,7 +75,6 @@ function mountSummary(rows, unassessed) {
       laboratory: { rows },
       assessments: [],
     },
-    // The WRITTEN branch -- where "Analysed as." had to be added.
     narrative: { outcome: 'generated', text: 'This tool flagged Diabetes because HbA1c was 8.4 %.' },
     unassessed,
   });
@@ -111,8 +103,6 @@ describe('clinician summary -- Test 3 and 02-diabetes, 2026-10-02/03', () => {
     const text = await passage();
     expect(text).toMatch(/Analysed as\.\s*Male, 20 years, BMI 25\.25 kg\/m²/);
     expect(text).toMatch(/sex, age and BMI from the patient's profile/);
-    // "could be read", not "prints": a profile value is also used for a
-    // printed one this tool could not read.
     expect(text).toMatch(/no sex or age could be read from the report/);
   });
 
@@ -139,15 +129,12 @@ describe('clinician summary -- Test 3 and 02-diabetes, 2026-10-02/03', () => {
     const text = await passage();
     expect(text).toMatch(/Reported values\..*SGPT 13 IU\/L \(normal\)/);
     expect(text).toMatch(/Average blood glucose 154 mg\/dL/);
-    // The owner's standing rule (clinical.test.jsx pins it page-wide too).
     expect(text.toLowerCase()).not.toContain('does not assess');
-    // A flag may have been inferred from the interval, so no agent is named.
     expect(text).not.toMatch(/per the reporting laboratory/);
     expect(text).toMatch(/HBA1C|Hba1c|HbA1c/);
   });
 });
 
-// ------------------------------------------------------------ population page
 
 function mountPopulation(features, subject, notCompared) {
   vi.spyOn(api, 'getPopulationContext').mockResolvedValue({
@@ -210,7 +197,6 @@ describe('population page -- Test 3, 2026-10-02', () => {
   });
 });
 
-// ------------------------------------------------------------ reports page
 
 function mountReports(reports) {
   vi.spyOn(api, 'listReports').mockResolvedValue({ reports });
@@ -262,7 +248,6 @@ describe('reports page -- 2026-10-02', () => {
   });
 });
 
-// ------------------------------------------------------------ sign-in page
 
 function mountSignIn() {
   return render(
@@ -318,7 +303,6 @@ describe('sign-in page -- 2026-10-02 (there is no "forgot password")', () => {
   });
 });
 
-// ------------------------------------------------------------ session refresh
 
 describe('a server hiccup does not sign the user out (2026-10-02)', () => {
   beforeEach(() => {
@@ -361,7 +345,6 @@ describe('a server hiccup does not sign the user out (2026-10-02)', () => {
   });
 });
 
-// ------------------------------------------------------------ dashboard tile
 
 describe('dashboard -- "results read from the report" (01-all-normal read 10 for 8)', () => {
   it('counts the rows the results table shows, not empty catalogue rows', async () => {
@@ -373,7 +356,6 @@ describe('dashboard -- "results read from the report" (01-all-normal read 10 for
         laboratory: [
           { feature: 'hba1c', value: 5.2, unit: '%', source: 'lab_report', state: 'valid', usable: true },
           { feature: 'blood_glucose', value: 88, unit: 'mg/dl', source: 'lab_report', state: 'valid', usable: true },
-          // Unanswered profile questions: no value, no source.
           { feature: 'heart_disease', value: null, source: null, state: 'unavailable', usable: false },
           { feature: 'hypertension', value: null, source: null, state: 'unavailable', usable: false },
         ],

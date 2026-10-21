@@ -1,79 +1,3 @@
-"""Module 10 -- the Diabetes Predictor.
-
-Loads the Random Forest pipeline built by `ml/train_diabetes.py` and turns one
-probability into one `ClinicalDecision`. It does not fit anything, ever.
-
-==========================================================================
-THE TRI-STATE PROBLEM, AND WHAT THIS FILE DOES ABOUT IT
-==========================================================================
-
-Module 2 stores `hypertension` and `heart_disease` as TRUE / FALSE / ABSENT,
-where absent means "the patient never answered". The training dataset has only
-0 and 1 -- it has no way to say "unknown".
-
-Encoding an absent answer as 0 would tell the forest "this patient does not
-have hypertension" when nobody ever asked. Median-imputing the column is the
-same act with better manners: the median of a 92%-zero column IS 0.
-
-So the artifact contains FOUR fitted pipelines, one per availability pattern:
-
-    both  |  hypertension_only  |  heart_disease_only  |  neither
-
-Each was fitted on the same real rows, and each variant's ColumnTransformer
-simply does not contain the column(s) that variant cannot know. `_model_row()`
-picks the variant matching what the patient actually answered, and builds a
-one-row frame containing ONLY that variant's columns. The matrix handed to the
-forest therefore never contains a value that was not observed -- not a zero,
-not a median, nothing. `tests/test_diabetes_predictor.py` asserts this against
-the real frame, not against the intention.
-
-WHY THIS IS DIFFERENT FROM IMPUTING `bmi` OR `age`. Imputing a continuous
-MEASUREMENT substitutes a population value for an unmeasured quantity: a
-documented statistical choice, and the one spec section 10 explicitly asks
-for. Imputing a boolean CLINICAL FINDING invents a diagnosis the patient never
-gave. Those are different acts and this file does not treat them the same way.
-
-The honest footnote, measured and recorded in the metrics artifact: the
-`neither` variant scores ROC-AUC 0.9734 against `both`'s 0.9738. Dropping the
-tri-state pair costs essentially nothing, because HbA1c and blood glucose carry
-almost all of the signal. The variant machinery therefore buys correctness at
-no measurable accuracy cost -- which is the best possible outcome, but it also
-means nobody should claim these two features are doing much work.
-
-==========================================================================
-INFORMATION SUFFICIENCY
-==========================================================================
-
-`required_features = ("hba1c", "blood_glucose")`.
-
-Those two carry ~69% of the model's global importance between them. If either
-is absent, the median imputer would substitute a population value for THE most
-discriminative input, and the resulting probability would be driven mostly by
-a number that came from the training set rather than from the patient. Spec
-Module 12's principle -- a model trained on several parameters is not equally
-reliable on a subset -- applies squarely, so the predictor SKIPS.
-
-That is not a gap in the report. Module 8's rule engine assesses `Diabetes`
-from whichever of the two IS present, and `Diabetes` is marked
-`always_assessed` in `app/data/conditions.py`, so the topic still reaches the
-reader with a deterministic decision attached. Only the ML opinion is withheld.
-
-==========================================================================
-CONFIDENCE SEMANTICS -- READ THIS BEFORE USING THE FIELD
-==========================================================================
-
-`ClinicalDecision.confidence` is ALWAYS the model's probability of the POSITIVE
-class, never "how sure the model is of whatever it concluded". So a
-NOT_INDICATED decision carries a LOW number (e.g. 0.03), and that number means
-"3% probability of diabetes", i.e. a confident negative -- not a shaky verdict.
-
-`decisions.py` defines the field as "Model probability in [0,1]" and Module 16
-fuses on it, so a consistent, single-directional meaning is the only workable
-choice; flipping it for negatives would make two decisions about the same
-condition incomparable. `metadata.confidence_semantics` records this on every
-decision so Module 20 cannot render it wrongly by accident.
-"""
-
 from __future__ import annotations
 
 import math
@@ -117,9 +41,6 @@ from app.schemas.decisions import (
     RiskLevel,
 )
 
-# --------------------------------------------------------------------------
-# Fixed, user-facing note fragments (scanned by the safety scanner in tests)
-# --------------------------------------------------------------------------
 
 NOTE_MODEL_INPUT = "this value was given to the model"
 NOTE_IMPUTED = (
@@ -154,16 +75,10 @@ DIABETES_NOTE_FRAGMENTS: Tuple[str, ...] = (
     NOTE_EXTREME_LOW,
 )
 
-#: What a categorical feature becomes when it is absent entirely. Deliberately
-#: a token the encoder has never seen, so `handle_unknown="ignore"` turns it
-#: into an all-zero block -- "no category asserted". It is NOT handed to the
-#: most-frequent imputer, which would assert the majority category instead.
 ABSENT_CATEGORY = "__absent__"
 
-#: The tri-state pair, in the order the variant key is built from.
 TRI_STATE: Tuple[str, str] = ("hypertension", "heart_disease")
 
-#: (has_hypertension, has_heart_disease) -> artifact variant name.
 VARIANT_BY_AVAILABILITY: Dict[Tuple[bool, bool], str] = {
     (True, True): "both",
     (True, False): "hypertension_only",
@@ -173,15 +88,6 @@ VARIANT_BY_AVAILABILITY: Dict[Tuple[bool, bool], str] = {
 
 
 def normalise_category(value: Any) -> Optional[str]:
-    """Module 2 / dataset spelling -> the token the encoder was fitted on.
-
-    `"No Info"`, `"NOT CURRENT"` and `"not current"` all become `no_info` /
-    `not_current`. Skipping this is a SILENT failure: the profile sends
-    `no_info`, the encoder was fitted on whatever the training script produced,
-    and `handle_unknown="ignore"` quietly zeroes the mismatch. Nothing raises;
-    the feature just stops existing. The training script applies the identical
-    transformation to the dataset, and a test asserts both directions.
-    """
     if value is None:
         return None
     text = str(value).strip().lower()
@@ -191,14 +97,12 @@ def normalise_category(value: Any) -> Optional[str]:
 
 
 class DiabetesPredictor(Predictor):
-    """Spec Module 10. Random Forest, one `ClinicalDecision` per call."""
 
     name = "diabetes_rf"
-    condition = C.DIABETES  # byte-for-byte canonical; never spelled out here
+    condition = C.DIABETES
     source_label = "Random Forest"
     version = "1.0.0"
 
-    #: See "INFORMATION SUFFICIENCY" above.
     required_features: Tuple[str, ...] = ("hba1c", "blood_glucose")
     optional_features: Tuple[str, ...] = (
         "age",
@@ -213,11 +117,9 @@ class DiabetesPredictor(Predictor):
         self._artifact_filename = artifact_filename
         super().__init__()
 
-    # -- artifact ---------------------------------------------------------
 
     @property
     def artifact(self):
-        """The loaded bundle, or None. Lazy and cached in `app.ml.artifacts`."""
         return load_model(self._artifact_filename)
 
     def is_available(self) -> bool:
@@ -227,12 +129,10 @@ class DiabetesPredictor(Predictor):
         return load_failure_reason(self._artifact_filename)
 
     def artifact_integrity(self) -> Dict[str, Any]:
-        """The load-time artifact<->metrics sha256 check (integration audit D3)."""
         bundle = self.artifact
         return dict(bundle.integrity or {}) if bundle is not None else {}
 
     def model_provenance(self) -> Dict[str, Any]:
-        """Trainable-to-prediction traceability, for decision metadata."""
         bundle = self.artifact
         if bundle is None:
             return {"available": False, "reason": self.unavailable_reason()}
@@ -241,11 +141,6 @@ class DiabetesPredictor(Predictor):
         return {
             "available": True,
             "artifact_file": self._artifact_filename,
-            # Integration audit D3. The artifact<->metrics sha256 binding,
-            # checked at load time and carried on EVERY decision this model
-            # produces -- the thresholds, importances and performance numbers
-            # published beside the prediction all come from the metrics
-            # document this digest binds to the joblib.
             "artifact_integrity": integrity,
             "artifact_integrity_verified": bool(integrity.get("verified")),
             "artifact_version": bundle.get("artifact_version"),
@@ -261,50 +156,27 @@ class DiabetesPredictor(Predictor):
             "resampling": dataset.get("resampling"),
         }
 
-    # -- variant selection: THE tri-state decision ------------------------
 
     @staticmethod
     def _tri_state(value: Any) -> Optional[bool]:
-        """A tri-state feature's value, or None for 'the patient never said'.
-
-        ONLY a real bool counts. Module 5 preserves the tri-state by ABSENCE
-        from the feature map, and Module 6 keeps booleans as booleans, so
-        anything that is not a `bool` here (a `None`, a stray `"unknown"`, a
-        `0` that arrived as an int from a sloppy caller) is treated as UNKNOWN
-        rather than coerced.
-
-        Note what is deliberately NOT done: `bool(value)` would turn the string
-        `"false"` into True and `0` into False. Both would fabricate an answer.
-        """
         if isinstance(value, bool):
             return value
         return None
 
     def select_variant(self, features: Mapping[str, Any]) -> Tuple[str, Dict[str, Optional[bool]]]:
-        """Which fitted pipeline matches what this patient actually answered."""
         known = {name: self._tri_state(features.get(name)) for name in TRI_STATE}
         key = (known["hypertension"] is not None, known["heart_disease"] is not None)
         return VARIANT_BY_AVAILABILITY[key], known
 
-    # -- the model frame --------------------------------------------------
 
     def _model_row(
         self, features: Mapping[str, Any], variant_name: str
     ) -> Tuple[Any, Dict[str, Any]]:
-        """Build the ONE-ROW frame handed to the pipeline, plus a trace of how.
-
-        The trace records, per feature, whether the value came from the patient
-        (`observed`), was left for the median imputer (`imputed`), was an
-        unrecognised category (`unrecognised`), or was excluded from the model
-        entirely (`not_asserted`). Evidence and metadata are built from the
-        trace, so what the decision claims and what the model actually received
-        cannot drift apart.
-        """
         import numpy as np
         import pandas as pd
 
         bundle = self.artifact
-        if bundle is None:  # pragma: no cover - guarded by is_available()
+        if bundle is None:
             raise PredictorError("diabetes model artifact is not loaded")
         spec = bundle.variants.get(variant_name)
         if spec is None:
@@ -320,10 +192,8 @@ class DiabetesPredictor(Predictor):
 
         for name in numeric:
             if name in TRI_STATE:
-                # Only reachable when this variant includes the column, which
-                # only happens when the patient supplied a real bool.
                 value = self._tri_state(features.get(name))
-                row[name] = int(value)  # type: ignore[arg-type]
+                row[name] = int(value)
                 trace[name] = {"status": "observed", "value": value}
                 continue
             raw = features.get(name)
@@ -345,13 +215,9 @@ class DiabetesPredictor(Predictor):
                 row[name] = token
                 trace[name] = {"status": "observed", "value": token}
             else:
-                # e.g. gender="prefer_not_to_say", which Module 2 allows and the
-                # dataset has no equivalent for. Passed through unchanged so the
-                # encoder's handle_unknown="ignore" makes it an all-zero block.
                 row[name] = token
                 trace[name] = {"status": "unrecognised", "value": token}
 
-        # Excluded from THIS variant because the patient never answered.
         for name in TRI_STATE:
             if name not in numeric:
                 trace[name] = {"status": "not_asserted", "value": None}
@@ -359,7 +225,6 @@ class DiabetesPredictor(Predictor):
         frame = pd.DataFrame([row], columns=numeric + categorical)
         return frame, trace
 
-    # -- risk banding -----------------------------------------------------
 
     @staticmethod
     def _thresholds(bundle, variant_name: str) -> Tuple[float, float]:
@@ -371,51 +236,12 @@ class DiabetesPredictor(Predictor):
     def band(
         probability: float, borderline: float, indicated: float
     ) -> Tuple[DecisionStatus, RiskLevel, str]:
-        """probability -> (status, risk, band name).
-
-        Both cut-offs are read off the artifact, and both were derived from the
-        measured precision-recall curve of a held-out validation split rather
-        than chosen as round numbers. See `ml/train_diabetes.py`:
-
-          * `indicated`  = the smallest threshold whose cumulative precision
-            reaches 0.90, so roughly nine in ten people flagged INDICATED in a
-            cohort like the training one are truly positive. On the shipped
-            model that lands at 0.795; the F1-maximising threshold on the same
-            data is 0.793, so the cut-off is insensitive to which criterion is
-            used, which is the strongest evidence it is not an artefact of the
-            choice.
-          * `borderline` = the LARGEST threshold whose cumulative recall is
-            still >= 0.99, so "below this line" means the model would still
-            have caught 99 of every 100 positives. It lands at 0.117.
-
-        The asymmetry is the point. The upper cut-off is set by precision
-        because a false INDICATED costs an unnecessary worry; the lower one is
-        set by sensitivity because a false NOT_INDICATED is false reassurance,
-        which `app/schemas/decisions.py` calls the most dangerous failure this
-        type can have.
-
-        Measured band composition on the 19,230-row held-out test split
-        (variant `both`), recorded in the metrics artifact:
-
-            low     11,713 patients,   12 positive  ( 0.10%)
-            medium   6,209 patients,  492 positive  ( 7.92%)
-            high     1,308 patients, 1192 positive  (91.13%)
-
-        Read that honestly. The middle band means "NOT RULED OUT", not
-        "elevated": its own positive rate (7.9%) is a shade BELOW the cohort
-        prevalence of 8.8%, because everyone genuinely high-scoring has already
-        been pulled out into the high band. It is mapped to
-        BORDERLINE/MEDIUM because those are the vocabulary `decisions.py`
-        offers, and `metadata.band_meaning` carries the real meaning forward so
-        Module 20 can render it without overclaiming.
-        """
         if probability >= indicated:
             return DecisionStatus.INDICATED, RiskLevel.HIGH, "high"
         if probability >= borderline:
             return DecisionStatus.BORDERLINE, RiskLevel.MEDIUM, "medium"
         return DecisionStatus.NOT_INDICATED, RiskLevel.LOW, "low"
 
-    # -- prediction -------------------------------------------------------
 
     def _predict(
         self, features: Mapping[str, Any], context: PredictionContext
@@ -460,14 +286,6 @@ class DiabetesPredictor(Predictor):
             "thresholds": {
                 "borderline": borderline,
                 "indicated": indicated,
-                # ACHIEVED RECALL AND PRECISION AT THIS CUT-OFF. This model
-                # published neither until 6p, so a clinician read a probability
-                # against a 0.795 threshold with no statement that it catches
-                # ~70% of true positives -- and `metrics_available` was True
-                # with no absent-code, so nothing signalled the gap. The
-                # numbers were in the artifact the whole time, under
-                # `metrics.positive_class` rather than under `thresholds`;
-                # the shared reader knows both shapes.
                 **operating_metrics(spec),
             },
             "threshold_basis": (
@@ -513,9 +331,6 @@ class DiabetesPredictor(Predictor):
                 "roc_auc": metrics.get("roc_auc"),
                 "pr_auc_average_precision": metrics.get("pr_auc_average_precision"),
                 "positive_class": metrics.get("positive_class"),
-                # Accuracy WITH its baseline. 0.968 against a 0.912
-                # majority-class baseline is a lift of 5.6 points, and the
-                # first number alone reads as far stronger than the pair does.
                 **performance_figures(spec),
                 "artifact": "ml/artifacts/diabetes_rf_v1.metrics.json",
             },
@@ -533,7 +348,6 @@ class DiabetesPredictor(Predictor):
             metadata=metadata,
         )
 
-    # -- evidence ---------------------------------------------------------
 
     def _evidence(
         self,
@@ -541,14 +355,6 @@ class DiabetesPredictor(Predictor):
         importance: Dict[str, float],
         context: PredictionContext,
     ) -> List[EvidenceItem]:
-        """One item per feature the model was given, most important first.
-
-        Every feature is listed, INCLUDING the ones that were absent, because
-        "the model was not told whether you have hypertension" is exactly the
-        sort of thing spec Module 20 exists to show. `threshold` is None
-        throughout: `decisions.py` reserves it for rule-based producers, and no
-        single threshold explains a forest.
-        """
         order = sorted(
             trace,
             key=lambda name: (-importance.get(name, 0.0), name),
@@ -580,7 +386,6 @@ class DiabetesPredictor(Predictor):
             )
         return items
 
-    # -- recommendations: catalogue codes only ----------------------------
 
     def _recommendations(
         self,
@@ -588,12 +393,6 @@ class DiabetesPredictor(Predictor):
         context: PredictionContext,
         trace: Dict[str, Any],
     ):
-        """Codes only. There is no code path here that composes text.
-
-        `recommendation_catalog.recommendation()` takes a CODE and raises on an
-        unknown one, so nothing this predictor can do -- now or after a future
-        edit -- can emit unvetted medical wording.
-        """
         if status is DecisionStatus.INDICATED:
             codes: Tuple[str, ...] = (
                 DISCUSS_WITH_CLINICIAN,
@@ -615,14 +414,8 @@ class DiabetesPredictor(Predictor):
 
         if any(name in context.questionable for name in trace):
             codes += (INPUT_QUALITY_CAVEAT,)
-        # NOT_A_DIAGNOSIS is attached to EVERY decision, exactly as Module 8
-        # does. This is a decision-support tool, and it says so every time.
         return resolve_recommendations(codes + (NOT_A_DIAGNOSIS,))
 
-
-# --------------------------------------------------------------------------
-# helpers
-# --------------------------------------------------------------------------
 
 _BAND_MEANING = {
     "low": (
@@ -642,11 +435,6 @@ _BAND_MEANING = {
 
 
 def _as_float(value: Any) -> Optional[float]:
-    """A usable number, or None. `bool` is NOT a number here.
-
-    Python makes `isinstance(True, int)` true, so without the explicit guard a
-    stray boolean would silently become 1.0 in a numeric column.
-    """
     if value is None or isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
@@ -656,10 +444,6 @@ def _as_float(value: Any) -> Optional[float]:
             number = float(str(value).strip())
         except (TypeError, ValueError):
             return None
-    # NaN and inf are not measurements. NaN matters most: it is the exact value
-    # the pipeline's imputer replaces, so admitting it here would record the
-    # feature as `observed` while the model actually received a cohort median
-    # -- the one substitution that would leave no trace (integration audit D1).
     return number if math.isfinite(number) else None
 
 
@@ -668,7 +452,6 @@ def _tri_word(value: Optional[bool]) -> str:
 
 
 def _known_levels(bundle, categorical: List[str]) -> Dict[str, Tuple[str, ...]]:
-    """Categories the encoder was actually fitted on, from the artifact."""
     dataset = bundle.get("dataset", {}) or {}
     return {
         "gender": tuple(dataset.get("gender_levels", ())),

@@ -6,15 +6,6 @@ const ApiError = require('../utils/ApiError');
 const asyncHandler = require('../utils/asyncHandler');
 const { verifyAccessToken, extractBearerToken } = require('../utils/jwt');
 
-/**
- * Authentication guard.
- * Reads `Authorization: Bearer <token>`, verifies the access token, loads the
- * user and attaches it to `req.user`.
- *
- * Every failure mode here - missing header, malformed header, expired token,
- * tampered token, deleted/deactivated user, token issued before a password
- * change - results in 401, never 500.
- */
 const protect = asyncHandler(async (req, res, next) => {
   const token = extractBearerToken(req.headers.authorization);
   if (!token) {
@@ -24,7 +15,7 @@ const protect = asyncHandler(async (req, res, next) => {
     );
   }
 
-  const payload = verifyAccessToken(token); // throws ApiError(401) on any problem
+  const payload = verifyAccessToken(token);
 
   if (!mongoose.isValidObjectId(payload.sub)) {
     throw ApiError.unauthorized('Invalid authentication token', 'INVALID_TOKEN');
@@ -52,10 +43,6 @@ const protect = asyncHandler(async (req, res, next) => {
   return next();
 });
 
-/**
- * Authorization guard. Must run after `protect`.
- * @param {...string} roles roles allowed through
- */
 function restrictTo(...roles) {
   const allowed = roles.flat();
   return function roleGuard(req, res, next) {

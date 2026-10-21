@@ -1,9 +1,5 @@
 import { READING_LINKS } from '../src/lib/readingLinks';
 
-/**
- * The further-reading links (2026-10-02). Fixed NHS pages only: a link that
- * carried a query string could carry something about the reader with it.
- */
 const CATALOGUE_CODES = [
   'GENERAL_BALANCED_DIET',
   'GENERAL_DIETARY_FAT_QUALITY',

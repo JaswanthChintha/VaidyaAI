@@ -1,15 +1,3 @@
-"""The VaidyaAI chatbot (owner, 2026-10-09).
-
-Pinned here:
-  * the fixed replies (emergency, diagnosis, medicines) never call a model,
-    and Module 24 itself approves every one of them;
-  * an answer is grounded -- in the app's help notes, the reviewed knowledge
-    base, or the one report the backend sent -- and passes Module 24;
-  * an unsafe or unsourced answer is replaced by a fixed reply, never shown;
-  * OFF_TOPIC questions get the redirect;
-  * no OpenRouter key -> "unavailable", and Gemini is never used for chat.
-"""
-
 from __future__ import annotations
 
 from typing import List
@@ -22,7 +10,6 @@ from app.services import chatbot as cb
 
 
 class FakeLLM:
-    """Returns the scripted answers in order; records every prompt."""
 
     def __init__(self, answers: List[str]):
         self.answers = list(answers)
@@ -40,11 +27,6 @@ REPORT = cb.ReportContext(
     results=[cb.ReportResult(name="HbA1c", value="5.6", unit="%", reference="4.0 - 5.6")],
     topics=[cb.ReportTopic(condition="Diabetes", status="Not indicated")],
 )
-
-
-# --------------------------------------------------------------------------
-# Fixed replies
-# --------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("kind", sorted(cb.FIXED_REPLIES))
@@ -86,28 +68,21 @@ def test_ordinary_questions_are_not_refused(question):
     assert cb.classify(question) is None
 
 
-# --------------------------------------------------------------------------
-# Answers
-# --------------------------------------------------------------------------
-
-
 def test_no_model_configured_means_unavailable():
     out = cb.answer_question("What is HbA1c?", llm=None)
     assert out.outcome == cb.OUTCOME_UNAVAILABLE
 
 
 def test_an_app_question_is_answered_in_the_models_words_with_the_site_map():
-    # Live 2026-10-09: "where can we go to check timeline?" got a note that
-    # said only WHAT the Timeline is. The model now answers the question.
     llm = FakeLLM(["Click Timeline in the menu on the left. It compares your analysed reports over time."])
     out = cb.answer_question("where can we go to check timeline?", llm=llm)
     assert out.outcome == cb.OUTCOME_ANSWERED
     assert out.answer.startswith("Click Timeline in the menu")
     assert out.model_used is True
-    assert "Finding your way around VaidyaAI" in llm.prompts[0]  # the site map
+    assert "Finding your way around VaidyaAI" in llm.prompts[0]
     assert "Timeline:" in llm.prompts[0]
     assert [s.title for s in out.sources] == ["Timeline"]
-    assert "healthcare professional" not in out.answer  # app help, not health
+    assert "healthcare professional" not in out.answer
 
 
 @pytest.mark.parametrize(
@@ -119,7 +94,6 @@ def test_an_app_question_is_answered_in_the_models_words_with_the_site_map():
     ],
 )
 def test_a_refused_app_answer_falls_back_to_the_reviewed_note(question, note_id):
-    # Live 2026-10-09: "Population context means..." was refused twice.
     llm = FakeLLM(["Population context means comparing you with others."] * 2)
     out = cb.answer_question(question, llm=llm)
     note = next(n for n in HELP_NOTES if n.note_id == note_id)
@@ -166,7 +140,7 @@ def test_a_printed_range_carries_its_unit_so_the_model_need_not_guess_one():
         ])
     )
     assert lines[0] == "Result: Haemoglobin = 13.6 g/dL (usual range on the report: 13.0 - 17.0 g/dL)"
-    assert lines[1].endswith("(usual range on the report: 0.4 - 4.0 mIU/L)")  # not doubled
+    assert lines[1].endswith("(usual range on the report: 0.4 - 4.0 mIU/L)")
 
 
 def test_a_number_that_is_not_in_the_report_is_refused():
@@ -205,7 +179,6 @@ def test_a_diagnosis_in_the_answer_is_never_shown():
     ["Write me a poem about cricket", "who won the election", "help me with my python code"],
 )
 def test_off_topic_is_redirected_before_any_model_call(question):
-    # Live 2026-10-09: the model WROTE the poem despite the OFF_TOPIC rule.
     llm = FakeLLM([])
     out = cb.answer_question(question, llm=llm)
     assert out.outcome == cb.OUTCOME_OFF_TOPIC
@@ -232,11 +205,6 @@ def test_a_failing_model_becomes_a_fixed_reply_not_an_error():
     out = cb.answer_question("What is HbA1c?", llm=Broken())
     assert out.outcome in (cb.OUTCOME_WITHHELD, cb.OUTCOME_OFF_TOPIC)
     assert out.answer in cb.FIXED_REPLIES.values()
-
-
-# --------------------------------------------------------------------------
-# Help notes
-# --------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -270,11 +238,6 @@ def test_every_help_note_passes_module_24_as_it_stands(note):
     assert verdict.approved, (note.note_id, verdict.codes)
 
 
-# --------------------------------------------------------------------------
-# The route
-# --------------------------------------------------------------------------
-
-
 def test_the_route_needs_the_service_key(authed_client):
     res = authed_client.post("/api/v1/chat", json={"question": "What is HbA1c?"})
     assert res.status_code == 401
@@ -301,8 +264,6 @@ def test_the_route_refuses_an_overlong_question(client):
 
 
 def test_openrouter_requests_ask_for_no_reasoning():
-    """Live 2026-10-09: every free model now reasons, and with reasoning on a
-    600-token budget came back as EMPTY content. Off, answers took 1-3 s."""
     from app.config import Settings
     from app.services.openrouter_text import build_openrouter_client, reset_cooldowns
 
@@ -327,7 +288,6 @@ def test_openrouter_requests_ask_for_no_reasoning():
 
 
 def test_chat_never_uses_gemini():
-    """With a Gemini key and NO OpenRouter key, chat is unavailable."""
     from app.api.routes_chat import get_chat_llm
     from app.config import Settings
 

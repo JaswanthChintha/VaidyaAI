@@ -1,25 +1,3 @@
-"""POST /api/v1/report/generate -- the Module 17-20 HTTP contract.
-
-Response shapes must match the rest of the service: `{success, data}` on
-success and `{success, error: {code, message}}` on failure.
-
-MOUNTING NOTE: the report router lives in its own file so it can be mounted
-without editing `app/main.py` concurrently with another module. Until the
-coordinator adds
-
-    app.include_router(routes_report.router)
-
-to `app/main.py`, this module mounts it itself, at import time, idempotently --
-the same pattern `tests/test_ml_endpoint.py` and `tests/test_decisions_endpoint.py`
-already use. Once the line is in `main.py` the guard below makes this a no-op,
-so nothing gets double-registered. Mounting at import time also means the route
-is present for
-`tests/test_auth.py::test_every_phi_route_declares_the_auth_dependency`, which
-is exactly the coverage we want.
-
-NO TRAINING, no API key, no network.
-"""
-
 from __future__ import annotations
 
 from typing import Any, Dict
@@ -62,11 +40,6 @@ _mount_once()
 @pytest.fixture()
 def api(client_factory) -> TestClient:
     return client_factory()
-
-
-# --------------------------------------------------------------------------
-# Payloads -- hand-written, invented values, no real patient data
-# --------------------------------------------------------------------------
 
 
 def engineered_payload() -> Dict[str, Any]:
@@ -136,7 +109,6 @@ def engineered_payload() -> Dict[str, Any]:
 
 
 def validated_with_rejection() -> Dict[str, Any]:
-    """A relayed Module 6 response, including its `rejected` map."""
     return {
         "validated": {
             "valid": {
@@ -172,11 +144,6 @@ def post(api: TestClient, payload: Dict[str, Any]):
     return api.post(ENDPOINT, json=payload)
 
 
-# --------------------------------------------------------------------------
-# The happy path
-# --------------------------------------------------------------------------
-
-
 def test_a_realistic_feature_set_returns_a_full_report(api):
     response = post(api, engineered_payload())
     assert response.status_code == 200
@@ -204,20 +171,16 @@ def test_the_response_validates_against_the_declared_schema(api):
 
 def test_the_dashboard_sections_module_27_needs_are_all_present(api):
     data = post(api, engineered_payload()).json()["data"]
-    # Overall health card
     assert data["overall"]["status_label"]
     assert "overall_risk" in data
-    # Condition cards
     for condition in data["conditions"]:
         assert condition["condition"]
         assert condition["status"]
         assert condition["priority"]
         assert "sources" in condition
-    # Laboratory cards
     for value in data["laboratory_values"]:
         assert value["feature"]
         assert "usable" in value
-    # Evidence section, recommendations section
     assert data["explainability"]["chain"] == ["Input", "Evidence", "Decision"]
     assert data["recommendations"]
 
@@ -245,7 +208,6 @@ def test_an_empty_body_does_not_claim_health(api):
 
 
 def test_a_relayed_module_6_response_carries_its_rejections_through(api):
-    """The rejected map survives the hop even though the decision chain drops it."""
     data = post(api, validated_with_rejection()).json()["data"]
 
     assert "creatinine" in data["document"]["rejected_features"]
@@ -333,20 +295,12 @@ def test_warnings_keep_their_origin_over_http(api):
     assert data["document"]["extraction_confidence"] == pytest.approx(0.55)
 
 
-# --------------------------------------------------------------------------
-# Input tolerance -- identical to Modules 8, 9 and 15/16, by inheritance
-# --------------------------------------------------------------------------
-
-
 def test_a_relayed_module_5_envelope_is_accepted(api):
     payload = {"success": True, "data": engineered_payload()["engineered"]}
     response = post(api, payload)
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["conditions"]
-    # What the CALLER sent, recorded separately from what the DECISION CHAIN
-    # saw: this layer runs Module 6 in-process first, so the chain always sees
-    # validated features and the report's rejected map is the real one.
     assert data["metadata"]["input_received"] == "engineered"
     assert data["summary"]["input_kind"] == "validated"
 
@@ -360,7 +314,6 @@ def test_a_bare_module_5_object_is_accepted(api):
 
 
 def test_posting_module_5_output_and_module_6_output_agree(api):
-    """Running Module 6 in-process must not change the clinical outcome."""
     from_module_5 = post(api, engineered_payload()).json()["data"]
 
     validated = api.post(
@@ -406,11 +359,6 @@ def test_a_non_object_body_is_422(api):
     assert response.json()["success"] is False
 
 
-# --------------------------------------------------------------------------
-# Auth -- the same dependency as every other PHI-bearing route
-# --------------------------------------------------------------------------
-
-
 def test_the_endpoint_requires_the_service_key(authed_client):
     response = authed_client.post(ENDPOINT, json=engineered_payload())
     assert response.status_code == 401
@@ -431,13 +379,7 @@ def test_the_policy_endpoint_requires_the_service_key(authed_client):
 
 
 def test_the_report_router_declares_the_auth_dependency():
-    """`tests/test_auth.py` walks routers recursively; this is the local check."""
     assert routes_report.router.dependencies, "the router declares no dependency"
-
-
-# --------------------------------------------------------------------------
-# The policy endpoint
-# --------------------------------------------------------------------------
 
 
 def test_the_policy_endpoint_documents_all_four_modules(api):

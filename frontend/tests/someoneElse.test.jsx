@@ -9,13 +9,6 @@ import Timeline from '../src/pages/Timeline';
 import { ProfileIdentityNotice } from '../src/components/IdentityNotice';
 import { api } from '../src/lib/api';
 
-/**
- * "This report is someone else's" (owner, 2026-10-03).
- *
- * Every analysis used the ACCOUNT profile for what a report did not print, and
- * always for BMI, smoking and health history; and the timeline mixed every
- * report into one person's history. These pin what the reader now sees.
- */
 
 beforeEach(() => {
   vi.restoreAllMocks();
@@ -106,7 +99,6 @@ describe('reports page -- whose report', () => {
     );
 
     fireEvent.click(await screen.findByRole('button', { name: 'Whose report?' }));
-    // The upload form above has the same fields; act inside the row's editor.
     const editor = within(document.querySelector('.report__subject-editor'));
     fireEvent.click(editor.getByLabelText(/Someone else/));
     fireEvent.change(editor.getByLabelText(/Their age/), { target: { value: '63' } });

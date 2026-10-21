@@ -1,18 +1,3 @@
-"""Request/response contract for the Modules 21-22 endpoints.
-
-Lives in `app/rag/` rather than `app/schemas/` so that Modules 21/22 are one
-self-contained, reviewable unit -- the same reason `app/safety/` holds its own
-schemas. Shapes match the rest of the service exactly: `{success, data}` on
-success and `{success: false, error: {code, message}}` on failure, produced by
-the app-level handlers in `app/main.py`.
-
-Pydantic v2 throughout, and STRICT: `extra="forbid"` on every request model.
-A caller that misspells `condition` for `conditions` gets a 422 rather than a
-silently ignored field and an empty result -- which for a retrieval endpoint is
-the worst failure mode available, because an empty result is indistinguishable
-from "nothing relevant exists".
-"""
-
 from __future__ import annotations
 
 from typing import Dict, List, Optional
@@ -23,12 +8,6 @@ from app.rag.index import DEFAULT_TOP_K, MAX_TOP_K, SIMILARITY_FLOOR
 
 
 class RetrievalRequest(BaseModel):
-    """A retrieval request: a finding, free text, or both.
-
-    The spec's worked example is the finding form:
-
-        {"conditions": ["Diabetes"], "features": ["hba1c", "blood_glucose"]}
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -72,12 +51,6 @@ class RetrievalRequest(BaseModel):
 
     @model_validator(mode="after")
     def _at_least_one_input(self) -> "RetrievalRequest":
-        """Refuse a request that asks for nothing.
-
-        An empty request could defensibly return the whole corpus, an arbitrary
-        slice, or nothing. All three are guesses, and this service does not
-        guess -- see the same policy in app/schemas/rules.py.
-        """
         if not self.conditions and not self.features and not (self.text or "").strip():
             raise ValueError(
                 "provide at least one of `conditions`, `features` or `text`. "
@@ -87,13 +60,6 @@ class RetrievalRequest(BaseModel):
 
 
 class RetrievedChunk(BaseModel):
-    """One retrieved chunk with its FULL provenance.
-
-    Every field here exists so a claim can be traced. Module 23 cites `doc_id`
-    and `title`, shows `basis` as the source of the claim, and can show `score`
-    to explain why this text was selected -- Module 20's Input -> Evidence ->
-    Decision chain, applied to retrieval.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -113,7 +79,6 @@ class RetrievedChunk(BaseModel):
 
 
 class RetrievalQueryEcho(BaseModel):
-    """What was actually asked, echoed back."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -148,7 +113,6 @@ class RetrievalResponse(BaseModel):
 
 
 class KnowledgeDocumentSummary(BaseModel):
-    """One document, without its body. For browsing the corpus."""
 
     model_config = ConfigDict(extra="forbid")
 

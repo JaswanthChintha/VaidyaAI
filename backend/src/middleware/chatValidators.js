@@ -2,13 +2,6 @@
 
 const { body } = require('express-validator');
 
-/**
- * The chatbot's input (2026-10-09).
- *
- * THE STANDING RULE: every chain starts with a type guard and `.bail()` before
- * any sanitizer, so no untyped value reaches a Mongo query -- `reportId` is
- * handed to `Report.findOne`. Messages are static and never echo the input.
- */
 
 const OBJECT_ID = /^[a-fA-F0-9]{24}$/;
 const MAX_QUESTION_CHARS = 300;

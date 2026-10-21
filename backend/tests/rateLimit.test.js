@@ -1,8 +1,5 @@
 'use strict';
 
-// These env vars MUST be set before src/config/env.js is first required.
-// Jest gives every test file its own module registry, so this file gets a
-// freshly configured app with rate limiting switched ON.
 process.env.ENABLE_RATE_LIMIT = 'true';
 process.env.LOGIN_RATE_LIMIT_MAX = '3';
 process.env.RATE_LIMIT_MAX = '1000';
@@ -22,13 +19,11 @@ const user = {
   password: 'Str0ng!Passw0rd',
 };
 
-/** Fire n failed logins, optionally setting X-Forwarded-For per request. */
 async function failedLogins(count, xffForIndex) {
   const statuses = [];
   for (let i = 0; i < count; i += 1) {
     let req = request(app).post(`${BASE}/login`);
     if (xffForIndex) req = req.set('X-Forwarded-For', xffForIndex(i));
-    // eslint-disable-next-line no-await-in-loop
     const res = await req.send({ email: user.email, password: 'Wr0ng!Password' });
     statuses.push(res.status);
   }
@@ -38,7 +33,7 @@ async function failedLogins(count, xffForIndex) {
 beforeEach(async () => {
   await resetRateLimiters();
   await request(app).post(`${BASE}/register`).send(user);
-  await resetRateLimiters(); // registration itself consumes limiter budget
+  await resetRateLimiters();
 });
 
 describe('rate limiting is actually enforced', () => {
@@ -69,10 +64,6 @@ describe('rate limiting is actually enforced', () => {
     });
   });
 
-  // Regression: defect 1. `trust proxy` used to be hard-coded to 1 with no
-  // proxy in front, so req.ip - the limiter's key - came straight from the
-  // client-supplied X-Forwarded-For header. Rotating that header gave an
-  // attacker unlimited login attempts.
   it('cannot be bypassed by rotating X-Forwarded-For', async () => {
     const statuses = await failedLogins(8, (i) => `203.0.113.${i}`);
 
@@ -98,7 +89,6 @@ describe('rate limiting is actually enforced', () => {
   it('ignores X-Real-IP too', async () => {
     const statuses = [];
     for (let i = 0; i < 5; i += 1) {
-      // eslint-disable-next-line no-await-in-loop
       const res = await request(app)
         .post(`${BASE}/login`)
         .set('X-Real-IP', `203.0.113.${i}`)
@@ -112,7 +102,6 @@ describe('rate limiting is actually enforced', () => {
   it('does not count successful logins against the login limiter', async () => {
     const statuses = [];
     for (let i = 0; i < 6; i += 1) {
-      // eslint-disable-next-line no-await-in-loop
       const res = await request(app)
         .post(`${BASE}/login`)
         .send({ email: user.email, password: user.password });
@@ -123,10 +112,10 @@ describe('rate limiting is actually enforced', () => {
   });
 
   it('does not apply the strict login limit to /me', async () => {
-    await failedLogins(5); // exhaust the login limiter
+    await failedLogins(5);
 
     const res = await request(app).get(`${BASE}/me`);
-    expect(res.status).toBe(401); // rejected by protect, not by the limiter
+    expect(res.status).toBe(401);
   });
 });
 

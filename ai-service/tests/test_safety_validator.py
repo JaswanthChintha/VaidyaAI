@@ -1,31 +1,3 @@
-"""Module 24 -- the Medical Safety and Validation Layer.
-
-Framework-independent tests: no HTTP, no API key, no network, no training.
-Every phrasing here is invented; nothing is real patient text.
-
-The five things this file exists to hold in place, all of them failure modes a
-passing "it found a violation" test would not catch:
-
-1. FAIL CLOSED. Anything the validator cannot analyse must REJECT. A validator
-   that answers "no violations found" because it crashed is worse than none,
-   because the caller cannot tell the two apart. This is the single most
-   important property in the module and it is tested from six directions.
-
-2. ZERO FALSE POSITIVES on the system's own output. A safety layer that cries
-   wolf over the catalogue's own reviewed wording trains its readers to ignore
-   it -- which is exactly how the "treat it with reduced confidence" defect
-   arose in the previous scanner. Regression-tested here specifically.
-
-3. THE PHRASINGS THE OLD PATTERNS MISSED. "the diagnosis is diabetes", a drug
-   nobody enumerated, a dosage with no numerals, "you do not need to see a
-   doctor", "this report replaces a clinical consultation".
-
-4. A MODIFICATION NEVER REWRITES CLINICAL MEANING. Only two actions exist and
-   neither can touch the words of a finding.
-
-5. NOTHING VALIDATED REACHES THE LOGS.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -66,8 +38,6 @@ from app.safety.validator import (
 )
 from app.services.report_builder import generate_report
 
-#: Fragment-level checks: the mandated referral framing lives in the
-#: surrounding document, not in every individual sentence.
 FRAGMENT = SafetyContext(require_referral=False)
 
 
@@ -77,11 +47,6 @@ def codes(verdict: SafetyVerdict) -> List[str]:
 
 def has(verdict: SafetyVerdict, code: ViolationCode) -> bool:
     return code.value in verdict.codes
-
-
-# ==========================================================================
-# 1. FAIL CLOSED -- the property everything else rests on
-# ==========================================================================
 
 
 @pytest.mark.parametrize(
@@ -101,11 +66,6 @@ def has(verdict: SafetyVerdict, code: ViolationCode) -> bool:
     ],
 )
 def test_a_non_string_is_rejected_never_approved(value: Any) -> None:
-    """The most basic fail-closed case: something that is not text.
-
-    A validator that returns "clean" for `None` would approve every generation
-    whose producer returned nothing.
-    """
     verdict = validate_text(value)
     assert verdict.verdict == REJECT
     assert verdict.approved_text is None
@@ -114,7 +74,6 @@ def test_a_non_string_is_rejected_never_approved(value: Any) -> None:
 
 
 def test_an_unencodable_string_is_rejected() -> None:
-    """A lone surrogate is a `str` that cannot be encoded. Refuse, do not scan."""
     verdict = validate_text("your result \udfff looks fine")
     assert verdict.verdict == REJECT
     assert has(verdict, ViolationCode.UNANALYSABLE_INPUT)
@@ -123,7 +82,6 @@ def test_an_unencodable_string_is_rejected() -> None:
 
 @pytest.mark.parametrize("control", ["\x00", "\x07", "\x1b", "\x7f", "\x9f"])
 def test_control_characters_are_rejected_not_scanned(control: str) -> None:
-    """Text that can hide content from a scanner is refused rather than scanned."""
     verdict = validate_text(f"An educational note{control} about your result.")
     assert verdict.verdict == REJECT
     assert has(verdict, ViolationCode.UNANALYSABLE_INPUT)
@@ -137,19 +95,12 @@ def test_oversized_input_is_rejected_rather_than_partially_analysed() -> None:
 
 @pytest.mark.parametrize("blank", ["", "   ", "\n\n", "\t \t"])
 def test_an_empty_generation_is_a_failure_not_an_approval(blank: str) -> None:
-    """An LLM that returned nothing has failed. It has not produced safe text."""
     verdict = validate_text(blank)
     assert verdict.verdict == REJECT
     assert has(verdict, ViolationCode.EMPTY_OUTPUT)
 
 
 def test_an_internal_error_rejects_instead_of_approving(monkeypatch) -> None:
-    """THE proof. If the analysis itself breaks, the answer is still REJECT.
-
-    Without this, a bug anywhere inside the validator would silently turn the
-    safety layer into a pass-through -- and the pass-through and the clean
-    result are indistinguishable to the caller.
-    """
     import app.safety.validator as validator_module
 
     def explode(*_args: Any, **_kwargs: Any):
@@ -164,7 +115,6 @@ def test_an_internal_error_rejects_instead_of_approving(monkeypatch) -> None:
 
 
 def test_even_a_base_exception_rejects(monkeypatch) -> None:
-    """`except Exception` would let a RecursionError through as an approval."""
     import app.safety.validator as validator_module
 
     def explode(*_args: Any, **_kwargs: Any):
@@ -177,7 +127,6 @@ def test_even_a_base_exception_rejects(monkeypatch) -> None:
 
 
 def test_validate_text_never_raises(monkeypatch) -> None:
-    """Module 23 must be able to call this without a try/except of its own."""
     import app.safety.validator as validator_module
 
     monkeypatch.setattr(
@@ -190,7 +139,6 @@ def test_validate_text_never_raises(monkeypatch) -> None:
 
 
 def test_a_rejection_never_carries_approved_text() -> None:
-    """There must be no field a careless renderer could show after a REJECT."""
     verdict = validate_text("Take metformin 500 mg twice a day.")
     assert verdict.verdict == REJECT
     assert verdict.approved_text is None
@@ -198,7 +146,6 @@ def test_a_rejection_never_carries_approved_text() -> None:
 
 
 def test_the_error_path_never_reports_a_clean_verdict(monkeypatch) -> None:
-    """Belt and braces: no structural code may map to anything but a rejection."""
     for code in (
         ViolationCode.UNANALYSABLE_INPUT,
         ViolationCode.EMPTY_OUTPUT,
@@ -207,11 +154,6 @@ def test_the_error_path_never_reports_a_clean_verdict(monkeypatch) -> None:
         ViolationCode.REDACTION_NOT_POSSIBLE,
     ):
         assert CODE_SEVERITY[code] is Severity.STRUCTURAL
-
-
-# ==========================================================================
-# 2. THE SIX CLASSES SPEC MODULE 24 NAMES
-# ==========================================================================
 
 
 @pytest.mark.parametrize(
@@ -228,12 +170,6 @@ def test_the_error_path_never_reports_a_clean_verdict(monkeypatch) -> None:
     ],
 )
 def test_unsupported_diagnosis_is_rejected(text: str) -> None:
-    """Spec Module 24: 'Unsupported diagnosis'.
-
-    `"the diagnosis is diabetes"` is the phrasing the previous enumerated
-    patterns missed entirely -- the natural way to assert a diagnosis is not
-    "diagnosis of" or "diagnosed with", it is the copula.
-    """
     verdict = validate_text(text, FRAGMENT)
     assert verdict.verdict == REJECT
     assert has(verdict, ViolationCode.UNSUPPORTED_DIAGNOSIS)
@@ -248,7 +184,6 @@ def test_unsupported_diagnosis_is_rejected(text: str) -> None:
     ],
 )
 def test_the_mandated_disclaiming_phrasing_is_not_a_diagnosis(text: str) -> None:
-    """The platform is REQUIRED to say 'not a diagnosis'. It must survive."""
     verdict = validate_text(text, FRAGMENT)
     assert not has(verdict, ViolationCode.UNSUPPORTED_DIAGNOSIS)
 
@@ -271,20 +206,6 @@ def test_the_mandated_disclaiming_phrasing_is_not_a_diagnosis(text: str) -> None
 def test_the_suffering_from_carrier_rejects_every_enumerated_condition(
     condition: str,
 ) -> None:
-    """`You are suffering from X.` must refuse wherever `You have X.` does.
-
-    IT DID NOT, FOR ALL ELEVEN CONDITIONS. The rule listed `you are suffering`
-    and, separately, `you suffer from`; the `-ing` branch was written WITHOUT
-    its preposition. The gap between carrier and condition is `_GAP`
-    (`\\W{1,4}`), which matches non-word characters only and therefore cannot
-    cross the WORD `from`. So the most natural way in English to assert a
-    diagnosis of a listed condition was APPROVED, with framing merely
-    appended, while the blunter `You have diabetes.` was rejected.
-
-    This is not a coverage gap in a blocklist -- it is a carrier somebody
-    intended to work that silently did not, which is why it is pinned per
-    condition rather than by one example.
-    """
     verdict = validate_text(f"You are suffering from {condition}.", FRAGMENT)
     assert verdict.verdict == REJECT
     assert has(verdict, ViolationCode.UNSUPPORTED_DIAGNOSIS)
@@ -303,18 +224,6 @@ def test_the_suffering_from_carrier_rejects_every_enumerated_condition(
 def test_a_multi_word_condition_name_survives_real_whitespace(
     text: str, why: str
 ) -> None:
-    """A doubled space inside a condition name must not buy an approval.
-
-    `_GAP` exists because a model wraps, tabs and double-spaces its output,
-    and a rule written with single spaces misses the result. That fix was
-    applied to the CARRIER (`you` `have`) and NOT to the multi-word condition
-    names beside it, which kept literal single spaces -- so `You have kidney
-    disease.` was refused and `You have kidney  disease.` was APPROVED.
-
-    Half a pattern hardened is the part nobody re-read, and the whitespace an
-    evader would need here is the whitespace a language model produces by
-    accident.
-    """
     verdict = validate_text(text, FRAGMENT)
     assert verdict.verdict == REJECT, why
     assert has(verdict, ViolationCode.UNSUPPORTED_DIAGNOSIS), why
@@ -354,20 +263,6 @@ def test_a_multi_word_condition_name_survives_real_whitespace(
 def test_a_diagnosis_is_refused_even_when_nobody_enumerated_the_condition(
     condition: str, why: str
 ) -> None:
-    """§6r's D1. `You have cirrhosis of the liver.` was APPROVED.
-
-    It was never one sentence. The rule enumerated ELEVEN conditions and
-    approved every assertion about any of the others -- leukaemia, HIV,
-    sepsis, tuberculosis and the rest. An enumeration cannot close that,
-    because the next report names something nobody listed.
-
-    Disease names are morphologically regular, so this is matched the way the
-    MEDICATION rule already matches unenumerated drugs -- by suffix
-    (`-itis`, `-osis`, `-aemia`, `-oma`, `-penia`), by head noun (`disease`,
-    `syndrome`, `disorder`) and, only for the genuinely irregular names,
-    by enumeration. The `why` column records which of the three catches each
-    row, so a future reader can see the enumeration is the SMALL part.
-    """
     verdict = validate_text(f"You have {condition}.", FRAGMENT)
     assert verdict.verdict == REJECT, why
     assert has(verdict, ViolationCode.UNSUPPORTED_DIAGNOSIS), why
@@ -392,16 +287,6 @@ def test_a_diagnosis_is_refused_even_when_nobody_enumerated_the_condition(
 def test_a_risk_or_a_history_or_the_report_itself_is_not_a_diagnosis(
     text: str, why: str
 ) -> None:
-    """The widened rule must not refuse the sentences the platform needs.
-
-    UNSUPPORTED_DIAGNOSIS is PROHIBITED, so a false positive refuses the WHOLE
-    generation and the reader is shown NOTHING. Every refusal path on this
-    platform renders a blank by design, which means an over-wide safety rule
-    does not look like an over-wide safety rule -- it looks like a broken
-    feature, and it is the reader who pays for it.
-
-    This is the half of the widening that took the measuring.
-    """
     verdict = validate_text(text, FRAGMENT)
     assert not has(verdict, ViolationCode.UNSUPPORTED_DIAGNOSIS), why
 
@@ -417,28 +302,11 @@ def test_a_risk_or_a_history_or_the_report_itself_is_not_a_diagnosis(
 def test_the_diagnosis_rule_does_not_reach_across_a_sentence_boundary(
     text: str,
 ) -> None:
-    """A carrier in one sentence must not bind a condition in the next.
-
-    `_GAP` is `\\W{1,4}` and `". "` is two non-word characters, so a rule that
-    walks filler words with `_GAP` between them walks out of its own sentence.
-    Measured on exactly the first case here: the reader is told their CRP is
-    raised and that infection is A cause, and the pair was REFUSED as though
-    they had been told they have an infection.
-
-    Found by probing, not by a fixture -- no stored report contains this
-    shape, because the corpus contains no `you have` sentences at all.
-    """
     verdict = validate_text(text, FRAGMENT)
     assert not has(verdict, ViolationCode.UNSUPPORTED_DIAGNOSIS)
 
 
 def test_the_perfect_tense_reaches_its_noun() -> None:
-    """`You have had a heart attack.` -- a diagnosis asserted as an EVENT.
-
-    Three filler words (`had`, `a`, `heart`) sit between the carrier and the
-    noun, and a two-word allowance let it through. No pathology suffix covers
-    `attack`, so the event nouns are enumerated alongside the head nouns.
-    """
     verdict = validate_text("You have had a heart attack.", FRAGMENT)
     assert verdict.verdict == REJECT
     assert has(verdict, ViolationCode.UNSUPPORTED_DIAGNOSIS)
@@ -457,13 +325,6 @@ def test_the_perfect_tense_reaches_its_noun() -> None:
     ],
 )
 def test_medication_reference_is_rejected(text: str, why: str) -> None:
-    """Spec Module 24: 'Prescription of medication'.
-
-    Four of these seven drugs are NOT in any enumerated name list. They are
-    caught by pharmacological class stems, which is the only half of the drug
-    check that generalises -- see the honesty test at the bottom of this file
-    for the half that does not.
-    """
     verdict = validate_text(text, FRAGMENT)
     assert verdict.verdict == REJECT, why
     assert has(verdict, ViolationCode.MEDICATION_REFERENCE), why
@@ -482,23 +343,12 @@ def test_medication_reference_is_rejected(text: str, why: str) -> None:
     ],
 )
 def test_medication_dosage_is_rejected(text: str) -> None:
-    """Spec Module 24: 'Medication dosage recommendations'.
-
-    `"take half a tablet at night"` is the case the previous patterns missed:
-    every dosage pattern there required a NUMERAL, and a dosage instruction
-    does not need digits to be one.
-    """
     verdict = validate_text(text, FRAGMENT)
     assert verdict.verdict == REJECT
     assert has(verdict, ViolationCode.MEDICATION_DOSAGE)
 
 
 def test_a_laboratory_threshold_is_not_a_dosage() -> None:
-    """"126 mg/dL" is a concentration; "500 mg" is a quantity to swallow.
-
-    The whole rule table would be unusable if a clinical threshold read as a
-    dose, because every explanation of a glucose result cites one.
-    """
     verdict = validate_text(
         "The fasting glucose threshold this tool uses is 126 mg/dL, which a "
         "qualified healthcare professional can put in context.",
@@ -519,7 +369,6 @@ def test_a_laboratory_threshold_is_not_a_dosage() -> None:
     ],
 )
 def test_unsafe_treatment_instruction_is_rejected(text: str) -> None:
-    """Spec Module 24: 'Unsafe treatment instructions'."""
     verdict = validate_text(text, FRAGMENT)
     assert verdict.verdict == REJECT
     assert has(verdict, ViolationCode.UNSAFE_TREATMENT_INSTRUCTION)
@@ -538,12 +387,6 @@ def test_unsafe_treatment_instruction_is_rejected(text: str) -> None:
     ],
 )
 def test_claims_of_certainty_are_rejected(text: str) -> None:
-    """Spec Module 24: 'Claims of certainty'.
-
-    Note the last two: FALSE REASSURANCE is a certainty claim. "Nothing to
-    worry about" is exactly as unsupported as "you definitely have this", and
-    is the more dangerous of the two because nobody reads it as a claim.
-    """
     verdict = validate_text(text, FRAGMENT)
     assert verdict.verdict == REJECT
     assert has(verdict, ViolationCode.CERTAINTY_CLAIM)
@@ -561,26 +404,12 @@ def test_claims_of_certainty_are_rejected(text: str) -> None:
     ],
 )
 def test_replacing_professional_consultation_is_caught(text: str) -> None:
-    """Spec Module 24: 'Replacement of professional medical consultation'.
-
-    Both of the brief's named misses are here: `"you do not need to see a
-    doctor"` and `"this report replaces a clinical consultation"`. Neither was
-    matched by the previous `no need to (see|consult|visit)` enumeration.
-    """
     verdict = validate_text(text, FRAGMENT)
     assert has(verdict, ViolationCode.REPLACES_PROFESSIONAL_CONSULTATION)
-    # Alone in a one-sentence text there is nothing left to keep, so the whole
-    # generation is refused rather than reduced to a redaction notice.
     assert verdict.verdict == REJECT
 
 
 def test_the_required_disclaimer_is_not_a_replacement_claim() -> None:
-    """"does not replace assessment by a qualified healthcare professional".
-
-    This is the catalogue's own mandated wording. If the rule that bans
-    claiming to replace a clinician also fires on the sentence DISCLAIMING it,
-    the platform cannot ship its own disclaimer.
-    """
     verdict = validate_text(recommendation(NOT_A_DIAGNOSIS).text, FRAGMENT)
     assert verdict.verdict == APPROVE
     assert verdict.violations == ()
@@ -596,15 +425,9 @@ def test_the_required_disclaimer_is_not_a_replacement_claim() -> None:
     ],
 )
 def test_clinician_voice_is_rejected(text: str) -> None:
-    """The platform is a tool. It must never sound like a practitioner."""
     verdict = validate_text(text, FRAGMENT)
     assert verdict.verdict == REJECT
     assert has(verdict, ViolationCode.CLINICIAN_VOICE)
-
-
-# ==========================================================================
-# 3. THE POSITIVE CONTROLS -- "is this the kind of statement we permit?"
-# ==========================================================================
 
 
 @pytest.mark.parametrize(
@@ -617,12 +440,6 @@ def test_clinician_voice_is_rejected(text: str) -> None:
     ],
 )
 def test_an_unhedged_interpretation_is_rejected(text: str) -> None:
-    """REQUIRED_HEDGING -- a positive control, not a pattern for bad claims.
-
-    The rule does not enumerate unsafe interpretations. It requires that ANY
-    interpretation of a person's clinical state carry the register spec
-    section 14 mandates: what a finding MAY mean, not what it does mean.
-    """
     verdict = validate_text(text, FRAGMENT)
     assert verdict.verdict == REJECT
     assert has(verdict, ViolationCode.UNHEDGED_INTERPRETIVE_CLAIM)
@@ -651,14 +468,6 @@ def test_a_hedged_interpretation_is_permitted(text: str) -> None:
     ],
 )
 def test_a_restatement_or_a_definition_needs_no_hedge(text: str) -> None:
-    """The control must not fire on facts or on Module 25's terminology work.
-
-    "Your HbA1c is 6.8%" restates a measured value; "HbA1c means glycated
-    haemoglobin" defines a word. Neither is a claim about anybody's clinical
-    state, and requiring a hedge on them would make the health-literacy
-    modules unshippable -- which is how a safety control becomes something
-    everyone switches off.
-    """
     verdict = validate_text(text, FRAGMENT)
     assert not has(verdict, ViolationCode.UNHEDGED_INTERPRETIVE_CLAIM)
 
@@ -673,12 +482,6 @@ def test_a_restatement_or_a_definition_needs_no_hedge(text: str) -> None:
     ],
 )
 def test_a_directive_verb_outside_the_allowlist_is_caught(verb_text: str) -> None:
-    """DIRECTIVE_VERB_ALLOWLIST -- the allowlist half of the design.
-
-    The layer does not have to recognise `reduce`, `avoid` or `titrate` as
-    unsafe. It observes that they are not `discuss`. That is the difference
-    between a control that generalises and a list somebody has to maintain.
-    """
     verdict = validate_text(verb_text, FRAGMENT)
     assert has(verdict, ViolationCode.UNPERMITTED_DIRECTIVE)
 
@@ -697,13 +500,6 @@ def test_the_permitted_directives_are_permitted(text: str) -> None:
 
 
 def test_a_number_absent_from_the_grounding_is_rejected() -> None:
-    """NUMERIC_GROUNDING -- spec section 23's 'grounded in retrieved medical
-    information', applied to the part of it that can be checked exactly.
-
-    A fabricated threshold reads to a patient as a clinical fact, and a number
-    is the one hallucination a validator can catch without understanding
-    anything.
-    """
     context = SafetyContext(
         grounding_sources=("An HbA1c at or above 6.5% is the usual threshold.",),
         permitted_numbers=(6.8,),
@@ -727,11 +523,6 @@ def test_a_number_absent_from_the_grounding_is_rejected() -> None:
 
 
 def test_numeric_grounding_is_inactive_without_grounding_material() -> None:
-    """Honest scoping: no grounding supplied means no numeric control.
-
-    A caller that supplies nothing gets a weaker check, and
-    SAFETY_POLICY['limitations'] says so rather than implying otherwise.
-    """
     verdict = validate_text("Your HbA1c of 6.8% is above 6.5%.", FRAGMENT)
     assert not has(verdict, ViolationCode.UNGROUNDED_NUMERIC_CLAIM)
 
@@ -743,11 +534,6 @@ def test_required_grounding_refuses_an_ungrounded_generation() -> None:
     )
     assert verdict.verdict == REJECT
     assert has(verdict, ViolationCode.GROUNDING_REQUIRED_BUT_ABSENT)
-
-
-# ==========================================================================
-# 4. VERDICTS -- Module 23 has to act on these programmatically
-# ==========================================================================
 
 
 def test_approve_carries_the_text_and_no_violations() -> None:
@@ -765,11 +551,6 @@ def test_approve_carries_the_text_and_no_violations() -> None:
 
 
 def test_every_violation_is_actionable_and_auditable() -> None:
-    """A rejection has to say WHAT, WHICH RULE and WHERE, or it is not usable.
-
-    Module 23 needs the span to quote back into a retry prompt; a reviewer
-    needs the rule id to find the rule. A bare boolean would give neither.
-    """
     text = "Take metformin 500 mg twice a day; this confirms you have diabetes."
     verdict = validate_text(text, FRAGMENT)
     assert verdict.verdict == REJECT
@@ -780,7 +561,6 @@ def test_every_violation_is_actionable_and_auditable() -> None:
         assert violation.reason.strip()
         assert violation.severity in set(Severity)
         assert violation.span_end >= violation.span_start
-        # The span must actually index the text it claims to.
         assert (
             verdict.analysed_text[violation.span_start : violation.span_end]
             == violation.excerpt
@@ -808,18 +588,7 @@ def test_assert_safe_for_patient_raises_on_a_rejection() -> None:
     )
 
 
-# ==========================================================================
-# 5. APPROVE WITH MODIFICATION -- exactly two permitted actions
-# ==========================================================================
-
-
 def test_missing_referral_appends_catalogue_framing_and_changes_nothing_else() -> None:
-    """Modification action 1: APPEND. Nothing existing is altered.
-
-    The appended sentence is taken verbatim from the reviewed catalogue rather
-    than written in the safety layer, so the one sentence this module is
-    allowed to add is a sentence a clinician signed off.
-    """
     original = (
         "Your HbA1c sits above the band this tool uses. Tracking it across "
         "future reports can show whether it is changing."
@@ -828,19 +597,11 @@ def test_missing_referral_appends_catalogue_framing_and_changes_nothing_else() -
     assert verdict.verdict == APPROVE_WITH_MODIFICATION
     assert has(verdict, ViolationCode.MISSING_PROFESSIONAL_REFERRAL)
     assert [m.action for m in verdict.modifications] == ["append_safety_framing"]
-    # The original survives byte for byte at the front.
     assert verdict.approved_text.startswith(original)
     assert verdict.approved_text.endswith(recommendation(NOT_A_DIAGNOSIS).text)
 
 
 def test_a_redaction_removes_a_whole_sentence_and_keeps_the_rest_verbatim() -> None:
-    """Modification action 2: REDACT. Whole sentences only, never a rewrite.
-
-    There is no code path that edits inside a sentence, so no sequence of
-    steps can turn "your creatinine is raised" into "your creatinine is
-    normal". The removed sentence is reported in the modification record so a
-    reviewer can see exactly what went.
-    """
     keep_first = (
         "Your creatinine sits above the band this tool uses, which a qualified "
         "healthcare professional can put in context."
@@ -861,14 +622,6 @@ def test_a_redaction_removes_a_whole_sentence_and_keeps_the_rest_verbatim() -> N
 
 
 def test_a_redaction_never_removes_the_abnormal_finding() -> None:
-    """The hazard this scoping exists to prevent.
-
-    Redaction is permitted ONLY for codes whose construction is an INSTRUCTION
-    (REPLACES_PROFESSIONAL_CONSULTATION, UNPERMITTED_DIRECTIVE). A finding --
-    "your creatinine is raised" -- is a statement about a value and can never
-    carry one of those codes, so it can never be the sentence that is dropped.
-    Softening an abnormality into reassurance is structurally unreachable.
-    """
     finding = "Your creatinine is above the usual band for this laboratory."
     verdict = validate_text(
         f"{finding} You do not need to see a doctor or any other clinician."
@@ -886,11 +639,6 @@ def test_only_instruction_codes_are_ever_redactable() -> None:
 
 
 def test_a_prohibited_violation_is_never_salvaged_by_redaction() -> None:
-    """A drug name in one sentence rejects the whole generation.
-
-    The alternative -- deleting the sentence and showing the rest -- would
-    present a partially-censored clinical text as a complete explanation.
-    """
     verdict = validate_text(
         "Your cholesterol sits above the band a qualified healthcare "
         "professional would use. Your doctor may start atorvastatin. "
@@ -902,11 +650,6 @@ def test_a_prohibited_violation_is_never_salvaged_by_redaction() -> None:
 
 
 def test_redaction_is_refused_when_it_would_gut_the_explanation() -> None:
-    """A mostly-redacted explanation is not an explanation.
-
-    Stitching one together would present fragments to a patient as a coherent
-    answer, so past `MAX_REDACTED_FRACTION` the whole text is refused instead.
-    """
     verdict = validate_text(
         "You do not need to see a doctor. There is no need to consult anyone. "
         "A qualified healthcare professional wrote this laboratory band."
@@ -918,11 +661,6 @@ def test_redaction_is_refused_when_it_would_gut_the_explanation() -> None:
 
 
 def test_a_modification_cannot_launder_text_into_approval() -> None:
-    """Whatever redaction produces is re-validated in full.
-
-    Otherwise a modification would be a hole in the layer: text goes in dirty,
-    comes out "modified", and is never checked again.
-    """
     import app.safety.validator as validator_module
 
     def fake_redact(text, sentences, violations):
@@ -952,7 +690,6 @@ def test_a_modification_cannot_launder_text_into_approval() -> None:
 
 
 def test_the_modification_policy_says_what_it_may_not_do() -> None:
-    """The scope has to be published, not just implemented."""
     policy = SAFETY_POLICY["modification"]
     actions = {a["action"] for a in policy["permitted_actions"]}
     assert actions == {"append_safety_framing", "redact_sentence"}
@@ -962,12 +699,6 @@ def test_the_modification_policy_says_what_it_may_not_do() -> None:
     assert "softening" in forbidden
 
 
-# ==========================================================================
-# 6. ZERO FALSE POSITIVES ON THE SYSTEM'S OWN OUTPUT
-# ==========================================================================
-
-#: Module 6's own boilerplate. The previous scanner fired on this, which is
-#: how a safety scanner trains its readers to ignore it (integration audit D5).
 TREAT_WARNING = (
     "Feature 'bmi' is usable but flagged (DERIVED_VALUE); treat it with "
     "reduced confidence."
@@ -975,13 +706,6 @@ TREAT_WARNING = (
 
 
 def test_treat_it_with_reduced_confidence_is_not_a_treatment_instruction() -> None:
-    """THE regression test. An epistemic 'treat' is not a clinical one.
-
-    "treat it with reduced confidence" is an instruction about how much to
-    BELIEVE a number, not about what to put in a body. It must pass both the
-    treatment rule AND the clause-initial imperative check, which is the newer
-    of the two places it could now trip.
-    """
     verdict = validate_text(TREAT_WARNING, FRAGMENT)
     assert verdict.verdict == APPROVE
     assert verdict.violations == ()
@@ -1011,18 +735,12 @@ def test_the_epistemic_treat_exemption_is_narrow(text: str) -> None:
     ],
 )
 def test_a_real_treatment_instruction_still_matches(text: str) -> None:
-    """The exemption must not be a hole. A dose cannot satisfy both halves."""
     verdict = validate_text(text, FRAGMENT)
     assert verdict.verdict == REJECT
 
 
 @pytest.mark.parametrize("code", sorted(RECOMMENDATIONS))
 def test_every_catalogue_recommendation_passes_cleanly(code: str) -> None:
-    """The reviewed catalogue is the reference sample of safe wording.
-
-    If Module 24 flags Module 8's own approved text, one of the two is wrong,
-    and it would be this one.
-    """
     verdict = validate_text(RECOMMENDATIONS[code].text, FRAGMENT)
     unexpected = [v for v in verdict.violations if v.severity is not Severity.REQUIRED]
     assert unexpected == [], f"{code}: {[v.code.value for v in unexpected]}"
@@ -1040,11 +758,6 @@ def _walk_strings(obj: Any, path: str = "report") -> Iterator[Tuple[str, str]]:
 
 
 def test_a_generated_clinical_report_produces_no_false_positives() -> None:
-    """Every user-facing string of a real Module 17-20 report, scanned.
-
-    This is the honest version of "it doesn't cry wolf": not a hand-picked
-    sample, but every string the report builder actually emits.
-    """
     report = generate_report()
     offenders: List[Tuple[str, str, List[str]]] = []
     for path, text in _walk_strings(report.model_dump(mode="json")):
@@ -1058,7 +771,6 @@ def test_a_generated_clinical_report_produces_no_false_positives() -> None:
 @pytest.mark.parametrize(
     "text",
     [
-        # Representative Module 22 knowledge-base register.
         "HbA1c reflects average blood glucose over roughly the previous three "
         "months. A qualified healthcare professional interprets it alongside "
         "other results.",
@@ -1072,18 +784,12 @@ def test_a_generated_clinical_report_produces_no_false_positives() -> None:
     ],
 )
 def test_knowledge_base_register_text_passes_cleanly(text: str) -> None:
-    """Module 22's educational register must survive Module 24 unchanged.
-
-    If curated knowledge cannot pass the safety layer, the RAG grounding the
-    spec asks for is unusable and Module 23 has nothing safe to quote.
-    """
     verdict = validate_text(text, FRAGMENT)
     unexpected = [v for v in verdict.violations if v.severity is not Severity.REQUIRED]
     assert unexpected == [], [v.code.value for v in unexpected]
 
 
 def test_a_realistic_module_23_explanation_is_approved() -> None:
-    """The layer has to let good prose through, or Module 23 cannot ship."""
     text = (
         "Your HbA1c came back at 6.8%. HbA1c reflects average blood glucose "
         "over roughly the previous three months, so it can give a broader "
@@ -1106,22 +812,14 @@ def test_a_realistic_module_23_explanation_is_approved() -> None:
     assert verdict.approved_text == text
 
 
-# ==========================================================================
-# 7. THE FALLBACK -- a rejection must not produce an empty screen
-# ==========================================================================
-
-
 def test_the_fallback_is_useful_honest_and_catalogue_sourced() -> None:
     verdict = validate_text("Take metformin 500 mg twice a day.")
     fallback = safe_fallback(verdict)
 
     assert fallback.generated_explanation_available is False
     assert fallback.use_structured_report is True
-    # It says the FINDINGS still stand -- a reader who concludes "the analysis
-    # failed" would discard a real abnormality.
     assert "unaffected" in fallback.notice
     assert "qualified healthcare professional" in fallback.notice
-    # The recommendations come from the reviewed catalogue by code.
     assert [r["code"] for r in fallback.recommendations] == list(
         fallback.recommendation_codes
     )
@@ -1131,10 +829,6 @@ def test_the_fallback_is_useful_honest_and_catalogue_sourced() -> None:
 
 
 def test_the_fallback_never_leaks_the_refused_text() -> None:
-    """A patient must never be shown a hint of the unsafe sentence.
-
-    "We nearly told you to take metformin" is exactly that hint.
-    """
     verdict = validate_text("Take metformin 500 mg twice a day.")
     rendered = " ".join(
         [fb for fb in (safe_fallback(verdict).notice,)]
@@ -1145,7 +839,6 @@ def test_the_fallback_never_leaks_the_refused_text() -> None:
 
 
 def test_the_fallback_text_itself_passes_the_safety_layer() -> None:
-    """What we show INSTEAD must clear the bar we just enforced."""
     fallback = safe_fallback(validate_text("You definitely have diabetes."))
     assert validate_text(fallback.notice).verdict == APPROVE
     for resolved in fallback.recommendations:
@@ -1157,11 +850,6 @@ def test_the_fallback_text_itself_passes_the_safety_layer() -> None:
 
 def test_the_redaction_notice_itself_passes_the_safety_layer() -> None:
     assert validate_text(REDACTION_NOTICE).verdict == APPROVE
-
-
-# ==========================================================================
-# 8. guarded_generation -- the Module 23 entry point
-# ==========================================================================
 
 
 def test_guarded_generation_returns_approved_text_when_the_output_is_clean() -> None:
@@ -1227,17 +915,7 @@ def test_a_generator_that_takes_no_feedback_keyword_still_works() -> None:
     assert result.approved_text is None
 
 
-# ==========================================================================
-# 9. NOTHING VALIDATED REACHES THE LOGS
-# ==========================================================================
-
-
 def test_validated_content_never_reaches_the_logs(caplog) -> None:
-    """PHI-adjacent by definition: the text restates the patient's values.
-
-    Codes and counts are logged because a safety layer nobody can see firing
-    is not an accountability mechanism. The words are not.
-    """
     caplog.set_level(logging.DEBUG)
     marker = "ZZQUNIQUEMARKERZZ"
     validate_text(
@@ -1249,7 +927,6 @@ def test_validated_content_never_reaches_the_logs(caplog) -> None:
     assert "metformin" not in logged.lower()
     assert "6.8" not in logged
     assert "500" not in logged
-    # ...but the verdict and the codes ARE there.
     assert "safety_validation" in logged
     assert ViolationCode.MEDICATION_REFERENCE.value in logged
 
@@ -1271,18 +948,7 @@ def test_a_structural_rejection_logs_no_content(caplog) -> None:
     assert ViolationCode.UNANALYSABLE_INPUT.value in logged
 
 
-# ==========================================================================
-# 10. THE RULE TABLE ITSELF -- it must not rot into something that matches
-#     nothing, and it must not overstate what it is
-# ==========================================================================
-
-
 def test_the_rule_table_is_not_vacuous() -> None:
-    """The same discipline as the catalogue's import-time canary.
-
-    A scanner that has been broken into matching nothing looks exactly like a
-    scanner that found nothing.
-    """
     canary = (
         "Take metformin 500 mg twice a day; this confirms you have diabetes "
         "and you do not need to see a doctor."
@@ -1303,23 +969,16 @@ def test_every_rule_records_why_it_exists() -> None:
 
 
 def test_the_rule_document_publishes_the_blocklist_split() -> None:
-    """The introspection payload must not flatter the layer.
-
-    A reader has to be able to see how much of this is an enumeration of
-    things somebody thought of, without taking a docstring's word for it.
-    """
     document = rule_document()
     assert document["rule_count"] == len(document["rules"])
     assert document["blocklist_rule_count"] > 0
     assert document["positive_control_rule_count"] > 0
     kinds = {r["kind"] for r in document["rules"]}
     assert kinds == {"blocklist", "positive_control", "fail_closed"}
-    # No pattern is published: it is the exact map of what to paraphrase round.
     assert all("pattern" not in r for r in document["rules"])
 
 
 def test_the_policy_publishes_its_limitations() -> None:
-    """An overstated safety layer is worse than an honestly-scoped one."""
     limitations = SAFETY_POLICY["limitations"]
     assert len(limitations) >= 4
     joined = " ".join(limitations).lower()
@@ -1329,18 +988,6 @@ def test_the_policy_publishes_its_limitations() -> None:
 
 
 def test_the_known_gap_is_recorded_rather_than_hidden() -> None:
-    """HONESTY TEST. A drug with no recognisable class stem is NOT caught.
-
-    'Digoxin' ends in nothing this layer knows. The medication rules miss it,
-    and that is the blocklist half of the design failing exactly as
-    SAFETY_POLICY['limitations'] says it will. What catches the realistic
-    SENTENCE is the positive-control half -- the directive allowlist and the
-    treatment vocabulary -- not the drug list.
-
-    This test asserts the current behaviour so the gap is visible in the suite
-    instead of living only in a docstring. If a future change closes it, this
-    test SHOULD fail and be updated.
-    """
     bare = validate_text("Digoxin exists.", FRAGMENT)
     assert not has(bare, ViolationCode.MEDICATION_REFERENCE)
 
@@ -1351,19 +998,7 @@ def test_the_known_gap_is_recorded_rather_than_hidden() -> None:
     )
 
 
-# ==========================================================================
-# 11. NARROW EXEMPTIONS -- each one is a place a hole could have been opened,
-#     so each one is pinned from BOTH sides
-# ==========================================================================
-
-
 def test_a_spelled_out_concentration_is_not_a_dose() -> None:
-    """"milligrams per decilitre" is a unit; "10 milligrams" is a dose.
-
-    The same distinction the numeric rule draws between "126 mg/dL" and
-    "500 mg". Module 22's knowledge base writes its reference bands out in
-    words, so without this the entire curated corpus reads as dosing advice.
-    """
     assert (
         validate_text(
             "Total cholesterol bands in milligrams per decilitre: below 200.",
@@ -1387,11 +1022,6 @@ def test_a_spelled_out_concentration_is_not_a_dose() -> None:
     ],
 )
 def test_insulin_the_hormone_is_not_insulin_the_injection(text: str) -> None:
-    """Diabetes cannot be explained without the word.
-
-    A rule that makes Module 22's diabetes documents unshippable does not make
-    anybody safer -- it makes the layer the thing that gets switched off.
-    """
     assert not has(validate_text(text, FRAGMENT), ViolationCode.MEDICATION_REFERENCE)
 
 
@@ -1404,7 +1034,6 @@ def test_insulin_as_a_medication_still_matches(text: str) -> None:
 
 
 def test_a_disclaiming_replacement_sentence_is_not_a_replacement_claim() -> None:
-    """The platform is REQUIRED to write sentences of exactly this shape."""
     for text in (
         "Nothing in it replaces an assessment by a qualified healthcare professional.",
         "It is the right place for questions rather than a substitute for it.",
@@ -1416,12 +1045,6 @@ def test_a_disclaiming_replacement_sentence_is_not_a_replacement_claim() -> None
 
 
 def test_the_negation_guard_cannot_leak_across_a_sentence_boundary() -> None:
-    """THE near-miss. A negator in a PREVIOUS sentence must excuse nothing.
-
-    Without the clamp to the violation's own sentence, "You do not need to see
-    a doctor." would supply a `not` that excused the claim in the sentence
-    after it -- one disclaimer laundering every assertion that followed.
-    """
     verdict = validate_text(
         "You do not need to see a doctor. There is no need to consult anyone. "
         "A qualified healthcare professional wrote this laboratory band.",
@@ -1437,11 +1060,6 @@ def test_the_negation_guard_cannot_leak_across_a_sentence_boundary() -> None:
 
 
 def test_naming_an_interpretation_is_not_making_one() -> None:
-    """"What a result means ... is a question for a professional."
-
-    The sentence that DEFERS to a clinician must not be the sentence the
-    hedging control rejects.
-    """
     verdict = validate_text(
         "What a result means for an individual is a question for a qualified "
         "healthcare professional.",
@@ -1451,11 +1069,6 @@ def test_naming_an_interpretation_is_not_making_one() -> None:
 
 
 def test_a_line_wrapped_disclaimer_still_reads_as_a_disclaimer() -> None:
-    """Curated corpora are hard-wrapped, and a lookbehind is fixed width.
-
-    "is not\\na diagnosis" must be excused exactly as "is not a diagnosis" is,
-    or every wrapped document in Module 22 asserts a diagnosis.
-    """
     assert not has(
         validate_text(
             "This material is educational and is not\na diagnosis.", FRAGMENT
@@ -1465,6 +1078,5 @@ def test_a_line_wrapped_disclaimer_still_reads_as_a_disclaimer() -> None:
 
 
 def test_zero_width_characters_cannot_split_a_banned_word() -> None:
-    """Normalisation runs before any pattern, so `met\\u200bformin` is caught."""
     verdict = validate_text("Your doctor may start met​formin.", FRAGMENT)
     assert has(verdict, ViolationCode.MEDICATION_REFERENCE)

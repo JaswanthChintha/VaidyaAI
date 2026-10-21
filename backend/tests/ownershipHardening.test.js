@@ -9,10 +9,6 @@ const {
 } = require('../src/utils/ownership');
 const { ROLES } = require('../src/utils/roles');
 
-/**
- * Regression tests for the two footguns Module 1's audit flagged in
- * ownership.js, fixed before Module 2 became its first real consumer.
- */
 
 const idA = new mongoose.Types.ObjectId();
 const patient = { id: idA.toString(), role: ROLES.PATIENT };
@@ -20,8 +16,6 @@ const admin = { id: new mongoose.Types.ObjectId().toString(), role: ROLES.ADMIN 
 const record = { _id: new mongoose.Types.ObjectId(), user: idA };
 
 describe('ownerScopedFilter refuses to build an unscoped filter', () => {
-  // Previously these returned `{ user: null }` - a valid Mongo filter matching
-  // every document with a null/absent owner, i.e. silent data exposure.
   it('throws for a null user', () => {
     expect(() => ownerScopedFilter(null)).toThrow(/authenticated user/i);
   });
@@ -46,9 +40,6 @@ describe('ownerScopedFilter refuses to build an unscoped filter', () => {
 });
 
 describe('ownership denies by default, and OWNER_ONLY restates it', () => {
-  // The default is now `allowRoles: []`. OWNER_ONLY is consequently identical
-  // to it - kept as belt-and-braces so health-data call sites stay denying even
-  // if the default is ever loosened again.
   it('the generic default denies a non-owner admin', () => {
     expect(canAccess(admin, record)).toBe(false);
     expect(ownerScopedFilter(admin)).toEqual({ user: admin.id });

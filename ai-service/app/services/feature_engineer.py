@@ -1,50 +1,3 @@
-"""Module 5 -- Medical Feature Engineering.
-
-Turns Module 4's raw `extracted_parameters[]` (plus optional Module 2 profile
-context) into a canonical, unit-normalised, fully traceable feature set.
-
-This module is FRAMEWORK-INDEPENDENT: `engineer_features()` is a plain
-function. Module 7 (Feature Repository) and the ML layer import it directly;
-the HTTP route in `app/api/routes_features.py` is a thin wrapper.
-
-WHAT THIS MODULE DOES NOT DO
-----------------------------
-It does not judge whether a value is believable. Range checks, physiologic
-plausibility and unit-consistency rejection are Module 6. Module 5 answers
-"what feature is this, and in what canonical unit?" and reports every doubt as
-a warning -- it never rejects a value as implausible.
-
-DOCUMENTED POLICIES
--------------------
-Missing unit
-    No unit printed -> the canonical unit is ASSUMED, a warning is emitted and
-    `provenance.unit_assumed` is true.
-Unrecognised unit
-    A unit that is printed but not in the conversion table is NEVER assumed to
-    be canonical. The feature is still emitted (Module 6 needs to see it) with
-    `canonical_unit=false`, `unit` set to the ORIGINAL string, the value
-    unconverted, and a warning.
-Censored values ("<0.1", ">500")
-    Kept at the stated detection limit, with `provenance.censored` set to
-    "left" or "right". The limit is a real, reported bound; discarding it would
-    lose information, and shifting it would invent one.
-Thousands separators ("1,234")
-    Parsed as 1234 (Module 4's `coerce_numeric` already does this).
-Qualitative values ("Negative", "Trace")
-    Never coerced to a number. The row is preserved in `unmapped[]` with reason
-    `non_numeric_value`.
-Reference intervals
-    `reference_low` / `reference_high` are ALWAYS emitted in the same unit as
-    the feature's `value`. When the value is converted, the printed bounds go
-    through the SAME audited conversion and `provenance.reference_converted`
-    is true. A bound that cannot be carried across (a factor that would not
-    preserve the ordering, a non-finite result) is DROPPED with a warning --
-    never passed through in the printed unit, never guessed. The printed text
-    survives in `provenance.reference_range_raw`.
-Duplicates
-    See `_candidate_rank`.
-"""
-
 from __future__ import annotations
 
 import math
@@ -86,7 +39,6 @@ from app.schemas.features import (
     UpstreamPage,
 )
 
-# Leading comparators that mean the result is censored at a detection limit.
 _LEFT_CENSORED = ("<", "≤", "<=")
 _RIGHT_CENSORED = (">", "≥", ">=")
 
@@ -100,11 +52,6 @@ DUPLICATE_POLICY = (
     "6) earlier position in extracted_parameters[]. "
     "Discarded candidates are preserved in duplicates_resolved[] and unmapped[]."
 )
-
-
-# --------------------------------------------------------------------------
-# Internal candidate record
-# --------------------------------------------------------------------------
 
 
 class _Candidate:
@@ -141,25 +88,15 @@ class _Candidate:
 
 
 def _candidate_rank(candidate: _Candidate) -> Tuple:
-    """Sort key -- LOWEST tuple wins. Total and deterministic.
-
-    Every component is derived from the input only, so the same payload always
-    yields the same winner regardless of dict ordering or timing.
-    """
     prov: FeatureProvenance = candidate.provenance
     return (
-        -(candidate.specificity or 0),          # 1. specificity, higher first
-        0 if (prov.unit_recognised and not prov.unit_assumed) else 1,  # 2. unit
-        0 if prov.censored is None else 1,      # 3. uncensored first
-        -(prov.confidence if prov.confidence is not None else -1.0),  # 4. conf
-        prov.page_number if prov.page_number is not None else 10**6,  # 5. page
-        candidate.index,                        # 6. input order
+        -(candidate.specificity or 0),
+        0 if (prov.unit_recognised and not prov.unit_assumed) else 1,
+        0 if prov.censored is None else 1,
+        -(prov.confidence if prov.confidence is not None else -1.0),
+        prov.page_number if prov.page_number is not None else 10**6,
+        candidate.index,
     )
-
-
-# --------------------------------------------------------------------------
-# Value parsing
-# --------------------------------------------------------------------------
 
 
 def _detect_censoring(value_raw: Optional[str]) -> Optional[str]:
@@ -174,13 +111,6 @@ def _detect_censoring(value_raw: Optional[str]) -> Optional[str]:
 
 
 def _resolve_numeric(param: ExtractedParameter) -> Optional[float]:
-    """Module 4's number if it gave one, else a conservative re-parse.
-
-    Never invents a number: anything that is not cleanly numeric stays None.
-    Module 4's `coerce_numeric` already handles thousands separators and the
-    ASCII comparators; the unicode ones (U+2264/U+2265) are stripped here
-    first so "<=0.1" and "<0.1" behave identically.
-    """
     if param.value_numeric is not None:
         return param.value_numeric
     text = (param.value_raw or "").strip()
@@ -201,63 +131,9 @@ def _reference_bounds(
     warnings: List[str],
     sex_from: str = "the profile",
 ) -> Tuple[Optional[float], Optional[float], bool, Optional[str]]:
-    """`(low, high, converted, unit)` for the interval printed beside a value.
-
-    WHY THIS EXISTS AT THIS LAYER. `reference_low` / `reference_high` are
-    siblings of `value` and `unit` on the same record. If the value is
-    converted to the canonical unit and the bounds are not, the four fields no
-    longer share a unit system, and EVERY consumer that compares a value to
-    its own range -- the clinical rule engine, the dashboard's laboratory
-    card, Module 24's permitted-numbers set, and the prose the LLM is asked to
-    write -- compares two unit systems. Converting per consumer cannot fix
-    that: the next consumer starts from the same broken record. So the bounds
-    are carried into the value's unit HERE, where the record is created and
-    the conversion cannot be bypassed.
-
-    THE ARITHMETIC IS THE VALUE'S OWN. `conversion` is the very
-    `UnitConversion` from the audited `app/data/unit_conversions.py` that was
-    applied to this value. It is affine -- `canonical = raw * factor + offset`
-    -- and `offset` is non-zero for HbA1c IFCC (the NGSP master equation), so a
-    bare multiplication would be wrong there; `conversion.apply` is used
-    instead. No second factor table is introduced, and nothing is guessed.
-
-    MONOTONICITY. `raw * factor + offset` preserves order only for a positive
-    factor. A non-positive or non-finite factor or offset, or a bound that
-    converts to a non-finite number, is REFUSED: both bounds come back None
-    with a note and a warning. An interval that cannot be carried is absent,
-    never left in the printed unit and never approximated -- absence must not
-    become a value. `reference_range_raw` still preserves the printed text.
-
-    WHEN NO CONVERSION WAS APPLIED (no unit printed and the canonical unit
-    assumed, an unrecognised unit left unconverted, or an identity
-    conversion) the bounds and the value came off the same report line in the
-    same unit, so they are used as they stand and `converted` is False.
-    """
     low = param.reference_low
     high = param.reference_high
 
-    # AN INTERVAL PRINTED ONCE PER SEX, CHOSEN RATHER THAN GUESSED.
-    # ======================================================================
-    #
-    # `F:11 - 15 M:12 - 16` is refused upstream by
-    # `printed_range_is_only_a_range`, which is CORRECT -- two intervals side
-    # by side are exactly the shape that gate exists to keep out, because a
-    # band table has the same shape and must never be read as one range. So
-    # the bounds arrive here as None while the printed text survives.
-    #
-    # ⚠ WHAT THAT COST A READER. On `Test 3.pdf`, PCV 37.9 % rendered as "not
-    # checked" while sitting BELOW the male interval printed on the same line.
-    # The absence was reported honestly and the out-of-range result was not.
-    #
-    # DONE HERE, AND NOT IN THE SCHEMA, FOR TWO REASONS. The patient's sex is
-    # not in scope at extraction -- it is on the profile -- and bounds
-    # resolved at this layer are carried through the unit conversion below
-    # like any other, which is the whole argument of this function. A pair
-    # resolved downstream would be in the printed unit while the value is in
-    # the canonical one.
-    #
-    # ONLY WHEN THERE IS NOTHING TO OVERWRITE. If the model did supply bounds
-    # they are the model's reading of this row and are left alone.
     if low is None and high is None and sex:
         chosen = bounds_for_sex(param.reference_range_raw, sex)
         if chosen is not None:
@@ -308,26 +184,12 @@ def _reference_bounds(
     return new_low, new_high, True, conversion.to_unit
 
 
-# --------------------------------------------------------------------------
-# Lab-report parameters -> candidates
-# --------------------------------------------------------------------------
-
-
 def _build_lab_candidate(
     index: int,
     param: ExtractedParameter,
     sex: Optional[str] = None,
     sex_from: str = "the profile",
 ) -> Tuple[Optional[_Candidate], Optional[UnmappedItem], List[str]]:
-    """`sex` is the patient's normalised sex, or None when it is unknown --
-    the sex PRINTED on the report when it could be read, else the profile's.
-    `sex_from` names which, for the provenance note.
-
-    It is used for ONE thing: choosing between the two intervals a report
-    prints when it gives a reference range per sex. Defaulted so that every
-    existing caller -- and this module's own tests -- behave exactly as
-    before when no profile was supplied.
-    """
     warnings: List[str] = []
 
     match, reason = lookup_test_name(param.test_name)
@@ -351,7 +213,6 @@ def _build_lab_candidate(
 
     raw_number = _resolve_numeric(param)
     if raw_number is None:
-        # e.g. "Negative", "Trace", "Not Detected". Preserved, never guessed.
         return (
             None,
             UnmappedItem(
@@ -392,7 +253,6 @@ def _build_lab_candidate(
     notes: List[str] = []
 
     if unit_key is None:
-        # No unit printed at all.
         unit_assumed = True
         notes.append(
             f"No unit printed; assumed the canonical unit '{canonical_unit}'."
@@ -402,8 +262,6 @@ def _build_lab_candidate(
             f"'{canonical_unit}' was assumed for feature '{feature}'."
         )
     elif conversion is None:
-        # Printed, but not a unit we can convert for this feature. NEVER
-        # assumed to be canonical.
         unit_recognised = False
         out_unit = param.unit
         out_canonical = False
@@ -444,8 +302,6 @@ def _build_lab_candidate(
             formula=conversion.formula,
         )
 
-    # The printed interval must leave this function in the SAME unit as
-    # `value`. See `_reference_bounds`.
     ref_low, ref_high, ref_converted, ref_unit = _reference_bounds(
         param,
         conversion=conversion,
@@ -497,11 +353,6 @@ def _build_lab_candidate(
     return candidate, None, warnings
 
 
-# --------------------------------------------------------------------------
-# Patient profile -> features
-# --------------------------------------------------------------------------
-
-
 def _profile_feature(
     name: str,
     value: Any,
@@ -535,8 +386,6 @@ def _profile_feature(
 
 
 def _printed_details(upstream: Optional[ExtractionInput]) -> Dict[str, Any]:
-    """The sex and age the report PRINTS, read -- or absent. See
-    `app/services/printed_identity.py` for what is read and what is refused."""
     meta = upstream.report_metadata if upstream is not None else None
     raw_sex = getattr(meta, "patient_sex", None)
     raw_age = getattr(meta, "patient_age", None)
@@ -555,20 +404,6 @@ def _merge_report_details(
     features: Dict[str, EngineeredFeature],
     warnings: List[str],
 ) -> set:
-    """THE REPORT'S OWN SEX AND AGE, used in place of the profile's.
-
-    THE OWNER'S DECISION, 2026-09-25. Every analysis used the ACCOUNT
-    PROFILE's sex and age and never the report's: a report printing
-    "34 Years / Female" on a "20, male" account was scored as a 20-year-old
-    man, male thresholds and all. The report describes the person whose
-    blood it is; the profile describes whoever owns the account. So a value
-    the report prints, and this service could read, wins -- labelled
-    `report_details`, a patient DETAIL and never a measurement.
-
-    Where they disagree the provenance names both and a warning says so,
-    because a disagreement can also mean the report is someone else's.
-    Returns the feature names claimed, so the profile does not overwrite them.
-    """
     claimed = set()
     profile_values = {
         "gender": normalize_gender(profile.gender) if profile and profile.gender is not None else None,
@@ -620,14 +455,10 @@ def _merge_profile(
     skip = set(skip)
 
     def claim(name: str, feature: EngineeredFeature) -> None:
-        # Already taken from the report's own patient details, which win.
-        # Not a duplicate to discard and report: it is the decided order.
         if name in skip:
             return
         existing = features.get(name)
         if existing is not None:
-            # Should not happen with the current catalog (no profile feature
-            # has a lab synonym), but never silently overwrite if it ever does.
             warnings.append(
                 f"Feature '{name}' was already set from the "
                 f"{existing.source}; the patient-profile value was not applied."
@@ -644,14 +475,12 @@ def _merge_profile(
             return
         features[name] = feature
 
-    # --- age ---
     if profile.age is not None:
         claim(
             "age",
             _profile_feature("age", int(profile.age), source_field="age", raw=profile.age),
         )
 
-    # --- bmi (Module 2 derives it server-side; we only derive as a fallback) ---
     if profile.bmi is not None:
         claim(
             "bmi",
@@ -679,7 +508,6 @@ def _merge_profile(
             ),
         )
 
-    # --- tri-state booleans ---
     for name, raw_value, field_name in (
         ("hypertension", profile.hypertension, "hypertension"),
         ("heart_disease", profile.heart_disease, "heartDisease"),
@@ -701,15 +529,12 @@ def _merge_profile(
             )
             continue
         if parsed is None:
-            # Absent / explicitly unknown. Deliberately NOT set to false --
-            # it will appear in missing_features, meaning UNKNOWN.
             continue
         claim(
             name,
             _profile_feature(name, bool(parsed), source_field=field_name, raw=raw_value),
         )
 
-    # --- smoking history ---
     if profile.smoking_history is not None:
         category = normalize_smoking_history(profile.smoking_history)
         if category is None:
@@ -738,7 +563,6 @@ def _merge_profile(
                 ),
             )
 
-    # --- gender ---
     if profile.gender is not None:
         category = normalize_gender(profile.gender)
         if category is None:
@@ -765,11 +589,6 @@ def _merge_profile(
             )
 
 
-# --------------------------------------------------------------------------
-# Public entry point
-# --------------------------------------------------------------------------
-
-
 def _coerce_parameters(
     parameters: Iterable[Any],
 ) -> List[ExtractedParameter]:
@@ -783,10 +602,6 @@ def _coerce_parameters(
 
 
 def _build_upstream(extraction: Optional[ExtractionInput]) -> UpstreamExtraction:
-    """Carry Module 4's context forward so the final report can see it.
-
-    Nothing here is interpreted or recomputed -- it is relayed as received.
-    """
     if extraction is None:
         return UpstreamExtraction(provided=False)
 
@@ -813,23 +628,6 @@ def engineer_features(
     profile: Optional[Any] = None,
     extraction: Optional[Any] = None,
 ) -> FeatureEngineeringData:
-    """Convert Module 4 rows (+ optional Module 2 profile) into features.
-
-    Framework-independent: no FastAPI, no I/O, no global state. Accepts either
-    pydantic models or plain dicts so Module 7 and the ML layer can call it
-    directly.
-
-    `extraction` is Module 4's whole `data` object. When supplied, its
-    warnings, source, report metadata, extraction confidence and per-page
-    readability are CARRIED FORWARD into the result (`upstream`,
-    `upstream_warnings`, `all_warnings`). Module 4's warnings are the only
-    signal that a document was damaged or partially unreadable, so dropping
-    them would make a report built from an unreadable scan indistinguishable
-    from one built from a clean scan. Prefer `engineer_from_extraction`.
-
-    Raises `pydantic.ValidationError` if the inputs do not satisfy the Module 4
-    / Module 2 contracts.
-    """
     upstream_input: Optional[ExtractionInput] = None
     if extraction is not None:
         upstream_input = (
@@ -856,15 +654,6 @@ def engineer_features(
     unmapped: List[UnmappedItem] = []
     by_feature: Dict[str, List[_Candidate]] = {}
 
-    # THE SEX, FOR CHOOSING BETWEEN TWO PRINTED INTERVALS AND NOTHING ELSE.
-    # Normalised through the SAME `normalize_gender` the profile feature uses,
-    # so a value this service would refuse to record as a feature cannot come
-    # in here by a side door. `other`, an unrecognised value, and no profile
-    # at all all yield None, and None selects no interval.
-    #
-    # THE SEX THE REPORT PRINTS COMES FIRST (2026-09-25), for the reason in
-    # `_merge_report_details`: `F: 11-15 M: 12-16` on a woman's report must be
-    # read with the F interval whatever the account's profile says.
     printed = _printed_details(upstream_input)
     if printed["gender"] is not None:
         sex, sex_from = printed["gender"], "the report"
@@ -890,7 +679,6 @@ def engineer_features(
     conversions: List[ConversionRecord] = []
     duplicates: List[DuplicateResolution] = []
 
-    # Iterate the catalog order, not dict-insertion order, for stable output.
     for feature in LAB_FEATURES:
         candidates = by_feature.get(feature)
         if not candidates:
@@ -952,8 +740,6 @@ def engineer_features(
         StageWarning(stage=STAGE_EXTRACTION, module=4, message=message)
         for message in (upstream_input.warnings if upstream_input else [])
     ]
-    # Upstream first: a "page 2 was unreadable" caveat frames everything that
-    # Module 5 then says about the rows it did receive.
     all_warnings = upstream_warnings + [
         StageWarning(stage=STAGE_FEATURE_ENGINEERING, module=5, message=message)
         for message in warnings
@@ -996,11 +782,6 @@ def engineer_features(
 def engineer_from_extraction(
     extraction: Any, profile: Optional[Any] = None
 ) -> FeatureEngineeringData:
-    """Convenience wrapper taking Module 4's whole `data` object.
-
-    This is the preferred entry point: it carries Module 4's warnings, source,
-    report metadata, extraction confidence and per-page readability forward.
-    """
     if isinstance(extraction, ExtractionInput):
         payload = extraction
     else:

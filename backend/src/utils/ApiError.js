@@ -1,17 +1,6 @@
 'use strict';
 
-/**
- * Operational (expected) application error.
- * Anything thrown that is NOT an ApiError is treated as an unexpected failure
- * by the centralized error handler and is never echoed back to the client.
- */
 class ApiError extends Error {
-  /**
-   * @param {number} statusCode HTTP status code
-   * @param {string} code Stable machine-readable error code
-   * @param {string} message Human-readable message (safe to expose)
-   * @param {*} [details] Optional structured details (e.g. validation issues)
-   */
   constructor(statusCode, code, message, details) {
     super(message);
     this.name = 'ApiError';

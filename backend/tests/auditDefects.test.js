@@ -1,18 +1,5 @@
 'use strict';
 
-/**
- * Regression tests for the four defects the Modules 1-3 audit raised.
- *
- * Each test in here is written to FAIL against the pre-fix code. They are
- * deliberately behavioural rather than structural: D1 in particular was found
- * by sending a filename, not by reading the error handler, and a test that only
- * asserted "a branch exists" would not have caught it.
- *
- *   D1  busboy multipart parse errors reached the stack-printing 500 branch
- *   D2  a tampered storageDriver 500'd, and DELETE removed the row anyway
- *   D3  download trusted the stored mimeType without re-validating it
- *   D4  ownerScopedFilter could return an UNSCOPED filter for an id-less identity
- */
 
 const fs = require('fs');
 const os = require('os');
@@ -52,17 +39,11 @@ async function uploadReport(token) {
   return res.body.data.report;
 }
 
-/**
- * Write through the RAW driver, bypassing every mongoose validator - the only
- * way these fields can acquire a bad value, and exactly how the audit produced
- * D2 and D3.
- */
 const rawUpdate = (id, $set) =>
   mongoose.connection
     .collection('reports')
     .updateOne({ _id: new mongoose.Types.ObjectId(id) }, { $set });
 
-/** Assert a response carries no stack trace and no filesystem paths. */
 function expectNoDisclosure(res) {
   expect(res.body.error).toBeDefined();
   expect(res.body.error.stack).toBeUndefined();
@@ -77,14 +58,7 @@ describe('audit defect regressions (D1-D4)', () => {
     fs.rmSync(UPLOAD_ROOT, { recursive: true, force: true });
   });
 
-  // ==================================================================== D1 ===
   describe('D1 - multipart parse failures are 400, not a 500 with a stack', () => {
-    /**
-     * Busboy throws a bare `Error: Malformed part header` for a filename
-     * containing a control character. With no `code`, no `type` and no
-     * `expose`, it missed every branch of normalizeError and produced a 500
-     * whose body contained a stack naming node_modules/busboy.
-     */
     it.each([
       ['a NUL in the filename', 'a.pdf\u0000.php'],
       ['a SOH control character', 'a\u0001b.pdf'],
@@ -98,8 +72,6 @@ describe('audit defect regressions (D1-D4)', () => {
         .set(auth(user.token))
         .attach('file', pdfBytes(), { filename, contentType: 'application/pdf' });
 
-      // Either the parser rejects it (400) or it parses and the filename is
-      // sanitised (201). What must NEVER happen is a 500.
       expect([400, 201]).toContain(res.status);
       if (res.status === 400) {
         expect(res.body.success).toBe(false);
@@ -120,8 +92,6 @@ describe('audit defect regressions (D1-D4)', () => {
 
       expect(res.status).toBe(400);
       expect(res.body.error.code).toBe('BAD_REQUEST');
-      // Specifically NOT the generic 500 branch, which is the only branch that
-      // logs `[unhandled-error]` and prints a stack.
       expect(res.body.error.code).not.toBe('INTERNAL_ERROR');
       expectNoDisclosure(res);
     });
@@ -141,9 +111,6 @@ describe('audit defect regressions (D1-D4)', () => {
     });
 
     it('a malformed part header raised anywhere maps to 400', () => {
-      // The generalised half of the fix: a busboy error reaching the error
-      // handler by ANY route - not just through middleware/upload.js - is a
-      // client error, not an unmapped 500.
       const bare = new Error('Malformed part header');
       expect(isMultipartParseError(bare)).toBe(true);
       const mapped = normalizeError(bare);
@@ -154,7 +121,6 @@ describe('audit defect regressions (D1-D4)', () => {
       tagged.isMultipartParseError = true;
       expect(normalizeError(tagged).statusCode).toBe(400);
 
-      // A MulterError still goes through its own code-driven branch.
       const multerish = new Error('File too large');
       multerish.name = 'MulterError';
       multerish.code = 'LIMIT_FILE_SIZE';
@@ -169,7 +135,6 @@ describe('audit defect regressions (D1-D4)', () => {
     });
   });
 
-  // ==================================================================== D2 ===
   describe('D2 - an unresolvable storage driver', () => {
     it('is a mapped 503 on download, not a 500 with a stack', async () => {
       const user = await makeUser('d2-download@example.com');
@@ -183,16 +148,9 @@ describe('audit defect regressions (D1-D4)', () => {
       expect(res.status).toBe(503);
       expect(res.body.error.code).toBe('STORAGE_UNAVAILABLE');
       expectNoDisclosure(res);
-      // The driver name is not echoed back either.
       expect(JSON.stringify(res.body)).not.toContain('not-a-real-driver');
     });
 
-    /**
-     * THE PART THAT ACTUALLY MATTERED. The row was genuinely deleted and the
-     * caller was told the request had failed: a retry then 404'd and the file
-     * was orphaned with nothing recording it. The reported outcome must match
-     * reality.
-     */
     it('DELETE reports the truth: the row IS deleted, and it says so', async () => {
       const user = await makeUser('d2-delete@example.com');
       const report = await uploadReport(user.token);
@@ -205,7 +163,6 @@ describe('audit defect regressions (D1-D4)', () => {
       expect(res.body.data.fileRemoved).toBe(false);
       expect(res.body.data.fileOrphaned).toBe(true);
 
-      // The reported outcome and the database agree.
       expect(await Report.findById(report.id)).toBeNull();
     });
 
@@ -228,7 +185,7 @@ describe('audit defect regressions (D1-D4)', () => {
         raised = err;
       }
       const mapped = normalizeError(raised);
-      expect(mapped).not.toBeNull(); // pre-fix this fell through to the 500 branch
+      expect(mapped).not.toBeNull();
       expect(mapped.statusCode).toBe(503);
       expect(mapped.code).toBe('STORAGE_UNAVAILABLE');
     });
@@ -242,7 +199,6 @@ describe('audit defect regressions (D1-D4)', () => {
     });
   });
 
-  // ==================================================================== D3 ===
   describe('D3 - the served Content-Type is re-validated at serve time', () => {
     it('a mimeType tampered to text/html is not echoed into the header', async () => {
       const user = await makeUser('d3@example.com');
@@ -256,7 +212,6 @@ describe('audit defect regressions (D1-D4)', () => {
       expect(res.status).toBe(200);
       expect(res.headers['content-type']).toMatch(/application\/octet-stream/);
       expect(res.headers['content-type']).not.toMatch(/text\/html/);
-      // The existing mitigations are still all present.
       expect(res.headers['content-disposition']).toMatch(/^attachment;/);
       expect(res.headers['x-content-type-options']).toBe('nosniff');
       expect(res.headers['content-security-policy']).toBe("default-src 'none'; sandbox");
@@ -287,15 +242,7 @@ describe('audit defect regressions (D1-D4)', () => {
     });
   });
 
-  // ==================================================================== D4 ===
   describe('D4 - ownerScopedFilter checks identity BEFORE any role bypass', () => {
-    /**
-     * Pre-fix, the allowRoles grant was evaluated first, so an identity-less
-     * caller carrying a granted role received `{}` - an unscoped filter
-     * matching every document in the collection. Unreachable today only because
-     * every call site passes OWNER_ONLY; it is the footgun the throw was added
-     * to prevent, waiting for the first legitimate staff bypass.
-     */
     it('throws for an id-less identity even when its role is granted a bypass', () => {
       expect(() =>
         ownerScopedFilter({ role: ROLES.ADMIN }, { allowRoles: [ROLES.ADMIN] })
@@ -321,7 +268,6 @@ describe('audit defect regressions (D1-D4)', () => {
         { id, role: ROLES.ADMIN },
         { allowRoles: [ROLES.ADMIN] }
       );
-      // The bypass capability survives the reorder - only its precedence moved.
       expect(filter).toEqual({});
     });
 

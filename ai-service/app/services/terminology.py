@@ -1,59 +1,3 @@
-"""Module 25 -- Medical Terminology Explainer.
-
-Spec Module 25: explain terms such as HbA1c, LDL, HDL, creatinine, SGPT and
-eGFR -- what the test measures, why it is performed, what the value represents,
-general reference information, and why it may matter.
-
-==========================================================================
-THE HAZARD THIS MODULE IS BUILT AROUND
-==========================================================================
-
-Module 23 retrieves from CANONICAL FINDINGS, so its query vocabulary is
-guaranteed to exist in the corpus. Module 25 is the only place in VaidyaAI
-where a HUMAN-TYPED STRING reaches retrieval, and that is a different problem.
-
-The shipped retriever is TF-IDF, and the Module 21/22 build measured what that
-means for coverage: terms the corpus does NOT cover (TSH, ferritin, WBC, ALT,
-PSA, CRP) score 0.141-0.271, while terms it DOES cover score 0.121-0.27. Those
-ranges OVERLAP COMPLETELY. No similarity floor separates a question the corpus
-can answer from one it cannot. Concretely, `"what does my TSH mean"` retrieves
-TRIGLYCERIDE content and scores it respectably.
-
-A module that retrieved on the raw string and explained whatever came back
-would therefore, sooner or later, confidently explain triglycerides to someone
-who asked about their thyroid -- in fluent, safety-validated, well-cited prose,
-because every one of those controls would pass. Module 24 checks that text is
-safe; it has no way to know it is about the wrong organ.
-
-So this module does NOT retrieve on free text. Ever.
-
-    term  ->  EXACT MAPPING to a canonical feature or a named document
-          ->  if it maps:      serve THAT document
-          ->  if it does not:  say the term is not covered. Stop.
-
-`resolve_term` is that mapping, and it is exact-key lookup against tables the
-platform already maintains (`feature_catalog.SYNONYM_INDEX` via
-`lookup_test_name`, plus the curated `TERM_ALIASES` below for terms the corpus
-covers that are not canonical features). There is no similarity, no threshold,
-no nearest match, and no fallback to search. An unmapped term is refused.
-
-The cost of this design is real and is accepted: a term the corpus does not
-cover is REFUSED rather than answered. SGPT was the spec's own example of that
-gap until 2026-10-04, when reviewed ALT/SGPT and AST/SGOT documents were added
-and mapped by exact alias below.
-
-==========================================================================
-WHY THE DEFAULT PATH DOES NOT USE THE LLM
-==========================================================================
-
-The curated corpus was written to be read by patients and is scanned for
-unsafe wording at import (`app/data/knowledge_safety.py`). For "what does
-HbA1c measure", an LLM adds nothing a reviewer wrote it does not already say,
-and adds a hallucination surface. So the default is `serve_from_knowledge_base`
-and the LLM is opt-in (`simplify=True`), gated by exactly the same
-`guarded_generation` as Module 23.
-"""
-
 from __future__ import annotations
 
 import re
@@ -94,18 +38,10 @@ logger = get_logger(__name__)
 
 TERMINOLOGY_VERSION = "1.0.0"
 
-#: Terms are short. A "term" of paragraph length is not a term.
 MAX_TERM_CHARS = 80
 
-#: What may be echoed back to the reader when a term is refused. Anything else
-#: in the submitted string is dropped before it is put in a sentence -- the
-#: refusal message is the one place user input reaches patient-facing output.
 _ECHOABLE = re.compile(r"[^A-Za-z0-9 /()\-.,%+']")
 
-
-# --------------------------------------------------------------------------
-# Outcomes
-# --------------------------------------------------------------------------
 
 OUTCOME_SERVED_FROM_KNOWLEDGE_BASE = "served_from_knowledge_base"
 OUTCOME_GENERATED = "generated"
@@ -139,20 +75,8 @@ TERMINOLOGY_POLICY = (
 )
 
 
-# --------------------------------------------------------------------------
-# The curated alias table
-# --------------------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class TermTarget:
-    """What a recognised term resolves to.
-
-    `doc_ids` is the AUTHORITATIVE selection when present: the documents a
-    reviewer decided answer this term. `feature` is the canonical feature the
-    term names, used both for citation and to select feature-tagged documents
-    when no explicit `doc_ids` were given.
-    """
 
     label: str
     feature: Optional[str] = None
@@ -171,13 +95,6 @@ def _alias(label: str, *terms: str, feature: Optional[str] = None, docs: Tuple[s
 
 
 def _build_aliases() -> Dict[str, TermTarget]:
-    """Terms the corpus covers that are NOT canonical features.
-
-    Every entry names the document(s) a reviewer chose. `_self_check` below
-    verifies at import that each named document exists, so a corpus edit that
-    removes a document breaks the service at start-up rather than producing a
-    terminology answer with no content.
-    """
     table: Dict[str, TermTarget] = {}
     for group in (
         _alias(
@@ -248,10 +165,6 @@ def _build_aliases() -> Dict[str, TermTarget]:
             "mmol per L",
             docs=("term_units_mgdl_mmoll",),
         ),
-        # LIVER ENZYMES (owner, 2026-10-04). Still EXACT keys: every printed
-        # form below was chosen by hand, and anything else is refused as
-        # before. No `feature` -- these are not catalogue features and
-        # nothing on this platform assesses them.
         _alias(
             "ALT (SGPT)",
             "ALT",
@@ -305,13 +218,7 @@ def _build_aliases() -> Dict[str, TermTarget]:
 TERM_ALIASES: Dict[str, TermTarget] = _build_aliases()
 
 
-# --------------------------------------------------------------------------
-# Resolution
-# --------------------------------------------------------------------------
-
-
 class TermResolution(BaseModel):
-    """The mapping decision, separated from the answer so it can be tested."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -332,16 +239,10 @@ def _documents_for(target: TermTarget) -> List[KnowledgeDocument]:
     return []
 
 
-#: Topics that answer "what is this test". A condition document explains a
-#: disease and is not what someone asking "what is creatinine" wants first.
 _TERM_TOPICS: Tuple[str, ...] = (
     TOPIC_LAB_TEST,
     TOPIC_TERMINOLOGY,
     TOPIC_REFERENCE,
-    # The profile parameters (age, BMI, gender, smoking history, and the two
-    # history flags) are documented under `educational_explanation` rather
-    # than `laboratory_test`, because they are not tests. They are still
-    # canonical features a reader may ask about by name.
     TOPIC_EDUCATION,
 )
 
@@ -349,7 +250,6 @@ _TERM_TOPICS: Tuple[str, ...] = (
 def _feature_documents(feature: str) -> List[KnowledgeDocument]:
     docs = documents_for_feature(feature)
     ordered = [d for topic in _TERM_TOPICS for d in docs if d.topic == topic]
-    # De-duplicate, preserving the topic ordering above.
     seen: Dict[str, None] = {}
     out: List[KnowledgeDocument] = []
     for doc in ordered:
@@ -360,12 +260,6 @@ def _feature_documents(feature: str) -> List[KnowledgeDocument]:
 
 
 def resolve_term(term: str) -> TermResolution:
-    """Map a submitted term onto curated content, or refuse it.
-
-    EXACT mapping only. Returns `covered=False` for anything the tables do not
-    name; the caller must not then "try a search anyway". See the module
-    docstring for the measurement that makes that non-negotiable.
-    """
     raw = (term or "").strip()[:MAX_TERM_CHARS]
     normalised = normalize_test_name(raw)
     if not normalised:
@@ -376,10 +270,6 @@ def resolve_term(term: str) -> TermResolution:
             resolution=RESOLUTION_EMPTY,
         )
 
-    # A canonical feature name IS a term. Exact DICTIONARY MEMBERSHIP after
-    # the platform's own normalisation -- "BMI", "bmi" and "Vitamin B12" all
-    # resolve; "hba1c and thyroid" does not, because the key it produces is
-    # simply not in the dictionary. No similarity is involved.
     canonical = normalised.replace(" ", "_")
     if canonical in FEATURES and _feature_documents(canonical):
         return TermResolution(
@@ -417,9 +307,6 @@ def resolve_term(term: str) -> TermResolution:
                 doc_ids=tuple(d.doc_id for d in docs),
                 label=match.matched_term,
             )
-        # The vocabulary knows the term but the corpus has nothing to say about
-        # it. Refusing is the only honest answer; retrieving would return the
-        # nearest unrelated document.
         return TermResolution(
             term=raw,
             normalised=normalised,
@@ -437,11 +324,6 @@ def resolve_term(term: str) -> TermResolution:
 
 
 def covered_terms() -> Tuple[str, ...]:
-    """Every term this module will answer, for the "not covered" reply.
-
-    Derived from the same tables `resolve_term` consults, so the published list
-    cannot drift from what actually resolves.
-    """
     labels = {t.label for t in TERM_ALIASES.values()}
     for feature in FEATURES:
         if _feature_documents(feature):
@@ -449,13 +331,7 @@ def covered_terms() -> Tuple[str, ...]:
     return tuple(sorted(labels))
 
 
-# --------------------------------------------------------------------------
-# Answers
-# --------------------------------------------------------------------------
-
-
 class TerminologyAnswer(BaseModel):
-    """One terminology answer, or the reason there is not one."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -466,8 +342,6 @@ class TerminologyAnswer(BaseModel):
     resolution: str
     canonical_feature: Optional[str] = None
     outcome: str
-    #: The ONLY string a caller may show. Either reviewed corpus text or
-    #: `guarded_generation().approved_text` -- never raw model output.
     explanation: Optional[str] = None
     source_kind: str = Field(
         description=(
@@ -489,13 +363,6 @@ def _echoable(term: str) -> str:
 
 
 def _not_covered_notice(term: str) -> str:
-    """Fixed wording, with the submitted term echoed only after filtering.
-
-    This is the single place a human-typed string reaches patient-facing
-    output, so it is filtered to a conservative character set AND the finished
-    sentence is put through Module 24 by the caller. If the validator refuses
-    it, `_not_covered_notice_anonymous` is used instead.
-    """
     safe = _echoable(term)
     if not safe:
         return _not_covered_notice_anonymous()
@@ -519,12 +386,6 @@ def _not_covered_notice_anonymous() -> str:
 
 
 def _assemble(docs: Sequence[KnowledgeDocument]) -> str:
-    """Build the served answer from curated text ONLY.
-
-    Composition is concatenation: no sentence here was written at runtime
-    except the two catalogue lines appended at the end, both of which are read
-    from `recommendation_catalog` by code rather than typed in.
-    """
     parts: List[str] = []
     for doc in docs:
         parts.append(doc.summary.strip())
@@ -532,8 +393,6 @@ def _assemble(docs: Sequence[KnowledgeDocument]) -> str:
             parts.append(paragraph)
     parts.append(recommendation(NOT_A_DIAGNOSIS).text)
     parts.append(recommendation(DISCUSS_WITH_CLINICIAN).text)
-    # De-duplicate adjacent repeats (a summary that restates its first
-    # paragraph is common in the corpus).
     out: List[str] = []
     for part in parts:
         if part and (not out or out[-1] != part):
@@ -542,12 +401,6 @@ def _assemble(docs: Sequence[KnowledgeDocument]) -> str:
 
 
 def _scored(docs: Sequence[KnowledgeDocument]) -> List[ScoredChunk]:
-    """Real `Chunk`s for the selected documents, at score 1.0.
-
-    1.0 records that these were SELECTED BY EXACT MAPPING, not ranked by
-    similarity. Reusing `chunk_document` rather than inventing a second
-    representation keeps the citation shape identical to Module 21's.
-    """
     out: List[ScoredChunk] = []
     for doc in docs:
         for chunk in chunk_document(doc):
@@ -556,32 +409,10 @@ def _scored(docs: Sequence[KnowledgeDocument]) -> List[ScoredChunk]:
 
 
 def _not_covered(resolution: TermResolution) -> TerminologyAnswer:
-    # STEP 1 -- validate the ECHO ON ITS OWN, before it is wrapped.
-    #
-    # Validating only the finished sentence was not enough, and the reason is
-    # subtle enough to be worth writing down. `_drop_disclaimed_replacements`
-    # excuses a REPLACES_PROFESSIONAL_CONSULTATION hit when a negator sits in
-    # the 60 characters before it, inside the same sentence. The template's own
-    # opening -- "This platform DOES NOT hold reviewed information about the
-    # term '<echo>'" -- puts a negator there every single time. So the carve-out
-    # was disarmed BY CONSTRUCTION for every echo, and
-    #
-    #     explain_term("there is no need to see a doctor")
-    #
-    # returned that phrase verbatim to the patient inside an otherwise safe
-    # sentence. Medication and dosage injections were caught, because those
-    # rules have no negation carve-out; only this class leaked.
-    #
-    # Checking the bare echo first removes the template's negator from the
-    # picture entirely, so the phrase is judged on its own words.
     bare_echo = _echoable(resolution.term)
     echo_verdict = validate_text(
         bare_echo,
         SafetyContext(
-            # A bare term is not a sentence, so the positive controls that
-            # require sentence structure are off here. Only the PROHIBITION
-            # rules matter for this check: does the submitted string itself
-            # contain something we refuse to repeat back?
             require_referral=False,
             check_numeric_grounding=False,
             purpose="module_25_echo",
@@ -595,8 +426,6 @@ def _not_covered(resolution: TermResolution) -> TerminologyAnswer:
         else _not_covered_notice(resolution.term)
     )
 
-    # STEP 2 -- validate the assembled sentence as before. Defence in depth:
-    # step 1 judges the echo, step 2 judges what the reader actually sees.
     verdict = validate_text(
         notice,
         SafetyContext(
@@ -607,11 +436,6 @@ def _not_covered(resolution: TermResolution) -> TerminologyAnswer:
     )
     echoed = "" if echo_is_unsafe else bare_echo
     if echo_is_unsafe or verdict.verdict == REJECT or verdict.approved_text is None:
-        # The echoed term made the sentence unsafe -- which is exactly what a
-        # prompt-injection attempt through the `term` field would look like.
-        # The echo is dropped from the WHOLE response, not just the sentence:
-        # a `term` field carrying "take metformin" is the same leak in a
-        # different key.
         notice = _not_covered_notice_anonymous()
         echoed = ""
     else:
@@ -645,19 +469,12 @@ def explain_term(
     llm: Any = None,
     settings: Optional[Settings] = None,
 ) -> TerminologyAnswer:
-    """Explain one medical term, or refuse it.
-
-    Default path serves the curated corpus verbatim. `simplify=True` asks the
-    LLM to rewrite that same curated text in plainer language, gated by the
-    same `guarded_generation` Module 23 uses -- and still only for a term that
-    already mapped.
-    """
     resolution = resolve_term(term)
     if not resolution.covered:
         return _not_covered(resolution)
 
     docs = [DOCUMENTS[d] for d in resolution.doc_ids if d in DOCUMENTS]
-    if not docs:  # pragma: no cover -- `_self_check` makes this unreachable
+    if not docs:
         return _not_covered(
             resolution.model_copy(
                 update={"covered": False, "resolution": RESOLUTION_NO_CORPUS_COVERAGE}
@@ -689,9 +506,6 @@ def explain_term(
                 sources=generated.sources,
                 safety=generated.safety,
             )
-        # Generation was refused. Rather than show the fallback, fall back to
-        # the CURATED text -- which is a better answer than none and is exactly
-        # what the default path would have served.
         logger.info(
             "terminology_generation_withheld %s",
             safe_meta(module=25, outcome=generated.outcome),
@@ -709,8 +523,6 @@ def explain_term(
         ),
     )
     if verdict.approved_text is None:
-        # Reviewed corpus text that the safety layer refuses is a defect in the
-        # corpus, not a reason to show it anyway.
         logger.warning(
             "terminology_curated_text_rejected %s",
             safe_meta(
@@ -761,7 +573,6 @@ def explain_term(
 
 
 def terminology_policy_document() -> Dict[str, Any]:
-    """What this module answers, what it refuses, and why."""
     return {
         "module": 25,
         "version": TERMINOLOGY_VERSION,
@@ -788,11 +599,6 @@ def terminology_policy_document() -> Dict[str, Any]:
     }
 
 
-#: Terms the SPEC names that the corpus does not cover, stated openly rather
-#: than answered from the nearest document. Reviewed alongside Module 22.
-#: SGPT / ALT left this list on 2026-10-04 (reviewed documents
-#: `term_alt_sgpt` and `term_ast_sgot`). The rest of the liver panel --
-#: alkaline phosphatase, bilirubin, GGT, albumin -- is still not covered.
 KNOWN_GAPS: Tuple[str, ...] = (
     "Other liver tests (alkaline phosphatase, bilirubin, GGT, albumin)",
     "TSH and thyroid tests",
@@ -804,7 +610,6 @@ KNOWN_GAPS: Tuple[str, ...] = (
 
 
 def _self_check() -> None:
-    """Import-time guarantees. A broken table stops the service starting."""
     for key, target in TERM_ALIASES.items():
         if not key:
             raise ValueError("empty terminology alias key")
@@ -823,9 +628,6 @@ def _self_check() -> None:
             raise ValueError(
                 f"terminology alias {target.label!r} resolves to nothing"
             )
-    # Every term this module ADVERTISES must actually resolve. Publishing a
-    # term in the "not covered" reply that then refuses would be worse than
-    # publishing nothing.
     for advertised in covered_terms():
         if not resolve_term(advertised).covered:
             raise ValueError(

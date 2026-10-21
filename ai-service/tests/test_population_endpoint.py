@@ -1,31 +1,3 @@
-"""Module 31 over HTTP -- `POST /api/v1/population/context`, `GET .../policy`.
-
-The router is a thin wrapper, so this file tests the things a wrapper can get
-wrong and the service cannot:
-
-  * AUTH. `/context` carries medical values and is therefore PHI-bearing.
-    `tests/test_auth.py` walks the route tree and would catch a missing
-    dependency; this file additionally checks that a real unauthenticated call
-    is actually refused, and that `/policy` -- which carries no patient data --
-    is behind the same key because the whole `/api/v1` surface is.
-
-  * THE ENVELOPE. `{success, data}` on success, `{success, error}` on
-    rejection, like every other endpoint in this service.
-
-  * A REFUSAL IS A 200. "No population group matches you" is the answer
-    Module 31 was built to give, not an error. A 4xx here would make a backend
-    render an outage where the truth was a documented absence.
-
-  * WHAT IS ACTUALLY A 422: a malformed request that has no honest answer --
-    two sources for the same value, no source at all, or the same feature
-    twice. Everything else (a bad unit, a non-numeric value, an unknown
-    feature name) is answered per feature and must NOT discard the request.
-
-  * THE SERIALISED SHAPE. `response_model_exclude_none=False`, so an
-    unavailable entry serialises `"comparison": null` -- and null is the whole
-    point: there is no object there for a percentile to be in.
-"""
-
 from __future__ import annotations
 
 import json
@@ -51,10 +23,6 @@ GOOD_VALUE = {
     "creatinine": 0.9,
     "cholesterol": 190.0,
     "bmi": 27.0,
-    # ---- the complete blood count ----
-    # Near the published median for the 40-49 cohorts, in the TABLE's own
-    # unit. Total over COVERED_FEATURES by design: a new table with no row
-    # here fails with a KeyError rather than being skipped.
     "hematocrit": 42.0,
     "rbc_count": 4.7,
     "mcv": 89.0,
@@ -101,15 +69,8 @@ def numbers_in(blob: Any) -> List[float]:
     return found
 
 
-# --------------------------------------------------------------------------
-# Authentication
-# --------------------------------------------------------------------------
-
-
 @pytest.mark.parametrize("path", [CONTEXT, POLICY])
 def test_both_endpoints_refuse_an_unauthenticated_call(authed_client, path):
-    """`/context` carries medical values; `/policy` is behind the same key
-    because the whole `/api/v1` surface is."""
     response = (
         authed_client.post(path, json=body([measurement("hba1c")]))
         if path == CONTEXT
@@ -142,14 +103,8 @@ def test_the_correct_key_is_accepted_on_both_endpoints(authed_client):
 
 
 def test_authentication_is_checked_before_the_body_is_read(authed_client):
-    """An unauthenticated caller learns nothing about the request contract."""
     response = authed_client.post(CONTEXT, json={"garbage": True})
     assert response.status_code == 401
-
-
-# --------------------------------------------------------------------------
-# The success envelope
-# --------------------------------------------------------------------------
 
 
 def test_a_successful_call_returns_the_services_standard_envelope(client):
@@ -177,7 +132,6 @@ def test_a_successful_call_returns_the_services_standard_envelope(client):
 
 
 def test_the_full_comparison_survives_serialisation_intact(client):
-    """The band must be checkable from the JSON, not only from the model."""
     response = client.post(CONTEXT, json=body([measurement("vitamin_d", value=30, unit="ng/mL")]))
     comparison = response.json()["data"]["features"]["vitamin_d"]["comparison"]
     assert comparison["unit"] == "nmol/l"
@@ -199,11 +153,6 @@ def test_the_full_comparison_survives_serialisation_intact(client):
     }
 
 
-# --------------------------------------------------------------------------
-# A refusal is a 200
-# --------------------------------------------------------------------------
-
-
 @pytest.mark.parametrize(
     "payload,expected",
     [
@@ -217,8 +166,6 @@ def test_the_full_comparison_survives_serialisation_intact(client):
     ],
 )
 def test_every_refusal_is_a_200_with_a_reason_code(client, payload, expected):
-    """A 4xx would make a backend render an outage where the truth was a
-    documented absence -- the answer Module 31 was built to give."""
     response = client.post(CONTEXT, json=payload)
     assert response.status_code == 200
     entry = response.json()["data"]["features"]["hba1c"]
@@ -228,8 +175,6 @@ def test_every_refusal_is_a_200_with_a_reason_code(client, payload, expected):
 
 
 def test_an_unavailable_entry_serialises_a_null_comparison_and_no_number(client):
-    """`response_model_exclude_none=False` keeps the key -- and null is the
-    point: there is no object there for a percentile to be in."""
     response = client.post(CONTEXT, json=body([measurement("hba1c")], gender="other"))
     entry = response.json()["data"]["features"]["hba1c"]
     assert "comparison" in entry
@@ -238,7 +183,6 @@ def test_an_unavailable_entry_serialises_a_null_comparison_and_no_number(client)
 
 
 def test_a_whole_unmatched_response_carries_no_population_number(client):
-    """The end-to-end no-value guarantee, over the wire."""
     response = client.post(
         CONTEXT,
         json=body(
@@ -268,8 +212,6 @@ def test_an_excluded_feature_is_a_200_with_its_own_reason(client):
 
 
 def test_an_unknown_feature_name_does_not_discard_the_rest_of_the_request(client):
-    """One odd row must not turn into an opaque 422 that throws away seven
-    perfectly good values."""
     response = client.post(
         CONTEXT,
         json=body([measurement("hba1c"), {"feature": "banana", "value": 1, "unit": "%"}]),
@@ -282,20 +224,11 @@ def test_an_unknown_feature_name_does_not_discard_the_rest_of_the_request(client
 
 @pytest.mark.parametrize("code", sorted(REASON_CODES))
 def test_no_reason_code_the_schema_accepts_is_missing_from_the_policy(client, code):
-    """A code the router could emit with no published wording would reach a
-    client as a bare identifier."""
     document = client.get(POLICY).json()["data"]
     assert code in document["policy"]["reason_codes"]
 
 
-# --------------------------------------------------------------------------
-# What IS a 422
-# --------------------------------------------------------------------------
-
-
 def test_sending_both_measurements_and_a_snapshot_is_a_422(client):
-    """Two sources for the same feature would make the answer depend on which
-    one the service happened to read first."""
     response = client.post(
         CONTEXT,
         json={
@@ -313,14 +246,12 @@ def test_sending_both_measurements_and_a_snapshot_is_a_422(client):
 
 
 def test_sending_neither_source_is_a_422(client):
-    """An empty request would return an empty answer that looks like a fault."""
     assert client.post(CONTEXT, json={"age": 45, "gender": "male"}).status_code == 422
     assert client.post(CONTEXT, json={"measurements": []}).status_code == 422
     assert client.post(CONTEXT, json={}).status_code == 422
 
 
 def test_the_same_feature_twice_is_a_422(client):
-    """Picking one silently would hide the disagreement between them."""
     response = client.post(
         CONTEXT,
         json=body([measurement("hba1c"), measurement("hba1c", value=9.9)]),
@@ -366,7 +297,6 @@ def test_a_measurement_with_no_feature_name_is_a_422(client):
 
 
 def test_a_relayed_envelope_is_unwrapped_rather_than_read_as_empty(client):
-    """The Node backend relays `{data: {...}}`; that must not be a 422."""
     response = client.post(
         CONTEXT,
         json={
@@ -381,14 +311,7 @@ def test_a_relayed_envelope_is_unwrapped_rather_than_read_as_empty(client):
     assert data["features"]["hba1c"]["available"] is True
 
 
-# --------------------------------------------------------------------------
-# GET /policy
-# --------------------------------------------------------------------------
-
-
 def test_the_policy_endpoint_publishes_the_rules_and_the_evidence(client):
-    """A percentile is only meaningful if a reader can see which population
-    it describes and which file it came from."""
     response = client.get(POLICY)
     assert response.status_code == 200
     payload = response.json()
@@ -412,8 +335,6 @@ def test_the_policy_endpoint_publishes_the_rules_and_the_evidence(client):
 
 
 def test_the_policy_endpoint_names_what_is_not_covered_and_why(client):
-    """A module that silently omits a feature is indistinguishable from one
-    that forgot it."""
     excluded = client.get(POLICY).json()["data"]["service"]["tables"][
         "excluded_features"
     ]
@@ -425,21 +346,18 @@ def test_the_policy_endpoint_names_what_is_not_covered_and_why(client):
 
 
 def test_the_policy_endpoint_returns_no_patient_data(client):
-    """It is the reviewer-facing endpoint; it must be safe to share."""
     text = client.get(POLICY).text
     for token in ("patient_ref", "snapshot_id", "Jordan", "value_raw"):
         assert token not in text
 
 
 def test_the_policy_endpoint_is_stable_across_calls(client):
-    """Static, reviewable data -- not a report about a request."""
     first = client.get(POLICY).json()
     second = client.get(POLICY).json()
     assert first == second
 
 
 def test_the_endpoints_do_not_appear_twice_in_the_route_table():
-    """A double mount would make behaviour depend on registration order."""
     from app.main import app
 
     def walk(routes):

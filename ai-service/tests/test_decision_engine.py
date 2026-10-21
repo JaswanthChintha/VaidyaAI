@@ -1,11 +1,3 @@
-"""Module 15 -- the Decision Engine.
-
-The load-bearing behaviours here are all about NOT LOSING THINGS: not losing a
-source's decisions when the other source raises, not losing an upstream
-warning, not losing per-rule traceability while still collapsing the rule
-engine's several decisions per condition down to one entry per source.
-"""
-
 from __future__ import annotations
 
 from typing import Any, Dict, List
@@ -43,12 +35,7 @@ from app.services.decision_engine import (
     merge_stage_warnings,
 )
 
-# --------------------------------------------------------------------------
-# Fixtures and helpers
-# --------------------------------------------------------------------------
 
-#: HbA1c 6.8 AND fasting glucose 112 -- the exact patient from the integration
-#: audit, for whom the rule engine correctly emits TWO Diabetes decisions.
 TWO_RULE_DIABETES_FEATURES: Dict[str, Any] = {
     "features": {
         "hba1c": {"name": "hba1c", "value": 6.8, "unit": "%"},
@@ -102,7 +89,7 @@ def rec(code: str) -> Recommendation:
 
 
 class SilentRegistry(PredictorRegistry):
-    """An empty registry -- no model runs, so the rule engine is alone."""
+    pass
 
 
 class FakeDiabetesPredictor(Predictor):
@@ -140,19 +127,7 @@ def registry_with(*predictors: Predictor) -> PredictorRegistry:
     return registry
 
 
-# --------------------------------------------------------------------------
-# THE AUDIT REQUIREMENT: group by (condition, source)
-# --------------------------------------------------------------------------
-
-
 def test_two_rules_on_one_condition_become_one_group_with_the_union_of_evidence():
-    """The exact defect the integration audit carried into this brief.
-
-    HbA1c 6.8 fires the HbA1c rule; fasting glucose 112 fires the glucose rule.
-    Both are `Diabetes`, both from `Clinical Rule Engine`. That is CORRECT at
-    Module 8 -- the unit of a rule decision is one rule -- and must collapse to
-    ONE entry before fusion.
-    """
     data = collect_decisions(
         engineered=TWO_RULE_DIABETES_FEATURES, registry=SilentRegistry()
     )
@@ -176,18 +151,15 @@ def test_two_rules_on_one_condition_become_one_group_with_the_union_of_evidence(
     assert group.member_count == len(raw)
     assert group.decision_ids == [item.decision_id for item in raw]
 
-    # The union of evidence, not one rule's slice of it.
     union = {item.dedup_key() for d in raw for item in d.decision.evidence}
     assert {item.dedup_key() for item in group.decision.evidence} == union
     assert "hba1c" in group.decision.evidence_features()
     assert "blood_glucose" in group.decision.evidence_features()
 
-    # And the collapse is visible rather than silent.
     assert f"{C.DIABETES} / Clinical Rule Engine" in data.summary.multi_decision_groups
 
 
 def test_the_group_keeps_the_highest_risk_and_most_severe_status():
-    """Indicated/High (HbA1c) beside Borderline/Medium (glucose) -> Indicated/High."""
     group = group_decisions(
         collection_from_decisions(
             [
@@ -202,7 +174,6 @@ def test_the_group_keeps_the_highest_risk_and_most_severe_status():
 
 
 def test_a_within_source_merge_is_not_a_hybrid_decision():
-    """Merging two rule decisions yields a RULE decision. Only 16 emits FUSION."""
     group = group_decisions(
         collection_from_decisions([decision(), decision()]).collected
     )[0]
@@ -250,11 +221,6 @@ def test_groups_come_out_in_canonical_condition_order():
     ]
 
 
-# --------------------------------------------------------------------------
-# Stable ids
-# --------------------------------------------------------------------------
-
-
 def test_ids_are_deterministic_across_runs():
     first = collect_decisions(
         engineered=TWO_RULE_DIABETES_FEATURES, registry=SilentRegistry()
@@ -273,7 +239,6 @@ def test_ids_are_unique_and_name_the_rule_that_produced_the_decision():
     assert len(ids) == len(set(ids))
     for item in data.collected:
         assert item.decision_id.startswith(("rules:", "ml:"))
-        # Module 20 must be able to name the exact rule.
         assert item.trace, f"{item.decision_id} carries no trace"
         assert item.trace == item.decision.metadata.get("rule_id")
 
@@ -290,17 +255,11 @@ def test_a_repeated_trace_is_disambiguated_rather_than_randomised():
 
 
 def test_every_group_member_id_exists_in_the_collection():
-    """Module 20 traces a fused finding back through these ids; no dangling ones."""
     data = collect_decisions(engineered=FULL_FEATURES, registry=SilentRegistry())
     known = {item.decision_id for item in data.collected}
     for group in data.groups:
         assert set(group.decision_ids) <= known
     assert sum(g.member_count for g in data.groups) == len(data.collected)
-
-
-# --------------------------------------------------------------------------
-# Resilience: one source failing must not lose the other's decisions
-# --------------------------------------------------------------------------
 
 
 def test_the_rule_engine_failing_keeps_the_model_decisions(monkeypatch):
@@ -338,7 +297,6 @@ def test_the_model_layer_failing_keeps_the_rule_decisions(monkeypatch):
 
 
 def test_a_failure_message_never_carries_the_exception_text(monkeypatch):
-    """The exception message quotes a patient value. It must not be relayed."""
 
     def boom(*args, **kwargs):
         raise RuntimeError("model blew up with hba1c 6.8 and glucose 112")
@@ -359,11 +317,6 @@ def test_both_sources_failing_still_returns_a_well_formed_result(monkeypatch):
     assert len(data.summary.sources_failed) == 2
     assert data.summary.highest_risk is None, "nothing assessed must not become Low"
     assert any("no analytical source produced a decision" in w for w in data.warnings)
-
-
-# --------------------------------------------------------------------------
-# Warnings: origins intact, nothing dropped, nothing duplicated
-# --------------------------------------------------------------------------
 
 
 def test_an_upstream_warning_survives_with_its_original_origin():
@@ -396,7 +349,6 @@ def test_module_15_stamps_its_own_stage_on_its_own_warnings(monkeypatch):
 
 
 def test_merge_stage_warnings_keeps_two_stages_that_said_the_same_thing():
-    """De-duplication is on (stage, module, message), never on the message alone."""
     merged = merge_stage_warnings(
         [StageWarning(stage="extraction", module=4, message="same")],
         [
@@ -413,11 +365,6 @@ def test_every_warning_module_15_produces_is_safe_to_show_a_patient(monkeypatch)
     data = collect_decisions(engineered=FULL_FEATURES)
     for message in data.warnings:
         assert scan_text(message) == [], message
-
-
-# --------------------------------------------------------------------------
-# The shared merge core
-# --------------------------------------------------------------------------
 
 
 def test_risk_merge_at_every_ordering_boundary():
@@ -438,7 +385,6 @@ def test_risk_merge_at_every_ordering_boundary():
 
 
 def test_an_empty_set_yields_no_risk_and_no_status_of_assessment():
-    """`RiskLevel.highest([])` is None, not LOW. Module 15 must not undo that."""
     merged = merge_decision_set([])
     assert merged.risk is None
     assert merged.status is DecisionStatus.INSUFFICIENT_DATA
@@ -459,9 +405,6 @@ def test_status_merge_takes_the_most_severe_assessed_value():
         assert merged.status is expected, statuses
 
 
-# ---- confidence: None is NOT 0.0 -----------------------------------------
-
-
 def test_none_confidence_is_absent_from_the_maximum_not_read_as_zero():
     merged = merge_decision_set(
         [
@@ -478,7 +421,6 @@ def test_none_confidence_is_absent_from_the_maximum_not_read_as_zero():
 
 
 def test_a_zero_confidence_model_takes_part_and_is_not_treated_as_absent():
-    """`0.0` means a model RAN and was maximally unconfident. It is a value."""
     merged = merge_decision_set(
         [
             decision(
@@ -527,9 +469,6 @@ def test_nothing_assessed_carries_no_confidence():
     assert merged.status is DecisionStatus.INSUFFICIENT_DATA
 
 
-# ---- evidence and recommendations ----------------------------------------
-
-
 def test_identical_evidence_from_two_sources_is_shown_once():
     item = EvidenceItem(feature="hba1c", value=6.8, unit="%", threshold=6.5)
     merged = merge_decision_set(
@@ -573,11 +512,6 @@ def test_recommendations_are_consolidated_without_duplicates():
 
 
 def test_an_unassessed_contributor_does_not_contradict_an_assessed_one():
-    """A "value not available" item beside a quoted value would confuse a reader.
-
-    The abstention is not lost -- it stays in the collection and in the
-    contribution record -- but its evidence does not join a real finding's.
-    """
     merged = merge_decision_set(
         [
             decision(evidence=[EvidenceItem(feature="hba1c", value=6.8, unit="%")]),
@@ -613,7 +547,6 @@ def test_when_nothing_could_be_assessed_the_evidence_is_what_was_missing():
 
 
 def test_an_unassessed_contributors_recommendations_are_still_carried():
-    """Evidence can contradict; "consider a repeat test" cannot. Union it."""
     merged = merge_decision_set(
         [
             decision(recommendations=[rec("NOT_A_DIAGNOSIS")]),
@@ -630,11 +563,6 @@ def test_an_unassessed_contributors_recommendations_are_still_carried():
     }
 
 
-# --------------------------------------------------------------------------
-# Assessment basis -- the Heart Disease hazard, at the collection layer
-# --------------------------------------------------------------------------
-
-
 def test_a_composite_risk_factor_rule_is_labelled_as_a_count_not_a_measurement():
     data = collect_decisions(engineered=FULL_FEATURES, registry=SilentRegistry())
     heart = [
@@ -642,7 +570,6 @@ def test_a_composite_risk_factor_rule_is_labelled_as_a_count_not_a_measurement()
     ]
     assert heart, "the rule engine no longer emits a Heart Disease decision"
     assert heart[0].assessment_basis == BASIS_RISK_FACTOR_COUNT
-    # And the rule's own wording travels with it, so Module 17 can quote it.
     assert heart[0].band_label
 
 
@@ -669,7 +596,6 @@ def test_a_model_is_labelled_as_a_probability_unless_it_says_otherwise():
 
 
 def test_a_predictor_may_declare_its_own_basis():
-    """The hook Module 11 uses to say it estimates likelihood, not burden."""
     item = collection_from_decisions(
         [
             decision(
@@ -699,11 +625,6 @@ def test_an_abstention_answers_no_question_and_so_declares_no_basis():
     assert item.assessment_basis == BASIS_NOT_ASSESSED
 
 
-# --------------------------------------------------------------------------
-# End to end over a realistic feature set
-# --------------------------------------------------------------------------
-
-
 def test_a_realistic_report_collects_groups_and_summarises():
     data = collect_decisions(engineered=FULL_FEATURES, registry=SilentRegistry())
 
@@ -715,7 +636,6 @@ def test_a_realistic_report_collects_groups_and_summarises():
     assert data.summary.input_kind == "engineered"
     assert data.metadata["grouped_by"] == ["condition", "source"]
 
-    # Every group's source really is one source.
     for group in data.groups:
         members = [
             i for i in data.collected if i.decision_id in set(group.decision_ids)
@@ -737,7 +657,6 @@ def test_no_input_at_all_assesses_nothing_and_says_so():
     data = collect_decisions(registry=SilentRegistry())
     assert data.summary.highest_risk is None
     assert data.summary.conditions_assessed == []
-    # The always-assessed conditions are still MENTIONED, as INSUFFICIENT_DATA.
     assert {g.condition for g in data.groups} >= set(C.FUSION_CONDITIONS)
     for group in data.groups:
         assert group.decision.status is DecisionStatus.INSUFFICIENT_DATA

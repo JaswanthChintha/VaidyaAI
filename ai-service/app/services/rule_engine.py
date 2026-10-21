@@ -1,58 +1,3 @@
-"""Module 8 -- the Clinical Rule Engine.
-
-Deterministic, transparent, threshold-based analysis. Every decision this
-module emits is traceable to a threshold configured in
-`app/data/clinical_rules.py`, and a clinician can audit that file without
-reading a line of this one.
-
-    Module 6 (validated features)  ->  Module 8  ->  ClinicalDecision[]
-                                                     -> Module 15 -> Module 16
-
---------------------------------------------------------------------------
-WHAT THIS MODULE DOES NOT DO
---------------------------------------------------------------------------
-
-No machine learning (Modules 9-12), no decision management (15), no fusion
-(16), no feature storage (7), no retrieval, no LLM, no report generation. It
-does not define a predictor registry. It compares numbers to thresholds and
-explains itself.
-
---------------------------------------------------------------------------
-THE FIVE INVARIANTS
---------------------------------------------------------------------------
-
-1. RULES SEE ONLY `valid`. Module 6's `rejected` map is not even parsed -- see
-   `app/schemas/rules.py`. A suspected extraction error can never reach a
-   threshold comparison.
-
-2. A RULE WITH NO INPUT DOES NOT FIRE. Absence never falls through to a
-   "nothing found" verdict. Where a condition genuinely deserves to be
-   mentioned anyway, an INSUFFICIENT_DATA decision is emitted -- which
-   `decisions.py` forces to carry `risk=None`, so it cannot be mistaken for
-   reassurance.
-
-3. AN ABSENT TRI-STATE IS NEVER A NEGATIVE. `hypertension` and `heart_disease`
-   are read only as POSITIVE risk factors, counted when the value is exactly
-   `True`. Absent and `False` both simply fail to add a factor.
-
-4. `clinically_extreme` IS TRUST, NOT DOUBT. It is carried into evidence and
-   the summary as a prioritisation signal for Module 19. It never suppresses,
-   discounts or re-weights a value.
-
-5. NO UPSTREAM WARNING IS EVER DROPPED. Modules 4, 5 and 6 warnings are carried
-   through with their origins intact and Module 8 appends its own under
-   `stage="rules"`.
-
---------------------------------------------------------------------------
-CONFIDENCE
---------------------------------------------------------------------------
-
-Every decision carries `confidence=None`. Per `decisions.py`, that means "this
-component produces no probability", which is exactly true of a threshold
-comparison. It is NOT `0.0`, which would mean "a model ran and was maximally
-unconfident" and would corrupt Module 16's confidence fusion.
-"""
-
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
@@ -111,7 +56,6 @@ from app.schemas.rules import (
 from app.schemas.validation import STAGE_VALIDATION
 from app.services.validator import validate_features
 
-#: Bumped when the ENGINE's behaviour changes, independently of the rule table.
 ENGINE_VERSION = "1.0.0"
 
 RULE_ENGINE_POLICY = (
@@ -126,14 +70,6 @@ INPUT_VALIDATED = "validated"
 INPUT_ENGINEERED = "engineered"
 INPUT_NONE = "none"
 
-
-# --------------------------------------------------------------------------
-# Fixed, user-facing note fragments
-# --------------------------------------------------------------------------
-#
-# Evidence notes reach the reader through Module 20, so their wording is fixed
-# here rather than formatted from arbitrary strings, and the test suite scans
-# every one of them with the recommendation catalogue's safety scanner.
 
 NOTE_QUESTIONABLE = (
     "this value was marked less reliable when the report was read"
@@ -151,40 +87,6 @@ NOTE_NOT_AVAILABLE = "this value was not available in the submitted report"
 NOTE_FACTOR_COUNTED = "counted as a cardiovascular risk factor"
 NOTE_FACTOR_NOT_COUNTED = "not counted as a cardiovascular risk factor"
 
-#: Prefix for a criterion that was EVALUATED AND NOT MET.
-#:
-#: ==========================================================================
-#: A FACTOR LABEL IS A CRITERION AND ONLY READS AS A FINDING WHEN IT HOLDS
-#: ==========================================================================
-#:
-#: `RiskFactorDefinition.label` states the test, not the result: "body mass
-#: index at or above 30.0", "current or lifetime smoking recorded in the
-#: patient profile", "age at or above the sex-specific cardiovascular age
-#: threshold". Emitted BARE beside a value that does not meet it, every one of
-#: those asserts the opposite of the truth.
-#:
-#: FOUND ON A REAL REPORT, 2026-09-18. Heart Disease on Test 3 stored three
-#: evidence lines, all three false:
-#:
-#:     bmi 25.25          -> "body mass index at or above 30.0; present,
-#:                            but not counted as a cardiovascular risk factor"
-#:     age 20             -> "age at or above the sex-specific cardiovascular
-#:                            age threshold; present, but not counted..."
-#:     smoking_history    -> "current or lifetime smoking recorded in the
-#:       (never)             patient profile; present, but not counted..."
-#:
-#: The patient is 20, has a BMI of 25.25 and has never smoked.
-#:
-#: `present` MADE IT WORSE and is gone. It meant "the value was available",
-#: but beside a risk-factor label it reads as "the risk factor is present" --
-#: the same collapse one word smaller. "criterion not met" already says the
-#: factor was evaluated, so nothing is lost by dropping it.
-#:
-#: THE ABSENT PATH IS A DIFFERENT BRANCH and keeps its own note: a feature
-#: that was never supplied gets `NOTE_NOT_AVAILABLE`, never this. The class
-#: docstring on `RiskFactorDefinition` already promised absence would never
-#: read as a stated negative; this is the other half of that promise -- a
-#: stated negative must not read as a positive.
 NOTE_FACTOR_NOT_MET = "criterion not met -- "
 NOTE_BELOW_MIN_AGE = (
     "the thresholds for this topic are adult reference values and were not "
@@ -194,7 +96,6 @@ NOTE_UNREADABLE = (
     "part of the document could not be read, so this value may be missing "
     "rather than absent from the report"
 )
-#: A calculated eGFR is never presented as a printed value.
 NOTE_EGFR_METHOD = (
     "calculated from creatinine, age and sex with the CKD-EPI 2021 equation; "
     "one estimate from one sample, which does not by itself stage kidney "
@@ -218,17 +119,7 @@ ALL_NOTE_FRAGMENTS: Tuple[str, ...] = (
 )
 
 
-# --------------------------------------------------------------------------
-# The engine's view of one usable feature
-# --------------------------------------------------------------------------
-
-
 class FeatureView:
-    """A usable feature, flattened into what a rule needs.
-
-    Built only from Module 6's `valid` map. There is no constructor path from
-    `rejected`, because `rejected` is not parsed at all.
-    """
 
     __slots__ = (
         "name",
@@ -266,11 +157,6 @@ class FeatureView:
 
 
 def _numeric(value: Any) -> Optional[float]:
-    """The value as a float, or None.
-
-    `bool` is excluded deliberately: `True == 1` in Python, and a boolean that
-    reached a numeric comparison must be caught, not silently measured.
-    """
     if isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
@@ -279,17 +165,11 @@ def _numeric(value: Any) -> Optional[float]:
 
 
 def _as_float(value: Any) -> Optional[float]:
-    """Coerce to a real float for `EvidenceItem`'s StrictFloat fields."""
     if value is None or isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
         return float(value)
     return None
-
-
-# --------------------------------------------------------------------------
-# Input coercion
-# --------------------------------------------------------------------------
 
 
 def _coerce_validated(value: Any) -> Optional[ValidatedFeaturesInput]:
@@ -306,13 +186,6 @@ def _coerce_validated(value: Any) -> Optional[ValidatedFeaturesInput]:
 
 
 def _carried_warnings(data: ValidatedFeaturesInput) -> List[StageWarning]:
-    """Every upstream warning, origins intact.
-
-    `all_warnings` is authoritative when present. The fallback exists because
-    dropping upstream warnings has ALREADY been a real defect twice on this
-    project: a caller that forwards only `upstream_warnings` / `warnings` must
-    not lose them here.
-    """
     if data.all_warnings:
         return list(data.all_warnings)
     rebuilt: List[StageWarning] = list(data.upstream_warnings)
@@ -327,11 +200,6 @@ def _carried_warnings(data: ValidatedFeaturesInput) -> List[StageWarning]:
     return rebuilt
 
 
-# --------------------------------------------------------------------------
-# Decision construction
-# --------------------------------------------------------------------------
-
-
 def _decision(
     condition: str,
     status: DecisionStatus,
@@ -340,12 +208,6 @@ def _decision(
     recommendation_codes: Tuple[str, ...],
     metadata: Dict[str, Any],
 ) -> ClinicalDecision:
-    """Build a `ClinicalDecision`.
-
-    `confidence` is left at its default of None -- see the module docstring.
-    Recommendations are resolved through the catalogue, which is the only way
-    Module 8 can produce recommendation text at all.
-    """
     return ClinicalDecision(
         condition=condition,
         status=status,
@@ -359,12 +221,6 @@ def _decision(
 
 
 def _base_metadata(rule_id: str, rule_version: str, condition: str) -> Dict[str, Any]:
-    """Reproducibility context. Names, ids and thresholds only -- never values.
-
-    A threshold is a configured constant, not patient information. A measured
-    value IS patient information, so it lives only in `evidence`, which is the
-    field designed to carry it.
-    """
     return {
         "rule_id": rule_id,
         "rule_version": rule_version,
@@ -376,7 +232,6 @@ def _base_metadata(rule_id: str, rule_version: str, condition: str) -> Dict[str,
 
 
 def _input_notes(views: List[FeatureView]) -> Tuple[List[str], List[str]]:
-    """`(questionable feature names, clinically extreme feature names)`."""
     questionable = [v.name for v in views if v.questionable]
     extreme = [v.name for v in views if v.clinically_extreme]
     return questionable, extreme
@@ -424,11 +279,6 @@ def _context_evidence(view: FeatureView, note: str) -> EvidenceItem:
 
 
 def _absent_evidence(feature: str, note: str) -> EvidenceItem:
-    """Evidence that a value was NOT available.
-
-    An INSUFFICIENT_DATA decision has to be able to say WHICH input it lacked,
-    or Module 20 can only render "could not assess" with no reason.
-    """
     definition = FEATURES.get(feature)
     return EvidenceItem(
         feature=feature,
@@ -438,19 +288,7 @@ def _absent_evidence(feature: str, note: str) -> EvidenceItem:
     )
 
 
-# --------------------------------------------------------------------------
-# Threshold rules
-# --------------------------------------------------------------------------
-
-
 def _sex_of(views: Dict[str, FeatureView]) -> Optional[str]:
-    """`'male'`, `'female'`, or None when sex was not established.
-
-    `other` and `prefer_not_to_say` are Module 2's real stored answers and are
-    respected: they are NOT coerced into a binary so that a threshold can be
-    picked. They resolve to None, which selects the conservative branch of a
-    `ContextualThreshold` and says so in the evidence.
-    """
     view = views.get("gender")
     if view is None:
         return None
@@ -471,8 +309,6 @@ def _evaluate_threshold_rule(
 ) -> Optional[ClinicalDecision]:
     view = views.get(rule.feature)
     if view is None:
-        # INVARIANT 2: no input, no decision. Never a fall-through to the
-        # "nothing found" band.
         return None
 
     if rule.only_timing and view.timing not in rule.only_timing:
@@ -492,7 +328,6 @@ def _evaluate_threshold_rule(
     if rule.derived is not None:
         return _evaluate_derived_rule(rule, view, views, sex, age, warnings, metadata)
 
-    # Adult reference intervals must not be applied to a child.
     if (
         rule.min_age_years is not None
         and age is not None
@@ -525,8 +360,6 @@ def _evaluate_threshold_rule(
         extra_notes: List[str] = []
         if note:
             extra_notes.append(note)
-        # Sex and age chose this threshold when it is sex-specific -- including
-        # a printed-limit threshold that fell back to a sex-specific guideline.
         contextual = isinstance(band.threshold, ContextualThreshold) or (
             isinstance(band.threshold, PrintedLimitThreshold)
             and isinstance(band.threshold.fallback, ContextualThreshold)
@@ -578,7 +411,6 @@ def _evaluate_threshold_rule(
             rule.condition, band.status, band.risk, evidence, codes, metadata
         )
 
-    # Unreachable: `_self_check()` guarantees a final always-matching band.
     return None
 
 
@@ -591,15 +423,6 @@ def _evaluate_derived_rule(
     warnings: List[str],
     metadata: Dict[str, Any],
 ) -> Optional[ClinicalDecision]:
-    """A rule whose bands compare a CALCULATED value (today: eGFR only).
-
-    NO ESTIMATE, NO DECISION. Without an adult age and a sex recorded as male
-    or female the equation has nothing valid to say, so the rule does not fire
-    -- it never computes on an assumed value, and never falls through to "at
-    or above 60". The measured-value rule on the same input still reports, so
-    the topic is not left silent. Under 18 that rule already emits
-    INSUFFICIENT_DATA, so this one adds nothing.
-    """
     if rule.derived != EGFR_FEATURE:
         warnings.append(f"{rule.id} was not applied: unknown derived value")
         return None
@@ -683,23 +506,12 @@ def _evaluate_derived_rule(
     return None
 
 
-# --------------------------------------------------------------------------
-# The composite cardiovascular rule
-# --------------------------------------------------------------------------
-
-
 def _factor_holds(
     factor: RiskFactorDefinition,
     view: FeatureView,
     sex: Optional[str],
     age: Optional[float],
 ) -> Tuple[bool, Optional[float], Optional[str]]:
-    """`(counted, resolved_threshold, threshold_note)`.
-
-    INVARIANT 3 lives here: a boolean factor counts only when the value IS
-    exactly `True`. A `False` returns False, and an ABSENT feature never
-    reaches this function at all, so absence cannot be read as a negative.
-    """
     if factor.kind == FACTOR_BOOLEAN_TRUE:
         return view.value is True, None, None
     if factor.kind == FACTOR_CATEGORY:
@@ -756,10 +568,6 @@ def _evaluate_composite_rule(
         evaluable.append(factor.id)
         used.append(view)
         holds, threshold, note = _factor_holds(factor, view, sex, age)
-        # THE LABEL IS A CRITERION. It reads as a finding only when it HOLDS,
-        # so a factor that was evaluated and not met says so rather than
-        # stating its own threshold as though the patient had crossed it.
-        # See `NOTE_FACTOR_NOT_MET` for the three false lines this produced.
         criterion = factor.label if holds else f"{NOTE_FACTOR_NOT_MET}{factor.label}"
         notes = [criterion, NOTE_FACTOR_COUNTED if holds else NOTE_FACTOR_NOT_COUNTED]
         if note:
@@ -792,8 +600,6 @@ def _evaluate_composite_rule(
         }
     )
 
-    # Too few inputs to tally honestly. A low count built from two features is
-    # not reassurance, it is ignorance, so it must not be reported as LOW risk.
     if len(evaluable) < rule.min_evaluable_inputs:
         metadata["skipped_reason"] = "insufficient_inputs"
         codes = (INFORMATION_INCOMPLETE,)
@@ -831,30 +637,9 @@ def _select_count_band(rule: CompositeRule, counted_ids: List[str]) -> CountBand
     return rule.bands[-1]
 
 
-# --------------------------------------------------------------------------
-# The engine
-# --------------------------------------------------------------------------
-
-
 def evaluate_rules(
     validated: Any = None, *, engineered: Any = None
 ) -> RuleEvaluationData:
-    """Apply the clinical rule table and return `ClinicalDecision[]`.
-
-    Framework-independent: no FastAPI, no I/O, no global state, so Module 15
-    can call it in-process exactly as it calls `engineer_features()` and
-    `validate_features()`.
-
-    `validated` -- Module 6's `FeatureValidationData`, a `ValidatedFeaturesInput`
-    or the equivalent dict. PREFERRED.
-
-    `engineered` -- Module 5's `FeatureEngineeringData` or the equivalent dict,
-    for use before validation has been run. It is passed through
-    `validate_features()` in-process first, so the rules still only ever see
-    validated values and no plausibility logic is duplicated here.
-
-    When both are given, `validated` wins.
-    """
     input_kind = INPUT_NONE
     data = _coerce_validated(validated)
     if data is not None:
@@ -908,32 +693,12 @@ def evaluate_rules(
 
     assessed = {decision.condition for _, _, decision in ranked}
 
-    # ---- conditions that must be mentioned even when nothing could be read --
     for condition, definition in C.CONDITIONS.items():
         if condition in assessed:
             continue
         inputs = CONDITION_INPUTS.get(condition, ())
         if not inputs:
             continue
-        # An always-assessed condition is one Modules 10-12 will also emit.
-        # Silence there would leave Module 16 unable to tell "not assessed"
-        # from "nothing found".
-        #
-        # EVERY OTHER CONDITION IS REPORTED TOO, AND NOT ONLY WHEN THE DOCUMENT
-        # WAS UNREADABLE. It used to require `partial_document`, on the reading
-        # that a fully-read report simply lacking a test is the laboratory's
-        # choice and not this tool's failure. That is true about the CAUSE and
-        # wrong about the READER: a real report produced eight of the thirteen
-        # topics, the payload then said `unassessedConditionCount: 0`, and the
-        # dashboard offered "nothing pointed to these 5 topics" as though the
-        # list were the whole of what this tool assesses. Cholesterol,
-        # triglycerides, vitamin D and B12 were never looked at and appeared
-        # nowhere -- absence rendered as a closed, complete list, which is the
-        # one thing this platform exists not to do.
-        #
-        # `report_when_unread=False` still suppresses a SECONDARY reading of a
-        # test another condition already reports, so one missing test produces
-        # one line and not two.
         if not definition.always_assessed and not definition.report_when_unread:
             continue
         note = NOTE_UNREADABLE if partial_document else NOTE_NOT_AVAILABLE
@@ -1036,9 +801,6 @@ def _summarise(
             1 for d in decisions if d.status is DecisionStatus.NOT_INDICATED
         ),
         insufficient_data_count=sum(1 for d in decisions if not d.was_assessed),
-        # RiskLevel.highest() rather than a hand-written comparison: the
-        # ordering is a property of the type (see decisions.py) and returns
-        # None for an empty list, so "nothing assessed" never becomes "Low".
         highest_risk=RiskLevel.highest(risks),
         conditions_assessed=sorted(
             {d.condition for d in decisions if d.was_assessed},

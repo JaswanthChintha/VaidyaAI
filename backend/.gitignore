@@ -1,32 +1,24 @@
-# Dependencies
 node_modules/
 
-# Environment / secrets
 .env
 .env.*
 !.env.example
 
-# Logs
 logs/
 *.log
 npm-debug.log*
 
-# Test / coverage output
 coverage/
 .jest-cache/
 
-# mongodb-memory-server downloaded binaries
 .cache/
 mongodb-binaries/
 
-# Editors / OS
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
 
-# Module 3: uploaded report files (medical data - never commit)
 storage/
-# ...but not the storage CODE in src/storage (see the root .gitignore).
 !src/storage/
 !src/storage/*.js

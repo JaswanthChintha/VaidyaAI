@@ -1,58 +1,3 @@
-"""The Gemini prompts for Modules 23 and 25.
-
-Kept in its own module -- like `extraction_prompt.py` -- so the exact words put
-in front of the model can be reviewed, diffed and versioned independently of
-the service code. Bump `PROMPT_VERSION` on any wording change.
-
-==========================================================================
-WHAT THIS PROMPT IS AND IS NOT
-==========================================================================
-
-It is NOT a safety mechanism. Module 24 is the safety mechanism, and it runs
-over every generation afterwards regardless of what the model was asked. A
-prompt is a request; a validator is a control. This file exists to make the
-request as narrow as possible so that the control is rarely the thing standing
-between a patient and an unsafe sentence.
-
-That distinction matters for how the file is read: nothing here may be cited as
-evidence that the system cannot produce unsafe text. It can. `app/safety/`
-is why it does not reach a patient.
-
-==========================================================================
-THE SEVEN PROHIBITIONS
-==========================================================================
-
-`PROHIBITIONS` below is the reviewable list, and it is interpolated into the
-prompt rather than restated, so the list and the prompt cannot drift apart.
-Spec section 14 names each of these as something the safety layer must catch:
-
-    no diagnosis, no medication, no dosage, no claim of certainty,
-    always defer to a qualified healthcare professional,
-    use only the values and knowledge supplied.
-
-The seventh, MANDATORY HEDGING, was added on 2026-09-20 and is not from spec
-section 14 -- it comes from the safety layer. `positive.required_hedging`
-refuses an interpretive verb beside a clinical subject when no hedge appears
-in the sentence, and the certainty rule above does not cover that: a sentence
-can avoid every forbidden word and still be refused. It cost a real reader
-the whole lymphocytes explanation on `Test 3.pdf`. See the comment on the
-rule itself for why naming the validator's own word lists is the fix.
-
-==========================================================================
-WHY THE SUPPLIED-VALUES RULE IS STATED SO INSISTENTLY
-==========================================================================
-
-Module 24 enforces NUMERIC GROUNDING: every number in the output must appear
-either in the retrieved knowledge or among the patient's validated values. A
-model that invents "the normal range is 70 to 99" when 99 was never supplied
-gets its whole explanation rejected -- so a fabricated number does not cost the
-patient a wrong fact, it costs them the entire explanation.
-
-The prompt therefore lists the permitted numbers explicitly and forbids
-numbered lists, percentages, dates and "about 3 months" style approximations,
-because each of those is a number the validator will not find in the sources.
-"""
-
 from __future__ import annotations
 
 from typing import Iterable, Optional, Sequence, Tuple
@@ -60,8 +5,6 @@ from typing import Iterable, Optional, Sequence, Tuple
 PROMPT_VERSION = "m23-explain-v1"
 
 
-#: The reviewable prohibition list. Tested for, interpolated below, and
-#: published by `GET /api/v1/explain/policy`.
 PROHIBITIONS: Tuple[str, ...] = (
     "NEVER DIAGNOSE. Do not say or imply that the reader has, or does not "
     "have, any condition. You are describing what a measurement is, not what "
@@ -73,28 +16,6 @@ PROHIBITIONS: Tuple[str, ...] = (
     "NEVER CLAIM CERTAINTY. Do not write 'definitely', 'confirms', 'proves', "
     "'clearly shows' or 'this means you have'. A single laboratory value "
     "settles nothing on its own, and saying so is part of the explanation.",
-    # ⚠ ADDED 2026-09-20, AND IT NAMES THE WORDS THE VALIDATOR MEASURES.
-    #
-    # The rule above forbids certainty VOCABULARY. The safety layer's
-    # `positive.required_hedging` measures something else: an INTERPRETIVE
-    # VERB plus a CLINICAL SUBJECT with NO HEDGE anywhere in the sentence.
-    # So a sentence containing none of the forbidden words is still refused:
-    #
-    #     "A low lymphocyte count indicates your immune system is strained."
-    #
-    # No 'definitely', no 'confirms', no 'this means you have' -- and it cost
-    # the reader the whole lymphocytes explanation on `Test 3.pdf`, twice,
-    # with the violation quoted back to the model on the retry.
-    #
-    # THE FIX IS THE ONE §6at ALREADY FOUND ON THIS PLATFORM. Module 24's
-    # treatment rule is a VOCABULARY rule, and telling the model "do not
-    # advise" did not stop it being refused four times in six; naming the
-    # words did. The same move here: name the verbs that need a hedge, and
-    # name the hedges, because those two lists are what the validator
-    # actually holds (`INTERPRETIVE_VERBS` and `HEDGE_MARKERS` in
-    # app/safety/policy.py). A prompt that forbade a property the validator
-    # does not measure, while leaving the one it does unnamed, is how the
-    # model gets refused for obeying its instructions.
     "HEDGE EVERY INTERPRETATION. If a sentence says what a result means for "
     "the reader's body or health, it MUST also carry one of: may, might, "
     "can, could, often, usually, typically, generally, commonly, sometimes. "
@@ -131,8 +52,6 @@ SYSTEM_INSTRUCTION = (
 )
 
 
-#: Appended to every prompt. Separated so the rules are visibly the same for
-#: the explanation path and the terminology path.
 def _rules_block() -> str:
     lines = [f"{n}. {rule}" for n, rule in enumerate(PROHIBITIONS, start=1)]
     return "## Absolute rules\n\n" + "\n".join(lines)
@@ -204,12 +123,6 @@ def _knowledge_block(extracts: Sequence["KnowledgeExtract"]) -> str:
 
 
 class KnowledgeExtract:
-    """One retrieved chunk, in the shape the prompt renders.
-
-    A tiny local structure rather than an import of `app.rag.schemas`, so this
-    file stays a pure prompt module with no dependency on the retriever's
-    representation. `app/services/explanation.py` does the conversion.
-    """
 
     __slots__ = ("doc_id", "title", "topic", "basis", "text")
 
@@ -224,14 +137,6 @@ class KnowledgeExtract:
 
 
 def _feedback_block(feedback: Optional[Iterable[Tuple[str, str, str]]]) -> str:
-    """Render the previous rejection so a retry is not the same request.
-
-    `feedback` is `(code, reason, excerpt)` triples taken from the previous
-    `SafetyVerdict`. Retrying with an unchanged prompt would be asking the same
-    question and hoping for a different answer, which is why
-    `app/services/explanation.py` refuses to retry when there is nothing to
-    say back.
-    """
     items = list(feedback or ())
     if not items:
         return ""
@@ -262,13 +167,6 @@ def build_explanation_prompt(
     permitted_numbers: Sequence[float] = (),
     feedback: Optional[Iterable[Tuple[str, str, str]]] = None,
 ) -> str:
-    """Module 23's prompt: structured findings + retrieved knowledge -> prose.
-
-    `subject` is what is being explained ("the HbA1c result"). `findings` are
-    Module 16/17's already-computed statements, rendered as flat lines. Nothing
-    the patient typed reaches this prompt; nothing outside `extracts` and
-    `permitted_numbers` is available to the model.
-    """
     blocks = [
         f"Explain {subject} to the person whose report this is.",
         "",
@@ -304,12 +202,6 @@ def build_terminology_prompt(
     permitted_numbers: Sequence[float] = (),
     feedback: Optional[Iterable[Tuple[str, str, str]]] = None,
 ) -> str:
-    """Module 25's optional plain-language rewrite of a curated term entry.
-
-    Reached ONLY after the term has been mapped to something the curated corpus
-    actually covers -- see `app/services/terminology.py`. The model is never
-    asked "what is X"; it is asked to simplify text the platform already holds.
-    """
     named = f"{term}"
     if canonical_feature and canonical_feature.lower() != term.strip().lower():
         named = f"{term} (recorded by this platform as '{canonical_feature}')"

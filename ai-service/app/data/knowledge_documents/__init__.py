@@ -1,26 +1,3 @@
-"""Module 22 corpus -- the content files, assembled.
-
-One module per topic area, so a clinical reviewer opens a file about a subject
-rather than scrolling one enormous list. The split is by TOPIC, not by size:
-
-    lab_tests.py              what each laboratory test measures
-    reference_information.py  the published bands and cut-offs
-    health_conditions.py      one document per canonical condition
-    terminology.py            what the words mean (Module 25 reads these)
-    profile_context.py        the six patient-profile features
-    interpretation.py         how to read a result at all
-    lifestyle.py              pre-approved educational guidance (Module 26)
-
-`ALL_DOCUMENTS` is the concatenation, in the order below. THE ORDER IS PART OF
-THE CONTRACT: `knowledge_base.DOCUMENT_ORDER` follows it, the Module 21 index
-assigns chunk ids in it, and the committed index is therefore reproducible only
-if it is stable. Append within a topic; do not reorder to tidy.
-
-Nothing is validated here. Every structural, vocabulary and safety check runs in
-`app/data/knowledge_base.py::_self_check()`, at import, over the assembled
-corpus -- one place, so a document added to any file below cannot bypass it.
-"""
-
 from __future__ import annotations
 
 from typing import Tuple

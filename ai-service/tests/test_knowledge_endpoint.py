@@ -1,11 +1,3 @@
-"""The Modules 21-22 HTTP surface.
-
-Response-shape, validation and auth behaviour for `/api/v1/knowledge/*`.
-`tests/test_auth.py` already walks the whole route tree and fails if any
-`/api/v1` route lacks the service-key dependency; the auth tests here are the
-specific, readable version of that guarantee for this router.
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -23,18 +15,6 @@ DOCS = "/api/v1/knowledge/documents"
 
 
 def _build_app(**settings_overrides):
-    """A FastAPI app carrying the knowledge router and main.py's handlers.
-
-    The router is NOT mounted by this module -- `app/main.py` belongs to the
-    integrator, who adds the `include_router` line. Building the app here means
-    these tests exercise the router the moment it exists, rather than being
-    blocked on that one line, and they keep passing unchanged afterwards.
-
-    The exception handlers are COPIED from `app.main` rather than reimplemented,
-    so the error envelopes asserted below are the real ones. A test that
-    asserted a hand-rolled envelope would pass while the service returned
-    something else.
-    """
     from fastapi import FastAPI
 
     from app.api import routes_knowledge
@@ -54,14 +34,12 @@ def _build_app(**settings_overrides):
 
 @pytest.fixture()
 def kclient(_isolate_env) -> TestClient:
-    """Unauthenticated client (the suite runs with ALLOW_UNAUTHENTICATED)."""
     with TestClient(_build_app(), raise_server_exceptions=False) as tc:
         yield tc
 
 
 @pytest.fixture()
 def kauthed(_isolate_env) -> TestClient:
-    """A client whose settings REQUIRE the service key."""
     app = _build_app(
         ai_service_api_key=TEST_SERVICE_KEY, allow_unauthenticated=False
     )
@@ -70,7 +48,6 @@ def kauthed(_isolate_env) -> TestClient:
 
 
 def _mounted_knowledge_paths():
-    """Knowledge paths reachable on the real service app, if any."""
     from app.main import app as real_app
 
     found = set()
@@ -83,17 +60,6 @@ def _mounted_knowledge_paths():
 
 
 def test_the_knowledge_router_is_mounted_in_the_service_app():
-    """Modules 21-22 are reachable on the real app.
-
-    `app/main.py` belongs to the integrator, who adds exactly one line:
-
-        app.include_router(routes_knowledge.router)
-
-    This SKIPS while that line is absent rather than failing, so it cannot
-    break the integrator's baseline before they have had a chance to add it,
-    and it becomes a real assertion the moment they do. Every other test in
-    this module exercises the router directly and does not depend on the mount.
-    """
     mounted = _mounted_knowledge_paths()
     if not mounted:
         pytest.skip(
@@ -106,12 +72,6 @@ def test_the_knowledge_router_is_mounted_in_the_service_app():
 
 
 def test_every_knowledge_route_requires_the_service_key():
-    """A retrieval request is a clinical statement about a patient.
-
-    Router-level dependency, so this holds for routes added later too.
-    `tests/test_auth.py` enforces the same thing across the whole app once the
-    router is mounted; this is the module-local, always-active version.
-    """
     from app.api import routes_knowledge
     from app.core.auth import require_service_key
 
@@ -119,11 +79,6 @@ def test_every_knowledge_route_requires_the_service_key():
     assert require_service_key in guards, (
         "the knowledge router must carry the service-key dependency"
     )
-
-
-# --------------------------------------------------------------------------
-# Retrieval
-# --------------------------------------------------------------------------
 
 
 def test_spec_example_returns_grounded_chunks(kclient):
@@ -156,15 +111,6 @@ def test_every_returned_chunk_carries_its_provenance(kclient):
 
 
 def test_free_text_retrieval_works(kclient):
-    """Free text still retrieves -- but ANCHORED, which the echo now shows.
-
-    `source` was asserted to be `"text"`, and that assertion encoded the
-    defect rather than the requirement: it recorded that this endpoint
-    retrieved on the raw words, which is precisely what sections 6k D7 and
-    6r D1 were about. The words are now resolved to canonical features first
-    and retrieved on those, so the query is `findings_and_text` -- the text is
-    still echoed, and what it resolved to is visible beside it.
-    """
     response = kclient.post(RETRIEVE, json={"text": "what does HbA1c measure"})
     assert response.status_code == 200
     data = response.json()["data"]
@@ -175,14 +121,6 @@ def test_free_text_retrieval_works(kclient):
 
 
 def test_an_uncovered_medical_question_is_refused_over_HTTP(kclient):
-    """The defect, at the layer it was actually reachable from.
-
-    `test_off_domain_query_returns_empty_not_junk` passed throughout, because
-    a bicycle puncture is far enough off-domain for the similarity floor to
-    catch it. The queries that got through were MEDICAL ones this corpus does
-    not cover -- they score inside the same range as covered terms, so no
-    floor can separate them, and only anchoring can.
-    """
     response = kclient.post(
         RETRIEVE, json={"text": "my ALP and GGT liver enzymes are high"}
     )
@@ -198,7 +136,6 @@ def test_an_uncovered_medical_question_is_refused_over_HTTP(kclient):
     ["how do I fix a puncture on my bicycle tyre", "asdfghjkl qwertyuiop"],
 )
 def test_off_domain_query_returns_empty_not_junk(kclient, text):
-    """A successful 200 with no results -- 'no good grounding' is a real answer."""
     response = kclient.post(RETRIEVE, json={"text": text})
     assert response.status_code == 200
     data = response.json()["data"]
@@ -222,12 +159,10 @@ def test_non_canonical_feature_is_a_422(kclient):
 
 
 def test_empty_request_is_rejected(kclient):
-    """An empty retrieval request has no defensible answer, so it is not guessed."""
     assert kclient.post(RETRIEVE, json={}).status_code == 422
 
 
 def test_unknown_field_is_rejected(kclient):
-    """`extra=forbid`: a misspelled field must not silently change the query."""
     response = kclient.post(RETRIEVE, json={"condition": [DIABETES]})
     assert response.status_code == 422
 
@@ -249,11 +184,6 @@ def test_out_of_range_floor_is_rejected(kclient, floor):
 def test_top_k_is_honoured(kclient):
     response = kclient.post(RETRIEVE, json={"conditions": [DIABETES], "top_k": 2})
     assert len(response.json()["data"]["results"]) <= 2
-
-
-# --------------------------------------------------------------------------
-# Introspection
-# --------------------------------------------------------------------------
 
 
 def test_index_stats(kclient):
@@ -303,10 +233,6 @@ def test_unknown_document_is_a_404(kclient):
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "UNKNOWN_DOCUMENT"
 
-
-# --------------------------------------------------------------------------
-# Auth -- a retrieval request is itself a clinical statement about a patient
-# --------------------------------------------------------------------------
 
 PROTECTED = [
     ("POST", RETRIEVE, {"conditions": [DIABETES]}),

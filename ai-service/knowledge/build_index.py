@@ -1,21 +1,3 @@
-"""Build the Module 21 knowledge index. Run by hand; never at import time.
-
-    cd ai-service
-    python knowledge/build_index.py
-
-Writes `knowledge/artifacts/knowledge_index_v1.json`, which is COMMITTED.
-
-This mirrors `ml/train_diabetes.py` and its siblings: a separate, re-runnable
-script produces a reviewable artifact that the service only ever loads. The
-reasons are the ones `app/rag/index.py` gives -- reproducibility, reviewability,
-and a startup cost that does not scale with the corpus.
-
-The build is DETERMINISTIC. Running it twice on an unchanged corpus produces a
-byte-identical file, which is what makes "the index in the repository is the
-index that was reviewed" a checkable claim rather than a hope. `--check` asserts
-exactly that without writing, which is what CI should run.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -23,10 +5,9 @@ import json
 import sys
 from pathlib import Path
 
-# Make `app` importable when run as a script from the service root.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.rag.index import (  # noqa: E402
+from app.rag.index import (
     DEFAULT_INDEX_PATH,
     SIMILARITY_FLOOR,
     KnowledgeIndex,

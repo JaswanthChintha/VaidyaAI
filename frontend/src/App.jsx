@@ -13,14 +13,6 @@ import Timeline from './pages/Timeline';
 import DoctorSummary from './pages/DoctorSummary';
 import Population from './pages/Population';
 
-/**
- * `checking` is a real state and is rendered as one.
- *
- * On a reload we hold a refresh token but do not yet know whether the server
- * still honours it. Guessing either way is wrong: guess signed-out and a
- * signed-in patient is bounced to the login screen on every refresh; guess
- * signed-in and a dashboard flashes up before 401ing. So the unknown waits.
- */
 function RequireAuth({ children }) {
   const { status } = useAuth();
   const location = useLocation();
@@ -33,14 +25,10 @@ function RequireAuth({ children }) {
 function Nav() {
   const { status, user, signOut } = useAuth();
   const onLanding = useLocation().pathname === '/';
-  // The front page is the same page for everyone (owner, 2026-10-09).
   if (status !== 'signedIn' || onLanding) return null;
   const who = user?.name || user?.email || '';
   return (
-    // A sidebar from 900px up, a wrapping top bar below it -- one element,
-    // laid out by the stylesheet, so the two cannot drift apart.
     <nav className="nav" aria-label="Main">
-      {/* The wordmark carries the one italic serif flourish in the app. */}
       <Link to="/reports" className="nav__brand">
         <Logo size={32} className="nav__mark" />
         <span>
@@ -75,15 +63,6 @@ function Nav() {
   );
 }
 
-/**
- * The standing disclaimer.
- *
- * Spec section 1 is explicit that this is an AI-assisted education and
- * decision-support platform and NOT an autonomous diagnostic system. Every
- * layer beneath carries that statement in its payloads; it belongs on the
- * screen too, on every page rather than once at sign-up where it would be
- * read once and forgotten.
- */
 function Disclaimer() {
   return (
     <footer className="disclaimer">
@@ -96,17 +75,12 @@ function Disclaimer() {
 
 export default function App() {
   const { status } = useAuth();
-  // The landing page carries its own footer with the same statement.
   const onLanding = useLocation().pathname === '/';
 
   return (
     <div className={status === 'signedIn' && !onLanding ? 'app app--shell' : 'app'}>
       <Nav />
       <Routes>
-        {/* THE LINK ALWAYS OPENS ON THE FRONT PAGE (owner, 2026-10-09), signed
-            in or not -- it used to jump a signed-in visitor straight to
-            Reports, which hid the front page in every demo. A signed-in
-            reader gets "Go to my reports" there instead of "Sign in". */}
         <Route path="/" element={<Landing />} />
         <Route
           path="/signin"
@@ -163,7 +137,6 @@ export default function App() {
         <Route path="*" element={<Navigate to={status === 'signedIn' ? '/reports' : '/'} replace />} />
       </Routes>
       {onLanding ? null : <Disclaimer />}
-      {/* The chatbot (2026-10-09): signed-in pages only, not the front page. */}
       {status === 'signedIn' && !onLanding ? <ChatBot /> : null}
     </div>
   );

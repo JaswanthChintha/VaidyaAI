@@ -1,5 +1,3 @@
-"""Health endpoint tests."""
-
 from __future__ import annotations
 
 
@@ -21,18 +19,15 @@ def test_health_returns_ok(client):
 
 def test_health_reports_configured_model_name(client):
     data = client.get("/api/v1/health").json()["data"]
-    # The user-selected model, sourced from GEMINI_MODEL.
     assert data["model"] == "gemini-3.6-flash"
     assert "prompt_version" in data
 
 
 def test_health_never_leaks_the_api_key(client):
-    """The health payload may say WHETHER a key is set, never what it is."""
     raw = client.get("/api/v1/health").text
     assert "api_key" not in raw.lower() or "model_configured" in raw
     body = client.get("/api/v1/health").json()["data"]
     assert isinstance(body["model_configured"], bool)
-    # No value that looks like a credential anywhere in the response.
     assert "AIza" not in raw
     assert "AQ." not in raw
 

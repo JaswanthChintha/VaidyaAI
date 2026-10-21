@@ -1,32 +1,7 @@
-/**
- * Overall risk, as an instrument dial.
- *
- * ==========================================================================
- * THE POINT OF THIS COMPONENT IS THE CASE WHERE IT DRAWS NO NEEDLE
- * ==========================================================================
- *
- * A gauge has a resting position, and on every gauge ever built that resting
- * position is the left-hand end -- which here is `low`. So a report where
- * NOTHING could be assessed would park the needle on "Low" and hand a reader
- * the single most dangerous sentence this platform can produce: "we could not
- * look" rendered as "we looked and it was fine".
- *
- * So `assessed === false` draws the rest arc, the bands, and NO NEEDLE AND NO
- * HUB, with the verdict word replaced by a dashed absence marker. There is no
- * angle for "unknown" and this component does not invent one.
- *
- * It takes a risk WORD and an assessed FLAG. It does not know a threshold, a
- * probability or a condition, and it must not learn one.
- */
-
-/* Degrees about the hub. -90 is straight up; the arc spans -96..+42. */
 const ANGLE = { low: -60, medium: -10, high: 38 };
 
 export default function RiskGauge({ risk, assessed = true, caption }) {
   const key = typeof risk === 'string' ? risk.toLowerCase() : null;
-  // BOTH conditions. A risk word with `assessed: false` is a contradiction the
-  // backend should never send, and if it ever does, absence wins -- the safer
-  // of the two readings.
   const known = assessed === true && Object.prototype.hasOwnProperty.call(ANGLE, key);
   const angle = known ? ANGLE[key] : null;
   const label = known ? risk : 'Not assessed';
@@ -47,8 +22,6 @@ export default function RiskGauge({ risk, assessed = true, caption }) {
       >
         <title>{title}</title>
 
-        {/* Rest arc -- the full sweep, always drawn, so the bands read as a
-            portion of something rather than as the whole instrument. */}
         <path
           d="M25 152 A120 120 0 0 1 265 152"
           fill="none"
@@ -57,8 +30,6 @@ export default function RiskGauge({ risk, assessed = true, caption }) {
           strokeLinecap="round"
         />
 
-        {/* The three bands. Drawn even when nothing was assessed: the scale is
-            a property of the instrument, not of this patient. */}
         <path
           className="gauge__band gauge__band--low"
           style={{ '--len': 200 }}
@@ -93,10 +64,6 @@ export default function RiskGauge({ risk, assessed = true, caption }) {
         {known ? (
           <g
             className="gauge__needle"
-            /* The angle is a STATIC transform as well as the animation's end
-               state. Under `prefers-reduced-motion` the keyframes are switched
-               off entirely, and a needle whose only angle lived in a keyframe
-               would rest at zero -- pointing at "low" on a high-risk report. */
             style={{ transform: `rotate(${angle}deg)`, '--angle': `${angle}deg` }}
           >
             <line
@@ -113,8 +80,6 @@ export default function RiskGauge({ risk, assessed = true, caption }) {
 
         {known ? <circle className="gauge__hub" cx="145" cy="152" r="8" fill="var(--ink)" /> : null}
 
-        {/* NOT MEASURED, drawn the way every absence in this app is drawn: a
-            dashed outline with no fill, in --mono, never a risk colour. */}
         {known ? null : (
           <circle
             className="gauge__absent"
@@ -132,8 +97,6 @@ export default function RiskGauge({ risk, assessed = true, caption }) {
           x="145"
           y="188"
           textAnchor="middle"
-          /* The word takes its own risk colour, as it does on every card --
-             and only when known: an absence keeps the absence treatment. */
           className={known ? `gauge__verdict gauge__verdict--${key}` : 'gauge__verdict gauge__verdict--absent'}
         >
           {label}

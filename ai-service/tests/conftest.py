@@ -1,25 +1,3 @@
-"""Shared fixtures.
-
-Two hard rules for this suite:
-
-1. It MUST pass with no GEMINI_API_KEY and no network access. The autouse
-   `_isolate_env` fixture strips any real key from the environment so a
-   developer's own key can never make a test pass that would otherwise fail,
-   and so no test can accidentally reach the network. The opt-in live test
-   (tests/test_live_gemini.py) restores the key deliberately.
-
-2. NO REAL MEDICAL DATA. The lab report fixtures below are synthesised here
-   with PyMuPDF from invented values for a fictional laboratory.
-
-3. AUTH. The service FAILS CLOSED -- importing `app.main` with no
-   `AI_SERVICE_API_KEY` and no escape hatch raises. The suite therefore sets
-   `ALLOW_UNAUTHENTICATED=true` before any app module is imported, so the
-   pre-existing tests exercise the endpoints without a key. Tests that verify
-   authentication build their own clients with an explicit key (see the
-   `authed_client_factory` fixture) and `tests/test_auth.py` asserts the
-   fail-closed startup behaviour in a real subprocess.
-"""
-
 from __future__ import annotations
 
 import io
@@ -27,19 +5,10 @@ import os
 import re
 from typing import Any, Dict, List, Optional
 
-# MUST run before any `app.*` import: `app.main` enforces the auth
-# configuration at import time and would otherwise refuse to load.
 os.environ.setdefault("ALLOW_UNAUTHENTICATED", "true")
 os.environ.pop("AI_SERVICE_API_KEY", None)
 
-# AND THE .env FILE IS NOT READ (2026-10-03). Popping the variables above kept a
-# real key out of the ENVIRONMENT, but `Settings` reads `ai-service/.env`
-# directly, so any test building settings the ordinary way picked the real
-# `AI_SERVICE_API_KEY` up from the file and got 401 instead of 200 -- about
-# thirty failures, and for weeks the suite was run with `.env` moved aside by
-# hand (MEMORY.md section 0, item 7). Turned off here, once, before any app
-# module can construct or cache a `Settings`.
-from app import config as _config  # noqa: E402
+from app import config as _config
 
 _config.Settings.model_config["env_file"] = None
 _config.get_settings.cache_clear()
@@ -48,16 +17,12 @@ import pymupdf
 import pytest
 from fastapi.testclient import TestClient
 
-# --------------------------------------------------------------------------
-# Environment isolation
-# --------------------------------------------------------------------------
 
 _LIVE_KEY_ENV = "_VAIDYAAI_REAL_GEMINI_KEY"
 
 
 @pytest.fixture(autouse=True, scope="session")
 def _isolate_env() -> Any:
-    """Remove real credentials and settings overrides for the whole session."""
     saved: Dict[str, Optional[str]] = {}
     for name in (
         "GEMINI_API_KEY",
@@ -72,12 +37,10 @@ def _isolate_env() -> Any:
     ):
         saved[name] = os.environ.pop(name, None)
 
-    # See rule 3 in the module docstring.
     os.environ["ALLOW_UNAUTHENTICATED"] = "true"
 
-    # Stash the real key so only the explicitly opt-in live test can use it.
     if saved.get("GEMINI_API_KEY"):
-        os.environ[_LIVE_KEY_ENV] = saved["GEMINI_API_KEY"]  # type: ignore[index]
+        os.environ[_LIVE_KEY_ENV] = saved["GEMINI_API_KEY"]
 
     yield
 
@@ -93,14 +56,8 @@ def _isolate_env() -> Any:
 def settings(_isolate_env: Any):
     from app.config import Settings
 
-    # Constructed directly (not via the cached get_settings) so each test gets
-    # a clean instance. `_env_file=None` keeps a developer's .env out of tests.
     return Settings(_env_file=None)
 
-
-# --------------------------------------------------------------------------
-# Synthetic lab report fixtures -- generated, never real patient data
-# --------------------------------------------------------------------------
 
 SYNTHETIC_ROWS: List[tuple] = [
     ("HbA1c", "6.8", "%", "4.0 - 5.6", "H"),
@@ -114,7 +71,6 @@ SYNTHETIC_ROWS: List[tuple] = [
 
 
 def _draw_report_page(page: "pymupdf.Page", page_number: int, total: int) -> None:
-    """Render a simple, realistic-looking lab table onto a page."""
     text_y = 60.0
 
     def line(text: str, size: float = 10.0, bold: bool = False, dy: float = 16.0):
@@ -138,7 +94,6 @@ def _draw_report_page(page: "pymupdf.Page", page_number: int, total: int) -> Non
         line("NORTHFIELD DIAGNOSTIC LABORATORY", size=12, bold=True, dy=20)
         line(f"Continued - page {page_number} of {total}", size=9, dy=24)
 
-    # Table header
     cols = [50, 230, 310, 380, 500]
     headers = ["TEST", "RESULT", "UNIT", "FLAG", "REFERENCE RANGE"]
     for x, head in zip(cols, headers):
@@ -161,11 +116,10 @@ def _draw_report_page(page: "pymupdf.Page", page_number: int, total: int) -> Non
 
 
 def make_synthetic_pdf(page_count: int = 1) -> bytes:
-    """Build a synthetic lab report PDF in memory."""
     doc = pymupdf.open()
     try:
         for index in range(page_count):
-            page = doc.new_page(width=595, height=842)  # A4
+            page = doc.new_page(width=595, height=842)
             _draw_report_page(page, index + 1, page_count)
         return doc.tobytes()
     finally:
@@ -173,7 +127,6 @@ def make_synthetic_pdf(page_count: int = 1) -> bytes:
 
 
 def make_synthetic_png(width: int = 900, height: int = 1200) -> bytes:
-    """Build a synthetic lab report as a PNG image."""
     doc = pymupdf.open()
     try:
         page = doc.new_page(width=595, height=842)
@@ -215,10 +168,6 @@ def synthetic_jpeg() -> bytes:
     return make_synthetic_jpeg()
 
 
-# --------------------------------------------------------------------------
-# Gemini test doubles
-# --------------------------------------------------------------------------
-
 WELL_FORMED_PAGE_PAYLOAD: Dict[str, Any] = {
     "raw_text": "NORTHFIELD DIAGNOSTIC LABORATORY\nHbA1c 6.8 % H 4.0 - 5.6\n"
     "Urine Ketones Negative Negative",
@@ -255,7 +204,6 @@ WELL_FORMED_PAGE_PAYLOAD: Dict[str, Any] = {
 
 
 class FakeGeminiClient:
-    """Stands in for GeminiClient. Records calls; never touches the network."""
 
     def __init__(
         self,
@@ -277,12 +225,6 @@ class FakeGeminiClient:
             }
         )
         if self._payloads is not None:
-            # BY PAGE NUMBER, NOT CALL ORDER (2026-10-03). Pages are now read
-            # concurrently, so page 2's call can arrive before page 1's;
-            # indexing by arrival would hand pages each other's payloads at
-            # random. The prompt states the page ("This is page 2 of 3"); a
-            # single-page prompt does not, and is page 1. A prompt that names
-            # no page at all falls back to arrival order, as before.
             match = re.search(r"This is page (\d+) of", prompt)
             if match:
                 position = int(match.group(1)) - 1
@@ -300,7 +242,6 @@ class FakeGeminiClient:
 
 @pytest.fixture()
 def client_factory(_isolate_env: Any):
-    """Build a TestClient whose extraction service uses a fake Gemini client."""
     from app.api.routes_ocr import get_extraction_service
     from app.config import Settings, get_settings
     from app.main import app
@@ -313,14 +254,12 @@ def client_factory(_isolate_env: Any):
         **settings_overrides: Any,
     ) -> TestClient:
         fake = fake or FakeGeminiClient()
-        # No real 20 s pause before a failed page's one retry (2026-10-10);
-        # tests/test_page_retry.py is where that pause is tested.
         settings_overrides.setdefault("page_retry_delay_seconds", 0)
         test_settings = Settings(_env_file=None, **settings_overrides)
 
         app.dependency_overrides[get_settings] = lambda: test_settings
         app.dependency_overrides[get_extraction_service] = (
-            lambda: ExtractionService(test_settings, fake)  # type: ignore[arg-type]
+            lambda: ExtractionService(test_settings, fake)
         )
         tc = TestClient(app, raise_server_exceptions=False)
         created.append(tc)
@@ -340,17 +279,11 @@ def client(client_factory: Any) -> TestClient:
     return client_factory()
 
 
-# --------------------------------------------------------------------------
-# Authenticated clients -- for the tests that exercise auth itself
-# --------------------------------------------------------------------------
-
-#: 32+ chars, so it satisfies `min_service_key_length`. Not a real credential.
 TEST_SERVICE_KEY = "test-service-key-0123456789abcdefghij"
 
 
 @pytest.fixture()
 def authed_client_factory(client_factory: Any) -> Any:
-    """A client whose settings REQUIRE the service key (no escape hatch)."""
 
     def _factory(fake: Optional[FakeGeminiClient] = None, **overrides: Any):
         overrides.setdefault("ai_service_api_key", TEST_SERVICE_KEY)

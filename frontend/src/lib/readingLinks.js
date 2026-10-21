@@ -1,15 +1,3 @@
-/**
- * Further reading for each lifestyle topic (Module 26's catalogue codes).
- *
- * ONE FIXED PAGE PER CODE, on the NHS website -- free, ad-free and written
- * for patients. Every URL was opened and its page title checked against the
- * topic on 2026-10-02.
- *
- * NOTHING ABOUT THE READER LEAVES THIS APP. The links carry no query string
- * and are opened with `rel="noopener noreferrer"`, so the NHS site is not
- * even told which page the reader came from. A code with no entry here simply
- * gets no link -- never a search URL built from a condition name.
- */
 export const READING_SOURCE = 'NHS website';
 
 export const READING_LINKS = {

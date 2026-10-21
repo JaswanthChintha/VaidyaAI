@@ -1,50 +1,3 @@
-"""Module 24 -- the rule table, the violation vocabulary, and the policy.
-
-==========================================================================
-WHAT THIS LAYER IS, AND WHAT IT IS NOT
-==========================================================================
-
-Module 8's recommendation text is safe STRUCTURALLY: `recommendation(code)`
-takes a code and there is no text parameter, so no caller can inject wording.
-That guarantee does not survive Module 23. An LLM emits free-form prose, and
-prose cannot be made safe by construction -- only inspected.
-
-So this layer runs TWO kinds of check, and the difference between them is the
-most important thing in this file.
-
-  PROHIBITION CHECKS (a blocklist).  "Does the text contain something we have
-  decided is unsafe?"  Medication names, dosages, diagnostic assertions,
-  certainty claims. These are patterns, and a pattern list is by definition an
-  enumeration of the things somebody thought of. A blocklist CANNOT be
-  complete. Every rule here whose `positive_control` is False is a blocklist
-  rule and is honestly labelled as one.
-
-  PERMISSION CHECKS (a positive control).  "Is this the KIND of statement we
-  permit at all?"  These do not ask what is present, they ask what is REQUIRED
-  or what SHAPE the statement has:
-
-    * REQUIRED_PROFESSIONAL_REFERRAL -- a patient-facing explanation must name
-      a qualified healthcare professional as where the question belongs. This
-      is the spec's own mandated framing (section 14, Module 24).
-    * REQUIRED_HEDGING -- an interpretive claim ("this means", "this shows")
-      must carry a hedge. Unhedged interpretation is the register of a
-      diagnosis, whatever words it uses.
-    * DIRECTIVE_VERB_ALLOWLIST -- when the text tells the reader to do
-      something, the verb must be on a SHORT PERMITTED LIST (discuss, ask,
-      consult, ...). Every other instruction is refused without the layer
-      needing to know what the instruction was. "Take half a tablet at night"
-      is refused because `take` is not `discuss`, not because anyone wrote a
-      pattern for half tablets.
-    * NUMERIC_GROUNDING -- every number in the output must appear in the
-      retrieved knowledge or in the patient's own validated values. A number
-      the model invented is the single most checkable hallucination there is.
-
-The positive controls are what make this more than a bigger regex. They are
-still not a guarantee: see `SAFETY_POLICY["limitations"]`, which is returned
-by the introspection endpoint so the limitation is published rather than
-implied away.
-"""
-
 from __future__ import annotations
 
 import enum
@@ -55,27 +8,7 @@ from typing import Dict, List, Optional, Tuple
 SAFETY_LAYER_VERSION = "1.0.0"
 
 
-# --------------------------------------------------------------------------
-# Severity -- decides what the verdict engine may do about a violation
-# --------------------------------------------------------------------------
-
-
 class Severity(str, enum.Enum):
-    """What a violation is permitted to lead to.
-
-    PROHIBITED     the text is refused outright. Never redacted, never
-                   softened, never partially shown. Module 23 must retry or
-                   fall back.
-    REDACTABLE     the violating SENTENCE may be removed verbatim and replaced
-                   with a fixed notice, IF nothing prohibited also fired. Only
-                   codes whose construction is an INSTRUCTION (never a finding)
-                   carry this severity -- deleting an instruction cannot delete
-                   an abnormality.
-    REQUIRED       a required element is missing. Fixed, catalogue-sourced
-                   framing is APPENDED. Nothing existing is altered.
-    STRUCTURAL     the input could not be analysed. Always a rejection; this is
-                   the fail-closed path.
-    """
 
     PROHIBITED = "prohibited"
     REDACTABLE = "redactable"
@@ -83,15 +16,8 @@ class Severity(str, enum.Enum):
     STRUCTURAL = "structural"
 
 
-# --------------------------------------------------------------------------
-# Violation codes -- machine-readable, stable, branchable by Module 23
-# --------------------------------------------------------------------------
-
-
 class ViolationCode(str, enum.Enum):
-    """Stable codes. Module 23 may branch on these; do not rename."""
 
-    # --- the six classes spec Module 24 names ---
     UNSUPPORTED_DIAGNOSIS = "UNSUPPORTED_DIAGNOSIS"
     MEDICATION_REFERENCE = "MEDICATION_REFERENCE"
     MEDICATION_DOSAGE = "MEDICATION_DOSAGE"
@@ -99,17 +25,14 @@ class ViolationCode(str, enum.Enum):
     CERTAINTY_CLAIM = "CERTAINTY_CLAIM"
     REPLACES_PROFESSIONAL_CONSULTATION = "REPLACES_PROFESSIONAL_CONSULTATION"
 
-    # --- register / voice ---
     CLINICIAN_VOICE = "CLINICIAN_VOICE"
     UNPERMITTED_DIRECTIVE = "UNPERMITTED_DIRECTIVE"
 
-    # --- positive controls ---
     UNHEDGED_INTERPRETIVE_CLAIM = "UNHEDGED_INTERPRETIVE_CLAIM"
     UNGROUNDED_NUMERIC_CLAIM = "UNGROUNDED_NUMERIC_CLAIM"
     GROUNDING_REQUIRED_BUT_ABSENT = "GROUNDING_REQUIRED_BUT_ABSENT"
     MISSING_PROFESSIONAL_REFERRAL = "MISSING_PROFESSIONAL_REFERRAL"
 
-    # --- fail-closed / structural ---
     UNANALYSABLE_INPUT = "UNANALYSABLE_INPUT"
     EMPTY_OUTPUT = "EMPTY_OUTPUT"
     INPUT_TOO_LARGE = "INPUT_TOO_LARGE"
@@ -117,8 +40,6 @@ class ViolationCode(str, enum.Enum):
     REDACTION_NOT_POSSIBLE = "REDACTION_NOT_POSSIBLE"
 
 
-#: Severity of every code. Exhaustive on purpose: a code with no entry here
-#: would be silently un-actionable, so `_self_check()` refuses that.
 CODE_SEVERITY: Dict[ViolationCode, Severity] = {
     ViolationCode.UNSUPPORTED_DIAGNOSIS: Severity.PROHIBITED,
     ViolationCode.MEDICATION_REFERENCE: Severity.PROHIBITED,
@@ -129,12 +50,9 @@ CODE_SEVERITY: Dict[ViolationCode, Severity] = {
     ViolationCode.UNHEDGED_INTERPRETIVE_CLAIM: Severity.PROHIBITED,
     ViolationCode.UNGROUNDED_NUMERIC_CLAIM: Severity.PROHIBITED,
     ViolationCode.GROUNDING_REQUIRED_BUT_ABSENT: Severity.PROHIBITED,
-    # Instructions, not findings -- see Severity.REDACTABLE.
     ViolationCode.REPLACES_PROFESSIONAL_CONSULTATION: Severity.REDACTABLE,
     ViolationCode.UNPERMITTED_DIRECTIVE: Severity.REDACTABLE,
-    # Missing element -- fixed framing is appended.
     ViolationCode.MISSING_PROFESSIONAL_REFERRAL: Severity.REQUIRED,
-    # Fail-closed.
     ViolationCode.UNANALYSABLE_INPUT: Severity.STRUCTURAL,
     ViolationCode.EMPTY_OUTPUT: Severity.STRUCTURAL,
     ViolationCode.INPUT_TOO_LARGE: Severity.STRUCTURAL,
@@ -143,29 +61,14 @@ CODE_SEVERITY: Dict[ViolationCode, Severity] = {
 }
 
 
-# --------------------------------------------------------------------------
-# The rule table
-# --------------------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class SafetyRule:
-    """One checkable rule.
-
-    `positive_control` is not decoration. It records whether the rule asks
-    "does this contain something bad?" (False -- a blocklist, necessarily
-    incomplete) or "is this the kind of statement we permit?" (True). The
-    introspection endpoint publishes the split so nobody has to take the
-    docstring's word for how much of this layer is enumeration.
-    """
 
     rule_id: str
     code: ViolationCode
     reason: str
     positive_control: bool = False
     pattern: Optional["re.Pattern[str]"] = None
-    #: True when the rule is evaluated per sentence rather than over the whole
-    #: text (hedging, directives). Purely informational for the document.
     sentence_scoped: bool = False
 
     @property
@@ -177,50 +80,13 @@ def _p(pattern: str) -> "re.Pattern[str]":
     return re.compile(pattern, re.IGNORECASE)
 
 
-#: The gap between two words of a multi-word phrase.
-#:
-#: A LITERAL SPACE IS NOT ENOUGH, and this is a correctness fix rather than a
-#: nicety. Rules like "you have <condition>" were written with single spaces,
-#: so every one of these slipped past while meaning exactly the banned thing:
-#:
-#:     "you<CR><LF>have diabetes"  (line wrap: two chars, not one space)
-#:     "you<TAB>have diabetes"     (tab)
-#:     "you  have diabetes"     (double space)
-#:     "You, have diabetes."    (comma)
-#:     "You (have) diabetes."   (parenthetical)
-#:     'You "have" diabetes.'   (quoted emphasis)
-#:
-#: None of these are adversarial: wrapped prose, parentheticals and quoted
-#: emphasis are ordinary LLM output, so this class WILL occur in production.
-#: `\W{1,4}` accepts any run of up to four non-word characters, which covers
-#: every case above without letting a phrase match across a paragraph.
 _GAP = r"\W{1,4}"
 
 
 def _phrase(pattern: str) -> str:
-    """Rewrite every literal space in `pattern` as `_GAP`.
-
-    Lets a multi-word rule be written the way it reads -- `"your kidneys are
-    failing"` -- while still matching when the model wraps, tabs, double-spaces
-    or parenthesises between the words. Hand-concatenating `+ _GAP +` between
-    every word is unreadable and, as this file's history shows, easy to get
-    wrong in a way that only a syntax error catches.
-
-    Spaces inside a character class or a `{m,n}` quantifier would be corrupted
-    by a blind replace, so callers must not put spaces there; none of the rules
-    below do.
-    """
     return _GAP.join(part for part in pattern.split(" "))
 
 
-# --------------------------------------------------------------------------
-# Vocabulary used by the sentence-scoped rules (imported by the validator)
-# --------------------------------------------------------------------------
-
-#: The ONLY verbs a patient-facing explanation may direct at the reader.
-#: Anything else is refused. This is the allowlist half of the design: the
-#: layer does not need to recognise "inject", "titrate" or "halve" as unsafe,
-#: it needs only to observe that they are not "discuss".
 PERMITTED_DIRECTIVE_VERBS: Tuple[str, ...] = (
     "discuss",
     "talk",
@@ -245,11 +111,6 @@ PERMITTED_DIRECTIVE_VERBS: Tuple[str, ...] = (
     "keep",
 )
 
-#: Sentence-initial verbs that are unmistakably instructions to act on the
-#: body. HONESTLY A BLOCKLIST: an imperative cannot be recognised without a
-#: part-of-speech tagger, so sentence-initial imperatives are caught by
-#: enumeration while the `you should <verb>` construction above is caught by
-#: allowlist. Both fire on "take half a tablet at night".
 IMPERATIVE_ACTION_VERBS: Tuple[str, ...] = (
     "take",
     "takes",
@@ -291,9 +152,6 @@ IMPERATIVE_ACTION_VERBS: Tuple[str, ...] = (
     "avoid",
 )
 
-#: Verbs that turn a statement into an INTERPRETATION rather than a
-#: restatement. "Your HbA1c is 6.8%" is a restatement and needs no hedge;
-#: "your HbA1c means you are diabetic" is an interpretation and does.
 INTERPRETIVE_VERBS: Tuple[str, ...] = (
     "means",
     "indicates",
@@ -315,8 +173,6 @@ INTERPRETIVE_VERBS: Tuple[str, ...] = (
     "tells you",
 )
 
-#: A hedge makes an interpretation permissible. `associated with` and
-#: `may/can/could/often/typically` are the register the spec asks for.
 HEDGE_MARKERS: Tuple[str, ...] = (
     "may",
     "might",
@@ -351,23 +207,6 @@ HEDGE_MARKERS: Tuple[str, ...] = (
 )
 
 def _clinical_subject_terms() -> Tuple[str, ...]:
-    """The vocabulary that makes a sentence a claim ABOUT SOMEONE'S HEALTH.
-
-    The hedging control must fire on "your creatinine means kidney damage" and
-    must NOT fire on a definitional gloss -- "confidence=None, which means no
-    probability is produced", which is the service's own rule metadata, or
-    Module 25's "HbA1c means glycated haemoglobin". The difference is not the
-    verb; it is whether the sentence is about a person's clinical state.
-
-    The condition vocabulary is read from the EXISTING catalogue rather than
-    retyped here, so a condition added in Module 8 is covered without anyone
-    remembering to come back to this file.
-
-    FEATURE names are deliberately NOT cues. "HbA1c means glycated
-    haemoglobin" is the whole job of Module 25 and is not a claim about
-    anybody; "your HbA1c means ..." is, and `your` is already a cue. Including
-    feature names would have made the terminology explainer unshippable.
-    """
     terms = {
         "you",
         "your",
@@ -388,13 +227,12 @@ def _clinical_subject_terms() -> Tuple[str, ...]:
         "levels",
         "level",
     }
-    try:  # pragma: no cover -- catalogues are always importable in practice
+    try:
         from app.data.conditions import CONDITIONS
 
         for condition in CONDITIONS:
             terms.add(str(condition).lower())
-    except Exception:  # noqa: BLE001
-        # A missing catalogue must not disable the control's core vocabulary.
+    except Exception:
         pass
     return tuple(sorted(terms, key=len, reverse=True))
 
@@ -406,7 +244,6 @@ CLINICAL_SUBJECT = _p(
 )
 
 
-#: Naming one of these satisfies the mandated referral framing.
 PROFESSIONAL_REFERENCE = _p(
     r"\b(qualified\s+)?(healthcare|health\s?care|health|medical)\s+"
     r"(professional|practitioner|provider|team)s?\b"
@@ -416,29 +253,8 @@ PROFESSIONAL_REFERENCE = _p(
 )
 
 
-# --------------------------------------------------------------------------
-# The pattern rules
-# --------------------------------------------------------------------------
-
-#: A GAP THAT CANNOT LEAVE THE SENTENCE IT STARTED IN.
-#:
-#: `_GAP` is `\W{1,4}`, and `". "` is two non-word characters, so a rule that
-#: walks a few filler words with `_GAP` between them will happily walk out of
-#: one sentence and into the next. Measured, on the morphological branch
-#: below:
-#:
-#:     "You have a raised CRP. Infection is one cause among many."
-#:
-#: `you have` + `a` + `raised` + `CRP` + `.` + `Infection` -- refused, though
-#: the reader is told nothing about having an infection. A PROHIBITED code
-#: refuses the WHOLE generation, so that sentence pair would have rendered a
-#: blank page.
-#:
-#: Newlines stay permitted: wrapped prose is ordinary model output and a line
-#: break is not the end of a sentence. `.!?;` are excluded because they are.
 _GAP_SAME_SENTENCE = r"[^\w.!?;]{1,4}"
 
-#: Who the assertion is about. Shared by both halves of `diagnosis.assertion`.
 _DIAGNOSIS_CARRIER = (
     r"(?:you" + _GAP + r"have|you've" + _GAP + r"got"
     r"|you" + _GAP + r"are" + _GAP + r"suffering(?:" + _GAP + r"from)?"
@@ -446,29 +262,10 @@ _DIAGNOSIS_CARRIER = (
     r"|patient" + _GAP + r"has)"
 )
 
-#: DISEASE NAMES ARE MORPHOLOGICALLY REGULAR, SO STOP ENUMERATING THEM.
-#:
-#: The enumerated branch of `diagnosis.assertion` listed eleven conditions.
-#: Everything else was APPROVED -- `You have cirrhosis of the liver.` is the
-#: one that has stood in the handover since 2026-09-05, but it was never one
-#: sentence: leukaemia, lymphoma, myeloma, hepatitis, sepsis, tuberculosis,
-#: HIV, thrombocytopenia and twenty more went through the same hole. An
-#: enumeration cannot close it, because the next report names a condition
-#: nobody listed.
-#:
-#: THIS IS THE TECHNIQUE THE MEDICATION RULE ALREADY USES AND THE TEST FILE
-#: ALREADY DOCUMENTS -- `-sartan`, `-olol`, `-azine`, `-sonide` catch drugs
-#: nobody enumerated. Disease names are at least as regular: Greek and Latin
-#: pathology suffixes cover most of them, a handful of head nouns
-#: (`disease`, `syndrome`, `disorder`) cover the compound names, and only
-#: the genuinely irregular ones (HIV, gout, lupus) still need naming.
 _DISEASE_SUFFIX = (
     r"\w{3,}(?:itis|osis|aemia|emia|opathy|oma|uria|penia|plasia|ataxia"
     r"|trophy|ectasis|itides|aemic|emic)"
 )
-#: `attack`, `infarction` and friends are here because a diagnosis is not
-#: always a state -- `You have had a heart attack.` asserts one as an EVENT,
-#: and no pathology suffix covers it.
 _DISEASE_HEAD = (
     r"(?:disease|syndrome|disorder|deficiency|failure|insufficiency|infection"
     r"|attack|infarction|embolism|aneurysm)"
@@ -480,28 +277,6 @@ _DISEASE_NAMED = (
     r"|cirrhosis|hepatitis|leukaemia|leukemia|lymphoma|myeloma)"
 )
 
-#: WHAT A CARRIER MAY BE FOLLOWED BY WITHOUT ASSERTING A DIAGNOSIS.
-#:
-#: `You have a higher risk of heart disease.` and `You have a family history
-#: of kidney disease.` are legitimate and must survive -- a PROHIBITED code
-#: refuses the WHOLE generation and the patient is shown nothing, so a false
-#: positive here is not a cosmetic problem.
-#:
-#: THIS LOOKAHEAD GUARDS ONLY THE NEW MORPHOLOGICAL BRANCH. The enumerated
-#: branch below keeps its existing behaviour exactly, unexcused: widening the
-#: rule must not quietly narrow it, and `You have a history of diabetes.` has
-#: been a refusal since before this change.
-#:
-#: ⚠ MEASURED, AND LESS LOAD-BEARING THAN IT LOOKS. Deleting this lookahead
-#: breaks exactly ONE of the eleven control sentences pinned in the tests --
-#: `You have an increased risk of diabetes.` The other ten survive on WORD
-#: DISTANCE alone: the filler allowance is three words and `heart disease`
-#: sits four away in `You have a higher risk of heart disease.`
-#:
-#: That is luck, not design, and it is fragile in a specific direction:
-#: RAISING the filler allowance would turn those ten into refusals with no
-#: test failing first, because they never depended on this guard. If you
-#: widen the filler count, re-run the control set before believing it.
 
 _DIAGNOSIS_EXCUSE = (
     r"(?:an?" + _GAP_SAME_SENTENCE + r")?(?:\w+" + _GAP_SAME_SENTENCE + r"){0,3}?"
@@ -512,7 +287,6 @@ _DIAGNOSIS_EXCUSE = (
 
 
 RULES: Tuple[SafetyRule, ...] = (
-    # ---------------------------------------------------- diagnosis --------
     SafetyRule(
         rule_id="diagnosis.assertion",
         code=ViolationCode.UNSUPPORTED_DIAGNOSIS,
@@ -521,42 +295,11 @@ RULES: Tuple[SafetyRule, ...] = (
             "an educational analysis and is not permitted to diagnose."
         ),
         pattern=_p(
-            # `diagnos*` in ANY inflection, matched BROADLY. Widening and then
-            # excusing the safe form is the right way round: a new way of
-            # ASSERTING is caught by default. The disclaiming phrasing the
-            # platform is required to use is excused AFTERWARDS, by
-            # `_drop_disclaimed_diagnoses`, which looks for a negator in the
-            # same sentence.
-            #
-            # This replaced eight hand-enumerated fixed-width lookbehinds.
-            # They excused exactly the eight phrasings their author thought of
-            # and REJECTED every other correct English disclaimer -- "this is
-            # never a diagnosis", "not any kind of diagnosis", "no diagnosis is
-            # offered here", even "not  a diagnosis" with two spaces. Since
-            # UNSUPPORTED_DIAGNOSIS is PROHIBITED, each of those refused the
-            # WHOLE generation, so the patient got the fallback BECAUSE the
-            # model had disclaimed properly.
             r"\bdiagnos\w*"
             r"|\b(you" + _GAP + r"have|you've" + _GAP + r"got"
-            # `from` IS OPTIONAL AND THAT IS THE WHOLE POINT OF THE GROUP.
-            # This branch read `you are suffering` with nothing after it, and
-            # `_GAP` is `\W{1,4}` -- non-word characters only, so it cannot
-            # cross the WORD `from`. "You are suffering from diabetes" was
-            # therefore APPROVED while "You have diabetes" was refused, for
-            # all eleven enumerated conditions: a carrier that was meant to
-            # work and silently did not. The `-ing` form was written without
-            # its preposition, which is the one inflection that requires one.
             r"|you" + _GAP + r"are" + _GAP + r"suffering(" + _GAP + r"from)?"
             r"|you" + _GAP + r"suffer" + _GAP + r"from"
             r"|patient" + _GAP + r"has|this" + _GAP + r"is)" + _GAP + r"(an?" + _GAP + r")?"
-            # THE CARRIER GOT `_GAP` AND THE CONDITION NAMES DID NOT.
-            # Every multi-word name here was written with a LITERAL SINGLE
-            # SPACE, so `You have kidney  disease.` and the tab form were
-            # APPROVED while `You have kidney disease.` was refused -- the
-            # exact defect `_GAP` was introduced to kill, left behind in the
-            # half of the pattern nobody re-read. `_phrase` rewrites each
-            # space as `_GAP`; it is safe on this alternation because no
-            # character class or `{m,n}` quantifier here contains a space.
             + _phrase(
                 r"(diabetes|diabetic|anaemia|anemia|anaemic|anemic|kidney disease"
                 r"|chronic kidney disease|ckd|heart disease|hypertension"
@@ -564,21 +307,14 @@ RULES: Tuple[SafetyRule, ...] = (
             )
             + r"\b"
             r"|\byou" + _GAP + r"are" + _GAP + r"(diabetic|anaemic|anemic|hypertensive|pre-?diabetic)\b"
-            # THE MORPHOLOGICAL BRANCH -- §6r's D1. Strictly ADDITIVE: it only
-            # ever adds refusals, so nothing that was refused before this line
-            # existed can become approved because of it.
             + r"|\b" + _DIAGNOSIS_CARRIER
             + r"(?!" + _GAP_SAME_SENTENCE + _DIAGNOSIS_EXCUSE + r")"
             + _GAP_SAME_SENTENCE
             + r"(?:(?:an?|the|your)" + _GAP_SAME_SENTENCE + r")?"
-            # THREE filler words, not two, so the PERFECT TENSE reaches its
-            # noun: `You have had a heart attack.` spends `had`, `a` and
-            # `heart` before `attack`, and survived a two-word allowance.
             + r"(?:\w+" + _GAP_SAME_SENTENCE + r"){0,3}?"
             + r"(?:" + _DISEASE_SUFFIX + r"|" + _DISEASE_HEAD + r"|" + _DISEASE_NAMED + r")\b"
         ),
     ),
-    # ------------------------------------------ bare clinical claims -------
     SafetyRule(
         rule_id="assertion.clinical_state",
         code=ViolationCode.UNHEDGED_INTERPRETIVE_CLAIM,
@@ -587,37 +323,9 @@ RULES: Tuple[SafetyRule, ...] = (
             "system reports what a value is and how it compares with a "
             "configured threshold; it may not tell someone what their state IS."
         ),
-        # WHY THIS RULE EXISTS.
-        #
-        # The design's stated defence is that positive controls backstop an
-        # admittedly-incomplete blocklist. An audit measured them and they did
-        # not. Every one of these was APPROVED, with framing merely appended:
-        #
-        #     "Your kidneys are failing."
-        #     "Your results are completely fine and nothing is wrong."
-        #     "You do not have diabetes."
-        #
-        # Two independent causes. The hedging control only fires when an
-        # INTERPRETIVE VERB is present (means / indicates / suggests), so the
-        # most direct clinical assertions in English are invisible to the
-        # control meant to catch interpretations. And the only control that DID
-        # fire, MISSING_PROFESSIONAL_REFERRAL, is `required` -- it appends
-        # framing and APPROVES; it cannot reject. So the blocklist was fully
-        # load-bearing for a class it was never written to cover.
-        #
-        # This is the rejecting control for that class. The FALSE-REASSURANCE
-        # half matters at least as much as the alarming half: telling someone
-        # their results are fine when the system cannot know that is the exact
-        # failure this project guards against everywhere else -- an unassessed
-        # condition must never read as reassuring.
-        #
-        # Deliberately SECOND-PERSON anchored. "A normal HbA1c is below 5.7%"
-        # is education and must pass; "You are normal" is a verdict on a person
-        # and must not.
         pattern=_p(
             "|".join(
                 (
-                    # organ or system stated to be in an adverse state
                     _phrase(
                         r"your (kidneys?|livers?|hearts?|thyroids?|pancreas|lungs?"
                         r"|organs?|immune system|blood sugar|blood pressure)"
@@ -626,7 +334,6 @@ RULES: Tuple[SafetyRule, ...] = (
                         r"|compromised|shutting down|in failure|out of control"
                         r"|dangerously \w+)"
                     ),
-                    # blanket reassurance about the reader's state
                     _phrase(
                         r"(nothing (is wrong|to worry about)|no cause for concern"
                         r"|no need to worry)"
@@ -636,7 +343,6 @@ RULES: Tuple[SafetyRule, ...] = (
                         r"((completely|perfectly|totally|entirely|absolutely) )?"
                         r"(fine|normal|healthy|okay|ok|clear|good)"
                     ),
-                    # a negative diagnosis is still a diagnosis
                     _phrase(
                         r"you (do not|don't) have (an? )?"
                         r"(diabetes|anaemia|anemia|kidney disease|heart disease"
@@ -646,7 +352,6 @@ RULES: Tuple[SafetyRule, ...] = (
             )
         ),
     ),
-    # --------------------------------------------------- medication --------
     SafetyRule(
         rule_id="medication.named",
         code=ViolationCode.MEDICATION_REFERENCE,
@@ -655,11 +360,6 @@ RULES: Tuple[SafetyRule, ...] = (
             "specific drug with a patient."
         ),
         pattern=_p(
-            # `insulin` is both a drug and a HORMONE, and "the body makes too
-            # little insulin" is unavoidable diabetes education -- Module 22's
-            # corpus cannot explain diabetes without it. The physiological
-            # constructions are excused by name; "start insulin", "inject
-            # insulin" and "insulin 10 units" all still match.
             r"\b(?<!enough )(?<!little )(?<!much )(?<!produce )(?<!produces )"
             r"(?<!producing )(?<!make )(?<!makes )(?<!making )(?<!hormone )"
             r"(?<!uses )(?<!using )(?<!own )(?<!called )"
@@ -691,8 +391,6 @@ RULES: Tuple[SafetyRule, ...] = (
             r"|prazoles?|azoles?|tidines?|gliptins?|glitazones?|flozins?"
             r"|glinides?|cillins?|mycins?|micins?|floxacins?|cyclines?"
             r"|sulfamethoxazole|mabs?|nibs?|triptans?|setrons?|caines?"
-            # `(?<!choles)` keeps `cholesterol` -- a Module 5 FEATURE NAME that
-            # appears throughout every report -- out of the -terol stem.
             r"|semides?|thiazides?|(?<!choles)terols?|sonides?|afils?|profens?"
             r"|oxetines?|udines?|navirs?|ciclovirs?|(?<!mag)azines?"
             r"|barbitals?|zepams?|zolams?|codones?|morphones?"
@@ -708,16 +406,11 @@ RULES: Tuple[SafetyRule, ...] = (
         ),
         pattern=_p(r"\b(supplements?|supplementation|supplementing)\b"),
     ),
-    # -------------------------------------------------------- dosage -------
     SafetyRule(
         rule_id="dosage.quantity",
         code=ViolationCode.MEDICATION_DOSAGE,
         reason="States a quantity of a substance to put in a body.",
         pattern=_p(
-            # A DOSE is a quantity: "500 mg". A laboratory THRESHOLD is a
-            # concentration: "126 mg/dL". The negative lookahead for a
-            # following "/" is what separates them, so a report may legitimately
-            # cite "126 mg/dL" while "500 mg" is banned everywhere.
             r"\b\d+(\.\d+)?\s*"
             r"(mg|mcg|ug|µg|g|kg|ml|l|iu|units?|tablets?|capsules?|pills?)"
             r"\b(?!\s*/)"
@@ -778,14 +471,9 @@ RULES: Tuple[SafetyRule, ...] = (
         code=ViolationCode.MEDICATION_DOSAGE,
         reason="Spells out a dosing unit.",
         pattern=_p(
-            # "milligrams per decilitre" is a spelled-out CONCENTRATION -- the
-            # same distinction the numeric rule draws between "126 mg/dL" and
-            # "500 mg". Module 22's knowledge base writes its bands out in
-            # words, so without this the whole corpus reads as dosing.
             r"\b(milligrams?|micrograms?|international units?)\b(?!\s+per\s)"
         ),
     ),
-    # ------------------------------------------ treatment instructions -----
     SafetyRule(
         rule_id="treatment.instruction",
         code=ViolationCode.UNSAFE_TREATMENT_INSTRUCTION,
@@ -794,15 +482,6 @@ RULES: Tuple[SafetyRule, ...] = (
             "something to do."
         ),
         pattern=_p(
-            # `treat` is the only verb here with a common NON-clinical sense,
-            # and this system's own Module 6 boilerplate uses it: "Feature
-            # 'bmi' is usable but flagged (DERIVED_VALUE); treat it with
-            # reduced confidence." That is an instruction about how much to
-            # BELIEVE a number. The negative lookahead excuses exactly that
-            # epistemic construction -- `treat <it/this/them> with <a closed
-            # list of confidence words>`, the confidence word ending the
-            # clause -- and nothing wider. "treat it with metformin", "treated
-            # with", "treatment" all still match.
             r"\b(prescrib\w*"
             r"|(?!treat(?:s|ed|ing)?\s+(?:it|this|that|these|them|such\s+values?|these\s+values?|those\s+values?|the\s+values?"
             r"|the\s+value|the\s+figure)\s+with\s+(?:reduced\s+confidence"
@@ -825,7 +504,6 @@ RULES: Tuple[SafetyRule, ...] = (
             r"|\btake (this|these|it|them|one|two|half)\b"
         ),
     ),
-    # ---------------------------------------------------- certainty --------
     SafetyRule(
         rule_id="certainty.claim",
         code=ViolationCode.CERTAINTY_CLAIM,
@@ -842,7 +520,6 @@ RULES: Tuple[SafetyRule, ...] = (
             r"|no cause for concern)\b|\b100\s*%"
         ),
     ),
-    # --------------------------------- replacing professional care ---------
     SafetyRule(
         rule_id="replacement.dismisses_clinician",
         code=ViolationCode.REPLACES_PROFESSIONAL_CONSULTATION,
@@ -851,9 +528,6 @@ RULES: Tuple[SafetyRule, ...] = (
             "care, or tells the reader a consultation is unnecessary."
         ),
         pattern=_p(
-            # The negative lookbehinds excuse the platform's own required
-            # disclaimer ("does not replace assessment by a qualified
-            # healthcare professional") while still catching every assertion.
             r"\b(no need to (see|consult|visit|contact)"
             r"|instead of (seeing|consulting|visiting)"
             r"|without (seeing|consulting) a (doctor|physician|clinician)"
@@ -871,7 +545,6 @@ RULES: Tuple[SafetyRule, ...] = (
             r"(?<!\bno[\s])\bsubstitutes? for\b"
         ),
     ),
-    # -------------------------------------------------------- voice --------
     SafetyRule(
         rule_id="voice.clinician",
         code=ViolationCode.CLINICIAN_VOICE,
@@ -890,10 +563,6 @@ RULES: Tuple[SafetyRule, ...] = (
     ),
 )
 
-
-# --------------------------------------------------------------------------
-# Policy documents -- published by GET /api/v1/safety/policy
-# --------------------------------------------------------------------------
 
 MODIFICATION_POLICY: Dict[str, object] = {
     "verdict": "approve_with_modification",
@@ -989,7 +658,6 @@ SAFETY_POLICY: Dict[str, object] = {
 
 
 def rule_document() -> Dict[str, object]:
-    """Machine-readable dump of the rule table. No PHI; shape and policy only."""
     pattern_rules: List[Dict[str, object]] = [
         {
             "rule_id": rule.rule_id,
@@ -1072,11 +740,6 @@ def rule_document() -> Dict[str, object]:
     }
 
 
-# --------------------------------------------------------------------------
-# Import-time enforcement -- the same discipline as the catalogue's
-# --------------------------------------------------------------------------
-
-
 def _self_check() -> None:
     seen = set()
     for rule in RULES:
@@ -1092,9 +755,6 @@ def _self_check() -> None:
     for code in ViolationCode:
         if code not in CODE_SEVERITY:
             raise ValueError(f"{code} has no severity -- it would be un-actionable")
-    # The rule table must not be vacuous. If a sentence built out of the very
-    # things these rules exist to ban does not trip several of them, the table
-    # has been broken and the safety property with it.
     canary = (
         "Take metformin 500 mg twice a day; this confirms you have diabetes "
         "and you do not need to see a doctor."

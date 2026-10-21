@@ -1,120 +1,3 @@
-"""Module 32 -- the Doctor-Friendly Clinical Summary contract, pydantic v2.
-
-    Module 17 clinical report ─┐
-    Module 28 trends           ├─> Module 32 doctor summary ─> a clinician
-    Module 29 comparison       │
-    Modules 21/22 knowledge  ──┘
-
-Spec Module 32: "VaidyaAI generates a structured report that can be shared
-with a healthcare professional... The purpose is not to provide a diagnosis
-but to improve communication between the patient and healthcare professional."
-
-==========================================================================
-THIS MODULE ASSEMBLES. IT DOES NOT GENERATE.
-==========================================================================
-
-There is no LLM call anywhere in Module 32, and no free-text entry point into
-any sentence it emits. Every narrative string comes from `_TEMPLATES` in
-`app/services/doctor_summary.py`, a fixed table scanned by the Module 24
-safety scanner at import time; the only things substituted into a template
-are canonical feature names, canonical condition names, numbers, units, dates
-and this module's own code constants.
-
-That is the same posture Module 26 took ("serves catalogue text and calls no
-model") and for a stronger reason. The Module 24 audit (MEMORY.md §6k) rated
-the whole Module 1->26 flow FAIL because free model prose reached a patient
-carrying a fabricated diagnosis. A clinician-facing document is a HIGHER-stakes
-surface than a patient-facing one, not a lower one: a clinician may act on it.
-
-STRUCTURALLY TRUE, NOT MERELY CLAIMED. Three properties hold it:
-
-1. `DoctorSummaryRequest` has NO field that can carry generated prose. It
-   accepts a `ClinicalReport` (Module 17, `extra="forbid"` throughout), a
-   report history in Module 28's own `TimelineReportInput` shape, and options.
-   `ClinicalReport` has no `explanation` field -- Module 23's output lives on
-   a different object entirely and cannot be posted here.
-2. Every narrative field on the response is filled from `_TEMPLATES`. The
-   service module has no other string-producing path.
-3. The two families of string that DO originate outside this service --
-   transcriptions of the patient's own document (a printed test name, a
-   printed reference range) and reviewed corpus text (Module 22 chunks,
-   Module 8 band labels, artifact-authored model caveats) -- are carried in
-   named data fields and are never spliced into a sentence. They are scanned
-   with the Module 24 scanner and, on a hit, withheld with a code rather than
-   rendered. See `TranscribedText`.
-
-==========================================================================
-ABSENCE IS NEVER A VALUE HERE EITHER
-==========================================================================
-
-The repeated hazard of this project (MEMORY.md §11) has a specific shape in a
-clinician document, because a clinician reads an omission as a negative
-result:
-
-* `overall.any_assessed == False` is NOT a clean bill of health. It is
-  rendered through `OverallStatusView.assessment_reading`, whose text for that
-  case says so explicitly, and `clean_bill_of_health` is a literal `False` on
-  the wire whenever `any_assessed` is false.
-* An unassessed condition is its own category (`unassessed`), never folded in
-  with `normal`. Module 17 already separates them; this module does not
-  re-merge them.
-* `INSUFFICIENT_DATA` carries no risk, inherited from `decisions.py` where
-  that is a type-level guarantee.
-* A missing laboratory value is `value: null` with a `LabPosition` of
-  `not_determinable` and a reason code. Never `0`, never "within range".
-* Trends and historical comparison are OPTIONAL SECTIONS. With one report
-  they are ABSENT with a stated reason -- never "stable", which Module 28
-  reserves for a change measured against a declared stability band.
-
-==========================================================================
-THE REFERENCE-RANGE UNIT HAZARD
-==========================================================================
-
-`feature_engineer.py` used to convert the VALUE to the canonical unit while
-copying `reference_low` / `reference_high` through in the unit they were
-PRINTED in: a creatinine printed in umol/L was stored as a mg/dL value beside
-a umol/L interval, and rendering those two numbers in one table row made
-every converted creatinine read as "low" -- a mis-rendering that would look
-entirely plausible on a clinician's page.
-
-FIXED AT THE SOURCE 2026-09-04. Module 5 now carries the interval through the
-same audited conversion as the value and sets
-`provenance.reference_converted`. Module 29's
-`report_comparator._reference_interval` honours that flag and returns such
-bounds untouched, converting only for carriers that predate it. Module 32
-CALLS THAT FUNCTION. It does not contain a second conversion path, nothing is
-converted twice, and `LabRow.reference_basis` states which of the four
-outcomes applied so a reader can see it.
-
-==========================================================================
-PROVENANCE IS PER LINE, AND THE BASES ARE NOT FLATTENED
-==========================================================================
-
-Module 16 carries `assessment_basis` and `basis_conflict` precisely so that a
-risk-factor tally and a model probability can be shown side by side rather
-than averaged into one undifferentiated "finding". `ConditionAssessment.bases`
-is a LIST, one entry per contributing source, each carrying its own kind, its
-own provenance (rule ids, or model identity and metrics), and its own status.
-Nothing in this module produces a single merged number across bases.
-
-==========================================================================
-ML PREDICTIONS CARRY THEIR OWN LIMITS
-==========================================================================
-
-Module 11 (heart) has ROC-AUC 0.697 and a recall at its operating threshold of
-0.268: it flags roughly one in four true positives and almost never rules
-anything out. Quoting its probability to a clinician without that is actively
-misleading.
-
-`ModelLimitations` therefore travels with EVERY machine-learning basis, and
-its numbers are read from the model artifact's own metadata -- which reaches
-this module through `MLExplanation.performance_reference` and
-`MLExplanation.thresholds`, both populated by `report_builder._explain_ml`
-from the predictor's `metadata`. No metric in this file is a number typed by
-hand. When a model's performance was NOT recorded on the decision, that is
-stated (`METRICS_NOT_RECORDED`) rather than passed over in silence.
-"""
-
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -127,7 +10,6 @@ from app.schemas.decisions import DecisionSourceKind, DecisionStatus, RiskLevel
 from app.schemas.report import EVIDENCE_CHAIN, ClinicalReport
 from app.schemas.timeline import TimelineReportInput, TimelineTrendsData
 
-#: The stage identifier Module 32 stamps on its own warnings.
 STAGE_DOCTOR_SUMMARY = "doctor_summary"
 DOCTOR_SUMMARY_MODULE = 32
 
@@ -136,49 +18,19 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-# --------------------------------------------------------------------------
-# Section availability -- the vocabulary for "this section is not here"
-# --------------------------------------------------------------------------
-#
-# Every optional section carries a `SectionStatus`. A consumer branches on
-# `present`; when it is false, `reason_code` says why in a machine-readable
-# way and `reason` says it in a sentence. There is deliberately no third
-# state and no way to be absent without a reason.
-
-#: No report history was supplied at all, so there is nothing to trend or
-#: compare. This is the normal single-report case.
 SECTION_NO_HISTORY = "NO_HISTORY_SUPPLIED"
 
-#: Exactly one report was supplied. A trend and a comparison both need two.
 SECTION_SINGLE_REPORT = "SINGLE_REPORT_ONLY"
 
-#: The caller turned the section off.
 SECTION_DISABLED = "DISABLED_BY_OPTION"
 
-#: Nothing in the report gave a canonical condition or feature to ground a
-#: retrieval on, so no knowledge was requested.
 SECTION_NOTHING_TO_GROUND = "NOTHING_TO_GROUND"
 
-#: A retrieval ran and returned nothing above the similarity floor. An empty
-#: result is a real answer (see `app/rag/retriever.py`), not a failure.
 SECTION_NO_MATCH = "NO_MATCHING_KNOWLEDGE"
 
-#: The knowledge index could not be loaded. The rest of the document is still
-#: assembled; a missing reference section never blocks the clinical content.
 SECTION_RETRIEVAL_UNAVAILABLE = "RETRIEVAL_UNAVAILABLE"
 
-#: Module 28 or Module 29 raised on the supplied history. The section is
-#: absent rather than half-rendered.
 SECTION_ANALYSIS_REFUSED = "ANALYSIS_REFUSED"
-#: History was supplied, but the report this document is ABOUT is not in it.
-#:
-#: A trend or comparison computed over a series that excludes its own subject
-#: is a claim about other reports wearing this report's name. It can happen
-#: for two entirely ordinary reasons -- the subject failed the caller's own
-#: inclusion rule, or the caller's history window is capped and the subject
-#: fell outside it -- so the section refuses rather than the request failing.
-#: An audit found both routes live, with nothing in the response naming the
-#: subject as missing.
 SECTION_SUBJECT_NOT_IN_HISTORY = "SUBJECT_NOT_IN_HISTORY"
 
 SECTION_REASON_CODES: Tuple[str, ...] = (
@@ -194,13 +46,6 @@ SECTION_REASON_CODES: Tuple[str, ...] = (
 
 
 class SectionStatus(BaseModel):
-    """Is this optional section present, and if not, why not.
-
-    A section that is absent WITHOUT a reason would read as "nothing to
-    report", which for trends means "stable" and for comparison means
-    "unchanged". Both would be fabrications. The model therefore refuses to
-    validate an absence with no reason code.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -234,19 +79,10 @@ class SectionStatus(BaseModel):
         return self
 
 
-# --------------------------------------------------------------------------
-# Text that did not originate in this service
-# --------------------------------------------------------------------------
-
-#: The scanner found nothing. The text is rendered as supplied.
 TRANSCRIPT_CLEAN = "CLEAN"
 
-#: The Module 24 scanner matched a forbidden pattern in text that came from
-#: outside this service (an OCR transcription, or reviewer-authored artifact
-#: text). The text is WITHHELD and this code is rendered in its place.
 TRANSCRIPT_WITHHELD = "WITHHELD_BY_SAFETY_SCAN"
 
-#: The field was absent upstream. Distinct from withheld: nothing was refused.
 TRANSCRIPT_ABSENT = "NOT_PRESENT"
 
 TRANSCRIPT_STATES: Tuple[str, ...] = (
@@ -257,20 +93,6 @@ TRANSCRIPT_STATES: Tuple[str, ...] = (
 
 
 class TranscribedText(BaseModel):
-    """A string this service did not author, carried as data with its state.
-
-    Three sources reach this document from outside: text transcribed from the
-    patient's own document by Module 4 (a printed test name, a printed
-    reference range, a printed unit), reviewed corpus text from Module 22, and
-    reviewer-authored caveats held in the model artifacts.
-
-    None of them is model-generated *interpretation*, and none of them is ever
-    substituted into a narrative template -- templates take canonical names
-    only. They are nonetheless scanned with the Module 24 scanner before being
-    rendered, because a document is an untrusted input and a clinician page is
-    the wrong place to discover otherwise. A hit withholds the text and says
-    so; it never silently drops it and never silently shows it.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -307,13 +129,7 @@ class TranscribedText(BaseModel):
         return self
 
 
-# --------------------------------------------------------------------------
-# Request
-# --------------------------------------------------------------------------
-
-
 class DoctorSummaryOptions(BaseModel):
-    """Options. Every one of them narrows or omits; none of them invents."""
 
     model_config = ConfigDict(extra="ignore")
 
@@ -358,21 +174,6 @@ class DoctorSummaryOptions(BaseModel):
 
 
 class DoctorSummaryRequest(BaseModel):
-    """Assemble a clinician-oriented summary from an ALREADY-BUILT report.
-
-    `report` is Module 17's `ClinicalReport`, posted verbatim -- the body of
-    `POST /api/v1/report/generate`'s response, relayed. This module does not
-    re-run fusion, re-run the rule engine or re-derive the overall status;
-    doing any of those would create a second source of truth that could
-    disagree with the report the patient was already shown. It is a VIEW, in
-    exactly the sense Module 17 is a view of Module 16.
-
-    `history` is optional and is the SAME shape Modules 28 and 29 take
-    (`TimelineReportInput`), so there is one way to hand this service a
-    patient's report history. It drives the trends and comparison sections and
-    nothing else; it never changes a single field of the clinical content
-    above, which comes from `report` alone.
-    """
 
     model_config = ConfigDict(extra="ignore")
 
@@ -408,15 +209,6 @@ class DoctorSummaryRequest(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _unwrap(cls, value: Any) -> Any:
-        """Accept `{"data": {...}}` so a relayed envelope is not a 422.
-
-        Also accepts a bare `{"success": true, "data": <ClinicalReport>}` --
-        the literal response body of `/api/v1/report/generate` -- as the whole
-        request, because that is the payload a caller most plausibly relays.
-        The two cases are distinguished by whether the inner object carries a
-        `report` key: a doctor-summary request has one, a clinical report does
-        not (`ClinicalReport` forbids extras, so it never can).
-        """
         if not isinstance(value, dict):
             return value
         if "report" in value:
@@ -436,7 +228,6 @@ class DoctorSummaryRequest(BaseModel):
                         merged[key] = value[key]
                 return merged
             if "report_version" in inner:
-                # A relayed `/report/generate` response body.
                 out = {"report": inner}
                 for key in (
                     "patient_ref",
@@ -464,20 +255,7 @@ class DoctorSummaryRequest(BaseModel):
         return self
 
 
-# --------------------------------------------------------------------------
-# Response -- the document's own statement of what it is
-# --------------------------------------------------------------------------
-
-
 class DocumentPurpose(BaseModel):
-    """What this document is and, explicitly, what it is not.
-
-    Spec Module 32 states the purpose in the negative first: "The purpose is
-    not to provide a diagnosis but to improve communication between the
-    patient and healthcare professional." That sentence is not decoration on
-    this object; it is the first section, and every string in it is fixed,
-    reviewed and import-time scanned.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -504,7 +282,6 @@ class DocumentPurpose(BaseModel):
 
 
 class SourceAttribution(BaseModel):
-    """Which report, produced when, and by which module versions."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -521,17 +298,10 @@ class SourceAttribution(BaseModel):
     module_versions: Dict[str, str] = Field(default_factory=dict)
 
 
-# --------------------------------------------------------------------------
-# Response -- laboratory values
-# --------------------------------------------------------------------------
-
-#: The reading sits below the lower bound actually used.
 POSITION_BELOW = "below_reference_interval"
 POSITION_WITHIN = "within_reference_interval"
 POSITION_ABOVE = "above_reference_interval"
 
-#: Not determinable. NEVER rendered as `within`. `reference_basis` and
-#: `position_reason_code` say which of the several reasons applied.
 POSITION_NOT_DETERMINABLE = "not_determinable"
 
 POSITION_VALUES: Tuple[str, ...] = (
@@ -541,22 +311,12 @@ POSITION_VALUES: Tuple[str, ...] = (
     POSITION_NOT_DETERMINABLE,
 )
 
-#: The interval was printed on the report and the value was never converted,
-#: so the two numbers are already in the same unit.
 REFERENCE_AS_PRINTED = "as_printed"
 
-#: The value was converted to its canonical unit, and the printed interval was
-#: carried through the SAME conversion (Module 29's approach). `conversion`
-#: names the arithmetic used.
 REFERENCE_CONVERTED = "converted_with_the_value"
 
-#: The report printed no interval for this parameter.
 REFERENCE_NONE_PRINTED = "none_printed"
 
-#: An interval was printed but could not be placed in the value's unit -- the
-#: conversion detail was missing, or its factor was not usable. The interval is
-#: NOT shown beside the value, because showing it would invite the exact
-#: mis-reading this basis exists to prevent.
 REFERENCE_NOT_COMPARABLE = "not_comparable_with_value"
 
 REFERENCE_BASIS_VALUES: Tuple[str, ...] = (
@@ -566,7 +326,6 @@ REFERENCE_BASIS_VALUES: Tuple[str, ...] = (
     REFERENCE_NOT_COMPARABLE,
 )
 
-#: Why a position could not be settled.
 POS_NO_USABLE_VALUE = "NO_USABLE_VALUE"
 POS_NO_INTERVAL = "NO_COMPARABLE_INTERVAL_AND_NO_FLAG"
 POS_CENSORED = "CENSORED_VALUE_INCONCLUSIVE"
@@ -581,7 +340,6 @@ POSITION_REASON_CODES: Tuple[str, ...] = (
     POS_UNIT_NOT_CANONICAL,
 )
 
-#: How the position was settled, when it was.
 POSITION_BY_INTERVAL = "reference_interval"
 POSITION_BY_FLAG = "printed_flag"
 POSITION_BASIS_VALUES: Tuple[str, ...] = (
@@ -591,12 +349,6 @@ POSITION_BASIS_VALUES: Tuple[str, ...] = (
 
 
 class LabProvenance(BaseModel):
-    """Where one laboratory row came from, line by line.
-
-    A clinician who wants to check a number against the original document
-    needs the page it was printed on and the name it was printed under. Both
-    are transcriptions, so both are `TranscribedText`.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -630,18 +382,6 @@ class LabProvenance(BaseModel):
 
 
 class LabRow(BaseModel):
-    """One laboratory or profile parameter, ready to print in a table.
-
-    `value` is `null` when there was no usable reading. Null is not zero and
-    is not "within range"; `position` is `not_determinable` and
-    `position_reason_code` says why.
-
-    `reference_low` / `reference_high` are, when present, EXPRESSED IN THE
-    SAME UNIT AS `value`. That is the whole point of `reference_basis`: on a
-    converted value they are the printed bounds carried through the same
-    arithmetic, and when they could not be carried through they are absent
-    rather than shown in a unit the value is not in.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -712,12 +452,6 @@ class LabRow(BaseModel):
 
     @model_validator(mode="after")
     def _position_is_explained(self) -> "LabRow":
-        """Structural half of "a missing position is not a normal position".
-
-        A `not_determinable` row with no reason, or a settled row with no
-        basis, is a contradiction -- caught here rather than shipped to a
-        renderer that would draw an empty cell a clinician reads as normal.
-        """
         determinable = self.position != POSITION_NOT_DETERMINABLE
         if determinable and self.position_reason_code is not None:
             raise ValueError("a settled position carries no reason code")
@@ -739,7 +473,6 @@ class LabRow(BaseModel):
 
 
 class LaboratorySection(BaseModel):
-    """Every parameter the report carried, plus the ones it did not."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -758,13 +491,7 @@ class LaboratorySection(BaseModel):
     note: str = Field(default="", description="Templated section caption.")
 
 
-# --------------------------------------------------------------------------
-# Response -- assessments and their bases
-# --------------------------------------------------------------------------
-
-
 class RuleBasisDetail(BaseModel):
-    """A deterministic rule fired. Which rule, on which value, against what."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -782,53 +509,15 @@ class RuleBasisDetail(BaseModel):
     deterministic: bool = True
 
 
-#: A model's discrimination is weak enough that its probability should not be
-#: read as a strong signal in either direction. The cut-off is this module's
-#: own, declared here rather than buried, and published on GET /policy.
-#: 0.75 is the conventional boundary between "acceptable" and "poor" ROC-AUC
-#: in the clinical prediction literature; the point of the constant is that it
-#: is ONE reviewable number, not that it is the only defensible one.
 WEAK_DISCRIMINATION_ROC_AUC = 0.75
 
-#: A model that flags fewer than half of true positives at its operating
-#: threshold cannot be used to rule anything out. Module 11 sits at 0.268.
 LOW_DETECTION_RECALL = 0.5
 
-#: Performance was not recorded on the decision that reached this module.
 METRICS_NOT_RECORDED = "METRICS_NOT_RECORDED"
-#: A performance record exists, but the figures that say what the model MISSES
-#: at its own cut-off are not in it. Distinct from METRICS_NOT_RECORDED, which
-#: means nothing was carried at all: this one says "you are looking at a
-#: partial record", which a reader would otherwise have no way to tell from a
-#: complete one. It exists because a summary once reported
-#: `metrics_available: True` with recall, precision, accuracy and baseline all
-#: absent, and nothing in the document signalled the gap.
 METRICS_OPERATING_POINT_INCOMPLETE = "METRICS_OPERATING_POINT_INCOMPLETE"
 
 
 class ModelLimitations(BaseModel):
-    """What this model can and cannot support, in its own recorded numbers.
-
-    Every number here is read from the model artifact's metadata as it
-    travelled through `MLExplanation`. Nothing in this object is a constant
-    typed into this module.
-
-    THAT CLAIM WAS ONCE FALSE, WHICH IS WHY IT IS SPELT OUT. An audit found
-    four numbers -- recall, precision, accuracy and the majority-class baseline
-    -- present in the metadata and simply not read, because the reader looked
-    for them under one key while a model published them under another. Every
-    field below is now sourced through `app/ml/operating_metrics.py`, one
-    reader shared by all three predictors, so "it is in the metadata" and "it
-    reaches this object" cannot drift apart per model again.
-
-    A field that is None means the artifact does not record it. It never means
-    the figure is zero, and it never means the figure is good.
-
-    `caveats` is a list of templated sentences SELECTED BY THOSE NUMBERS --
-    the weak-discrimination sentence appears because `roc_auc` is below
-    `WEAK_DISCRIMINATION_ROC_AUC`, not because someone remembered to add it
-    for the heart model.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -885,7 +574,6 @@ class ModelLimitations(BaseModel):
 
 
 class MLBasisDetail(BaseModel):
-    """A model produced an estimate. Which model, how good it is, and its band."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -913,13 +601,6 @@ class MLBasisDetail(BaseModel):
 
 
 class AssessmentBasis(BaseModel):
-    """ONE contributing source's answer, kept separate from the others.
-
-    A rule tally and a model probability are different quantities. Module 16
-    stamps `assessment_basis` and `assessment_basis_family` so they can be
-    shown side by side; this object is that rendering, one per source. There
-    is deliberately no merged number across bases.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -954,7 +635,6 @@ class AssessmentBasis(BaseModel):
 
 
 class ConditionAssessment(BaseModel):
-    """One condition, its fused position, and each basis behind it."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -995,7 +675,6 @@ class ConditionAssessment(BaseModel):
 
 
 class OverallStatusView(BaseModel):
-    """Module 18's status, with the fourth and fifth cases carried intact."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -1031,12 +710,6 @@ class OverallStatusView(BaseModel):
 
     @model_validator(mode="after")
     def _absence_is_not_health(self) -> "OverallStatusView":
-        """The single most repeated hazard on this project, enforced.
-
-        `clean_bill_of_health` is the field a hurried renderer will reach for.
-        It must be impossible for it to be true when nothing was assessed or
-        when something was flagged.
-        """
         if self.clean_bill_of_health and not self.any_assessed:
             raise ValueError(
                 "clean_bill_of_health cannot be true when nothing was "
@@ -1053,13 +726,7 @@ class OverallStatusView(BaseModel):
         return self
 
 
-# --------------------------------------------------------------------------
-# Response -- evidence, knowledge, quality, integrity
-# --------------------------------------------------------------------------
-
-
 class EvidenceItemView(BaseModel):
-    """One evidence line, with its availability intact (Module 20's join)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -1107,12 +774,6 @@ class EvidenceSection(BaseModel):
 
 
 class KnowledgeReference(BaseModel):
-    """One retrieved passage from the Module 22 corpus, with its citation.
-
-    This is REFERENCE MATERIAL matched to the conditions this report raised.
-    It is not a statement about this patient, and `patient_specific` is a
-    literal false on the wire so a renderer cannot present it as one.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -1149,7 +810,6 @@ class KnowledgeSection(BaseModel):
 
 
 class DataQualitySection(BaseModel):
-    """What the platform could and could not read, in counts."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -1178,11 +838,6 @@ class DataQualitySection(BaseModel):
 
 
 class IntegrityStatement(BaseModel):
-    """The document's own audit of how it was produced.
-
-    This exists because a claim in a docstring is not a guarantee (MEMORY.md
-    §11). These are the checks actually run, with their actual results.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -1228,21 +883,7 @@ class IntegrityStatement(BaseModel):
     )
 
 
-# --------------------------------------------------------------------------
-# Response -- the document
-# --------------------------------------------------------------------------
-
-
 class DoctorSummary(BaseModel):
-    """The whole clinician-oriented document, section by section.
-
-    Section order follows the specification's own list for Module 32: patient
-    information, laboratory values, reference information, abnormal findings,
-    risk classifications, ML predictions, evidence, trends, historical
-    comparison, and relevant retrieved information -- with the purpose
-    statement first, because the spec defines this module in the negative
-    before it defines it in the positive.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -1303,12 +944,6 @@ class DoctorSummary(BaseModel):
 
     @model_validator(mode="after")
     def _sections_match_their_status(self) -> "DoctorSummary":
-        """A section's data and its status cannot disagree.
-
-        Without this, a `present: false` trends status beside a populated
-        `trend_data` would let a renderer draw a trend the document says is
-        not there -- or, worse, the reverse.
-        """
         if self.trends.present != (self.trend_data is not None):
             raise ValueError("trends.present must match the presence of trend_data")
         if self.comparison.present != (self.comparison_data is not None):

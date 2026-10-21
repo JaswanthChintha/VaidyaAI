@@ -1,36 +1,3 @@
-"""Module 30 -- the Health Progress Score, and the table it is computed from.
-
-Framework-independent: no HTTP, no API key, no network, no model. Every report
-snapshot here is hand-written from invented values for a fictional laboratory.
-
-WHY THIS FILE EXISTS. Module 30 shipped with NO tests (MEMORY.md §6m). It
-prints ONE NUMBER, on a scale a reader will treat as a summary of their
-health, and the whole safety of that number rests on properties nothing was
-checking:
-
-1. **Nothing assessed must produce NO score.** `score: null`, `band: null` --
-   never 50, never a band label reading like steady progress. "We could not
-   tell" and "it did not move" are different facts, and the neutral anchor is
-   exactly where a lazy edit would collapse them. §11 records this as the
-   single most repeated hazard on this project.
-2. **An excluded parameter must contribute nothing.** Not a reduced weight,
-   not a neutral score -- nothing. `ExcludedParameter` is supposed to make
-   that structural by having no `points`/`weight` field at all; this file
-   asserts that stays true rather than trusting the docstring.
-3. **The scoring table's self-asserted invariants.** `progress_scoring.py`
-   enforces equal anchor spacing, a total weight table, band tiling and the
-   anchor/boundary separation in `_self_check()`, which runs at import. A
-   `_self_check()` deleted in a refactor would take every one of those
-   guarantees with it silently, because nothing would then be looking. The
-   invariant tests below are written against the TABLES, not against
-   `_self_check()`, so they still fail if the function is removed.
-4. **No caller-supplied option may buy a friendlier score.** The coverage
-   floor, the weights and the band boundaries are declared in a reviewable
-   data file; a request must not be able to move any of them.
-5. **Determinism.** Same reports in any order -> byte-identical output apart
-   from `generated_at`.
-"""
-
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
@@ -78,11 +45,6 @@ from app.schemas.progress import (
 from app.services.progress_analyzer import analyse_progress, progress_document
 
 
-# --------------------------------------------------------------------------
-# Payload helpers -- invented values, never real patient data
-# --------------------------------------------------------------------------
-
-
 def value(
     name: str,
     number: Any,
@@ -92,7 +54,6 @@ def value(
     ref_low: Optional[float] = None,
     ref_high: Optional[float] = None,
 ) -> Dict[str, Any]:
-    """One entry of Module 6's `valid` map, as the backend would relay it."""
     provenance: Dict[str, Any] = {"source": "lab_report"}
     if ref_low is not None:
         provenance["reference_low"] = ref_low
@@ -109,7 +70,6 @@ def value(
 
 
 def snapshot(report_id: str, date: str, **values: Dict[str, Any]) -> Dict[str, Any]:
-    """One `TimelineReportInput` -- Module 28's shape, which 29/30/32 reuse."""
     return {
         "report_id": report_id,
         "chrono_date": date,
@@ -128,13 +88,6 @@ def analyse(reports: List[Dict[str, Any]], **extra: Any):
 
 
 def mixed_pair() -> List[Dict[str, Any]]:
-    """Seven declared-polarity parameters spanning four of the five categories.
-
-    Chosen so the arithmetic is checkable by hand:
-    improved 75 + newly_normal 100 + unchanged 50 + worsened 25 +
-    newly_normal 100 + unchanged 50 + unchanged 50 = 450 over 7 = 64.285...
-    which rounds to 64.3.
-    """
     return [
         snapshot(
             "r1",
@@ -172,8 +125,6 @@ def uniform_pair(baseline: Dict[str, Any], comparison: Dict[str, Any]):
     ]
 
 
-#: Three declared-polarity parameters, well inside their intervals on both
-#: sides. Used as the "everything held steady" case.
 STEADY_BASELINE = {
     "hba1c": value("hba1c", 5.0, "%", ref_low=4.0, ref_high=5.6),
     "creatinine": value("creatinine", 0.8, "mg/dl", ref_low=0.7, ref_high=1.3),
@@ -181,23 +132,7 @@ STEADY_BASELINE = {
 }
 
 
-# ==========================================================================
-# 1. The scoring table's own invariants
-# ==========================================================================
-#
-# `progress_scoring._self_check()` asserts all of these at IMPORT. Every test
-# below re-derives the property from the TABLES rather than calling
-# `_self_check()`, so deleting that function -- the obvious casualty of a
-# refactor that finds an import-time raise inconvenient -- does not delete the
-# coverage with it.
-
-
 def test_the_five_anchors_are_equally_spaced():
-    """Equal spacing is a claim the file, the policy endpoint and the API all
-    make in prose. Nobody on this project can defend a ratio between
-    `newly_abnormal` and `worsened`, so no ratio is asserted -- which is only
-    true while the four steps are identical.
-    """
     by_rank = sorted(CATEGORY_POINTS.values(), key=lambda e: e.rank)
     steps = {
         round(higher.points - lower.points, 9)
@@ -219,11 +154,6 @@ def test_the_anchor_scale_spans_the_declared_range_and_is_strictly_ordered():
 
 
 def test_unchanged_sits_on_the_neutral_anchor_and_nothing_else_does():
-    """`unchanged` is an EARNED finding: both reports carried a reading and the
-    change did not clear the declared stability band. It owns 50. A parameter
-    nobody could assess must never land on the same number, which is why the
-    exclusion machinery exists at all.
-    """
     assert CATEGORY_POINTS[CATEGORY_UNCHANGED].points == NEUTRAL_ANCHOR == 50.0
     on_neutral = [
         e.category for e in CATEGORY_POINTS.values() if e.points == NEUTRAL_ANCHOR
@@ -232,10 +162,6 @@ def test_unchanged_sits_on_the_neutral_anchor_and_nothing_else_does():
 
 
 def test_every_module_29_category_has_a_decision_and_none_has_two():
-    """A category with no decision would have to be given one at RUNTIME --
-    and the cheapest runtime default is the neutral anchor, which is the exact
-    failure this module is built to prevent.
-    """
     on_scale = set(CATEGORY_POINTS)
     off_scale = set(NON_CONTRIBUTING_CATEGORIES)
     assert on_scale | off_scale == set(CATEGORY_VALUES)
@@ -246,9 +172,6 @@ def test_every_module_29_category_has_a_decision_and_none_has_two():
 
 
 def test_the_weight_table_is_total_over_the_catalogue():
-    """Adding a feature to `feature_catalog.py` without deciding what Module 30
-    does with it must not silently produce a score that ignores it.
-    """
     assert set(WEIGHTS) == set(CANONICAL_FEATURES)
     for name, entry in WEIGHTS.items():
         assert entry.feature == name
@@ -257,22 +180,9 @@ def test_the_weight_table_is_total_over_the_catalogue():
 
 
 def test_the_non_zero_weights_are_exactly_the_trendable_features():
-    """Weight 0 is an EXCLUSION, not a low importance. The two sets must line
-    up exactly: a trendable feature carrying weight 0 would be silently
-    dropped from a score that still printed with full confidence, and a
-    non-trendable one carrying weight would be scored on a direction of change
-    the polarity table says it does not have.
-    """
     non_zero = {name for name, e in WEIGHTS.items() if e.weight > 0.0}
     trendable = {name for name, p in POLARITY.items() if p.trendable}
     assert non_zero == trendable
-    # 9 + the twelve complete-blood-count features. They are TRENDABLE --
-    # a platelet count can be followed over time -- but every one carries
-    # POLARITY_UNDECLARED, so they are excluded on the CATEGORY axis and
-    # none of them reaches a score. Weight 0 here would mean 'not a trend
-    # at all', which is what `gender` and `smoking_history` are and what
-    # these are not.
-    # 2026-10-04: + the three liver-panel features (declared, monotone) -> 24.
     assert len(non_zero) == 24, sorted(non_zero)
     assert {name for name, e in WEIGHTS.items() if e.weight == 0.0} == (
         set(CANONICAL_FEATURES) - trendable
@@ -280,25 +190,17 @@ def test_the_non_zero_weights_are_exactly_the_trendable_features():
 
 
 def test_every_declared_polarity_feature_can_reach_the_score():
-    """The silent-drop guard. A feature the clinical table says CAN be
-    classified must not be zero-weighted out of the number here.
-    """
     scorable = [
         name
         for name, p in POLARITY.items()
         if p.trendable and p.kind != POLARITY_UNDECLARED
     ]
-    # 7 + alt, ast, bilirubin_total (2026-10-04).
     assert len(scorable) == 10, sorted(scorable)
     for name in scorable:
         assert WEIGHTS[name].weight > 0.0, f"{name} is silently dropped"
 
 
 def test_all_weights_are_equal_so_no_parameter_outranks_another():
-    """An invented importance hierarchy inside a computed score reaches a
-    reader as clinical fact. The table states there is no basis for one; that
-    statement is only true while every scoring weight is the same.
-    """
     weights = {e.weight for e in WEIGHTS.values() if e.weight > 0.0}
     assert weights == {1.0}
 
@@ -315,11 +217,6 @@ def test_the_bands_tile_the_whole_scale_exactly_once():
 
 
 def test_each_anchor_gets_its_own_band_and_none_sits_on_an_interior_boundary():
-    """The stated basis for the boundaries 20/40/60/80. If a boundary moves
-    onto an anchor, "every parameter worsened" could share a label with "every
-    parameter was unchanged" -- and the sentence in `_BAND_BASIS` explaining
-    why that cannot happen becomes a false comment.
-    """
     seen: Dict[str, str] = {}
     for entry in CATEGORY_POINTS.values():
         band = band_for(entry.points)
@@ -345,8 +242,6 @@ def test_band_lookup_is_lower_inclusive_upper_exclusive_and_bands_100():
     assert band_for(60.0).key == BANDS[3].key
     assert band_for(79.9).key == BANDS[3].key
     assert band_for(80.0).key == BANDS[4].key
-    # The top of the scale must have a band; an open interval there would
-    # raise on a perfect score.
     assert band_for(100.0).key == BANDS[-1].key
 
 
@@ -357,23 +252,11 @@ def test_band_lookup_refuses_a_score_outside_the_scale_rather_than_guessing():
 
 
 def test_the_coverage_floor_enforces_the_rule_it_states():
-    """The stated rule is NO SINGLE PARAMETER MAY BE A MAJORITY OF THE SCORE.
-    With equal weights that is false at n=1 (one parameter is the whole score)
-    and at n=2 (it is half), so 3 is the smallest floor that implements it.
-    """
     assert MINIMUM_CONTRIBUTING_PARAMETERS >= 3
     assert 1.0 / MINIMUM_CONTRIBUTING_PARAMETERS <= 0.5
 
 
 def test_rounding_happens_before_banding_so_number_and_band_never_disagree():
-    """Exhaustive over every reachable score.
-
-    A contribution can only ever carry one of the five anchor values, and at
-    most nine features can contribute, so every possible weighted mean is
-    enumerable. For each one, the band chosen from the ROUNDED score must
-    actually contain that rounded score -- i.e. a reader comparing the printed
-    number with the printed band can never find them inconsistent.
-    """
     from itertools import combinations_with_replacement
 
     anchors = [e.points for e in CATEGORY_POINTS.values()]
@@ -390,10 +273,6 @@ def test_rounding_happens_before_banding_so_number_and_band_never_disagree():
 
 
 def test_lookup_helpers_return_none_rather_than_a_default():
-    """`None` from either helper means "excluded", never "score it neutrally".
-    A dict `.get` with a default would be the one-character edit that turns an
-    unknown category into 50 out of 100.
-    """
     assert points_for("no_such_category") is None
     assert weight_for("no_such_feature") is None
     for name in CATEGORY_VALUES:
@@ -401,10 +280,6 @@ def test_lookup_helpers_return_none_rather_than_a_default():
 
 
 def test_scoring_document_publishes_the_same_numbers_the_scorer_uses():
-    """`GET /progress/policy` is how a reviewer checks the table without
-    sending a patient's reports through it. A document that drifted from the
-    table would make that review worthless.
-    """
     doc = scoring_document()
     assert doc["scale"]["min"] == SCALE_MIN
     assert doc["scale"]["max"] == SCALE_MAX
@@ -422,15 +297,7 @@ def test_scoring_document_publishes_the_same_numbers_the_scorer_uses():
     assert doc["makes_clinical_claims"] is False
 
 
-# ==========================================================================
-# 2. Outcomes -- and the refusals that must never carry a number
-# ==========================================================================
-
-
 def test_every_declared_outcome_is_reachable_and_only_one_carries_a_score():
-    """A vocabulary with an unreachable member is a vocabulary nobody has
-    tested. All four are produced below from real requests.
-    """
     assert set(PROGRESS_OUTCOME_VALUES) == {
         PROGRESS_SCORE_COMPUTED,
         PROGRESS_NO_PAIR,
@@ -443,24 +310,12 @@ def test_score_computed_carries_the_hand_checkable_weighted_mean():
     data = analyse(mixed_pair())
     assert data.outcome == PROGRESS_SCORE_COMPUTED
 
-    # SIX, NOT SEVEN, AND THE SEVENTH IS THE POINT. `mixed_pair()` records no
-    # `age`, and BMI's polarity declaration is adult-only -- the WHO 18.5-24.9
-    # interval "is NOT valid in children and adolescents". Module 28 used to
-    # apply it anyway whenever no age was present, so BMI was scored here
-    # against an interval that may not have applied to the patient at all.
-    # An unknown age is now refused rather than assumed adult, so BMI drops
-    # out of the score and is listed with its reason.
-    #
-    # This test previously asserted 7 contributors and 450/7 = 64.3, i.e. it
-    # asserted the defect. The numbers below are the same arithmetic over the
-    # six parameters that are genuinely classifiable.
     assert data.coverage.contributing_count == 6
     assert {e.feature for e in data.coverage.excluded} == {"bmi"}
-    assert data.score == 66.7  # 400 / 6 = 66.666..., rounded to 1 dp
+    assert data.score == 66.7
     assert data.band is not None
     assert data.band.key == "more_favourable_than_unfavourable"
     assert data.band.lower_inclusive <= data.score < data.band.upper_exclusive
-    # Every point value came from the table, and nothing else fed the number.
     assert sum(c.weighted_points for c in data.contributions) == 400.0
     assert {c.points for c in data.contributions} <= {
         e.points for e in CATEGORY_POINTS.values()
@@ -470,7 +325,6 @@ def test_score_computed_carries_the_hand_checkable_weighted_mean():
 @pytest.mark.parametrize(
     "baseline,comparison,expected_score,expected_band,expected_category",
     [
-        # Every parameter crosses from inside to outside its printed interval.
         (
             STEADY_BASELINE,
             {
@@ -484,7 +338,6 @@ def test_score_computed_carries_the_hand_checkable_weighted_mean():
             "predominantly_unfavourable",
             CATEGORY_NEWLY_ABNORMAL,
         ),
-        # Every parameter moves unfavourably without crossing an interval.
         (
             STEADY_BASELINE,
             {
@@ -498,7 +351,6 @@ def test_score_computed_carries_the_hand_checkable_weighted_mean():
             "more_unfavourable_than_favourable",
             CATEGORY_WORSENED,
         ),
-        # Nothing clears its declared stability band.
         (
             STEADY_BASELINE,
             {
@@ -512,7 +364,6 @@ def test_score_computed_carries_the_hand_checkable_weighted_mean():
             "mixed_or_little_movement",
             CATEGORY_UNCHANGED,
         ),
-        # Every parameter crosses from outside to inside.
         (
             {
                 "hba1c": value("hba1c", 9.0, "%", ref_low=4.0, ref_high=5.6),
@@ -537,10 +388,6 @@ def test_score_computed_carries_the_hand_checkable_weighted_mean():
 def test_each_anchor_lands_in_its_own_band_end_to_end(
     baseline, comparison, expected_score, expected_band, expected_category
 ):
-    """The band separation, proved through the whole service rather than only
-    against the table: "everything worsened" and "everything held steady" must
-    reach a reader under different labels.
-    """
     data = analyse(uniform_pair(baseline, comparison))
     assert data.outcome == PROGRESS_SCORE_COMPUTED
     assert {c.category for c in data.contributions} == {expected_category}
@@ -592,15 +439,6 @@ def test_fewer_than_two_reports_is_no_pair_with_no_number(reports):
 
 
 def test_nothing_assessed_produces_no_score_and_says_so_in_words():
-    """THE CASE THIS MODULE EXISTS FOR.
-
-    Both parameters moved a long way -- blood glucose 180 -> 140, haemoglobin
-    10.0 -> 11.5 -- and both stayed outside their printed intervals, so no
-    reference crossing was established either. Neither has a declared clinical
-    direction, so nothing here can be called favourable or unfavourable. The
-    honest answer is "we cannot tell", and the dangerous answer is 50 out of
-    100 beside a band whose label reads "little movement".
-    """
     data = analyse(
         uniform_pair(
             {
@@ -633,7 +471,6 @@ def test_nothing_assessed_produces_no_score_and_says_so_in_words():
     assert data.coverage.contributing_count == 0
     assert data.coverage.excluded_count == 4
     assert data.contributions == []
-    # The prose must not read as a finding of stability.
     text = " ".join([data.summary.headline, *data.summary.lines]).lower()
     assert "not one of the 4 parameter(s) examined could be placed" in (
         data.summary.headline
@@ -644,10 +481,6 @@ def test_nothing_assessed_produces_no_score_and_says_so_in_words():
 
 
 def test_below_the_coverage_floor_the_contributions_are_returned_but_no_number_is():
-    """Two parameters, both classified, both improving. A number here would
-    print with exactly the confidence of one built from nine, and one
-    parameter would hold half of it.
-    """
     data = analyse(
         uniform_pair(
             {
@@ -670,7 +503,6 @@ def test_below_the_coverage_floor_the_contributions_are_returned_but_no_number_i
     assert data.coverage.contributing_count == 2
     assert data.coverage.minimum_required == MINIMUM_CONTRIBUTING_PARAMETERS
     assert not data.coverage.sufficient
-    # The working IS still shown -- the refusal is of the headline number only.
     assert len(data.contributions) == 2
     assert {c.feature for c in data.contributions} == {"hba1c", "creatinine"}
     assert all(c.points in {e.points for e in CATEGORY_POINTS.values()}
@@ -682,9 +514,6 @@ def test_below_the_coverage_floor_the_contributions_are_returned_but_no_number_i
     ["no_pair", "nothing_assessed", "insufficient"],
 )
 def test_no_refusal_ever_carries_a_score_or_a_band(outcome_case):
-    """One assertion, three ways in. `HealthProgressData`'s own validator
-    enforces this too; this proves the SERVICE never asks it to.
-    """
     if outcome_case == "no_pair":
         data = analyse([snapshot("only", EARLIER, **STEADY_BASELINE)])
     elif outcome_case == "nothing_assessed":
@@ -705,17 +534,12 @@ def test_no_refusal_ever_carries_a_score_or_a_band(outcome_case):
     assert data.score is None
     assert data.band is None
     assert data.score != NEUTRAL_ANCHOR
-    # The instrument is still described, because that is not a claim about
-    # the patient.
     assert data.scale.direction == SCALE_DIRECTION
     assert len(data.scale.bands) == len(BANDS)
     assert data.coverage is not None
 
 
 def test_the_response_model_refuses_a_refusal_that_acquired_a_number():
-    """The guarantee at the lowest layer (MEMORY.md §11). Even if a future
-    edit computed a score on a refusing branch, the type will not validate it.
-    """
     data = analyse([snapshot("only", EARLIER, **STEADY_BASELINE)])
     payload = data.model_dump(mode="json")
     assert payload["outcome"] == PROGRESS_NO_PAIR
@@ -735,16 +559,7 @@ def test_the_response_model_refuses_a_computed_outcome_with_no_number():
     assert "requires a score" in str(excinfo.value)
 
 
-# ==========================================================================
-# 3. Exclusions contribute NOTHING -- structurally, not by convention
-# ==========================================================================
-
-
 def test_excluded_parameter_has_no_points_weight_or_weighted_points_field():
-    """The structural half of "absence is never a value", and the reason this
-    is a separate model from `ParameterContribution` at all. No later code
-    path can 'fill in' a 50 on a field that does not exist.
-    """
     fields = set(ExcludedParameter.model_fields)
     assert "points" not in fields
     assert "weight" not in fields
@@ -761,9 +576,6 @@ def test_excluded_parameter_has_no_points_weight_or_weighted_points_field():
 
 
 def test_an_exclusion_cannot_be_given_points_by_a_caller():
-    """`extra="forbid"` is what keeps the missing field from being smuggled
-    back in as an extra attribute.
-    """
     with pytest.raises(Exception):
         ExcludedParameter(
             feature="creatinine",
@@ -778,15 +590,6 @@ def test_an_exclusion_cannot_be_given_points_by_a_caller():
 
 
 def test_a_unit_mismatched_parameter_is_excluded_not_scored_as_neutral():
-    """THE CASE MEMORY.md §6n D1 makes unmissable.
-
-    Creatinine is 1.4 mg/dL on the baseline and 168 umol/L (about 1.9 mg/dL)
-    on the comparison -- a substantial WORSENING. Module 29 cannot compare the
-    two units, so Module 30 must exclude it. What it must NOT do is score it
-    at the neutral anchor: that would quietly convert an unreadable
-    deterioration into "this parameter did not move", and drag the headline
-    number toward 50 on the strength of a fact nobody established.
-    """
     data = analyse(
         [
             snapshot(
@@ -819,17 +622,13 @@ def test_a_unit_mismatched_parameter_is_excluded_not_scored_as_neutral():
     assert excluded["creatinine"].reason_code == EXCLUDED_NOT_CLASSIFIABLE
     assert excluded["creatinine"].outcome == "UNIT_MISMATCH"
     assert "counts for nothing in the score" in excluded["creatinine"].reason
-    # It is absent from the number entirely -- not present with points 50.
     assert "creatinine" not in {c.feature for c in data.contributions}
     assert "creatinine" not in data.coverage.contributing
     assert data.coverage.contributing_count == 3
-    assert data.score == 91.7  # (75 + 100 + 100) / 3, creatinine contributing nothing
+    assert data.score == 91.7
 
 
 def test_a_parameter_present_in_only_one_report_is_excluded_with_a_reason():
-    """ONLY_IN_BASELINE. The value IS in the earlier report; nothing is known
-    about where it went. That is not "unchanged".
-    """
     data = analyse(
         [
             snapshot(
@@ -851,16 +650,10 @@ def test_a_parameter_present_in_only_one_report_is_excluded_with_a_reason():
     assert excluded["creatinine"].outcome == "ONLY_IN_BASELINE"
     assert excluded["creatinine"].reason_code == EXCLUDED_NOT_CLASSIFIABLE
     assert "creatinine" not in data.coverage.contributing
-    # Two contributing parameters, so the floor refuses the headline number.
     assert data.outcome == PROGRESS_INSUFFICIENT_COVERAGE
 
 
 def test_an_undeclared_polarity_parameter_is_excluded_with_its_own_reason_code():
-    """Blood glucose moved 180 -> 140 -- a big, significant move, still
-    outside its interval on both sides. No clinical direction is declared for
-    it, so whether that move was good cannot be said. `DIRECTION_UNDECLARED`
-    is a DIFFERENT fact from `NOT_CLASSIFIABLE` and is reported as such.
-    """
     data = analyse(
         uniform_pair(
             {
@@ -895,9 +688,6 @@ def test_an_undeclared_polarity_parameter_is_excluded_with_its_own_reason_code()
 
 
 def test_a_non_trendable_feature_is_excluded_as_zero_weight_not_scored():
-    """Age rises for everyone by construction. It carries weight 0 as an
-    EXCLUSION, and must never appear as a scored contribution.
-    """
     data = analyse(
         uniform_pair(
             {
@@ -922,10 +712,6 @@ def test_a_non_trendable_feature_is_excluded_as_zero_weight_not_scored():
 
 
 def test_every_examined_parameter_either_contributes_or_is_listed_as_excluded():
-    """The coverage figure is the ONE number that must not be wrong: it is
-    what separates a score built from two lucky parameters from one built from
-    nine on a rendered page.
-    """
     for reports in (
         mixed_pair(),
         uniform_pair(
@@ -950,10 +736,6 @@ def test_every_examined_parameter_either_contributes_or_is_listed_as_excluded():
 
 
 def test_the_category_tally_spans_every_examined_parameter_not_only_the_scored_ones():
-    """`by_category` deliberately covers the excluded parameters too, so a
-    reader adding the five scored counts and comparing with `features_examined`
-    sees the shortfall rather than a tidy total that absorbed it.
-    """
     data = analyse(
         uniform_pair(
             {
@@ -989,17 +771,7 @@ def test_the_category_tally_spans_every_examined_parameter_not_only_the_scored_o
     )
 
 
-# ==========================================================================
-# 4. No option can buy a friendlier score
-# ==========================================================================
-
-
 def test_a_caller_cannot_lower_the_floor_change_a_weight_or_move_a_band():
-    """`ProgressOptions` has `extra="ignore"`, so an invented option is
-    dropped rather than honoured -- but "dropped" has to be PROVED, because
-    silently accepting `minimum_contributing=1` would be indistinguishable
-    from ignoring it right up until it worked.
-    """
     reports = uniform_pair(
         {"hba1c": value("hba1c", 7.8, "%", ref_low=4.0, ref_high=5.6)},
         {"hba1c": value("hba1c", 6.0, "%", ref_low=4.0, ref_high=5.6)},
@@ -1022,7 +794,6 @@ def test_a_caller_cannot_lower_the_floor_change_a_weight_or_move_a_band():
     assert hostile.coverage.minimum_required == MINIMUM_CONTRIBUTING_PARAMETERS
     assert hostile.scale.neutral_anchor == NEUTRAL_ANCHOR
     assert len(hostile.scale.bands) == len(BANDS)
-    # And identical to the request with no options at all.
     plain = analyse(reports)
     assert hostile.model_dump(exclude={"generated_at"}) == plain.model_dump(
         exclude={"generated_at"}
@@ -1030,11 +801,6 @@ def test_a_caller_cannot_lower_the_floor_change_a_weight_or_move_a_band():
 
 
 def test_narrowing_the_feature_list_narrows_coverage_and_still_faces_the_floor():
-    """Cherry-picking the two best parameters must not buy a headline number.
-    The narrowing is allowed -- it is a legitimate request -- but the coverage
-    floor is applied to what is left, and the response says the list was
-    narrowed.
-    """
     data = analyse(mixed_pair(), options={"features": ["hba1c", "vitamin_d"]})
     assert data.coverage.contributing_count == 2
     assert data.outcome == PROGRESS_INSUFFICIENT_COVERAGE
@@ -1075,9 +841,6 @@ def test_a_duplicate_report_id_is_refused_rather_than_double_counted():
 
 
 def test_a_narrow_score_is_reported_as_narrow():
-    """A score at the floor and a score from nine parameters print the same
-    way. The warning is the only thing that separates them in prose.
-    """
     data = analyse(
         uniform_pair(
             STEADY_BASELINE,
@@ -1093,12 +856,6 @@ def test_a_narrow_score_is_reported_as_narrow():
     assert data.outcome == PROGRESS_SCORE_COMPUTED
     assert data.coverage.contributing_count == 3
     assert any("It describes those parameters" in w for w in data.warnings)
-    # THE INVARIANT, NOT THE SENTENCE. The response must state that the SIZE
-    # of a change decides only whether it counts at all -- never how much it
-    # counts for -- so a reader cannot take a big number as a big score.
-    # The wording was rewritten out of this service's own vocabulary ("the
-    # stability band declared for that parameter"); what is pinned here is
-    # the claim, in whichever words carry it.
     warnings_text = " ".join(data.warnings).lower()
     assert "big enough to count" in warnings_text or "counts as a change" in warnings_text
     assert (
@@ -1107,16 +864,7 @@ def test_a_narrow_score_is_reported_as_narrow():
     )
 
 
-# ==========================================================================
-# 5. Determinism, and the module's stated model-free property
-# ==========================================================================
-
-
 def test_the_same_reports_in_any_order_give_identical_output():
-    """Ordering comes from `chrono_date`, never from array order. If it did
-    not, the same patient's score would change between two identical calls
-    that happened to serialise the history differently.
-    """
     forward = analyse(mixed_pair())
     backward = analyse(list(reversed(mixed_pair())))
     assert forward.model_dump(exclude={"generated_at"}) == backward.model_dump(
@@ -1134,10 +882,6 @@ def test_repeated_calls_are_byte_identical_apart_from_the_timestamp():
 
 
 def test_module_30_reaches_no_model_client():
-    """Module 30's stated property: no LLM, no free-text entry point. Proved
-    over the whole `app.*` import closure of the analyser and its scoring
-    table, so it holds even if a helper three levels down grows an import.
-    """
     from tests.test_doctor_summary import app_import_closure
 
     closure = app_import_closure("app.services.progress_analyzer")
@@ -1150,9 +894,6 @@ def test_module_30_reaches_no_model_client():
 
 
 def test_progress_document_states_which_outcome_carries_a_score():
-    """The policy document is what a client integrator reads before deciding
-    what to render. It must name `outcome` as the branch field.
-    """
     doc = progress_document()
     assert doc["outcomes"]["branch_on"] == "outcome"
     assert doc["outcomes"]["score_present_for"] == PROGRESS_SCORE_COMPUTED
@@ -1161,26 +902,10 @@ def test_progress_document_states_which_outcome_carries_a_score():
 
 
 def test_the_disclaimer_and_scale_wording_ride_on_every_response():
-    """Including the refusals: a number a reader has to infer the direction of
-    is worse than no number, and the same is true of one with no disclaimer.
-    """
     for data in (analyse(mixed_pair()), analyse([])):
         assert data.scale.direction == "higher_is_better"
         assert data.scale.direction_text.strip()
         assert data.scale.rounding.strip()
-        # The copy capitalises the negations for emphasis ("NOT a risk score,
-        # NOT a measure of health"), so this is matched case-insensitively --
-        # the property under test is that the disclaimer SAYS it, not how it
-        # is cased. Asserting the exact lowercase literal would fail on a
-        # purely typographic edit while a real removal of the sentence would
-        # still be caught.
-        # THE THREE DENIALS ARE THE INVARIANT. Which words carry them is not:
-        # "not a measure of health" became "not a health score" when this
-        # paragraph was rewritten for a reader, and pinning the old phrase
-        # would fail on that edit while a genuine REMOVAL of the denial --
-        # the thing this platform has actually done three times -- would slip
-        # through either way. Each denial is matched in the forms that state
-        # it, and the test fails if any of the three stops being stated.
         said = data.what_this_is_not.lower()
         assert "not a health score" in said or "not a measure of health" in said
         assert "not a risk score" in said

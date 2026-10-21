@@ -1,14 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../src/lib/api';
 
-/**
- * The query string the timeline's two paired endpoints are called with.
- *
- * Tested at THIS layer because the rule lives here: the picker refuses to act
- * on a half-made choice, but `pairQuery` is what stops a half pair reaching
- * the backend from any future caller, and a guard nothing exercises is a
- * guard nobody knows is broken.
- */
 describe('the comparison pair in the query string', () => {
   let calls;
 
@@ -42,9 +34,6 @@ describe('the comparison pair in the query string', () => {
   });
 
   it('sends NOTHING when only one was chosen', async () => {
-    // BOTH OR NEITHER. The backend refuses exactly one of the pair rather than
-    // guessing the other, so a half pair turns a half-finished choice into an
-    // error message instead of into the default comparison.
     await api.getComparison({ baseline: 'aaa' });
     await api.getComparison({ comparison: 'bbb' });
     expect(calls[0]).not.toContain('?');

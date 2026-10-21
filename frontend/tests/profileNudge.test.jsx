@@ -7,13 +7,6 @@ import { AuthProvider } from '../src/lib/auth';
 import { api, ApiError } from '../src/lib/api';
 import { joinDetails, missingKeyDetails } from '../src/lib/profileGaps';
 
-/**
- * "Complete your profile first" (owner, 2026-10-06).
- *
- * A new account now lands on its details with a note saying why, and the
- * Reports page reminds the user while age or sex is missing. A NUDGE, not a
- * block: nothing here stops an upload or an analysis.
- */
 
 const NOT_FOUND = () => new ApiError(404, 'NOT_FOUND', 'Profile not found');
 
@@ -41,8 +34,6 @@ function mountReports({ profile, profileError } = {}) {
 
 describe('after creating an account', () => {
   it('opens Your details with the welcome note -- through the REAL router', async () => {
-    // The whole App, because its /signin route sends a signed-in user to
-    // /reports: the new redirect has to win that race, not just be called.
     vi.spyOn(api, 'register').mockResolvedValue({
       user: { id: 'u1', name: 'New User', email: 'new@example.invalid' },
       accessToken: 'a'.repeat(40),
@@ -151,7 +142,7 @@ describe('missingKeyDetails / joinDetails', () => {
   it.each([
     [null, ['age', 'sex']],
     [{}, ['age', 'sex']],
-    [{ age: 0, gender: 'female' }, []], // 0 is a real age, not a blank
+    [{ age: 0, gender: 'female' }, []],
     [{ age: '', gender: null }, ['age', 'sex']],
     [{ gender: 'other' }, ['age']],
   ])('%j -> %j', (profile, expected) => {

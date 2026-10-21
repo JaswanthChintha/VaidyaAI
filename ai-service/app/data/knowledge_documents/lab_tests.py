@@ -1,23 +1,3 @@
-"""Module 22 content -- LABORATORY TESTS.
-
-One document per laboratory feature in `app/data/feature_catalog.py`. Each
-answers the four questions spec Module 25 lists: what the test measures, why it
-is performed, what the value represents, and why the parameter may matter.
-
-REVIEWER NOTES
---------------
-* `features` and `conditions` are checked against the shared catalogues at
-  import. Do not invent a name here.
-* The reference bands quoted in `reference_information.py` are the ones the
-  Module 8 rule table actually applies. THESE documents describe the test;
-  those describe the numbers. Keeping them apart means a threshold change
-  touches one document, not fifteen.
-* Every paragraph is a retrieval chunk, so each must stand on its own. A
-  paragraph beginning "It is also..." is a bug, not a style choice.
-* Nothing here may name a medication, quantify an intake, assert a finding
-  about a reader, or express certainty. The import-time scanner enforces it.
-"""
-
 from __future__ import annotations
 
 from typing import Tuple
@@ -443,16 +423,6 @@ something a laboratory value answers.
             "app/data/clinical_rules.py."
         ),
     ),
-    # ==================================================================
-    # THE COMPLETE BLOOD COUNT
-    # ==================================================================
-    #
-    # Twelve documents for the twelve CBC features. Every one of them says,
-    # somewhere and in the reader's own language, that the value is harmful at
-    # BOTH ends or that it is a proportion of a total -- because that is why
-    # `app/data/trend_polarity.py` refuses to tell the reader which direction
-    # is better, and a refusal the reader cannot understand reads as the tool
-    # being broken.
     KnowledgeDocument(
         doc_id="lab_hematocrit",
         title="Haematocrit (PCV)",
@@ -993,8 +963,6 @@ unusual at either end and a fall is not automatically good news.
             "distribution: NHANES 2017-2018 (LBXPLTSI)."
         ),
     ),
-    # ALT and AST are described by `term_alt_sgpt` / `term_ast_sgot` in
-    # terminology.py (2026-10-04), tagged with their features there.
     KnowledgeDocument(
         doc_id="lab_bilirubin_total",
         title="Total bilirubin",

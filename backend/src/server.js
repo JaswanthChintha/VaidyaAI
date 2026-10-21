@@ -11,18 +11,11 @@ async function start() {
   await connectDatabase();
 
   server = app.listen(config.port, () => {
-    // eslint-disable-next-line no-console
     console.log(
       `VaidyaAI backend listening on port ${config.port} [${config.env}]`
     );
 
-    // The ai-service answers a byte-identical 401 for a missing header, a wrong
-    // key, an empty key and a whitespace key, so a runtime 401 cannot tell an
-    // operator which it is. State OUR side of the configuration here, at
-    // startup, where it is unambiguous. The key is never printed - only whether
-    // one exists and its length.
     const ai = aiServiceClient.describeConfig();
-    // eslint-disable-next-line no-console
     console.log(
       ai.configured
         ? `ai-service: configured url=${ai.url} apiKeyLength=${ai.apiKeyLength} ` +
@@ -34,7 +27,6 @@ async function start() {
 }
 
 async function shutdown(signal) {
-  // eslint-disable-next-line no-console
   console.log(`\n${signal} received. Shutting down gracefully...`);
   if (server) {
     await new Promise((resolve) => server.close(resolve));
@@ -50,13 +42,11 @@ async function shutdown(signal) {
 });
 
 process.on('unhandledRejection', (reason) => {
-  // eslint-disable-next-line no-console
   console.error('Unhandled promise rejection:', reason);
   shutdown('unhandledRejection').catch(() => process.exit(1));
 });
 
 start().catch((err) => {
-  // eslint-disable-next-line no-console
   console.error('Failed to start server:', err);
   process.exit(1);
 });

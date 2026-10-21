@@ -1,17 +1,3 @@
-"""Module 22 content -- HEALTH CONDITIONS.
-
-Exactly one document per entry in `app/data/conditions.py::CONDITIONS`. The
-import-time check in `knowledge_base.py` fails if any condition is left
-uncovered, so this file and that vocabulary move together.
-
-A CONDITION NAME HERE IS A TOPIC, NOT A FINDING -- the same rule
-`conditions.py` states for the vocabulary itself. "Diabetes" names what was
-assessed. Whether anything was found lives in the decision's status, never in
-the corpus. Every document is therefore written to be equally true whether the
-reader's own result was flagged or not, which is what makes it safe to retrieve
-for any patient with that condition in scope.
-"""
-
 from __future__ import annotations
 
 from typing import Tuple

@@ -1,11 +1,3 @@
-"""PRELOAD_ON_STARTUP (2026-10-06).
-
-On Render's free plan the first analysis loaded the ML models mid-request,
-took ~30 s, and the backend's stage timeout turned the report "partial". With
-the setting on, the models and the knowledge index are loaded during startup
--- before the port opens -- and nothing is loaded lazily on a patient's time.
-"""
-
 from __future__ import annotations
 
 from types import SimpleNamespace

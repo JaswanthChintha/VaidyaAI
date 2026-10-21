@@ -3,12 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import Icon from './Icon';
 
-/**
- * Account: change the password, or delete the account for good.
- *
- * Both ask for the current password; the server re-checks it, so an
- * unattended signed-in screen is not enough to do either.
- */
 
 function ChangePassword() {
   const { changePassword } = useAuth();
@@ -23,8 +17,6 @@ function ChangePassword() {
     event.preventDefault();
     setError(null);
     setDone(false);
-    // Checked here only so a typo is caught before a round trip; the server
-    // applies the real rules.
     if (next !== confirm) {
       setError('The new passwords do not match.');
       return;

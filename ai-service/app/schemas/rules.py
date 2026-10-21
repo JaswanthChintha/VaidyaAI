@@ -1,60 +1,3 @@
-"""The Module 8 (Clinical Rule Engine) request/response contract.
-
-Module 8 consumes Module 6's validated feature set and emits
-`ClinicalDecision[]` -- the shared type defined in `app/schemas/decisions.py`,
-which is NOT redefined, subclassed or wrapped here.
-
---------------------------------------------------------------------------
-WHAT THE ENGINE IS ALLOWED TO SEE
---------------------------------------------------------------------------
-
-`ValidatedFeaturesInput` below models Module 6's `data` object and DELIBERATELY
-HAS NO `rejected` FIELD.
-
-That is not an oversight and it is not laziness. Module 6's `rejected` map holds
-suspected extraction errors -- values that are physiologically impossible, of
-the wrong type, or in a unit that could not be converted. A clinical rule must
-never compare against one. By simply not parsing the field, the rule engine
-cannot read a rejected value even by accident, even if a future edit tries to:
-there is no attribute to read. The guarantee is structural rather than
-disciplinary.
-
-`questionable` IS parsed, and is a subset view of `valid`, so the engine can
-carry "this decision rests on a shakier number" into its evidence and metadata
-instead of pretending every input is equally solid.
-
---------------------------------------------------------------------------
-ACCEPTED REQUEST SHAPES
---------------------------------------------------------------------------
-
-THE CANONICAL FORM is Module 6's output:
-
-    {"validated": <Module 6's `data` object>}
-
-For the same reason `routes_validation.py` is tolerant -- a caller relaying a
-response verbatim must never be silently handed an empty result -- these are
-also accepted:
-
-  * `{"engineered": <Module 5's `data` object>}`   raw, pre-validation input.
-    The engine runs Module 6 over it in-process first, so rules still only ever
-    see validated values. This is what makes the engine usable in tests and by
-    Module 15 before validation has been run.
-  * `{"success": ..., "data": {...}}`  either module's response envelope,
-    relayed unchanged. Which module it came from is decided by whether the
-    object carries `valid` (Module 6) or `features` (Module 5).
-  * a BARE `data` object posted at the top level, classified the same way.
-
-Anything ambiguous is a 422. Nothing is ever guessed:
-
-  * an envelope AND a bare object in the same body
-  * a bare object carrying both `valid` and `features`
-  * an envelope carrying both `valid` and `features`
-
-An explicit `validated` key always wins over an explicit `engineered` key,
-because validated input is strictly better information. That precedence is
-documented, deterministic, and not a guess.
-"""
-
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
@@ -69,24 +12,11 @@ from app.schemas.validation import (
     FeatureValidationSummary,
 )
 
-#: The stage identifier Module 8 stamps on its own warnings.
 STAGE_RULES = "rules"
 RULES_MODULE = 8
 
 
-# --------------------------------------------------------------------------
-# Request
-# --------------------------------------------------------------------------
-
-
 class IncomingValidatedFeature(BaseModel):
-    """One entry of Module 6's `valid` map.
-
-    Permissive about `value` for the same reason Module 6 is permissive about
-    Module 5's: a single odd entry must not turn into an opaque 422 that
-    discards every other perfectly good feature in the payload. The rule engine
-    skips a value it cannot compare and says so in a warning.
-    """
 
     model_config = ConfigDict(extra="ignore")
 
@@ -103,11 +33,6 @@ class IncomingValidatedFeature(BaseModel):
 
 
 class ValidatedFeaturesInput(BaseModel):
-    """Module 6's `data` object, MINUS `rejected`.
-
-    See the module docstring: the absence of `rejected` is the mechanism that
-    makes "rules never consume rejected features" structural.
-    """
 
     model_config = ConfigDict(extra="ignore")
 
@@ -155,7 +80,6 @@ AMBIGUOUS_OBJECT_MESSAGE = (
 
 
 class RuleEvaluationRequest(BaseModel):
-    """See the module docstring for every accepted shape."""
 
     model_config = ConfigDict(extra="ignore")
 
@@ -168,7 +92,7 @@ class RuleEvaluationRequest(BaseModel):
         if not isinstance(value, dict):
             return value
         if "validated" in value or "engineered" in value:
-            return value  # Explicit wins; `validated` beats `engineered` later.
+            return value
 
         envelope = value.get("data")
         has_envelope = isinstance(envelope, dict)
@@ -189,20 +113,12 @@ class RuleEvaluationRequest(BaseModel):
                 return {"validated": envelope}
             if inner_engineered:
                 return {"engineered": envelope}
-            # An envelope with neither key carries no features at all. Treat it
-            # as an empty validated set rather than guessing which module sent
-            # it -- the outcome is identical either way (no rules can fire).
             return {"validated": envelope}
         if bare_validated:
             return {"validated": value}
         if bare_engineered:
             return {"engineered": value}
         return value
-
-
-# --------------------------------------------------------------------------
-# Response
-# --------------------------------------------------------------------------
 
 
 class RuleEvaluationSummary(BaseModel):
@@ -239,7 +155,6 @@ class RuleEvaluationSummary(BaseModel):
 
 
 class RuleEvaluationData(BaseModel):
-    """The `data` object of a successful rule-evaluation response."""
 
     model_config = ConfigDict(extra="forbid")
 

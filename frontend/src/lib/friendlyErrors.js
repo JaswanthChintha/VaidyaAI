@@ -1,14 +1,3 @@
-/**
- * Plain words for analysis failures (owner, 2026-10-06).
- *
- * The backend's messages are written for API callers -- "ANALYSIS_PARTIAL:
- * Some analysis stages did not complete; see analysis.stages", "See GET
- * /reports/:id/analysis ..." -- and they reached patients word for word. They
- * stay as they are (they are the API's contract and its tests); this file is
- * only what a PERSON is shown. The machine code is kept, small, so a report of
- * the problem can still say exactly which one it was.
- */
-
 const RETRY_SOON =
   'The analysis service did not answer properly. It may have been starting up after a quiet spell. Press Analyse again in a minute.';
 
@@ -44,10 +33,6 @@ const BY_CODE = {
 
 const FALLBACK = 'Something went wrong during the analysis. Press Analyse again to retry.';
 
-/**
- * A report row's `statusMessage` ("CODE: api wording") -> what to show.
- * @returns {{ text: string, code: string|null } | null}
- */
 export function friendlyStatus(statusMessage) {
   if (!statusMessage || typeof statusMessage !== 'string') return null;
   const match = /^([A-Z][A-Z0-9_]+):/.exec(statusMessage);
@@ -55,11 +40,6 @@ export function friendlyStatus(statusMessage) {
   return { text: (code && BY_CODE[code]) || FALLBACK, code };
 }
 
-/**
- * A page-level error from the backend -> what to show. Messages that tell an
- * API caller which endpoint to call next are rewritten; anything else passes
- * through with any "Run POST ..." / "See GET ..." sentence removed.
- */
 export function friendlyPageError(message) {
   if (!message || typeof message !== 'string') return message;
   if (/has not been analysed yet/i.test(message)) {

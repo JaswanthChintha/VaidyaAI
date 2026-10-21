@@ -1,13 +1,5 @@
 'use strict';
 
-/**
- * The date a report PRINTS -- read, or declared unreadable, never guessed.
- *
- * Found 2026-09-24: extraction returned `report_metadata.report_date` on every
- * report and nothing read it, so two reports printing `05-Sep-2026 17:40` were
- * compared as "9 September to 11 September, 2 days apart" -- the dates typed
- * at upload. See `src/utils/printedDate.js`.
- */
 
 const mongoose = require('mongoose');
 
@@ -21,7 +13,7 @@ const read = (raw, options) => parsePrintedDate(raw, options);
 
 describe('parsePrintedDate -- what is read', () => {
   it.each([
-    ['05-Sep-2026 17:40', '2026-09-05'], // the synthetic fixtures, exactly
+    ['05-Sep-2026 17:40', '2026-09-05'],
     ['5 September 2026', '2026-09-05'],
     ['05 Sep, 2026', '2026-09-05'],
     ['Sep 5, 2026', '2026-09-05'],
@@ -30,10 +22,9 @@ describe('parsePrintedDate -- what is read', () => {
     ['2026-09-05', '2026-09-05'],
     ['2026/09/05', '2026-09-05'],
     ['Reported On: 05-Sep-2026 17:40', '2026-09-05'],
-    // Digits, where only one order is a real date.
-    ['25/09/2026', '2026-09-25'], // 25 cannot be a month
+    ['25/09/2026', '2026-09-25'],
     ['09/25/2026', '2026-09-25'],
-    ['05/05/2026', '2026-05-05'], // both orders are the same day
+    ['05/05/2026', '2026-05-05'],
   ])('%s -> %s', (raw, expected) => {
     const r = read(raw);
     expect(r.status).toBe(STATUS.READ);
@@ -44,8 +35,6 @@ describe('parsePrintedDate -- what is read', () => {
 
 describe('parsePrintedDate -- what is refused rather than guessed', () => {
   it('refuses DD/MM against MM/DD when both are real dates', () => {
-    // 5 September in India, 9 May in the United States. Four months out of
-    // place on a timeline read for trends.
     const r = read('05/09/2026');
     expect(r.status).toBe(STATUS.AMBIGUOUS);
     expect(r.date).toBeNull();
@@ -61,9 +50,9 @@ describe('parsePrintedDate -- what is refused rather than guessed', () => {
   });
 
   it.each([
-    ['02 Dec, 2X'], // real OCR output on this project (drlogy-hba1c-normal.pdf)
-    ['05-Sep-26'], // a century is a guess
-    ['31-Feb-2026'], // does not exist
+    ['02 Dec, 2X'],
+    ['05-Sep-26'],
+    ['31-Feb-2026'],
     ['yesterday'],
     ['17:40'],
   ])('%s is unreadable', (raw) => {
@@ -193,7 +182,6 @@ describe('backfillPrintedDates -- from the extraction already stored', () => {
 
     expect(await backfillPrintedDates({ apply: true })).toHaveLength(1);
     expect(await backfillPrintedDates({ apply: true })).toHaveLength(0);
-    // The one already marked was left exactly as it was.
     expect((await Report.findById(done).lean()).printedDateStatus).toBe('absent');
   });
 });

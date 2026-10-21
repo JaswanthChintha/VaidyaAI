@@ -1,19 +1,3 @@
-"""Module 24 over HTTP -- POST /api/v1/safety/validate and the introspection.
-
-No API key, no network. The router is mounted on a LOCALLY BUILT app here
-rather than taken from `app.main`, because mounting it in `app/main.py` is the
-coordinator's edit and this suite must pass either side of it. The two tests at
-the bottom cover both worlds: the router's own routes must declare the
-service-key dependency, and IF the route is already mounted in `app.main` it
-must carry it there too. `tests/test_auth.py` walks the real app recursively
-and enforces the same thing once the mount lands.
-
-The endpoint is a thin wrapper. Everything about WHAT is safe is tested in
-`tests/test_safety_validator.py`; what is tested here is the contract -- the
-envelope, the pydantic v2 enforcement, the fallback on rejection, and that
-nothing submitted over the wire reaches the logs.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -52,11 +36,6 @@ def _post(client: TestClient, **payload: Any) -> Dict[str, Any]:
     return response.json()
 
 
-# --------------------------------------------------------------------------
-# The envelope
-# --------------------------------------------------------------------------
-
-
 def test_a_clean_text_is_approved_in_the_standard_envelope(safety_client) -> None:
     body = _post(safety_client, text=SAFE_TEXT)
     assert body["success"] is True
@@ -71,11 +50,6 @@ def test_a_clean_text_is_approved_in_the_standard_envelope(safety_client) -> Non
 def test_a_rejection_carries_codes_spans_reasons_and_the_fallback(
     safety_client,
 ) -> None:
-    """A rejection has to be actionable over the wire, not just a 'no'.
-
-    Module 23 will call the in-process function, but the backend calls this,
-    and a backend that gets `false` back can neither retry nor explain.
-    """
     body = _post(safety_client, text=UNSAFE_TEXT)
     verdict = body["data"]["verdict"]
     assert verdict["verdict"] == "reject"
@@ -131,19 +105,8 @@ def test_grounding_is_honoured_over_the_wire(safety_client) -> None:
     }
 
 
-# --------------------------------------------------------------------------
-# Fail closed at the HTTP edge too
-# --------------------------------------------------------------------------
-
-
 @pytest.mark.parametrize("bad", [None, 12, [], {}, True])
 def test_a_non_string_body_is_a_422_not_an_approval(safety_client, bad) -> None:
-    """Pydantic v2 refuses it before the validator sees it. Either way: no pass.
-
-    (The `{success:false, error:{...}}` envelope for a 422 is applied by
-    `app/main.py`'s handler, which this locally-mounted app does not carry.
-    What matters here is that the request never reaches an approval.)
-    """
     response = safety_client.post(VALIDATE, json={"text": bad})
     assert response.status_code == 422
     assert "approved_text" not in response.text
@@ -155,12 +118,6 @@ def test_a_missing_text_field_is_a_422(safety_client) -> None:
 
 
 def test_a_misspelled_field_is_a_422_not_a_weaker_check(safety_client) -> None:
-    """`extra="forbid"` is load-bearing here.
-
-    A caller who typed `grounding_source` would otherwise silently get a
-    validation with NO numeric grounding and a clean verdict back. In this
-    module a typo must be an error, not a quieter check.
-    """
     response = safety_client.post(
         VALIDATE,
         json={"text": SAFE_TEXT, "grounding_source": ["oops"]},
@@ -186,12 +143,6 @@ def test_an_oversized_text_is_rejected(safety_client) -> None:
     )
 
 
-# --------------------------------------------------------------------------
-# Introspection -- a rule nobody can retrieve is not an accountability
-# mechanism, and a layer that publishes only its strengths is advertising
-# --------------------------------------------------------------------------
-
-
 def test_the_policy_endpoint_publishes_the_modification_scope(safety_client) -> None:
     body = safety_client.get(POLICY).json()
     assert body["success"] is True
@@ -209,7 +160,6 @@ def test_the_policy_endpoint_publishes_the_modification_scope(safety_client) -> 
 
 
 def test_the_policy_endpoint_publishes_the_limitations(safety_client) -> None:
-    """An overstated safety layer is worse than an honestly-scoped one."""
     body = safety_client.get(POLICY).json()
     limitations = body["data"]["medical_safety"]["policy"]["limitations"]
     assert len(limitations) >= 4
@@ -219,7 +169,6 @@ def test_the_policy_endpoint_publishes_the_limitations(safety_client) -> None:
 def test_the_rules_endpoint_lists_rules_without_publishing_the_patterns(
     safety_client,
 ) -> None:
-    """The rule table is publishable; the regexes are the map of what to evade."""
     body = safety_client.get(RULES).json()
     data = body["data"]
     assert data["module"] == 24
@@ -233,19 +182,12 @@ def test_the_rules_endpoint_lists_rules_without_publishing_the_patterns(
 
 
 def test_the_introspection_endpoints_carry_no_phi(safety_client) -> None:
-    """Shape and policy only, like the rule table and the fusion policy."""
     for path in (POLICY, RULES):
         text = safety_client.get(path).text
         assert "patient" not in text.lower() or "patient-facing" in text.lower()
 
 
-# --------------------------------------------------------------------------
-# Auth -- tests/test_auth.py enforces this on the real app once mounted
-# --------------------------------------------------------------------------
-
-
 def _walk_api_routes(routes):
-    """Same descent as `tests/test_auth.py`: routers are wrapped, not flat."""
     for route in routes:
         original = getattr(route, "original_router", None)
         if original is not None:
@@ -255,11 +197,6 @@ def _walk_api_routes(routes):
 
 
 def test_every_safety_route_declares_the_service_key_dependency() -> None:
-    """The text submitted here restates a patient's values. It is PHI-bearing.
-
-    Checked on the router itself so the guarantee holds from the moment the
-    file exists, not only once `app/main.py` mounts it.
-    """
     app = FastAPI()
     app.include_router(routes_safety.router)
     found = list(_walk_api_routes(app.routes))
@@ -272,11 +209,6 @@ def test_every_safety_route_declares_the_service_key_dependency() -> None:
 
 
 def test_the_mounted_app_protects_the_safety_routes_if_they_are_mounted() -> None:
-    """Passes before the mount lands and keeps passing after it.
-
-    The mount itself is the coordinator's edit to `app/main.py`; this asserts
-    that when it happens the route arrives protected.
-    """
     from app.main import app
 
     for route in _walk_api_routes(app.routes):
@@ -284,11 +216,6 @@ def test_the_mounted_app_protects_the_safety_routes_if_they_are_mounted() -> Non
             continue
         deps = getattr(route.dependant, "dependencies", [])
         assert any(d.call is require_service_key for d in deps), route.path
-
-
-# --------------------------------------------------------------------------
-# Privacy
-# --------------------------------------------------------------------------
 
 
 def test_the_endpoint_never_logs_the_submitted_text(safety_client, caplog) -> None:

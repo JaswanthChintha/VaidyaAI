@@ -10,17 +10,6 @@ import {
 
 const AuthContext = createContext(null);
 
-/**
- * Who is signed in, and the three operations that change that.
- *
- * `status` is a three-state, not a boolean: `checking` exists because on a
- * reload we hold a refresh token but do not yet know whether the server still
- * honours it. Collapsing that into `signedIn: false` would bounce a signed-in
- * patient to the login screen on every refresh; collapsing it into `true`
- * would flash a dashboard that is about to 401. Neither is acceptable, so the
- * unknown is represented rather than guessed -- the same rule the rest of this
- * platform applies to clinical values.
- */
 export function AuthProvider({ children }) {
   const [status, setStatus] = useState(hasSession() ? 'checking' : 'signedOut');
   const [user, setUser] = useState(null);
@@ -30,9 +19,6 @@ export function AuthProvider({ children }) {
     if (status !== 'checking') return undefined;
 
     (async () => {
-      // A stored refresh token proves nothing: it may have been rotated,
-      // revoked by a password change, or simply expired. Exchange it before
-      // claiming a session.
       const ok = await refreshSession();
       if (cancelled) return;
       if (!ok) {
@@ -46,8 +32,6 @@ export function AuthProvider({ children }) {
         setStatus('signedIn');
       } catch (error) {
         if (cancelled) return;
-        // Same rule as `refreshSession`: only a rejection deletes the stored
-        // session; a server that is down for a moment does not.
         if (isSessionRejected(error)) clearSession();
         setStatus('signedOut');
       }
@@ -76,25 +60,18 @@ export function AuthProvider({ children }) {
     try {
       await api.logout();
     } catch {
-      // Logout is session-scoped server-side and best-effort here: a failed
-      // call must still clear this device, or a patient who pressed "sign
-      // out" on a shared machine stays signed in.
     }
     clearSession();
     setUser(null);
     setStatus('signedOut');
   }, []);
 
-  // A password change signs out every other session server-side and returns
-  // a fresh pair for this one, which must replace the old pair at once.
   const changePassword = useCallback(async (currentPassword, newPassword) => {
     const data = await api.changePassword(currentPassword, newPassword);
     setSession(data);
     if (data.user) setUser(data.user);
   }, []);
 
-  // PERMANENT. On success the account no longer exists, so this device's
-  // session is cleared locally -- there is nothing left to log out of.
   const deleteAccount = useCallback(async (password) => {
     await api.deleteAccount(password);
     clearSession();

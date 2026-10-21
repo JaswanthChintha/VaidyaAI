@@ -1,55 +1,3 @@
-"""Modules 17-20 -- Clinical Report Generation.
-
-    Module 16 fusion  ─>  generate_report()  ─>  Module 27 dashboard
-                                                 Module 32 doctor summary
-
-Framework-independent, exactly as `evaluate_rules`, `predict_all` and
-`fuse_decisions` are: `app/api/routes_report.py` is a thin HTTP wrapper, and
-Modules 27/32 and the Node backend call these functions in-process.
-
-Four public entry points, one per spec module:
-
-    generate_report(...)     Module 17  the whole structured report
-    overall_status(...)      Module 18  the overall health status
-    prioritise(...)          Module 19  findings ordered by significance
-    build_explainability(...) Module 20 Input -> Evidence -> Decision
-
-Each is callable on its own, because Module 27 wants the health card without
-building a whole report and Module 32 wants the evidence without the card.
-
-==========================================================================
-WHAT THIS LAYER ADDS THAT NOTHING UPSTREAM COULD
-==========================================================================
-
-1. THE REJECTED-FEATURE JOIN (Module 20; the integration audit's item 3).
-   Modules 8 and 9/10 do not parse Module 6's `rejected` map AT ALL -- that
-   absence is what makes "a clinical rule can never read a rejected value"
-   structural. The cost is that their evidence for such a feature says "this
-   value was not available in the submitted report", which is FACTUALLY WRONG:
-   the value was in the report, it was read, and it was refused. This layer is
-   the first one that holds both halves, so this is where they are joined. See
-   `_evidence_line`.
-
-2. THE OVERALL STATUS'S FOURTH AND FIFTH CASES (Module 18). See
-   `overall_status`.
-
-3. THE LABORATORY VALUES. Fusion carries decisions, not values; a report needs
-   both, and Module 27's laboratory cards and Module 32's reference columns
-   read the same rows.
-
-4. CATALOGUE RE-SOURCING OF RECOMMENDATION TEXT. See `_recommendations`.
-
-==========================================================================
-LOGGING
-==========================================================================
-
-This module logs COUNTS ONLY, through `safe_meta`. The report object holds
-clinical values by design -- that is what it is for -- but a log line is a
-different artifact with a different lifetime and a different audience, and no
-laboratory value, feature value, patient attribute or report text is ever
-written to it.
-"""
-
 from __future__ import annotations
 
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
@@ -59,7 +7,6 @@ from app.data import conditions as C
 from app.data.egfr import EGFR_DISPLAY_NAME, EGFR_FEATURE
 from app.data.feature_catalog import FEATURES
 
-#: Names for values a rule CALCULATED, which have no catalogue entry.
 _CALCULATED_DISPLAY_NAMES = {EGFR_FEATURE: EGFR_DISPLAY_NAME}
 from app.data.recommendation_catalog import RECOMMENDATIONS
 from app.ml.base import REASON_MODEL_UNAVAILABLE, REASON_REQUIRED_IMPUTED
@@ -133,12 +80,8 @@ from app.services.rule_engine import NOTE_FACTOR_NOT_MET
 
 logger = get_logger(__name__)
 
-#: Bumped when THIS layer's output shape or behaviour changes.
 REPORT_VERSION = "1.0.0"
 
-#: Fixed, reviewed wording for the Module 12 skip (integration audit D2). The
-#: only runtime part is the list of CANONICAL feature names, so this can never
-#: carry producer free text into a reader-facing string.
 SKIP_EXPLANATION_MISSING = (
     "This model was not run because the following value(s) it needs were not "
     "available in the submitted report: {features}."
@@ -166,8 +109,6 @@ REPORT_POLICY = (
     "intact."
 )
 
-#: Order recommendations are presented in. Safety first, then what to do about
-#: it, then background. Fixed so two renderers cannot order it differently.
 _CATEGORY_ORDER: Tuple[str, ...] = (
     "information",
     "consultation",
@@ -191,9 +132,6 @@ _RISK_RANK: Dict[Optional[RiskLevel], int] = {
     None: 3,
 }
 
-#: The producer notes this layer is allowed to CORRECT. Both are Module 8's and
-#: Module 9's wording for "the feature was not in the usable set", which is
-#: true from where they stand and false from where the report stands.
 _ABSENCE_NOTES = (
     "this value was not available in the submitted report",
     "part of the document could not be read, so this value may be missing "
@@ -203,64 +141,12 @@ _ABSENCE_NOTES = (
 )
 
 
-# ==========================================================================
-# Module 18 -- overall health status
-# ==========================================================================
-
-
 def overall_status(fusion: DecisionFusionData) -> OverallHealthStatus:
-    """Spec Module 18, with the case the spec does not name.
-
-    THE SPEC'S THREE OUTCOMES
-    -------------------------
-        No abnormal findings              -> Healthy
-        Abnormal findings + no High risk  -> Needs Monitoring
-        Abnormal finding + High risk      -> Needs Medical Attention
-
-    THE FOURTH CASE: NOTHING WAS ASSESSED
-    -------------------------------------
-    `summary.overall_status` is None when nothing was assessed at all, and this
-    function must NOT fill that in. "No abnormal findings" is vacuously true of
-    a report whose every test was unreadable, in exactly the way an empty set
-    has no members -- so the first branch of the spec's rule would fire and
-    hand a reader whose document could not be read the word "Healthy".
-
-    That is the same failure `app/schemas/decisions.py` forbids at the type
-    level when it refuses to let an INSUFFICIENT_DATA decision carry a risk
-    level, and calls "the most dangerous failure mode this type can have". The
-    report gives a FOURTH label, `Not Assessed`, and `status` stays None so a
-    consumer that only knows the spec's three vocabulary values cannot silently
-    read it as one of them.
-
-    THE FIFTH CASE: SOME THINGS COULD NOT BE ASSESSED
-    -------------------------------------------------
-    Here the spec's status still applies to what WAS assessed, and it is kept.
-    Downgrading a clean partial report to `Needs Monitoring` would be worse,
-    not safer: it would report a finding nobody made, and a caveat that fires
-    on every incomplete report is a caveat nobody reads by the third one.
-
-    So the incompleteness is made STRUCTURAL instead of editorial:
-    `complete=False`, a non-null fixed `caveat`, and the specific conditions
-    named -- AND, since the integration audit (D4), it is carried in the LABEL
-    too. A partial clean report is labelled `Healthy (partial assessment)`
-    while `status` stays `Healthy`, so a renderer that shows only
-    `status_label` no longer presents a one-test report as a full clean bill of
-    health. The abnormal statuses keep their labels: an abnormal finding IS a
-    finding, and another topic going unassessed does not qualify it.
-
-    The `status` value itself is taken from Module 16's summary rather than
-    recomputed, so the two layers cannot disagree; the branch is re-derived
-    only to record WHICH rule fired.
-    """
     summary = fusion.summary
 
     assessed = [f for f in fusion.fused if f.decision.was_assessed]
     flagged = [f for f in fusion.fused if f.decision.is_flagged]
     high = [f for f in flagged if f.risk is RiskLevel.HIGH]
-    # THE SIXTH CASE (2026-10-06): topics were judged and none flagged, but
-    # not one of them used a test result from the report -- BMI, age and sex
-    # only. Same predicate as Module 16 (`rests_on_lab_result`), so the two
-    # layers still agree on the value.
     clean_without_lab = (
         bool(assessed)
         and not flagged
@@ -289,8 +175,6 @@ def overall_status(fusion: DecisionFusionData) -> OverallHealthStatus:
         label = STATUS_NEEDS_MONITORING
         status = STATUS_NEEDS_MONITORING
 
-    # Module 16 is the authority on the value itself. If this layer ever
-    # derived a DIFFERENT one, the two would be reporting different reports.
     if summary.overall_status != status:
         raise ValueError(
             "Module 17's overall status disagrees with Module 16's "
@@ -300,20 +184,6 @@ def overall_status(fusion: DecisionFusionData) -> OverallHealthStatus:
 
     complete = any_assessed and not summary.assessment_incomplete
 
-    # THE FIFTH LABEL (integration audit D4). `status` stays at its spec value
-    # -- consumers reading the three-value vocabulary are untouched -- but the
-    # always-renderable LABEL now distinguishes "we looked at everything and
-    # found nothing" from "we found nothing in the part we could look at".
-    # Before this, those two reports were byte-identical in `status`,
-    # `status_label` and `overall_risk`, so the docstring's claim above that a
-    # label-only renderer "is demonstrably wrong" was not actually true: the
-    # label showed no difference to detect. It is true now.
-    #
-    # Only the HEALTHY branch is relabelled. `Needs Monitoring` and `Needs
-    # Medical Attention` are statements about a finding that WAS made, and that
-    # finding is not made less real by another topic going unassessed; the
-    # incompleteness there is carried by `complete=False` and the caveat, as
-    # before. It is the clean result that is falsely reassuring when partial.
     if status == STATUS_HEALTHY and not complete:
         label = STATUS_HEALTHY_PARTIAL
 
@@ -345,43 +215,7 @@ def overall_status(fusion: DecisionFusionData) -> OverallHealthStatus:
     )
 
 
-# ==========================================================================
-# Module 19 -- risk prioritisation
-# ==========================================================================
-
-
 def prioritise(fused: Sequence[FusedDecision]) -> List[PrioritizedFinding]:
-    """Spec Module 19. ONE ROW PER CONDITION, ordered by significance.
-
-    BY CONDITION, NEVER BY DECISION COUNT
-    -------------------------------------
-    The rule engine emits one decision per RULE, so a patient with HbA1c 6.8
-    AND fasting glucose 112 produces two `Diabetes` decisions. That is correct
-    -- it is what makes per-rule traceability possible -- but it means any
-    ranking that counts decisions gives `Diabetes` double weight purely because
-    two relevant tests were ordered. Module 15 groups by `(condition, source)`
-    and Module 16 fuses to one per condition, so this function reads `fused`
-    and counts nothing. `contributing_decision_count` is carried for display
-    and is deliberately absent from the sort key.
-
-    AN UNASSESSED CONDITION IS NOT A LOW-RISK CONDITION
-    ---------------------------------------------------
-    It has `risk=None`: not "low", NONE. Filing it in the Low band would sort
-    an open question in among settled ones and bury it -- the same class of
-    error as letting an absence of findings read as health. It gets its own
-    band, `Not Assessed`, placed:
-
-        tier 0  FLAGGED findings   High -> Medium -> Low
-        tier 1  NOT ASSESSED
-        tier 2  NORMAL findings    High -> Medium -> Low
-
-    A flagged Low-risk finding still outranks an open question, because it IS a
-    finding and somebody looked. A NORMAL finding does not, because "we looked
-    and found nothing" is settled and "we could not look" is not.
-
-    Ties break on `app/data/conditions.py`'s canonical order, so the list is
-    stable across runs and two dashboards cannot disagree about the order.
-    """
     ordered = sorted(fused, key=_priority_sort_key)
     return [
         PrioritizedFinding(
@@ -423,28 +257,7 @@ def _priority_sort_key(item: FusedDecision) -> Tuple[int, int, int]:
     )
 
 
-# ==========================================================================
-# Module 20 -- evidence and explainability
-# ==========================================================================
-
-
 def extract_rejected_features(body: Any) -> Dict[str, ReportRejectedFeature]:
-    """Find Module 6's `rejected` map in whatever shape the caller relayed.
-
-    The decision chain's request models deliberately DO NOT parse `rejected`
-    (see `app/schemas/rules.py`), so it has to be recovered from the raw body.
-    Every shape `/decisions/fuse` accepts is covered:
-
-        {"validated": {... "rejected": {...}}}      explicit
-        {"rejected_features": {...}}                explicit, this layer's own
-        {"success": true, "data": {... "rejected"}} a relayed envelope
-        {"valid": {...}, "rejected": {...}}         a bare Module 6 object
-
-    Anything unusable is skipped rather than raised on: a malformed rejection
-    record must not be able to fail a whole report, and the worst case of
-    skipping one is that the report says "not present" where it could have said
-    "found but not trusted" -- which is exactly what happens today.
-    """
     if not isinstance(body, Mapping):
         return {}
 
@@ -482,7 +295,7 @@ def _coerce_rejected(name: Any, record: Any) -> Optional[ReportRejectedFeature]:
         return None
     try:
         parsed = ReportRejectedFeature.model_validate(dict(record))
-    except Exception:  # noqa: BLE001 -- one bad record must not fail a report
+    except Exception:
         return None
     if parsed.name is None:
         parsed = parsed.model_copy(update={"name": str(name)})
@@ -496,19 +309,6 @@ def build_explainability(
     questionable: Sequence[str] = (),
     clinically_extreme: Sequence[str] = (),
 ) -> ExplainabilitySection:
-    """Spec Module 20: `Input -> Evidence -> Decision`, for every condition.
-
-    For a RULE decision it records the triggering laboratory value, the
-    threshold it was compared against and the rule's own classification. For an
-    ML decision it records the model, the prediction, the probability and the
-    input evidence -- and labels the model's feature importances as GLOBAL,
-    because that is what the artifacts contain and spec section 24 forbids
-    presenting them as more.
-
-    THE REJECTED-FEATURE JOIN happens in `_evidence_line`, applied to every
-    line this function builds, so no path through the explainability layer can
-    emit "not available" for a value that was read and refused.
-    """
     rejected = dict(rejected or {})
     questionable_set = set(questionable)
     extreme_set = set(clinically_extreme)
@@ -559,12 +359,6 @@ def build_explainability(
 
 
 def _fusion_explanation(item: FusedDecision) -> Optional[str]:
-    """Spec section 13's 'Fusion Explainability': which sources combined.
-
-    A list of source names joined by ' + '. It states WHICH analyses were
-    combined and nothing about what they mean, so there is no clinical claim
-    here to get wrong.
-    """
     if not item.sources:
         return None
     return " + ".join(item.sources)
@@ -576,7 +370,6 @@ def _explain_source(
     fusion: DecisionFusionData,
     line: Any,
 ) -> SourceExplanation:
-    """One source's half of `Input -> Evidence -> Decision`."""
     raw = _raw_decisions_for(fusion, contribution.decision_ids)
     assessed = contribution.status is not DecisionStatus.INSUFFICIENT_DATA
     evidence = [line(e) for d in raw for e in d.evidence]
@@ -617,29 +410,12 @@ def _explain_source(
 def _triggering_values(
     raw: Sequence[ClinicalDecision], line: Any
 ) -> List[EvidenceLine]:
-    """The values that actually TRIGGERED a rule -- those with a threshold.
-
-    Spec Module 20 asks for "the rule-triggering laboratory value", which is
-    narrower than "every value the rule looked at". A context value used only
-    to select which threshold applied (age, sex) is evidence, but it did not
-    trigger anything, and presenting it as the trigger would misstate what the
-    rule did.
-    """
     out: List[EvidenceLine] = []
     for decision in raw:
         classification = decision.metadata.get("band_label")
         for item in decision.evidence:
             if item.threshold is None:
                 continue
-            # A COUNTED-FACTOR RULE'S UNMET CRITERIA DID NOT TRIGGER IT
-            # (2026-10-03). The cardiovascular rule records every factor it
-            # evaluated, each with a threshold, and marks the unmet ones with
-            # `NOTE_FACTOR_NOT_MET`. Without this they arrived here as
-            # "triggering values" -- BMI 25.25 against >= 30 and age 20
-            # against >= 45 -- and the clinician narrative wrote them up as
-            # the reasons for a borderline Heart Disease they did not count
-            # towards. They remain on `decision.evidence`, where "evaluated
-            # and not met" is the true statement.
             if isinstance(item.note, str) and item.note.startswith(NOTE_FACTOR_NOT_MET):
                 continue
             out.append(
@@ -656,39 +432,17 @@ def _explain_ml(
     raw: Sequence[ClinicalDecision],
     evidence: Sequence[EvidenceLine],
 ) -> MLExplanation:
-    """Spec Module 20's ML record: source, prediction, probability, inputs.
-
-    HONESTY ABOUT IMPORTANCE. `global_feature_importance` is copied from the
-    predictor's own metadata, where every artifact records it with
-    `feature_importance_scope: global_model_level` and a caveat saying it is
-    not a per-patient explanation. This function preserves BOTH and sets
-    `importance_is_per_patient=False` on the wire, so a renderer cannot
-    reasonably label a training-set ranking "why you got this result". Spec
-    section 24 forbids unsupported certainty; a global ranking dressed as a
-    personal reason is exactly that.
-    """
     metadata: Dict[str, Any] = {}
     for decision in raw:
         metadata.update(decision.metadata)
 
     skipped = contribution.status is DecisionStatus.INSUFFICIENT_DATA
 
-    # THE KEY ALIGNMENT (integration audit D2). This used to look for
-    # `skip_reason` / `insufficiency_reason` / `sufficiency_reason`; no producer
-    # in the service emits any of the three. Both producers -- `Predictor.
-    # insufficient_decision` in `app/ml/base.py` and the rule engine in
-    # `app/services/rule_engine.py` -- stamp `skipped_reason`, so THAT is the
-    # canonical key and it is read here, with the nested `sufficiency.reason`
-    # the predictors also record as the fallback. The consequence of the old
-    # mismatch was a Module 12 skip rendering as "Random Forest -- skipped --
-    # (no reason)", which a reader cannot tell from "the model broke".
     sufficiency = metadata.get("sufficiency")
     if not isinstance(sufficiency, Mapping):
         sufficiency = {}
     skip_reason = metadata.get("skipped_reason") or sufficiency.get("reason")
 
-    # Likewise `features_missing`: the rule engine stamps that key directly,
-    # the predictors record the same list as `sufficiency.required_missing`.
     missing_features: List[str] = []
     for candidate in (
         metadata.get("features_missing"),
@@ -740,13 +494,6 @@ def _explain_ml(
 def _skip_explanation(
     reason: Optional[str], missing: Sequence[str]
 ) -> Optional[str]:
-    """A fixed sentence naming the inputs the model needed and did not get.
-
-    Composed from a small closed set of wordings plus CANONICAL feature names
-    (`app/data/feature_catalog.py`), never from producer free text -- so this
-    string cannot become an injection surface and cannot drift into clinical
-    language. `report_text_violations` scans it anyway.
-    """
     names = ", ".join(str(n) for n in missing)
     if reason == REASON_MODEL_UNAVAILABLE:
         return SKIP_EXPLANATION_MODEL_UNAVAILABLE
@@ -768,19 +515,9 @@ def _as_str(value: Any) -> Optional[str]:
 def _raw_decisions_for(
     fusion: DecisionFusionData, decision_ids: Sequence[str]
 ) -> List[ClinicalDecision]:
-    """The raw `ClinicalDecision` objects behind a contribution.
-
-    Module 16 kept Module 15's whole collection precisely so this trace-back is
-    always possible; nothing here re-runs anything.
-    """
     wanted = list(decision_ids)
     by_id = {c.decision_id: c.decision for c in fusion.collection.collected}
     return [by_id[i] for i in wanted if i in by_id]
-
-
-# --------------------------------------------------------------------------
-# The join itself
-# --------------------------------------------------------------------------
 
 
 def _evidence_line(
@@ -792,31 +529,6 @@ def _evidence_line(
     warnings_by_feature: Mapping[str, List[StageWarning]],
     classification: Optional[str] = None,
 ) -> EvidenceLine:
-    """Turn one `EvidenceItem` into a renderable line -- AND CORRECT IT.
-
-    THIS IS THE REJECTED-FEATURE JOIN (integration audit §6h item 3).
-
-    Modules 8 and 9/10 attach "this value was not available in the submitted
-    report" whenever a feature is not in Module 6's USABLE set. From where they
-    stand that is true: `rejected` is not a field they parse, so the value is
-    genuinely not available TO THEM. From where the reader stands it is false
-    and materially so. "No creatinine was ordered" and "creatinine was printed
-    in a unit we could not read" call for completely different next steps, and
-    the second one is a fixable problem with the document.
-
-    So: if the cited feature is in Module 6's `rejected` map, this line is
-    `found_but_not_trusted`, carries the validator's own `reason_code` and
-    `reason`, preserves the value that was actually printed, and says the value
-    was read. The producer's original note is kept in `note` -- unedited, so
-    the trace back to what Module 8 actually said stays intact -- but
-    `availability` and `explanation`, which are what a renderer shows, are
-    corrected. The upstream warnings that name the feature are attached too,
-    with their origin stage, which is the other half of the join the audit
-    described.
-
-    The correction is applied ONLY to a feature that is genuinely in the
-    rejected map. A feature that really was absent still reads as absent.
-    """
     feature = item.feature
     record = rejected.get(feature)
     definition = FEATURES.get(feature)
@@ -873,12 +585,6 @@ def _warnings_by_feature(
     warnings: Sequence[StageWarning],
     rejected: Mapping[str, ReportRejectedFeature],
 ) -> Dict[str, List[StageWarning]]:
-    """Index upstream warnings by the rejected feature they name.
-
-    Only rejected features are indexed. A broad substring match across every
-    feature would attach a warning about `hemoglobin` to a line about
-    `hba1c`, and a wrong join is worse than no join.
-    """
     index: Dict[str, List[StageWarning]] = {}
     for name in rejected:
         needle = name.lower()
@@ -900,11 +606,6 @@ def _dedup_lines(lines: Sequence[EvidenceLine]) -> List[EvidenceLine]:
     return out
 
 
-# ==========================================================================
-# Module 17 -- the report
-# ==========================================================================
-
-
 def generate_report(
     validated: Any = None,
     *,
@@ -913,24 +614,6 @@ def generate_report(
     fusion: Optional[DecisionFusionData] = None,
     registry: Any = None,
 ) -> ClinicalReport:
-    """Spec Module 17. Build the structured Clinical Report.
-
-    `validated`  -- Module 6's `FeatureValidationData`, a `ValidatedFeaturesInput`
-                    or the equivalent dict. PREFERRED, and when it is Module 6's
-                    own object the rejected map comes with it for free.
-    `engineered` -- Module 5's output. Module 6 is then run in-process, so the
-                    report's laboratory values and rejected map are the real
-                    ones and not a guess.
-    `rejected`   -- Module 6's `rejected` map, when the caller had to relay it
-                    separately (see `extract_rejected_features`).
-    `fusion`     -- an already-computed `DecisionFusionData`. Supplying it skips
-                    re-running the rules and the models, which is how Modules
-                    27/32 re-render a stored analysis without a second
-                    prediction that might not reproduce bit-for-bit.
-    `registry`   -- an ML `PredictorRegistry`; defaults to the process registry.
-
-    Framework-independent. No FastAPI, no I/O, no global state.
-    """
     features_view = _resolve_features(validated, engineered)
     if fusion is None:
         fusion = run_decision_fusion(
@@ -995,9 +678,6 @@ def generate_report(
         fusion=fusion,
     )
 
-    # COUNTS ONLY. No feature name, no value, no report text -- see the module
-    # docstring. `safe_meta` drops content-bearing keys as a second line of
-    # defence, but nothing content-bearing is passed to it in the first place.
     logger.info(
         "report_generated %s",
         safe_meta(
@@ -1012,13 +692,7 @@ def generate_report(
     return report
 
 
-# --------------------------------------------------------------------------
-# Resolving the feature view
-# --------------------------------------------------------------------------
-
-
 class _FeatureView:
-    """Everything about the INPUT the report needs, from any accepted shape."""
 
     __slots__ = (
         "valid",
@@ -1041,22 +715,10 @@ class _FeatureView:
         self.unmapped_count: int = 0
         self.summary: Any = None
         self.for_decisions: Any = None
-        #: What the CALLER actually sent, before Module 6 was run in-process.
-        #: `fusion.summary.input_kind` reports what the DECISION CHAIN saw,
-        #: which is always "validated" once this layer has validated -- so both
-        #: are recorded, and neither is a guess about the other.
         self.input_received: str = "none"
 
 
 def _resolve_features(validated: Any, engineered: Any) -> _FeatureView:
-    """Normalise every accepted input into one view.
-
-    When only `engineered` is supplied, Module 6 is RUN here rather than
-    approximated. Its output is then what both the decision chain and the
-    report read, so the laboratory values the report shows and the values the
-    rules saw cannot diverge -- and the rejected map, which is the whole point
-    of the Module 20 join, is the real one.
-    """
     view = _FeatureView()
     if validated is not None:
         view.input_received = "validated"
@@ -1075,7 +737,6 @@ def _resolve_features(validated: Any, engineered: Any) -> _FeatureView:
 
     data: Any = validated
     if isinstance(validated, Mapping):
-        # A relayed envelope or a bare Module 6 object.
         inner = validated.get("data")
         if isinstance(inner, Mapping) and "valid" in inner:
             data = inner
@@ -1111,28 +772,6 @@ def _get(container: Any, key: str) -> Any:
 
 
 def _unmapped_count(data: Any, summary: Any) -> int:
-    """How many extracted parameters never became a feature.
-
-    COUNTED FROM THE PRODUCER'S OWN COUNT, NOT FROM THE LIST -- because over
-    HTTP the list is not here. `ValidatedFeaturesInput` declares no `unmapped`
-    field and sets `extra="ignore"`, so Module 6's seventeen unmapped rows are
-    dropped silently at the boundary; `len(unmapped or [])` then returns 0 and
-    the report states, as a fact, that every parameter on the document was
-    assessed. Measured on `Test 2.pdf`: seventeen sent, zero recorded.
-
-    `summary.unmapped_count` is the SAME number computed by the feature stage
-    (`feature_engineer` sets it to `len(unmapped)`), and it survives the
-    boundary because `summary` is a declared field. So it is preferred, and the
-    list is the fallback for in-process callers whose summary is absent.
-
-    §6u FOUND THIS ON THE PATIENT PAGE AND ROUTED AROUND IT rather than fixing
-    it here: `dashboardService` reads `fusion.upstream_summary.unmapped_count`
-    instead, with a comment calling the 0 "not merely missing information but a
-    false statement". The clinician document was never brought along and still
-    read this field. A count of nothing, where a reader will take it to mean
-    nothing was set aside, is this project's fourth case -- "we did not look"
-    rendered as "we looked and found nothing".
-    """
     counted = _get(summary, "unmapped_count")
     if isinstance(counted, int) and not isinstance(counted, bool) and counted >= 0:
         return counted
@@ -1142,11 +781,6 @@ def _unmapped_count(data: Any, summary: Any) -> int:
 def _merge_rejected(
     from_input: Mapping[str, ReportRejectedFeature], explicit: Any
 ) -> Dict[str, ReportRejectedFeature]:
-    """The input's own rejected map, plus anything relayed separately.
-
-    The input's own entries win: they came from the object the decisions were
-    actually made from.
-    """
     merged: Dict[str, ReportRejectedFeature] = {}
     if isinstance(explicit, Mapping):
         for name, record in explicit.items():
@@ -1157,18 +791,7 @@ def _merge_rejected(
     return merged
 
 
-# --------------------------------------------------------------------------
-# Sections
-# --------------------------------------------------------------------------
-
-
 def _patient_information(view: _FeatureView) -> PatientInformation:
-    """Spec Module 17's patient information -- clinical context, no identity.
-
-    `hypertension` and `heart_disease` stay TRI-STATE: absent means UNKNOWN and
-    is reported as None, never as False. That distinction has survived every
-    hop from Module 4 to here and this is the last place it could be lost.
-    """
     provided: List[str] = []
 
     def value(name: str) -> Any:
@@ -1206,15 +829,7 @@ def _feature_value(entry: Any) -> Any:
 def _laboratory_values(
     view: _FeatureView, rejected: Mapping[str, ReportRejectedFeature]
 ) -> List[LaboratoryValue]:
-    """Spec Module 17's laboratory values -- Module 27's cards, Module 32's rows.
-
-    A REJECTED value appears here too, marked `usable=False` with its reason.
-    Hiding it would reproduce the exact defect Module 20's join exists to fix,
-    one layer up: the reader would see a report with no creatinine row and
-    conclude none was ordered.
-    """
     out: List[LaboratoryValue] = []
-    # Catalogue order, so two reports of the same panel list rows identically.
     names = [n for n in FEATURES if n in view.valid or n in rejected]
     names += [n for n in view.valid if n not in FEATURES]
     names += [n for n in rejected if n not in FEATURES and n not in view.valid]
@@ -1274,7 +889,7 @@ def _provenance(entry: Any) -> Any:
         from app.schemas.features import FeatureProvenance
 
         return FeatureProvenance.model_validate(raw)
-    except Exception:  # noqa: BLE001 -- provenance is context, never load-bearing
+    except Exception:
         return None
 
 
@@ -1302,16 +917,6 @@ def _provenance_fields(provenance: Any) -> Dict[str, Any]:
 def _reported_condition(
     item: FusedDecision, priority: Optional[PrioritizedFinding]
 ) -> ReportedCondition:
-    """One Module 27 condition card.
-
-    `basis_conflict` IS SURFACED, NOT BLENDED. When Module 16 flagged that a
-    risk-factor burden is sitting beside a different kind of claim -- the
-    `Heart Disease` hazard, where a composite rule counts recorded risk factors
-    and Module 11 estimates a likelihood -- `contributions` carries each source
-    separately with its OWN band labels, status and risk, and
-    `render_contributions_separately` says so in a field. Merging them into one
-    sentence would tell the reader a tally was a probability.
-    """
     return ReportedCondition(
         condition=item.condition,
         status=item.status,
@@ -1362,26 +967,6 @@ def _reported_condition(
 def _recommendations(
     fused: Sequence[FusedDecision], own_warnings: List[str]
 ) -> List[ReportRecommendation]:
-    """Consolidate and de-duplicate, CATALOGUE-SOURCED BY CODE.
-
-    Spec Module 16 point 5: "Recommendations from different decision sources
-    are consolidated and duplicates are removed."
-
-    Two properties this function guarantees that a naive union would not:
-
-    * `text` is re-read from `app/data/recommendation_catalog.py` by CODE, not
-      copied from the `Recommendation` object that carried it. So even if some
-      producer somewhere constructed a recommendation with its own wording,
-      that wording cannot reach a report. The catalogue is import-time scanned
-      by the safety scanner, so this is what makes "no free text, no
-      medication, no dosage, no diagnostic assertion, no certainty claim" a
-      property of the report rather than a property of every producer.
-    * a code that is NOT in the catalogue is DROPPED, with a warning. Dropping
-      is the safe direction: a missing educational line is a smaller harm than
-      an unreviewed one, and the warning means the drop is not silent.
-
-    Nothing here composes, rewrites or personalises text.
-    """
     seen: Dict[str, ReportRecommendation] = {}
     unknown: List[str] = []
 
@@ -1429,13 +1014,6 @@ def _document_quality(
     view: _FeatureView,
     rejected: Mapping[str, ReportRejectedFeature],
 ) -> DocumentQuality:
-    """Carry `pages_unreadable` and `extraction_confidence` into the report.
-
-    A report built from a partially unreadable scan MUST say so. Module 4
-    records which pages could not be read and how confident the extraction was;
-    Modules 5, 6, 15 and 16 each carried it forward without editing it; this is
-    the last hop and it does not drop it either.
-    """
     upstream = fusion.upstream
     summary = fusion.upstream_summary
     return DocumentQuality(
@@ -1461,11 +1039,6 @@ def _report_warnings(
     rejected: Mapping[str, ReportRejectedFeature],
     view: _FeatureView,
 ) -> List[str]:
-    """Module 17's OWN warnings.
-
-    Each exists because the report would otherwise present something as more
-    settled than it is.
-    """
     warnings: List[str] = []
     summary = fusion.summary
 
@@ -1536,15 +1109,6 @@ def _summary(
 
 
 def _metadata(fusion: DecisionFusionData, input_received: str) -> Dict[str, Any]:
-    """System metadata (spec Module 17). Versions and policies. Never PHI.
-
-    `input_received` is what the CALLER sent; `upstream.input_kind` is what the
-    DECISION CHAIN saw. They differ by design when Module 5 output is posted:
-    this layer runs Module 6 in-process first, so the rules and the models
-    consume validated features and the report's laboratory values and rejected
-    map are the real ones rather than an approximation. Recording both means
-    neither has to be inferred from the other.
-    """
     return {
         "report_version": REPORT_VERSION,
         "input_received": input_received,
@@ -1569,25 +1133,7 @@ def _metadata(fusion: DecisionFusionData, input_received: str) -> Dict[str, Any]
     }
 
 
-# ==========================================================================
-# Safety inspection -- used by the test suite and available to Module 24
-# ==========================================================================
-
-
 def report_text_violations(report: ClinicalReport) -> List[Tuple[str, str, List[str]]]:
-    """Scan every user-facing string in a report with the safety scanner.
-
-    Returns `(where, text, patterns)` for each violation; an empty list means
-    the report asserts no diagnosis, prescribes no medication, states no dosage
-    and claims no certainty.
-
-    This is an INSPECTION, not a filter. The report's safety is structural --
-    recommendation text comes from the reviewed catalogue by code, band labels
-    are import-time scanned by Module 8, and every fixed string in
-    `app/schemas/report.py` is scanned at import. This function is how a test,
-    a reviewer or Module 24 can verify that the structure actually held instead
-    of trusting that it did.
-    """
     from app.data.recommendation_catalog import scan_text
 
     out: List[Tuple[str, str, List[str]]] = []
@@ -1632,11 +1178,6 @@ def report_text_violations(report: ClinicalReport) -> List[Tuple[str, str, List[
             check("evidence.note", line.note)
             check("evidence.rejection_reason", line.rejection_reason)
     for index, value in enumerate(report.laboratory_values):
-        # EVERY caller-controlled string on a laboratory value, not just the
-        # rejection reason (integration audit D5). `unit`, `original_unit`,
-        # `original_test_name` and `feature` all originate in the submitted
-        # document or in a caller-posted payload, all four are rendered, and
-        # none of them was walked before.
         check(f"laboratory_values[{index}].reason", value.rejection_reason)
         check(f"laboratory_values[{index}].feature", value.feature)
         check(f"laboratory_values[{index}].unit", value.unit)

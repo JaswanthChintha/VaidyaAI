@@ -3,11 +3,6 @@ import { MemoryRouter } from 'react-router-dom';
 import App from '../src/App';
 import { AuthProvider } from '../src/lib/auth';
 
-/**
- * The landing page's buttons, clicked through the REAL app while signed out
- * (2026-10-02). Each must reach the sign-in screen, and the "create" ones
- * must arrive with the registration form already showing.
- */
 function renderAt(path) {
   return render(
     <MemoryRouter initialEntries={[path]}>
@@ -65,10 +60,6 @@ describe('the landing page', () => {
   });
 });
 
-/**
- * THE LINK ALWAYS OPENS ON THE FRONT PAGE (owner, 2026-10-09). A signed-in
- * visitor used to be sent straight to Reports and never saw it.
- */
 describe('the landing page while signed in', () => {
   const ok = (data) => ({ ok: true, status: 200, json: async () => ({ success: true, data }) });
 
@@ -97,7 +88,6 @@ describe('the landing page while signed in', () => {
     expect(screen.queryByRole('link', { name: 'Sign in' })).toBeNull();
     expect(screen.queryByRole('link', { name: /Create an account/ })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Get started' })).toBeNull();
-    // The app's side menu and chat bubble are not on the front page.
     expect(screen.queryByRole('navigation', { name: 'Main' })).toBeNull();
   });
 

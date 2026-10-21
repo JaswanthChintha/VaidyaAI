@@ -1,16 +1,3 @@
-"""A counted-factor rule's UNMET criteria are not "triggering values".
-
-Found by the owner on 2026-10-03 (`02-diabetes-and-lipids-redacted.pdf`): the
-clinician note read "recorded Heart Disease as borderline because ... Body mass
-index was 25.25 kg/m2 (>= 30 ...) and Age in whole years was 20 years (>= 45
-...)". The cardiovascular rule counted two of four factors and was right; but
-`report_builder._triggering_values` took every evidence line with a threshold,
-including the two the rule had marked "criterion not met".
-
-These tests drive the REAL rule engine on that report's numbers, so they hold
-against the rule's own notes rather than a hand-written copy of them.
-"""
-
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -75,7 +62,6 @@ def test_the_rule_itself_counts_two_of_four_and_is_borderline():
 
 
 def test_unmet_factors_stay_on_the_evidence_as_not_met():
-    # The evidence still records them -- "evaluated and not met" is true.
     notes = {i.feature: i.note for i in _decision().evidence}
     assert notes["bmi"].startswith(RE.NOTE_FACTOR_NOT_MET)
     assert notes["age"].startswith(RE.NOTE_FACTOR_NOT_MET)

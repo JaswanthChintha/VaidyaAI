@@ -1,20 +1,3 @@
-"""The Module 28 HTTP surface -- `/api/v1/timeline/*`.
-
-The in-process API is the primary interface (see `tests/test_trend_analyzer.py`
-for the behaviour); this file covers the round trip through HTTP: the
-`{success, data}` envelope, pydantic v2 enforcement at the boundary, the
-service-key requirement, and -- most importantly -- that the documented
-REFUSALS actually survive serialisation.
-
-WHY THE REFUSALS ARE TESTED AGAIN HERE. A refusal that is correct in Python
-and lost on the wire is not a refusal. `trend: null` has to arrive as an
-explicit JSON null rather than being dropped by `exclude_none`, because a
-client reading a missing key as "no trend information" is one careless `||
-'stable'` away from printing a clinical claim nobody made. The router sets
-`response_model_exclude_none=False` for exactly this reason, and that setting
-is what these tests hold in place.
-"""
-
 from __future__ import annotations
 
 import json
@@ -47,13 +30,7 @@ HBA1C_RISING = [
 ]
 
 
-# --------------------------------------------------------------------------
-# Envelope and happy path
-# --------------------------------------------------------------------------
-
-
 def test_the_specification_example_round_trips_through_http(client):
-    """HbA1c 6.1 -> 6.4 -> 6.8, the specification's own worked example."""
     response = client.post(TRENDS, json=body(HBA1C_RISING))
     assert response.status_code == 200, response.text
     payload = response.json()
@@ -89,27 +66,12 @@ def test_the_patient_ref_is_echoed_and_nothing_else_identifying_is_added(client)
 
 
 def test_a_relayed_envelope_is_not_read_as_an_empty_request(client):
-    """The backend may forward `{"data": {...}}`; that must not silently
-    become a run with no reports, which would answer with a confident empty
-    timeline instead of the trend."""
     response = client.post(TRENDS, json={"data": body(HBA1C_RISING)})
     assert response.status_code == 200
     assert response.json()["data"]["summary"]["report_count"] == 3
 
 
-# --------------------------------------------------------------------------
-# The refusals, over the wire
-# --------------------------------------------------------------------------
-
-
 def test_insufficient_data_arrives_as_an_explicit_null_trend(client):
-    """`trend` must be PRESENT and null, never absent.
-
-    A client that reads a missing key as "no information" and falls back to a
-    default is exactly how "we could not tell" becomes "stable" on a
-    dashboard. `response_model_exclude_none=False` is what stops that, and
-    this assertion is what stops someone removing it.
-    """
     response = client.post(
         TRENDS,
         json=body(
@@ -161,8 +123,6 @@ def test_a_rejected_reading_never_crosses_the_wire_as_a_value(client):
 
 
 def test_an_undeclared_polarity_refuses_over_http_with_its_arithmetic(client):
-    """Glucose doubled. The response says so, and says nothing about
-    better or worse."""
     response = client.post(
         TRENDS,
         json=body(
@@ -213,12 +173,6 @@ def test_a_unit_mismatch_refuses_over_http_and_converts_nothing(client):
 
 
 def test_no_feature_ever_comes_back_as_stable_when_nothing_was_measured(client):
-    """The whole catalogue, from two reports that carried nothing at all.
-
-    Every entry must be a refusal with a null trend. This is the response a
-    dashboard renders when a patient's history is empty, and it is the exact
-    place a "clean bill of health" would be fabricated.
-    """
     response = client.post(
         TRENDS,
         json=body(
@@ -237,11 +191,6 @@ def test_no_feature_ever_comes_back_as_stable_when_nothing_was_measured(client):
     assert data["summary"]["stable"] == 0
     assert data["summary"]["not_determinable"] == len(CANONICAL_FEATURES)
     assert '"trend": "stable"' not in json.dumps(data)
-
-
-# --------------------------------------------------------------------------
-# Malformed input
-# --------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -275,19 +224,12 @@ def test_no_feature_ever_comes_back_as_stable_when_nothing_was_measured(client):
     ],
 )
 def test_malformed_requests_are_422_and_not_a_partial_answer(client, payload):
-    """A request the contract cannot read is refused whole.
-
-    None of these may come back 200 with an empty or guessed timeline: a
-    caller that posted a duplicate report id or a bad date needs to be told,
-    not handed a plausible-looking answer built from what parsed.
-    """
     response = client.post(TRENDS, json=payload)
     assert response.status_code == 422, response.text
     assert response.json()["error"]["code"] == "INVALID_REQUEST"
 
 
 def test_an_empty_report_list_is_accepted_and_answers_with_a_refusal(client):
-    """Not malformed -- just nothing to work with, and it says so."""
     response = client.post(TRENDS, json={"reports": []})
     assert response.status_code == 200
     data = response.json()["data"]
@@ -296,14 +238,7 @@ def test_an_empty_report_list_is_accepted_and_answers_with_a_refusal(client):
     assert any("No reports" in warning for warning in data["warnings"])
 
 
-# --------------------------------------------------------------------------
-# Policy endpoint
-# --------------------------------------------------------------------------
-
-
 def test_the_policy_endpoint_publishes_the_tables_behind_every_answer(client):
-    """A trend direction is only meaningful if a reader can see what this
-    service considers "better" for that feature, and on what basis."""
     response = client.get(POLICY)
     assert response.status_code == 200
     data = response.json()["data"]
@@ -321,13 +256,6 @@ def test_the_policy_endpoint_publishes_the_tables_behind_every_answer(client):
 
 
 def test_the_policy_endpoint_is_a_rule_dump_and_holds_no_request_state(client):
-    """Shape and thresholds only.
-
-    Posting a timeline first must not change one byte of it, and none of the
-    values, report ids or patient reference from that request may appear -- the
-    endpoint is unauthenticated-adjacent rule metadata, not a cache of the last
-    caller's medical data.
-    """
     before = client.get(POLICY).json()
     client.post(
         TRENDS,
@@ -353,16 +281,8 @@ def test_the_policy_endpoint_is_a_rule_dump_and_holds_no_request_state(client):
 
     assert before == after
     text = json.dumps(after)
-    # Distinctive markers: bare numbers would collide with the published
-    # thresholds (56.1 % contains "6.1"), which is why the identity check
-    # above carries most of the weight here.
     for leak in ("report-marker", "patient-marker", "2024-01-01"):
         assert leak not in text
-
-
-# --------------------------------------------------------------------------
-# Auth
-# --------------------------------------------------------------------------
 
 
 def _call(client, method: str, path: str, headers=None):
@@ -375,9 +295,6 @@ def _call(client, method: str, path: str, headers=None):
 def test_every_timeline_route_rejects_a_caller_without_the_key(
     authed_client, method, path
 ):
-    """Both routes are PHI-bearing -- one carries medical values over time,
-    and the other would let an unauthenticated caller enumerate the service's
-    clinical rule set."""
     response = _call(authed_client, method, path)
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "UNAUTHORIZED"
@@ -392,11 +309,6 @@ def test_every_timeline_route_accepts_the_right_key(authed_client, method, path)
 
 
 def test_the_router_declares_the_auth_dependency_once_for_every_route():
-    """Declared at router level, so a route added later inherits it.
-
-    Mirrors `tests/test_auth.py`'s recursive walk, scoped to this router, so
-    the reason is recorded next to the module it protects.
-    """
     from app.api import routes_timeline
     from app.core.auth import require_service_key
 

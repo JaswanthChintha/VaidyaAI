@@ -1,18 +1,3 @@
-"""Module 10 -- the Diabetes Predictor.
-
-THESE TESTS LOAD THE PERSISTED ARTIFACT. They never fit a model. If
-`ml/artifacts/diabetes_rf_v1.joblib` is missing, run
-`python ml/train_diabetes.py`; training inside a test run would make these
-numbers unfalsifiable.
-
-No API key and no network are needed.
-
-The central tests in this file are the tri-state ones. They assert on the
-ACTUAL DataFrame handed to the pipeline -- not on metadata, not on a comment --
-because "an unanswered question was silently encoded as a negative finding" is
-a defect that produces a perfectly plausible-looking prediction.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -49,10 +34,6 @@ from app.schemas.decisions import (
 pytestmark = pytest.mark.filterwarnings("ignore::UserWarning")
 
 
-# --------------------------------------------------------------------------
-# Fixtures -- small hand-written feature maps. NOT training data.
-# --------------------------------------------------------------------------
-
 HIGH_RISK = {
     "hba1c": 9.0,
     "blood_glucose": 260.0,
@@ -87,11 +68,6 @@ def bundle():
     return loaded
 
 
-# --------------------------------------------------------------------------
-# The artifact exists, is loadable, and matches its metrics document
-# --------------------------------------------------------------------------
-
-
 def test_the_committed_artifact_loads(predictor, bundle):
     assert predictor.is_available() is True
     assert predictor.unavailable_reason() is None
@@ -104,12 +80,6 @@ def test_the_committed_artifact_loads(predictor, bundle):
 
 
 def test_the_metrics_document_describes_the_committed_model():
-    """A metrics file that does not match the shipped model is worse than none.
-
-    The training script records the sha256 of the joblib it produced; this
-    recomputes it. If someone retrains and commits only one of the two files,
-    or edits the JSON by hand, this fails.
-    """
     metrics = load_metrics()
     assert metrics is not None, "the metrics artifact is missing"
 
@@ -129,7 +99,6 @@ def test_the_metrics_document_and_the_model_agree_on_thresholds(bundle):
 
 
 def test_provenance_is_recorded_so_a_prediction_can_be_traced(bundle):
-    """A model whose provenance cannot be traced is not auditable."""
     dataset = bundle.get("dataset")
     assert dataset["sha256"] == (
         "f233fc470e904201f35310d061cb46ca0a6bc7ca5c3e428b769fb4f87f69929b"
@@ -137,7 +106,6 @@ def test_provenance_is_recorded_so_a_prediction_can_be_traced(bundle):
     assert dataset["rows_raw"] == 100_000
     assert dataset["exact_duplicate_rows_dropped"] == 3_854
     assert dataset["rows_used"] == 96_146
-    # REAL DATA ONLY -- the user's explicit instruction, asserted not assumed.
     assert dataset["synthetic_rows"] == 0
     assert "none" in dataset["resampling"]
     assert bundle.get("sklearn_version")
@@ -158,11 +126,6 @@ def test_required_features_are_the_two_the_model_is_built_on(predictor):
     }
 
 
-# ==========================================================================
-# TRI-STATE -- the most important tests in this file
-# ==========================================================================
-
-
 def _frame(predictor, features):
     variant, _ = predictor.select_variant(features)
     frame, trace = predictor._model_row(features, variant)
@@ -170,12 +133,6 @@ def _frame(predictor, features):
 
 
 def test_absent_tri_state_is_absent_from_the_model_matrix(predictor):
-    """An unanswered question must not become a 0 in the feature vector.
-
-    This asserts on the real DataFrame columns, because encoding absence as a
-    negative finding produces an entirely plausible prediction and would never
-    show up any other way.
-    """
     variant, frame, trace = _frame(predictor, dict(HIGH_RISK))
 
     assert variant == "neither"
@@ -185,14 +142,12 @@ def test_absent_tri_state_is_absent_from_the_model_matrix(predictor):
             "matrix handed to the model -- not as 0, not as an imputed median"
         )
         assert trace[name]["status"] == "not_asserted"
-    # And nothing in the row equals a fabricated boolean.
     assert list(frame.columns) == [
         "hba1c", "blood_glucose", "age", "bmi", "gender", "smoking_history",
     ]
 
 
 def test_explicit_false_IS_included_as_a_real_answer(predictor):
-    """`false` is information. It must reach the model as 0, unlike absence."""
     features = dict(HIGH_RISK, hypertension=False, heart_disease=False)
     variant, frame, trace = _frame(predictor, features)
 
@@ -239,11 +194,6 @@ def test_every_availability_pattern_selects_its_own_fitted_variant(
 
 @pytest.mark.parametrize("junk", [None, "unknown", "false", "no", 0, 1, "", "true"])
 def test_a_non_boolean_tri_state_is_treated_as_unknown_never_coerced(predictor, junk):
-    """`bool("false")` is True and `bool(0)` is False. Both would fabricate.
-
-    Anything that is not a real `bool` is UNKNOWN, so it falls out of the model
-    entirely rather than being guessed at in either direction.
-    """
     features = dict(HIGH_RISK, hypertension=junk)
     variant, frame, trace = _frame(predictor, features)
     assert variant == "neither"
@@ -252,7 +202,6 @@ def test_a_non_boolean_tri_state_is_treated_as_unknown_never_coerced(predictor, 
 
 
 def test_the_absent_tri_state_still_appears_in_evidence_saying_so(predictor):
-    """Silence about a missing input is not transparency (spec Module 20)."""
     decision = predictor.predict(dict(HIGH_RISK))
     by_feature = {item.feature: item for item in decision.evidence}
     for name in TRI_STATE:
@@ -263,18 +212,12 @@ def test_the_absent_tri_state_still_appears_in_evidence_saying_so(predictor):
 
 
 def test_absent_and_false_produce_genuinely_different_predictions(predictor):
-    """Proof the distinction is not cosmetic: it changes which model runs."""
     absent = predictor.predict(dict(HIGH_RISK))
     explicit_no = predictor.predict(dict(HIGH_RISK, hypertension=False, heart_disease=False))
 
     assert absent.metadata["variant"] == "neither"
     assert explicit_no.metadata["variant"] == "both"
     assert absent.metadata["model_input_columns"] != explicit_no.metadata["model_input_columns"]
-
-
-# --------------------------------------------------------------------------
-# Categoricals: normalisation and unseen values
-# --------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -293,7 +236,6 @@ def test_absent_and_false_produce_genuinely_different_predictions(predictor):
     ],
 )
 def test_smoking_history_case_and_underscore_normalisation(raw, expected):
-    """A mismatch here silently DROPS the feature -- nothing raises."""
     assert normalise_category(raw) == expected
 
 
@@ -304,12 +246,6 @@ def test_normalise_category_treats_blank_as_absent():
 
 
 def test_the_training_script_and_the_predictor_normalise_identically(bundle):
-    """Both ends of the contract, asserted against the shipped artifact.
-
-    The levels recorded in the artifact are what the encoder was fitted on. If
-    the predictor's normalisation produced anything else, every smoking value
-    would silently become an all-zero block.
-    """
     levels = set(bundle.get("dataset")["smoking_history_levels"])
     assert levels == {"no_info", "current", "ever", "former", "never", "not_current"}
     for dataset_spelling in ("No Info", "current", "ever", "former", "never", "not current"):
@@ -321,7 +257,6 @@ def test_the_training_script_and_the_predictor_normalise_identically(bundle):
     "gender", ["prefer_not_to_say", "Prefer_Not_To_Say", "nonbinary", "", None]
 )
 def test_unsupported_gender_does_not_crash_and_asserts_no_category(predictor, gender):
-    """Module 2 allows `prefer_not_to_say`; the dataset has no equivalent."""
     features = dict(HIGH_RISK, gender=gender)
     decision = predictor.predict(features)
     assert isinstance(decision, ClinicalDecision)
@@ -343,17 +278,14 @@ def test_an_unknown_smoking_value_does_not_crash(predictor):
 
 
 def test_an_absent_categorical_uses_the_sentinel_not_the_majority_category(predictor):
-    """The most-frequent imputer must never assert the majority gender."""
     features = {k: v for k, v in HIGH_RISK.items() if k != "gender"}
     variant, frame, trace = _frame(predictor, features)
     assert frame["gender"].iloc[0] == ABSENT_CATEGORY
     assert trace["gender"]["status"] == "not_asserted"
-    # And the sentinel is genuinely not a level the encoder ever saw.
     assert ABSENT_CATEGORY not in load_model().get("dataset")["gender_levels"]
 
 
 def test_an_unseen_category_is_encoded_as_all_zeros(predictor, bundle):
-    """handle_unknown='ignore' behaviour, asserted on the real encoder."""
     variant, frame, _ = _frame(predictor, dict(HIGH_RISK, gender="prefer_not_to_say"))
     pipeline = bundle.pipelines[variant]
     encoded = pipeline.named_steps["preprocess"].transform(frame)
@@ -365,11 +297,6 @@ def test_an_unseen_category_is_encoded_as_all_zeros(predictor, bundle):
         "an unsupported gender must encode as all zeros -- 'no category "
         "asserted' -- never as the majority category"
     )
-
-
-# --------------------------------------------------------------------------
-# Numeric imputation
-# --------------------------------------------------------------------------
 
 
 def test_a_missing_optional_numeric_is_left_for_the_median_imputer(predictor):
@@ -386,7 +313,6 @@ def test_a_missing_optional_numeric_is_left_for_the_median_imputer(predictor):
 
 
 def test_a_boolean_never_leaks_into_a_numeric_column(predictor):
-    """`isinstance(True, int)` is True in Python; a stray bool must not become 1.0."""
     _, frame, trace = _frame(predictor, dict(HIGH_RISK, bmi=True))
     assert math.isnan(frame["bmi"].iloc[0])
     assert trace["bmi"]["status"] == "imputed"
@@ -402,11 +328,6 @@ def test_unparseable_numeric_falls_back_to_imputation_rather_than_crashing(predi
     _, frame, trace = _frame(predictor, dict(HIGH_RISK, bmi="not a number"))
     assert math.isnan(frame["bmi"].iloc[0])
     assert trace["bmi"]["status"] == "imputed"
-
-
-# --------------------------------------------------------------------------
-# Information sufficiency
-# --------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("missing", ["hba1c", "blood_glucose"])
@@ -437,7 +358,6 @@ def test_a_none_valued_required_feature_is_absent_not_zero(predictor):
 
 
 def test_an_unavailable_model_skips_rather_than_predicting_or_crashing(monkeypatch):
-    """A deployment that forgot the artifact must not fabricate predictions."""
     broken = DiabetesPredictor(artifact_filename="does_not_exist.joblib")
     assert broken.is_available() is False
     assert "not found" in (broken.unavailable_reason() or "")
@@ -448,11 +368,6 @@ def test_an_unavailable_model_skips_rather_than_predicting_or_crashing(monkeypat
     assert decision.confidence is None
     assert decision.metadata["skipped_reason"] == "model_unavailable"
     assert decision.metadata["model_unavailable"] is True
-
-
-# --------------------------------------------------------------------------
-# Probability -> risk mapping, at every boundary
-# --------------------------------------------------------------------------
 
 
 def test_band_boundaries_are_inclusive_at_the_lower_edge(predictor):
@@ -477,24 +392,16 @@ def test_band_boundaries_are_inclusive_at_the_lower_edge(predictor):
 
 
 def test_the_shipped_thresholds_are_the_ones_the_bands_use(predictor, bundle):
-    """The cut-offs come from the artifact, not from a constant in the code."""
     for name, spec in bundle.variants.items():
         borderline = spec["thresholds"]["borderline"]
         indicated = spec["thresholds"]["indicated"]
         assert 0.0 < borderline < indicated < 1.0
-        # Derived, not round: an exactly-round cut-off would suggest it was
-        # picked rather than measured.
         assert round(indicated, 2) != indicated
         assert spec["thresholds"]["target_precision_indicated"] == 0.90
         assert spec["thresholds"]["borderline_minimum_recall"] == 0.99
 
 
 def test_the_two_indicated_criteria_agree(bundle):
-    """Evidence the cut-off is not an artefact of the criterion chosen.
-
-    The precision-targeted threshold and the F1-maximising threshold on the
-    same validation data land within a few thousandths of each other.
-    """
     thresholds = bundle.variants["both"]["thresholds"]
     assert abs(thresholds["indicated"] - thresholds["f1_optimal"]) < 0.01
 
@@ -510,7 +417,6 @@ def test_a_clearly_healthy_profile_is_not_indicated_and_low(predictor):
     decision = predictor.predict(dict(LOW_RISK, hypertension=False, heart_disease=False))
     assert decision.status is DecisionStatus.NOT_INDICATED
     assert decision.risk is RiskLevel.LOW
-    # Confidence is P(positive), so a confident NEGATIVE is a LOW number.
     assert decision.confidence < 0.1
 
 
@@ -533,37 +439,16 @@ def test_an_assessed_ml_decision_always_carries_confidence(predictor):
 
 
 def test_predictions_are_deterministic(predictor):
-    """Same input, same decision -- to within floating-point reproducibility.
-
-    NOT an exact `==` on the probability. RandomForest.predict_proba with
-    n_jobs=-1 sums per-tree votes in whatever order the worker threads finish,
-    so two identical calls can differ in the last bit (observed:
-    0.9935134130063653 vs ...652). That is a 1-ULP artefact of thread
-    reduction order, not non-determinism in anything this project controls,
-    and an exact comparison makes the suite intermittently red for a
-    difference ~1e-16 -- fifteen orders of magnitude below any risk band edge.
-
-    What must be stable is what the patient is actually shown, so the BAND,
-    the status and the risk are asserted exactly, and the probability to a
-    tolerance far tighter than any decision boundary.
-    """
     first = predictor.predict(dict(HIGH_RISK))
     second = predictor.predict(dict(HIGH_RISK))
 
-    # The things a reader sees must be bit-stable.
     assert first.status is second.status
     assert first.risk is second.risk
 
     assert first.confidence == pytest.approx(second.confidence, abs=1e-12)
 
 
-# --------------------------------------------------------------------------
-# Evidence and explainability (spec Module 20, section 24)
-# --------------------------------------------------------------------------
-
-
 def test_evidence_names_the_features_the_spec_calls_for(predictor):
-    """Spec Module 10 lists HbA1c, Blood Glucose and BMI as the evidence."""
     decision = predictor.predict(dict(HIGH_RISK))
     features = decision.evidence_features()
     for expected in ("hba1c", "blood_glucose", "bmi"):
@@ -587,11 +472,6 @@ def test_evidence_carries_the_actual_values_and_canonical_units(predictor):
 
 
 def test_ml_evidence_carries_no_threshold(predictor):
-    """decisions.py reserves `threshold` for rule-based producers.
-
-    No single threshold explains a forest, and presenting one would be exactly
-    the unsupported certainty spec section 24 forbids.
-    """
     decision = predictor.predict(dict(HIGH_RISK))
     for item in decision.evidence:
         assert item.threshold is None
@@ -653,17 +533,11 @@ def test_metadata_reports_the_measured_performance_of_the_variant_used(predictor
 
 
 def test_band_meaning_states_the_measured_positive_rate(predictor):
-    """The middle band means 'not ruled out', and must say so honestly."""
     decision = predictor.predict(dict(HIGH_RISK))
     assert "91.1%" in decision.metadata["band_meaning"]
 
     borderline_meaning = predictor.band(0.3, 0.1173, 0.7948)
     assert borderline_meaning[0] is DecisionStatus.BORDERLINE
-
-
-# --------------------------------------------------------------------------
-# Safety
-# --------------------------------------------------------------------------
 
 
 def test_every_recommendation_resolves_to_a_catalogue_code(predictor):
@@ -673,7 +547,6 @@ def test_every_recommendation_resolves_to_a_catalogue_code(predictor):
         assert codes
         for code in codes:
             assert code in RECOMMENDATIONS, code
-            # The wording is the catalogue's, not this module's.
             assert (
                 dict(RECOMMENDATIONS)[code].text
                 == [r for r in decision.recommendations if r.code == code][0].text
@@ -694,13 +567,11 @@ def test_prompt_medical_advice_is_reserved_for_the_high_band(predictor):
 
 
 def test_all_user_facing_note_fragments_pass_the_safety_scanner():
-    """No medication, no dosage, no diagnostic assertion, no certainty claim."""
     for fragment in DIABETES_NOTE_FRAGMENTS + BASE_NOTE_FRAGMENTS:
         assert scan_text(fragment) == [], fragment
 
 
 def test_no_free_text_recommendation_can_be_produced(predictor):
-    """Every recommendation text is byte-identical to the catalogue entry."""
     decision = predictor.predict(dict(HIGH_RISK))
     for recommendation in decision.recommendations:
         assert recommendation.text == RECOMMENDATIONS[recommendation.code].text
@@ -709,17 +580,10 @@ def test_no_free_text_recommendation_can_be_produced(predictor):
 def test_the_decision_never_asserts_a_diagnosis(predictor):
     decision = predictor.predict(dict(HIGH_RISK))
     assert decision.status is not DecisionStatus.INDICATED or True
-    # "Indicated" is not diagnostic vocabulary; assert the safety scanner is
-    # clean over everything a reader could see.
     for item in decision.evidence:
         assert scan_text(item.note or "") == []
     for recommendation in decision.recommendations:
         assert scan_text(recommendation.text) == []
-
-
-# --------------------------------------------------------------------------
-# Serialisation
-# --------------------------------------------------------------------------
 
 
 def test_decisions_round_trip_through_json(predictor):
@@ -735,7 +599,6 @@ def test_decisions_round_trip_through_json(predictor):
     assert [r.code for r in restored.recommendations] == [
         r.code for r in decision.recommendations
     ]
-    # Metadata must be JSON-native throughout -- no numpy scalars leaking out.
     json.loads(payload)
 
 
@@ -748,7 +611,6 @@ def test_insufficient_data_decisions_round_trip_too(predictor):
 
 
 def test_metadata_contains_no_raw_report_text(predictor):
-    """Metadata is reproducibility context, never PHI beyond the cited values."""
     decision = predictor.predict(dict(HIGH_RISK))
     blob = json.dumps(decision.metadata)
     assert "raw_text" not in blob

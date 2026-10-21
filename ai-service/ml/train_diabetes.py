@@ -1,103 +1,3 @@
-"""Train the Module 10 Diabetes model. RUN THIS BY HAND -- never at import time.
-
-    python ml/train_diabetes.py
-
-Nothing in `app/` imports this file. The service loads the persisted artifact
-and never fits a model; the test suite loads the same artifact. Training at
-request time (or in a test run) would make predictions non-reproducible and
-would make the metrics below unfalsifiable.
-
-==========================================================================
-THE DATA
-==========================================================================
-
-`datasets/raw/diabetes_prediction_dataset.csv` -- Kaggle's "Diabetes prediction
-dataset", verified byte-identical across two independent HuggingFace mirrors.
-See `datasets/PROVENANCE.md`. REAL DATA ONLY: nothing here generates,
-augments, resamples-with-synthesis (no SMOTE) or fabricates a row. The only
-row-level operation applied is DROPPING exact duplicates.
-
-==========================================================================
-THE FIVE MODELLING DECISIONS, AND WHY
-==========================================================================
-
-1. TRI-STATE `hypertension` / `heart_disease` -> AVAILABILITY-PATTERN VARIANTS.
-
-   Module 2 stores these as true / false / ABSENT-MEANS-UNKNOWN. The dataset
-   has only 0/1. Encoding an absent answer as 0 would fabricate a negative
-   clinical finding -- the model would be told "this patient does not have
-   hypertension" when nobody ever asked. Median-imputing them is the same
-   thing wearing a hat: the median of a 92%-zero column IS 0.
-
-   So instead of imputing, FOUR pipelines are fitted from the same real rows,
-   one per availability pattern:
-
-       both  |  hypertension_only  |  heart_disease_only  |  neither
-
-   Each variant's ColumnTransformer simply does not contain the column(s) it
-   cannot know. At prediction time the predictor picks the variant matching
-   what the patient actually answered, so the feature matrix handed to the
-   forest NEVER contains a value that was not observed. `tests/` asserts this
-   on the real matrix, not on the intent.
-
-   The distinction being drawn is deliberate: imputing a CONTINUOUS
-   MEASUREMENT (bmi, age) substitutes a population value for an unmeasured
-   quantity, which is a documented statistical choice and what spec section 10
-   asks for. Imputing a BOOLEAN CLINICAL FINDING invents a diagnosis the
-   patient never gave. Those are not the same act and are not treated the same
-   way here.
-
-2. DUPLICATES -> DROPPED BEFORE SPLITTING.
-
-   3,854 exact duplicate rows exist. De-duplicating AFTER the split would let
-   the same row sit in train and test, and the test score would then partly
-   measure memorisation. Dropping first guarantees no exact row appears on
-   both sides. The cost is real and is stated: some of those rows are probably
-   distinct patients who coincidentally match on eight coarse features, so a
-   little genuine information is discarded to protect the evaluation.
-
-3. `bmi == 27.32` x 25,495 (25.5%) -> KEPT, NOT DROPPED.
-
-   The dataset's author median-filled missing BMI, so a quarter of the column
-   is imputed rather than measured, and it is not recoverable which rows those
-   are (a few subjects genuinely have that BMI). Dropping 25% of the rows would
-   discard 25% of the positives and would bias the sample if the fill was not
-   missing-at-random. They are kept, and the consequence is reported rather
-   than hidden: the model's learned BMI effect near 27.32 is ATTENUATED,
-   because a quarter of subjects share that value regardless of their true BMI.
-   BMI should be read as a weak feature in this model for that reason.
-
-4. CLASS IMBALANCE (8.5% positive) -> class weights + a tuned threshold.
-
-   `class_weight="balanced_subsample"` reweights the real rows; no synthetic
-   minority rows are created. The decision threshold is then TUNED on a
-   held-out validation split rather than left at 0.5. Accuracy is computed
-   because spec section 11 asks for it, but it is reported last and with the
-   majority-class baseline (91.2%) printed beside it, because on this dataset
-   accuracy mostly measures the prevalence.
-
-5. UNSEEN CATEGORIES -> encoded as ALL ZEROS, never as the majority category.
-
-   `OneHotEncoder(handle_unknown="ignore")`. Module 2 allows
-   `gender="prefer_not_to_say"`, which has no dataset equivalent; an unknown
-   smoking token is possible too. Both arrive at the encoder as a value it
-   never saw and become an all-zero block, which reads as "no category
-   asserted". The spec-required most-frequent imputer is still fitted and
-   present in the pipeline, but the predictor deliberately never hands it a
-   missing categorical -- it sends an explicit sentinel token instead -- so
-   "unknown gender" can never become "the majority gender".
-
-==========================================================================
-OUTPUTS
-==========================================================================
-
-    ml/artifacts/diabetes_rf_v1.joblib        the WHOLE pipeline(s), one file
-    ml/artifacts/diabetes_rf_v1.metrics.json  every number below, auditable
-
-The metrics file records the sha256 of the joblib it was produced from, so a
-test can prove the committed metrics describe the committed model.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -129,9 +29,6 @@ from sklearn.model_selection import StratifiedKFold, cross_validate, train_test_
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
 
-# --------------------------------------------------------------------------
-# Paths and constants
-# --------------------------------------------------------------------------
 
 HERE = Path(__file__).resolve().parent
 SERVICE_ROOT = HERE.parent
@@ -144,21 +41,16 @@ ARTIFACT_VERSION = "1.0.0"
 MODEL_ID = "diabetes_rf"
 RANDOM_STATE = 42
 TEST_SIZE = 0.20
-VALIDATION_SIZE = 0.20  # of the training portion
+VALIDATION_SIZE = 0.20
 CV_FOLDS = 5
 
-#: The two features the forest is effectively built on. See the sufficiency
-#: note in `app/ml/diabetes.py`: absent either one, the predictor refuses.
 REQUIRED_FEATURES: Tuple[str, ...] = ("hba1c", "blood_glucose")
 
-#: Median-imputable continuous inputs.
 OPTIONAL_NUMERIC: Tuple[str, ...] = ("age", "bmi")
 CATEGORICAL: Tuple[str, ...] = ("gender", "smoking_history")
 
-#: The tri-state pair, handled by variant selection rather than imputation.
 TRI_STATE: Tuple[str, ...] = ("hypertension", "heart_disease")
 
-#: name -> the tri-state columns that variant is allowed to see.
 VARIANTS: Dict[str, Tuple[str, ...]] = {
     "both": ("hypertension", "heart_disease"),
     "hypertension_only": ("hypertension",),
@@ -174,30 +66,9 @@ HYPERPARAMETERS: Dict[str, Any] = {
     "n_jobs": -1,
 }
 
-#: PPV (precision) an INDICATED decision must reach on held-out validation
-#: data. 0.90 means roughly nine in ten people this model flags in a cohort
-#: like the training one really are positive. Chosen BEFORE looking at the
-#: resulting number, and cross-checked against the F1-maximising threshold.
 TARGET_PRECISION_INDICATED = 0.90
 
-#: The LOW / NOT_INDICATED band is a RULE-OUT band, and this is the sensitivity
-#: it must preserve. `t_borderline` is the LARGEST validation threshold at which
-#: recall is still at or above this value, so "Low" means "at this cut-off the
-#: model would still have caught 99 of every 100 positive cases".
-#:
-#: The asymmetry is deliberate and is the whole reason this cut-off is not
-#: chosen by the same criterion as the INDICATED one. A false "worth
-#: discussing" costs a conversation. A false reassurance is the failure
-#: `app/schemas/decisions.py` calls "the most dangerous failure mode this type
-#: can have". So the lower boundary is set by sensitivity and the upper one by
-#: precision, and neither is a round number: both are read off the measured
-#: precision-recall curve of the held-out validation split.
 BORDERLINE_MINIMUM_RECALL = 0.99
-
-
-# --------------------------------------------------------------------------
-# Loading and normalisation
-# --------------------------------------------------------------------------
 
 
 def sha256_of(path: Path) -> str:
@@ -209,13 +80,6 @@ def sha256_of(path: Path) -> str:
 
 
 def normalise_smoking(series: "pd.Series[str]") -> "pd.Series[str]":
-    """Dataset spelling -> Module 2 spelling.
-
-    `No Info` -> `no_info`, `not current` -> `not_current`. Skipping this step
-    silently drops the whole feature at prediction time: the profile would send
-    `no_info`, the encoder would have been fitted on `No Info`, and
-    handle_unknown="ignore" would quietly zero it. Nothing would raise.
-    """
     return series.astype(str).str.strip().str.lower().str.replace(" ", "_", regex=False)
 
 
@@ -230,7 +94,6 @@ def load_dataset() -> Tuple[pd.DataFrame, Dict[str, Any]]:
     rows_raw = len(raw)
     duplicates = int(raw.duplicated().sum())
 
-    # DECISION 2: de-duplicate BEFORE any split.
     frame = raw.drop_duplicates().reset_index(drop=True)
 
     frame = frame.rename(
@@ -258,22 +121,7 @@ def load_dataset() -> Tuple[pd.DataFrame, Dict[str, Any]]:
     return frame, provenance
 
 
-# --------------------------------------------------------------------------
-# Pipeline construction
-# --------------------------------------------------------------------------
-
-
 def build_pipeline(numeric: List[str], categorical: List[str]) -> Pipeline:
-    """Spec section 10's pipeline, as one object.
-
-    numeric:      median imputation
-    categorical:  most-frequent imputation -> one-hot (unknown -> all zeros)
-    model:        Random Forest
-
-    The whole thing is a single `Pipeline`, so `joblib.dump` persists
-    preprocessing and model together and a prediction can never be made with a
-    mismatched encoder.
-    """
     return Pipeline(
         [
             (
@@ -308,14 +156,8 @@ def variant_columns(tri: Tuple[str, ...]) -> Tuple[List[str], List[str]]:
     return numeric, list(CATEGORICAL)
 
 
-# --------------------------------------------------------------------------
-# Threshold selection -- on VALIDATION data, never on test
-# --------------------------------------------------------------------------
-
-
 def choose_thresholds(y_true: np.ndarray, scores: np.ndarray) -> Dict[str, Any]:
     precision, recall, thresholds = precision_recall_curve(y_true, scores)
-    # precision/recall have one more entry than thresholds.
     prec, rec = precision[:-1], recall[:-1]
     f1 = 2 * prec * rec / np.maximum(prec + rec, 1e-12)
     best = int(np.nanargmax(f1))
@@ -324,15 +166,11 @@ def choose_thresholds(y_true: np.ndarray, scores: np.ndarray) -> Dict[str, Any]:
     def first_threshold_reaching(target: float) -> float:
         hits = np.where(prec >= target)[0]
         if len(hits) == 0:
-            # No threshold reaches the target: fall back to the most selective
-            # point on the curve rather than silently accepting a lower PPV.
             return float(thresholds[-1])
         return float(thresholds[hits[0]])
 
     indicated = first_threshold_reaching(TARGET_PRECISION_INDICATED)
 
-    # Largest threshold still preserving the required sensitivity. Recall is
-    # non-increasing in the threshold, so this is the last qualifying index.
     keeps_recall = np.where(rec >= BORDERLINE_MINIMUM_RECALL)[0]
     borderline = (
         float(thresholds[keeps_recall[-1]]) if len(keeps_recall) else float(thresholds[0])
@@ -365,19 +203,12 @@ def choose_thresholds(y_true: np.ndarray, scores: np.ndarray) -> Dict[str, Any]:
     }
 
 
-# --------------------------------------------------------------------------
-# Evaluation -- spec section 11
-# --------------------------------------------------------------------------
-
-
 def evaluate(y_true: np.ndarray, scores: np.ndarray, threshold: float) -> Dict[str, Any]:
     predicted = (scores >= threshold).astype(int)
     tn, fp, fn, tp = confusion_matrix(y_true, predicted, labels=[0, 1]).ravel()
     prevalence = float(np.mean(y_true))
     return {
         "decision_threshold": float(threshold),
-        # Threshold-independent first: these are the honest numbers on an
-        # 8.5%-positive problem.
         "roc_auc": float(roc_auc_score(y_true, scores)),
         "pr_auc_average_precision": float(average_precision_score(y_true, scores)),
         "positive_class": {
@@ -404,7 +235,6 @@ def evaluate(y_true: np.ndarray, scores: np.ndarray, threshold: float) -> Dict[s
             "layout": "rows = actual [negative, positive], columns = predicted",
             "matrix": [[int(tn), int(fp)], [int(fn), int(tp)]],
         },
-        # Reported LAST and next to its baseline, deliberately.
         "accuracy": float(accuracy_score(y_true, predicted)),
         "majority_class_baseline_accuracy": float(max(prevalence, 1 - prevalence)),
         "test_prevalence": prevalence,
@@ -415,14 +245,6 @@ def evaluate(y_true: np.ndarray, scores: np.ndarray, threshold: float) -> Dict[s
 def risk_band_report(
     y_true: np.ndarray, scores: np.ndarray, thresholds: Dict[str, Any]
 ) -> Dict[str, Any]:
-    """How many held-out patients land in each risk band, and how many of them
-    are actually positive.
-
-    This is the number that says whether the cut-offs are usable. A BORDERLINE
-    band that swallows half the cohort would be noise, however defensible its
-    derivation; a reviewer should be able to see that here rather than take it
-    on trust.
-    """
     low = scores < thresholds["borderline"]
     high = scores >= thresholds["indicated"]
     medium = ~low & ~high
@@ -442,12 +264,6 @@ def risk_band_report(
 def cross_validate_variant(
     numeric: List[str], categorical: List[str], X: pd.DataFrame, y: pd.Series
 ) -> Dict[str, Any]:
-    """Spec section 11's k-fold cross-validation.
-
-    Run on the TRAINING portion only, and a fresh pipeline is fitted inside
-    every fold (the imputers and the encoder included), so no fold sees
-    statistics derived from its own validation half.
-    """
     scoring = ("f1", "precision", "recall", "roc_auc", "average_precision")
     results = cross_validate(
         build_pipeline(numeric, categorical),
@@ -477,21 +293,12 @@ def cross_validate_variant(
 
 
 def feature_importances(pipeline: Pipeline, numeric: List[str]) -> Dict[str, float]:
-    """GLOBAL, MODEL-LEVEL importances. NOT a per-patient explanation.
-
-    Recorded so the ordering of evidence can be justified and reviewed. The
-    predictor is explicitly forbidden from presenting these as the reason an
-    INDIVIDUAL prediction came out the way it did -- spec section 24 forbids
-    unsupported certainty, and a mean-impurity-decrease score says nothing
-    about one patient.
-    """
     encoder = pipeline.named_steps["preprocess"].named_transformers_["categorical"]
     encoded = list(encoder.named_steps["encode"].get_feature_names_out(CATEGORICAL))
     names = numeric + encoded
     values = pipeline.named_steps["model"].feature_importances_
     grouped: Dict[str, float] = {}
     for name, value in zip(names, values):
-        # Fold one-hot columns back onto their source feature.
         base = name
         for source in CATEGORICAL:
             if name.startswith(source + "_"):
@@ -499,11 +306,6 @@ def feature_importances(pipeline: Pipeline, numeric: List[str]) -> Dict[str, flo
                 break
         grouped[base] = grouped.get(base, 0.0) + float(value)
     return dict(sorted(grouped.items(), key=lambda kv: -kv[1]))
-
-
-# --------------------------------------------------------------------------
-# main
-# --------------------------------------------------------------------------
 
 
 def main() -> int:
@@ -531,7 +333,6 @@ def main() -> int:
         numeric, categorical = variant_columns(tri)
         print(f"\n--- variant {name}: numeric={numeric}")
 
-        # Threshold selection: fit on the fit split only, choose on validation.
         selector = build_pipeline(numeric, categorical)
         selector.fit(X_fit[numeric + categorical], y_fit)
         val_scores = selector.predict_proba(X_val[numeric + categorical])[:, 1]
@@ -542,8 +343,6 @@ def main() -> int:
             f"f1_optimal={thresholds['f1_optimal']:.4f}"
         )
 
-        # The SHIPPED model is refitted on fit+validation, so no data is wasted;
-        # the test split has still never been touched.
         pipeline = build_pipeline(numeric, categorical)
         pipeline.fit(X_train[numeric + categorical], y_train)
 

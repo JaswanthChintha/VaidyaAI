@@ -1,16 +1,6 @@
 'use strict';
 
-/**
- * POST /api/v1/chat -- the chatbot (2026-10-09).
- *
- * Pinned here: signed-in only; input checked; a general question sends no
- * report; a report question sends a compact summary of THAT report, and only
- * if the caller owns it; the per-user budget; no question or answer stored.
- * axios is mocked at the transport layer, as in analysis.test.js.
- */
 
-// Rate limiting is off under NODE_ENV=test unless switched on (config/env.js);
-// this file tests the chat budget, so it is on, with a small chat limit.
 process.env.ENABLE_RATE_LIMIT = 'true';
 process.env.RATE_LIMIT_MAX = '1000';
 process.env.LOGIN_RATE_LIMIT_MAX = '50';
@@ -164,11 +154,9 @@ describe('POST /chat', () => {
     const fresh = await makeUser('fresh@example.com');
     const statuses = [];
     for (let i = 0; i < 6; i += 1) {
-      // eslint-disable-next-line no-await-in-loop
       statuses.push((await ask(limited.token, { question: `question ${i}` })).status);
     }
     expect(statuses).toEqual([200, 200, 200, 200, 200, 429]);
-    // Same IP (the test client), different user: its own budget.
     expect((await ask(fresh.token, { question: 'hello' })).status).toBe(200);
   });
 
@@ -179,12 +167,10 @@ describe('POST /chat', () => {
     expect(res.status).toBeGreaterThanOrEqual(500);
     expect(res.body.success).toBe(false);
     expect(JSON.stringify(res.body)).not.toMatch(/\.js:\d+/);
-    expect(mockAxios.post).toHaveBeenCalledTimes(1); // no retry: a retry re-spends quota
+    expect(mockAxios.post).toHaveBeenCalledTimes(1);
   });
 });
 
-// A question asked while the ai-service was waking (after a quiet spell, or a
-// deploy) failed at once with "Chat isn't available" -- seen live 2026-10-09.
 describe('POST /chat with a sleeping ai-service', () => {
   const saved = {};
   const badGateway = () => Object.assign(new Error('bad gateway'), { response: { status: 502, data: '' } });
@@ -232,7 +218,7 @@ describe('POST /chat with a sleeping ai-service', () => {
       message: 'The assistant is waking up. Please try again in a minute.',
     });
     expect(mockAxios.get.mock.calls.length).toBeGreaterThan(1);
-    expect(mockAxios.post).not.toHaveBeenCalled(); // no free-model request spent
+    expect(mockAxios.post).not.toHaveBeenCalled();
   });
 
   it('waiting switched off (laptop, tests): no /health probe at all', async () => {
@@ -261,7 +247,7 @@ describe('chatWakeWaitMs', () => {
       });
       return loaded;
     };
-    expect(load('180000')).toBe(120000); // Render's analysis wait is 3 minutes
+    expect(load('180000')).toBe(120000);
     expect(load('60000')).toBe(60000);
     expect(load('0')).toBe(0);
   });

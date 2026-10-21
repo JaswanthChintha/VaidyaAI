@@ -1,54 +1,3 @@
-"""The Module 31 (Population Context and Percentile Analysis) contract, pydantic v2.
-
-Module 31 answers ONE question, for one canonical feature at a time:
-
-    among people of the same sex and a similar age in a real, published health
-    survey, how common is a value like this one?
-
-That is a DESCRIPTIVE question about a population. It is not "is this normal",
-it is not "is this a risk", and it is not "what should be done". Module 8 owns
-the reference range; Module 31 owns only how common a number is.
-
---------------------------------------------------------------------------
-THE ONE STRUCTURAL GUARANTEE
---------------------------------------------------------------------------
-
-`PopulationFeatureContext.available` is the field a consumer branches on, and
-everything the comparison produced lives inside `comparison`, a nested model
-that is `None` when `available` is false. There is therefore exactly ONE place
-in the response where a value or a percentile can live, and when the answer is
-"we cannot say", that place is absent -- not a null, not a zero, not an empty
-band that a template would render as "0th percentile".
-
-`PopulationComparison` in turn has NO `reason_code` and NO `message` field, and
-`PopulationFeatureContext` carries no value fields of its own, so the two
-halves cannot be filled in at the same time by accident. A model validator
-closes the remaining combinations.
-
---------------------------------------------------------------------------
-BANDS, NOT NUMBERS
---------------------------------------------------------------------------
-
-`PercentileBand` reports the two ADJACENT PUBLISHED cut-points a value falls
-between -- "between the 75th and the 90th percentile". There is no field for a
-single percentile number, because none is computed: the tables publish eleven
-cut-points per cohort and an interpolated percentile between them would be an
-arithmetic invention wearing the same units as a measurement. See
-`POLICY["percentile_reporting"]`.
-
-The two edges are `Optional` for the two real open cases -- below the lowest
-published cut-point, and at or above the highest -- and `position` says which
-case it is, so a consumer never has to infer meaning from a null.
-
---------------------------------------------------------------------------
-NO CLINICAL CLAIM, NO MODEL
---------------------------------------------------------------------------
-
-Every string in a response comes from `app/population/policy.py` or from the
-provenance recorded in the shipped table. No LLM is called, nothing is
-generated, and no caller-supplied text is echoed into patient-facing copy.
-"""
-
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -61,7 +10,6 @@ from app.schemas.repository import FeatureSnapshot
 
 POPULATION_MODULE = MODULE
 
-#: Where a value sits relative to the published grid. Always present on a band.
 POSITION_BELOW_LOWEST = "below_lowest_published_percentile"
 POSITION_BETWEEN = "between_published_percentiles"
 POSITION_AT_OR_ABOVE_HIGHEST = "at_or_above_highest_published_percentile"
@@ -77,24 +25,7 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-# --------------------------------------------------------------------------
-# Request
-# --------------------------------------------------------------------------
-
-
 class PopulationMeasurementInput(BaseModel):
-    """One measured value to place in a population.
-
-    `unit` is REQUIRED to be supplied by the caller as a string or left out
-    entirely; leaving it out is answered with `UNIT_NOT_PROVIDED` rather than
-    being treated as "the canonical unit". A value whose unit nobody stated is
-    a number without a meaning, and Module 31 will not pick one for it.
-
-    `value` is typed `Any` on purpose: a caller relaying a report row may hold
-    "Not Detected" or an empty string there, and the honest answer to that is
-    `VALUE_NOT_NUMERIC` from the service, not a 422 that discards the whole
-    request. Numeric admission uses the catalogue's own `is_finite_number`.
-    """
 
     model_config = ConfigDict(extra="ignore")
 
@@ -116,7 +47,6 @@ class PopulationMeasurementInput(BaseModel):
 
 
 class PopulationOptions(BaseModel):
-    """Options. Every one of them narrows or pads; none of them invents."""
 
     model_config = ConfigDict(extra="ignore")
 
@@ -130,18 +60,6 @@ class PopulationOptions(BaseModel):
 
 
 class PopulationContextRequest(BaseModel):
-    """Place one patient's values in an age- and sex-matched population.
-
-    The values arrive EITHER as `measurements` (an explicit list) OR as
-    `snapshot` (a Module 7 `FeatureSnapshot`, the same object Module 28 takes).
-    Sending both is a 422: two sources for the same feature would make the
-    answer depend on which one this file happened to read first.
-
-    `age` and `gender` may be given directly. When they are not, and a snapshot
-    was supplied, they are read from the snapshot's own `age` and `gender`
-    features -- Module 2 stores both and Module 7 carries them through. Nothing
-    else is consulted, and neither is ever defaulted.
-    """
 
     model_config = ConfigDict(extra="ignore")
 
@@ -185,7 +103,6 @@ class PopulationContextRequest(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _unwrap(cls, value: Any) -> Any:
-        """Accept `{"data": {...}}` so a relayed envelope is not an empty run."""
         if not isinstance(value, dict):
             return value
         if "measurements" in value or "snapshot" in value:
@@ -225,20 +142,7 @@ class PopulationContextRequest(BaseModel):
         return self
 
 
-# --------------------------------------------------------------------------
-# Response -- the comparison
-# --------------------------------------------------------------------------
-
-
 class PercentileBand(BaseModel):
-    """The two adjacent PUBLISHED cut-points a value falls between.
-
-    There is deliberately no single-percentile field. `lower_percentile` is
-    `None` only when the value is below the lowest published cut-point, and
-    `upper_percentile` is `None` only when it is at or above the highest;
-    `position` names which of the three cases this is, so no consumer has to
-    read meaning into a null.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -288,12 +192,6 @@ class PercentileBand(BaseModel):
 
 
 class MatchedCohort(BaseModel):
-    """The published (sex, age band) cell the value was compared against.
-
-    Echoed in full because a percentile is meaningless without the group it
-    describes, and because `n_unweighted` lets a reader judge how many people
-    the statement actually rests on.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -316,12 +214,6 @@ class MatchedCohort(BaseModel):
 
 
 class SubmittedValue(BaseModel):
-    """What the caller sent, when a unit conversion changed the number.
-
-    Present ONLY when the submitted unit differed from the table's unit, so a
-    reader can see both sides of the conversion instead of wondering why the
-    number in the response is not the number on the report.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -330,12 +222,6 @@ class SubmittedValue(BaseModel):
 
 
 class PopulationComparison(BaseModel):
-    """Everything the comparison produced. Absent entirely when unavailable.
-
-    HAS NO `reason_code` AND NO `message` FIELD. This object exists only when
-    there is a real answer, and the refusal fields live on the parent -- so no
-    single object can carry both a percentile and a reason it has none.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -383,13 +269,6 @@ class PopulationComparison(BaseModel):
 
 
 class PopulationFeatureContext(BaseModel):
-    """The full answer for ONE feature. Branch on `available`.
-
-    When `available` is false, `comparison` is absent and there is no value, no
-    percentile and no band anywhere in this object; `reason_code` and `message`
-    say why instead. When it is true, `reason_code` and `message` are absent --
-    an answer does not also carry an excuse.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -422,13 +301,6 @@ class PopulationFeatureContext(BaseModel):
 
     @model_validator(mode="after")
     def _available_xor_reason(self) -> "PopulationFeatureContext":
-        """The half of the no-value guarantee that nesting cannot express.
-
-        Nesting already makes it impossible to carry a value alongside a
-        refusal. This closes the two remaining contradictions: an `available`
-        entry with nothing in it, and an unavailable entry that forgot to say
-        why.
-        """
         if self.available:
             if self.comparison is None:
                 raise ValueError(f"{self.feature}: available=true with no comparison")
@@ -451,20 +323,7 @@ class PopulationFeatureContext(BaseModel):
         return self
 
 
-# --------------------------------------------------------------------------
-# Response -- subject echo, summary and envelope
-# --------------------------------------------------------------------------
-
-
 class SubjectContext(BaseModel):
-    """How the request's age and gender were read. No value is repeated here.
-
-    `sex_cohort` is the survey stratum that was used, or `None` when none
-    could be. It is derived from `gender` ONLY when Module 2's vocabulary maps
-    it onto a stratum the tables actually publish; `other`,
-    `prefer_not_to_say`, an absent and an unrecognised gender all leave it
-    `None`, and `sex_cohort_available` says so explicitly.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -495,7 +354,6 @@ class SubjectContext(BaseModel):
 
 
 class PopulationSummary(BaseModel):
-    """Counts only -- no values, no percentiles. Safe to render as a headline."""
 
     model_config = ConfigDict(extra="forbid")
 

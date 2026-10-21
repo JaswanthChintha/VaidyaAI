@@ -1,73 +1,3 @@
-"""Module 8 clinical rules -- the CLINICIAN-AUDITABLE data file.
-
-`app/services/rule_engine.py` contains the logic; this file contains the
-medicine. It follows `app/data/validation_rules.py` exactly: plain tables, no
-control flow beyond threshold lookup, every threshold citing its clinical
-basis, and a `_self_check()` that fails at IMPORT time if the table and the
-feature catalog disagree.
-
---------------------------------------------------------------------------
-WHAT MODULE 8 IS, AND WHAT IT IS NOT
---------------------------------------------------------------------------
-
-Module 6 answered "is this value BELIEVABLE?". Module 8 answers "is this value
-NOTABLE, against a published threshold?" -- deterministically, transparently,
-and traceably. There is no model here, no probability, and no learning. Every
-decision this engine emits can be reproduced by a human reading this file.
-
-That is also why every decision it emits carries ``confidence=None``: per
-`app/schemas/decisions.py`, `None` means "this component produces no
-probability", which is exactly true of a threshold comparison. It is NOT 0.0.
-
---------------------------------------------------------------------------
-HOW A RULE WORKS
---------------------------------------------------------------------------
-
-A `ThresholdRule` names ONE canonical feature and an ORDERED tuple of `Band`s.
-The first band whose comparator holds decides the outcome; the final band has
-`comparator=None` and always matches, so a rule that fires produces exactly one
-decision. Ordering matters and is deliberate: the most severe band is first.
-
-Comparator semantics are exact and are tested ON the threshold as well as
-either side of it:
-
-    ">=" fires AT the threshold          "<" does NOT fire at the threshold
-    ">"  does NOT fire at the threshold  "<=" fires AT the threshold
-
---------------------------------------------------------------------------
-MISSING DATA
---------------------------------------------------------------------------
-
-A rule whose feature is absent from Module 6's `valid` map DOES NOT FIRE. It
-does not fall through to its final band; there is nothing to compare. Absence
-never produces a NOT_INDICATED decision, because "we did not measure it" and
-"we measured it and it was fine" are different statements and conflating them
-is the failure mode this whole project keeps re-encountering.
-
-The tri-state booleans (`hypertension`, `heart_disease`) are only ever read as
-POSITIVE risk factors: a factor counts when the value is exactly `True`.
-`False` and ABSENT both simply fail to add a factor, and are never distinguished
-in a way that lets absence masquerade as a stated negative.
-
---------------------------------------------------------------------------
-SEX- AND AGE-SPECIFIC THRESHOLDS
---------------------------------------------------------------------------
-
-Haemoglobin, creatinine and cardiovascular age thresholds are genuinely
-sex-specific, so they are implemented as `ContextualThreshold`s rather than
-being flattened into one number and quietly mis-called for half the population.
-
-Where sex is NOT established (absent, `other`, `prefer_not_to_say`) the rule
-uses the threshold that AVOIDS OVER-CALLING, and adds an explicit BORDERLINE
-band covering the zone between the male and female cut-offs, with a note saying
-why. Neither silently over-calling nor silently under-calling is acceptable;
-saying "this depends on a value I do not have" is.
-
-Adult reference intervals are not valid for children. Rules carrying
-`min_age_years` therefore emit INSUFFICIENT_DATA -- never a numeric verdict --
-when the recorded age is below it.
-"""
-
 from __future__ import annotations
 
 import operator
@@ -99,17 +29,10 @@ from app.data.recommendation_catalog import (
 )
 from app.schemas.decisions import DecisionStatus, RiskLevel
 
-#: Bumped whenever any threshold, band or rule in this file changes. Recorded
-#: in every decision's `metadata` so a past report can be reproduced.
 RULE_TABLE_VERSION = "1.1.0"
 
-#: The human-readable producer name written into every `ClinicalDecision`.
 RULE_ENGINE_SOURCE = "Clinical Rule Engine"
 
-
-# --------------------------------------------------------------------------
-# Comparators
-# --------------------------------------------------------------------------
 
 COMPARATORS: Dict[str, Callable[[float, float], bool]] = {
     ">=": operator.ge,
@@ -119,35 +42,17 @@ COMPARATORS: Dict[str, Callable[[float, float], bool]] = {
 }
 
 
-# --------------------------------------------------------------------------
-# Sample timing -- which glucose thresholds are even applicable
-# --------------------------------------------------------------------------
-
 TIMING_FASTING = "fasting"
 TIMING_POST_PRANDIAL = "post_prandial"
 TIMING_RANDOM = "random"
 TIMING_UNSPECIFIED = "unspecified"
 
-# Module 5 maps fasting, random and post-prandial glucose onto the SAME
-# canonical feature (`blood_glucose`), keeping the printed name in
-# `provenance.original_test_name` / `matched_synonym`. The ADA fasting
-# thresholds (126 / 100 mg/dL) are only valid for a FASTING sample, so the
-# engine recovers the timing from those strings rather than assuming.
-#
-# These token sets mirror the qualifiers already present in
-# `FEATURE_SYNONYMS["blood_glucose"]`, normalised with `normalize_test_name`.
 FASTING_TOKENS: Tuple[str, ...] = ("fasting", "fbs", "fpg")
 POST_PRANDIAL_TOKENS: Tuple[str, ...] = ("postprandial", "prandial", "ppbs", "pp")
 RANDOM_TOKENS: Tuple[str, ...] = ("random", "rbs")
 
 
 def sample_timing(*texts: Optional[str]) -> str:
-    """Infer glucose sample timing from the printed test name.
-
-    Returns `unspecified` when nothing in the text establishes the timing.
-    UNSPECIFIED IS NOT FASTING: it is the reason a separate, deliberately more
-    conservative rule exists.
-    """
     for text in texts:
         if not text:
             continue
@@ -161,22 +66,8 @@ def sample_timing(*texts: Optional[str]) -> str:
     return TIMING_UNSPECIFIED
 
 
-# --------------------------------------------------------------------------
-# Thresholds that depend on sex or age
-# --------------------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class ContextualThreshold:
-    """A threshold whose value depends on recorded sex and age.
-
-    `unknown` is used when sex was not established. It is ALWAYS the value that
-    avoids over-calling, and `unknown_note` is carried into the decision's
-    evidence so the reader is told the threshold was chosen conservatively.
-
-    `paediatric` is an ordered tuple of `(max_age_inclusive, value)` applied
-    before sex, because the paediatric cut-offs below are not sex-specific.
-    """
 
     male: float
     female: float
@@ -188,19 +79,6 @@ class ContextualThreshold:
 
 @dataclass(frozen=True)
 class PrintedLimitThreshold:
-    """A multiple of the upper limit PRINTED ON THE REPORT (owner, 2026-10-04).
-
-    Laboratories set their own upper limits for enzymes such as ALT and AST,
-    because methods differ, and guidelines grade a result by multiples of
-    "the upper limit of normal" -- the laboratory's. So the comparison uses
-    the printed limit when there is one.
-
-    A printed limit outside `plausible_low..plausible_high` is NOT trusted --
-    a misread "0-400" must not hide a raised value -- and `fallback` (a
-    guideline limit, plain or sex-specific) is used instead, with a note
-    saying so. Never the other way round: the guideline value never
-    overrides a sensible printed one.
-    """
 
     multiple: float
     fallback: Any
@@ -211,7 +89,6 @@ class PrintedLimitThreshold:
 
 
 def uses_printed_limit(threshold: Any, reference_high: Optional[float]) -> bool:
-    """Does this `PrintedLimitThreshold` use the report's own limit here?"""
     if not isinstance(threshold, PrintedLimitThreshold) or reference_high is None:
         return False
     try:
@@ -227,8 +104,6 @@ def resolve_threshold(
     age: Optional[float],
     reference_high: Optional[float] = None,
 ) -> Tuple[Optional[float], Optional[str]]:
-    """`(value, note)` for a plain float, a `ContextualThreshold` or a
-    `PrintedLimitThreshold` (which also reads `reference_high`)."""
     if threshold is None:
         return None, None
     if isinstance(threshold, PrintedLimitThreshold):
@@ -268,19 +143,8 @@ def resolve_threshold(
     return float(threshold.unknown), threshold.unknown_note
 
 
-# --------------------------------------------------------------------------
-# Bands and rules
-# --------------------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class Band:
-    """One outcome of a rule.
-
-    `label` is USER-FACING (it reaches `EvidenceItem.note`), so it is scanned by
-    the recommendation catalogue's safety scanner at import time. `basis` is
-    reviewer-facing and cites the guideline.
-    """
 
     comparator: Optional[str]
     threshold: Optional[Any]
@@ -289,13 +153,11 @@ class Band:
     label: str
     recommendations: Tuple[str, ...]
     basis: str
-    #: Restricts the band to the case where sex was / was not established.
     only_when_sex_unknown: bool = False
 
 
 @dataclass(frozen=True)
 class ThresholdRule:
-    """A single-feature, banded rule."""
 
     id: str
     version: str
@@ -303,23 +165,13 @@ class ThresholdRule:
     feature: str
     bands: Tuple[Band, ...]
     basis: str
-    #: Adult reference intervals are invalid below this age -> INSUFFICIENT_DATA.
     min_age_years: Optional[int] = None
-    #: Fire only when the sample timing is one of these. Empty = any timing.
     only_timing: Tuple[str, ...] = ()
-    #: Extra features read to resolve thresholds. Recorded in evidence.
     context_features: Tuple[str, ...] = ()
-    #: Recommendations added to every decision this rule produces.
     always_recommend: Tuple[str, ...] = ()
-    #: When set, the bands compare a value CALCULATED from `feature` (and the
-    #: context features), not `feature` itself. One of `DERIVED_VALUES`.
-    #: `feature` stays the measured input, so a report without it still means
-    #: "no input, no decision".
     derived: Optional[str] = None
 
 
-#: Values a rule may calculate rather than read, with the unit they are
-#: compared in and the context features the calculation needs.
 DERIVED_VALUES: Dict[str, Dict[str, Any]] = {
     EGFR_FEATURE: {
         "input": "creatinine",
@@ -330,21 +182,6 @@ DERIVED_VALUES: Dict[str, Dict[str, Any]] = {
 }
 
 
-# --------------------------------------------------------------------------
-# The contextual thresholds
-# --------------------------------------------------------------------------
-
-# WHO, "Haemoglobin concentrations for the diagnosis of anaemia and assessment
-# of severity" (VMNIS, WHO/NMH/NHD/MNM/11.1, 2011), Table 1, sea level, g/dL:
-#     children 6-59 months        11.0
-#     children 5-11 years         11.5
-#     children 12-14 years        12.0
-#     non-pregnant women 15+      12.0
-#     men 15+                     13.0
-# Whole-year age buckets are used because Module 2 stores age in whole years,
-# so the 6-59 month band becomes ages 0-4. Infants under 6 months are NOT
-# covered by the WHO table at all; this is recorded as a known gap rather than
-# extrapolated.
 ANEMIA_CUTOFF = ContextualThreshold(
     male=13.0,
     female=12.0,
@@ -357,9 +194,6 @@ ANEMIA_CUTOFF = ContextualThreshold(
     basis="WHO VMNIS 2011 Table 1 anaemia cut-offs at sea level.",
 )
 
-# WHO VMNIS 2011 Table 1 severity boundaries (g/dL):
-#     moderate anaemia below   11.0 (adults and children 5+), 10.0 (under 5)
-#     severe anaemia below      8.0 (adults and children 5+),  7.0 (under 5)
 ANEMIA_MODERATE_BELOW = ContextualThreshold(
     male=11.0,
     female=11.0,
@@ -377,10 +211,6 @@ ANEMIA_SEVERE_BELOW = ContextualThreshold(
     basis="WHO VMNIS 2011 Table 1 severe-anaemia boundary.",
 )
 
-# WHO 2016 revision of the classification of myeloid neoplasms, polycythaemia
-# vera major criterion 1: haemoglobin > 16.5 g/dL in men, > 16.0 g/dL in women.
-# Used here only as the "raised haemoglobin, worth a look" boundary -- this
-# engine does not and cannot classify a myeloproliferative disorder.
 ELEVATED_HB_CUTOFF = ContextualThreshold(
     male=16.5,
     female=16.0,
@@ -392,11 +222,6 @@ ELEVATED_HB_CUTOFF = ContextualThreshold(
     basis="WHO 2016 polycythaemia vera haemoglobin criterion.",
 )
 
-# Adult serum creatinine upper reference limits, mg/dL. Typical isotope-dilution
-# mass-spectrometry-traceable enzymatic assay reference intervals (e.g. Mayo
-# Clinic Laboratories): men 0.74-1.35, women 0.59-1.04. Reference intervals are
-# assay-specific, which is why the report's OWN printed reference range is
-# carried into the evidence alongside this configured threshold.
 CREATININE_UPPER = ContextualThreshold(
     male=1.35,
     female=1.04,
@@ -408,8 +233,6 @@ CREATININE_UPPER = ContextualThreshold(
     basis="Adult sex-specific serum creatinine upper reference limits.",
 )
 
-# NCEP ATP III major cardiovascular risk factor: age >= 45 in men, >= 55 in
-# women.
 CVD_AGE_THRESHOLD = ContextualThreshold(
     male=45.0,
     female=55.0,
@@ -421,10 +244,6 @@ CVD_AGE_THRESHOLD = ContextualThreshold(
     basis="NCEP ATP III major risk factor: age >= 45 (men) / >= 55 (women).",
 )
 
-# ACG Clinical Guideline: Evaluation of Abnormal Liver Chemistries (Kwo, Cohen,
-# Lim; Am J Gastroenterol 2017): "The true healthy normal ALT level ranges from
-# 29 to 33 IU/L for males, 19 to 25 IU/L for females." The top of each range is
-# used. Applied ONLY when the report prints no usable upper limit.
 ALT_GUIDELINE_ULN = ContextualThreshold(
     male=33.0,
     female=25.0,
@@ -435,11 +254,8 @@ ALT_GUIDELINE_ULN = ContextualThreshold(
     ),
     basis="ACG 2017 healthy upper limits for ALT: 33 IU/L men, 25 IU/L women.",
 )
-# AST has no guideline-defined healthy limit comparable to ALT's; 40 U/L is the
-# usual adult laboratory upper limit and is used only when none is printed.
 AST_GUIDELINE_ULN = 40.0
 
-#: A printed ALT/AST upper limit outside this range is a misread, not a limit.
 _ENZYME_ULN_PLAUSIBLE = (15.0, 100.0)
 
 
@@ -458,10 +274,6 @@ def _ast_limit(multiple: float) -> PrintedLimitThreshold:
         "none is printed.",
     )
 
-
-# --------------------------------------------------------------------------
-# Shared band fragments
-# --------------------------------------------------------------------------
 
 _NOT_FLAGGED = (NOTHING_FLAGGED_EDUCATIONAL, MONITOR_OVER_TIME)
 _FLAGGED = (DISCUSS_WITH_CLINICIAN, CONFIRM_WITH_REPEAT_TESTING)
@@ -484,12 +296,7 @@ def _normal_band(label: str, basis: str) -> Band:
     )
 
 
-# --------------------------------------------------------------------------
-# THE RULE TABLE
-# --------------------------------------------------------------------------
-
 THRESHOLD_RULES: Tuple[ThresholdRule, ...] = (
-    # ==================================================== DIABETES: HbA1c ==
     ThresholdRule(
         id="RULE_DIABETES_HBA1C",
         version="1.0.0",
@@ -529,7 +336,6 @@ THRESHOLD_RULES: Tuple[ThresholdRule, ...] = (
             ),
         ),
     ),
-    # ====================================== DIABETES: FASTING glucose only ==
     ThresholdRule(
         id="RULE_DIABETES_GLUCOSE_FASTING",
         version="1.0.0",
@@ -574,7 +380,6 @@ THRESHOLD_RULES: Tuple[ThresholdRule, ...] = (
             ),
         ),
     ),
-    # ============================ DIABETES: glucose of unestablished timing ==
     ThresholdRule(
         id="RULE_DIABETES_GLUCOSE_UNSPECIFIED",
         version="1.0.0",
@@ -602,23 +407,6 @@ THRESHOLD_RULES: Tuple[ThresholdRule, ...] = (
                 threshold=200.0,
                 status=DecisionStatus.INDICATED,
                 risk=RiskLevel.HIGH,
-                # THE TIMING IS PART OF THE CLASSIFICATION, NOT A FOOTNOTE.
-                #
-                # This rule's `only_timing` accepts unspecified, random and
-                # post-prandial ONLY, so every band below is used exclusively
-                # on a sample that was NOT established as fasting. Saying so in
-                # the label is therefore always true, and it puts the
-                # qualification wherever the classification goes -- the patient
-                # page, the clinician page and the written narrative alike.
-                #
-                # WHY IT HAD TO GO HERE. The `basis` above says the uncertainty
-                # "is stated to the reader via DISCUSS_SAMPLE_TIMING", and on
-                # the PATIENT page that is true -- the recommendation renders.
-                # The CLINICIAN page carries no recommendations at all, so it
-                # showed "at or above the 2-hour post-load boundary" against a
-                # RANDOM sample with nothing saying the timing was never
-                # established. A clinician reading that would reasonably take
-                # it for a post-load draw. Found 2026-09-18.
                 label=(
                     "at or above the ADA diabetes-range random plasma glucose "
                     "threshold of 200 mg/dL, on a sample not established as "
@@ -632,9 +420,6 @@ THRESHOLD_RULES: Tuple[ThresholdRule, ...] = (
                 threshold=140.0,
                 status=DecisionStatus.BORDERLINE,
                 risk=RiskLevel.MEDIUM,
-                # THE ONE THAT MATTERS MOST. "at or above the 2-hour post-load
-                # boundary" beside a RANDOM glucose reads as a post-load draw
-                # unless the label says otherwise. See the band above.
                 label=(
                     "at or above the 2-hour post-load impaired-glucose-tolerance "
                     "boundary of 140 mg/dL, applied because the sample was not "
@@ -650,7 +435,6 @@ THRESHOLD_RULES: Tuple[ThresholdRule, ...] = (
             ),
         ),
     ),
-    # ====================================================== HYPOGLYCAEMIA ==
     ThresholdRule(
         id="RULE_HYPOGLYCEMIA_GLUCOSE",
         version="1.0.0",
@@ -689,7 +473,6 @@ THRESHOLD_RULES: Tuple[ThresholdRule, ...] = (
             ),
         ),
     ),
-    # ============================================================ ANAEMIA ==
     ThresholdRule(
         id="RULE_ANEMIA_HEMOGLOBIN",
         version="1.0.0",
@@ -758,7 +541,6 @@ THRESHOLD_RULES: Tuple[ThresholdRule, ...] = (
             ),
         ),
     ),
-    # ================================================ ELEVATED HAEMOGLOBIN ==
     ThresholdRule(
         id="RULE_ELEVATED_HEMOGLOBIN",
         version="1.0.0",
@@ -813,7 +595,6 @@ THRESHOLD_RULES: Tuple[ThresholdRule, ...] = (
             ),
         ),
     ),
-    # ============================================== VITAMIN D DEFICIENCY ==
     ThresholdRule(
         id="RULE_VITAMIN_D_DEFICIENCY",
         version="1.0.0",
@@ -864,7 +645,6 @@ THRESHOLD_RULES: Tuple[ThresholdRule, ...] = (
             ),
         ),
     ),
-    # ================================================= ELEVATED VITAMIN D ==
     ThresholdRule(
         id="RULE_ELEVATED_VITAMIN_D",
         version="1.0.0",
@@ -893,7 +673,6 @@ THRESHOLD_RULES: Tuple[ThresholdRule, ...] = (
             ),
         ),
     ),
-    # ============================================ VITAMIN B12 DEFICIENCY ==
     ThresholdRule(
         id="RULE_VITAMIN_B12_DEFICIENCY",
         version="1.0.0",
@@ -944,7 +723,6 @@ THRESHOLD_RULES: Tuple[ThresholdRule, ...] = (
             ),
         ),
     ),
-    # ====================================================== KIDNEY: creat ==
     ThresholdRule(
         id="RULE_KIDNEY_CREATININE",
         version="1.0.0",
@@ -1017,19 +795,6 @@ THRESHOLD_RULES: Tuple[ThresholdRule, ...] = (
             ),
         ),
     ),
-    # ======================================================= KIDNEY: eGFR ==
-    #
-    # THE VALUE KDIGO ACTUALLY USES (owner, 2026-10-04). Calculated from the
-    # creatinine above with the CKD-EPI 2021 equation (`app/data/egfr.py`),
-    # only for an adult whose sex is recorded as male or female -- otherwise
-    # this rule does not fire and the creatinine rule speaks alone. A low eGFR
-    # can flag the topic even when creatinine sits inside its reference
-    # interval (owner's decision): a 75-year-old woman with creatinine 1.0
-    # mg/dL (inside 0.59-1.04) has an eGFR of 59, and that is the reading a
-    # clinician would make.
-    #
-    # Compared on the WHOLE NUMBER the reader is shown, so "59.6" is reported
-    # as 60 and not flagged as below 60.
     ThresholdRule(
         id="RULE_KIDNEY_EGFR",
         version="1.0.0",
@@ -1093,7 +858,6 @@ THRESHOLD_RULES: Tuple[ThresholdRule, ...] = (
             ),
         ),
     ),
-    # ==================================================== HIGH CHOLESTEROL ==
     ThresholdRule(
         id="RULE_HIGH_CHOLESTEROL",
         version="1.0.0",
@@ -1146,7 +910,6 @@ THRESHOLD_RULES: Tuple[ThresholdRule, ...] = (
             ),
         ),
     ),
-    # ================================================== HIGH TRIGLYCERIDES ==
     ThresholdRule(
         id="RULE_HIGH_TRIGLYCERIDES",
         version="1.0.0",
@@ -1209,13 +972,6 @@ THRESHOLD_RULES: Tuple[ThresholdRule, ...] = (
             ),
         ),
     ),
-    # ============================================================== LIVER ==
-    #
-    # 2026-10-04, owner's decisions: ALT and AST against the upper limit
-    # PRINTED ON THE REPORT (guideline limits only when none is usable), total
-    # bilirubin against 1.2 mg/dL. Graded as the ACG 2017 guideline grades
-    # liver enzymes, by multiples of the upper limit. Adults only: children's
-    # references differ and newborn bilirubin has its own charts.
     ThresholdRule(
         id="RULE_LIVER_ALT",
         version="1.0.0",
@@ -1254,8 +1010,6 @@ THRESHOLD_RULES: Tuple[ThresholdRule, ...] = (
             ),
             Band(
                 comparator=">",
-                # Only ever reached with NO usable printed limit: with one, the
-                # band above already caught anything over it.
                 threshold=PrintedLimitThreshold(
                     1.0, 25.0, *_ENZYME_ULN_PLAUSIBLE, unit="U/L",
                     basis="ACG 2017 female limit, for the sex-unknown zone.",
@@ -1352,7 +1106,6 @@ THRESHOLD_RULES: Tuple[ThresholdRule, ...] = (
             ),
         ),
     ),
-    # ============================================================ OBESITY ==
     ThresholdRule(
         id="RULE_OBESITY_BMI",
         version="1.0.0",
@@ -1408,7 +1161,6 @@ THRESHOLD_RULES: Tuple[ThresholdRule, ...] = (
             ),
         ),
     ),
-    # ========================================================= UNDERWEIGHT ==
     ThresholdRule(
         id="RULE_UNDERWEIGHT_BMI",
         version="1.0.0",
@@ -1461,10 +1213,6 @@ THRESHOLD_RULES: Tuple[ThresholdRule, ...] = (
 )
 
 
-# --------------------------------------------------------------------------
-# The composite cardiovascular risk-factor rule
-# --------------------------------------------------------------------------
-
 FACTOR_NUMERIC = "numeric"
 FACTOR_CATEGORY = "category"
 FACTOR_BOOLEAN_TRUE = "boolean_true"
@@ -1472,12 +1220,6 @@ FACTOR_BOOLEAN_TRUE = "boolean_true"
 
 @dataclass(frozen=True)
 class RiskFactorDefinition:
-    """One countable cardiovascular risk factor.
-
-    A factor is counted ONLY when its feature is present in the usable set AND
-    the condition below holds. A missing feature contributes nothing and is
-    reported as "not established" -- never as "absent risk factor".
-    """
 
     id: str
     label: str
@@ -1492,7 +1234,6 @@ class RiskFactorDefinition:
 
 @dataclass(frozen=True)
 class CountBand:
-    """An outcome keyed on how many risk factors were counted."""
 
     minimum_count: int
     status: DecisionStatus
@@ -1500,7 +1241,6 @@ class CountBand:
     label: str
     recommendations: Tuple[str, ...]
     basis: str
-    #: When set, the band applies only if this factor id was counted.
     requires_factor: Optional[str] = None
 
 
@@ -1511,7 +1251,6 @@ class CompositeRule:
     condition: str
     factors: Tuple[RiskFactorDefinition, ...]
     bands: Tuple[CountBand, ...]
-    #: Fewer evaluable inputs than this -> INSUFFICIENT_DATA, never a verdict.
     min_evaluable_inputs: int
     min_age_years: Optional[int]
     basis: str
@@ -1662,17 +1401,7 @@ HEART_DISEASE_RULE = CompositeRule(
 COMPOSITE_RULES: Tuple[CompositeRule, ...] = (HEART_DISEASE_RULE,)
 
 
-# --------------------------------------------------------------------------
-# Derived indexes
-# --------------------------------------------------------------------------
-
-
 def _condition_inputs() -> Dict[str, Tuple[str, ...]]:
-    """Which features each condition is assessed from.
-
-    DERIVED from the rule table rather than written out again, so it cannot
-    drift when a rule is added or its feature changed.
-    """
     index: Dict[str, list] = {}
     for rule in THRESHOLD_RULES:
         index.setdefault(rule.condition, [])
@@ -1703,11 +1432,6 @@ def rule_by_id(rule_id: str) -> Optional[Any]:
     return None
 
 
-# --------------------------------------------------------------------------
-# Import-time self-check -- mirrors app/data/validation_rules.py
-# --------------------------------------------------------------------------
-
-
 def _check_band(rule_id: str, band: Any) -> None:
     if band.comparator is not None and band.comparator not in COMPARATORS:
         raise ValueError(f"{rule_id}: unknown comparator {band.comparator!r}")
@@ -1729,8 +1453,6 @@ def _check_band(rule_id: str, band: Any) -> None:
     for code in band.recommendations:
         if not is_known_code(code):
             raise ValueError(f"{rule_id}: unknown recommendation code {code!r}")
-    # Band labels reach the user through EvidenceItem.note, so they are held to
-    # the same safety standard as the recommendation catalogue itself.
     assert_safe(band.label, f"{rule_id} band label")
 
 
@@ -1897,8 +1619,6 @@ def _self_check() -> None:
             if not is_known_code(code):
                 raise ValueError(f"{composite.id}: unknown code {code!r}")
 
-    # Every condition that promises always to be assessed must actually have a
-    # rule capable of assessing it.
     for condition in C.ALWAYS_ASSESSED_CONDITIONS:
         if condition not in CONDITION_INPUTS:
             raise ValueError(
@@ -1907,11 +1627,6 @@ def _self_check() -> None:
 
 
 _self_check()
-
-
-# --------------------------------------------------------------------------
-# Review dump
-# --------------------------------------------------------------------------
 
 
 def _threshold_document(threshold: Any) -> Any:
@@ -1939,7 +1654,6 @@ def _threshold_document(threshold: Any) -> Any:
 
 
 def rules_document() -> Dict[str, Any]:
-    """Machine-readable dump of the rule table, for clinical review."""
     return {
         "rule_table_version": RULE_TABLE_VERSION,
         "source": RULE_ENGINE_SOURCE,

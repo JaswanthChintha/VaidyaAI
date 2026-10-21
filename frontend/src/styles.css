@@ -1,136 +1,54 @@
-/* VaidyaAI — the "Forest & sage" design system (2026-10-02; supersedes the
- * "Instrument" palette of design.md, same token names and same rules).
- *
- * Plain CSS, no framework. Two things this file has to get right, and they are
- * the same two the components get right:
- *
- *   AN ABSENCE NEVER LOOKS LIKE A VALUE. Anything not measured or not assessed
- *   is a DASHED OUTLINE WITH NO FILL in `--mono` -- never a risk colour, never
- *   a greyed-out version of a real value. A grey number still reads as a
- *   number; a dashed empty outline cannot.
- *
- *   RISK COLOUR IS CATEGORICAL. Exactly three carry meaning -- `--green` in
- *   range, `--amber` borderline, `--rust` above threshold -- and nothing else
- *   on the page may use them. A fourth decorative colour would teach the eye
- *   that colour here is decoration.
- */
-
-/* ==========================================================================
-   TOKENS
-   ==========================================================================
-   Every colour in this file and in every component comes from here. There are
-   no literal hex values below these two blocks, and SVG uses the same tokens
-   (`stroke="var(--rust)"`) so the charts theme with everything else.
-
-   DARK IS NOT AN INVERSION. The semantic hues are lifted in lightness and
-   chroma (#a44a2a -> #e0764c) because the same rust that reads as "above
-   threshold" on sand is nearly black on a warm brown ground -- the three risk
-   colours have to stay distinguishable from each other in both themes, and a
-   straight inversion loses that. */
 :root {
   color-scheme: light;
 
-  /* surfaces */
   --bg:          #f1f5f0;
   --header:      #e8efe7;
   --header-line: #d8e2d6;
   --panel:       #ffffff;
   --panel-line:  #e1e8df;
-  --grid:        #e6ece4;   /* chart gridlines / radar rings */
-  --hairline:    #edf2ec;   /* in-panel dividers */
-  --track:       #e6ece4;   /* chart baselines, gauge rest arc */
-  --band:        #e6eedb;   /* "usual range" band fill */
-  --band-line:   #c3ccc1;   /* dashed band for a value never measured */
+  --grid:        #e6ece4;
+  --hairline:    #edf2ec;
+  --track:       #e6ece4;
+  --band:        #e6eedb;
+  --band-line:   #c3ccc1;
 
-  /* ink
-     `--muted` and `--mono` WERE #7d6f5d and #8a7c69 and BOTH FAILED WCAG AA
-     in this theme -- measured against the grounds they actually sit on, not
-     assumed: `--mono` bottomed out at 3.04:1 (the header identity) and
-     `--muted` at 3.66:1, and 17 pieces of text on one screen were below the
-     4.5:1 floor. The text failing was the worst possible set to lose: "Not
-     measured", "not checked", and the reasons underneath them. THE ABSENCE
-     LABELS WERE THE LEAST READABLE TEXT IN THE APP.
-     Fixed here, at the token, rather than on 17 elements -- guarantees belong
-     at the lowest layer. Hue and chroma are unchanged (both are the original
-     colour scaled toward black), so the palette still reads as one family.
-     `--mono` is set darker than `--muted` on purpose: it carries 11px tracked
-     uppercase, which is harder to read than 13-14px prose at the same ratio.
-     Only the light theme moved. Dark already passed on the same grounds
-     (4.97-5.34) and is untouched -- and note dark has ALWAYS set `--muted`
-     and `--mono` to one value, so the two converging in light would have been
-     the system's own precedent rather than a new problem. */
   --ink:   #1d2621;
   --ink-2: #33403a;
   --body:  #46524b;
-  --muted: #5f6a63;   /* >= 4.61:1 on --bg / --header / --panel */
-  --mono:  #57625b;   /* >= 5.02:1 -- smaller type, more contrast */
+  --muted: #5f6a63;
+  --mono:  #57625b;
 
-  /* semantic -- these three, and only these three, mean something.
-     TWO OF THEM NEED A SEPARATE TEXT VALUE. A colour bright enough to read as
-     a band on a chart is not dark enough to read as a word on sand; the
-     `--green` / `--green-text` split below already said so, and `--amber` had
-     exactly the same problem and no such pair. As text it measured
-     **2.28:1** -- the worst contrast anywhere in the app -- and it is the
-     colour of `.flag--low`, `.verdict--low`, `.risk--medium` and `.caveat`,
-     all of them patient-facing words in the results table.
-     It survived the route sweep because nothing on the two stored reports is
-     borderline or low-flagged, so the text never rendered. LATENT, not
-     absent: the first report with a borderline finding would have printed it.
-     `--amber-text` is darkened until it passes (5.26:1) while staying
-     SEPARABLE from the other two risk colours -- checked as CIE Lab dE, not
-     luminance, because darkening any hue toward AA drags it into rust's
-     luminance band while leaving it obviously a different colour:
-     dE 28 from rust, 32 from green-text (a just-noticeable difference is ~2).
-     `--amber` itself is unchanged and still paints the gauge's middle arc,
-     which is geometry and not text. */
   --green:      #8a9a3c;
-  --green-text: #5a6b12;   /* --green does not pass 4.5:1 as text; this does */
+  --green-text: #5a6b12;
   --amber:      #d39a2c;
-  --amber-text: #7a5300;   /* --amber is 2.28:1 as text; this is 5.26:1 */
+  --amber-text: #7a5300;
   --rust:       #b3261e;
   --brand:      #1f5a45;
   --radar-fill: rgba(179, 38, 30, .12);
 
-  /* ON-colour ink. A token pair, because "white on the accent" stops being
-     legible the moment the accent is a light gold rather than a dark clay --
-     which is exactly what happens in dark mode. */
   --on-brand:  #ffffff;
-  --logo-drop: #cfe5d7;   /* the drop inside the forest logo tile */
+  --logo-drop: #cfe5d7;
   --on-danger: #ffffff;
-  --rejected-bg: #fbeceb;   /* the row tint for a reading validation refused */
+  --rejected-bg: #fbeceb;
 
-  /* ---- compatibility aliases ------------------------------------------
-     The pre-existing stylesheet and components name colours by their old
-     roles. Aliasing rather than renaming means every existing rule becomes
-     theme-aware in one move, with no chance of a selector being dropped in a
-     mass rewrite -- and the old names still say what the rule MEANT. */
   --line:   var(--panel-line);
   --card:   var(--panel);
   --accent: var(--brand);
   --danger: var(--rust);
   --absent: var(--mono);
   --low:    var(--green-text);
-  /* EVERY `--medium` USE IS TEXT -- `.risk--medium`, `.status--partial`,
-     `.caveat`, `.flag--low`, `.verdict--low`, plus one border on
-     `.unanalysed`. None is a chart mark: the gauge's middle arc reaches for
-     `--amber` directly. So the alias points at the text value, exactly as
-     `--low` already points at `--green-text` rather than `--green`. */
   --medium: var(--amber-text);
   --high:   var(--rust);
 
-  /* Forest on soft sage (2026-10-02; dark is the same forest, lifted). Decoration only -- never a
-     meaning. "In range" is an OLIVE, not the forest of the buttons (CIE dE
-     38), and "above threshold" a crimson, so a button can never be read as a
-     finding. No saffron accent: it would sit on top of amber "borderline". */
-  --brand-soft:  #e3efe7;   /* terracotta tint behind icons and the active nav item */
-  --sage:        #e4efe7;   /* calm highlight panels */
+  --brand-soft:  #e3efe7;
+  --sage:        #e4efe7;
   --sage-line:   #cfe0d4;
-  --espresso:    #16261f;   /* the dark forest band on the landing page */
+  --espresso:    #16261f;
   --on-espresso: #f3f1e8;
   --shadow-sm:   0 1px 2px rgba(29, 38, 33, .05), 0 1px 1px rgba(29, 38, 33, .03);
   --shadow-md:   0 10px 30px -12px rgba(29, 38, 33, .18), 0 2px 6px rgba(29, 38, 33, .05);
-  --brand-strong: #174535;  /* button hover */
-  --mint:        #9fd8b8;   /* light accent ON the dark forest panels only */
+  --brand-strong: #174535;
+  --mint:        #9fd8b8;
 }
 
 [data-theme="dark"] {
@@ -156,16 +74,11 @@
   --green:      #b3ba5c;
   --green-text: #c2c86a;
   --amber:      #e0ac4b;
-  /* Dark needs no darker variant -- on this ground the band colour already
-     measures 8.13:1 as text. The token exists so `--medium` resolves in both
-     themes; it is deliberately the same value, not an oversight. */
   --amber-text: #e0ac4b;
   --rust:       #f07a6a;
   --brand:      #6fc29b;
   --radar-fill: rgba(240, 122, 106, .16);
 
-  /* Dark text ON the light accent -- the inverse of the light theme, and the
-     reason these are tokens at all. */
   --on-brand:  #0f1512;
   --logo-drop: #0f1512;
   --on-danger: #0f1512;
@@ -184,20 +97,6 @@
 
 * { box-sizing: border-box; }
 
-/* ==========================================================================
-   TYPOGRAPHY
-   ==========================================================================
-   Three families, three jobs, and the split is load-bearing rather than
-   decorative:
-
-     SERIF is the wordmark and the single verdict word ("High"). Nothing else.
-       Reserving it means the one serif word on a screen is always the answer.
-     SANS is every sentence a person reads.
-     MONO is every NUMBER, plus uppercase micro-labels. Numbers in monospace
-       align down a column, which is the whole reason a reader can scan a
-       results table at all.
-
-   Never below 11px. */
 :root {
   --font-serif: "Source Serif 4", Georgia, "Times New Roman", serif;
   --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -212,8 +111,6 @@ body {
 }
 
 h1, h2, h3 { font-family: var(--font-sans); font-weight: 600; color: var(--ink); }
-/* Page titles are the one place the serif is used at size -- a printed
-   document's heading, not a product banner. */
 h1 {
   font-family: var(--font-serif);
   font-weight: 500;
@@ -224,14 +121,12 @@ h1 {
 h2 { font-size: 16px; }
 h3 { font-size: 14.5px; }
 
-/* Every numeric value is monospace. */
 .value, .prob, .measured__value, .progress__score,
 .lab-table td, .range__value, .gauge__scale, .radar text {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
 
-/* Uppercase mono micro-label -- metadata, axes, absence flags. */
 .micro {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -240,18 +135,6 @@ h3 { font-size: 14.5px; }
   color: var(--mono);
 }
 
-/* ==========================================================================
-   MOTION
-   ==========================================================================
-   Entry only. Charts draw once on mount and then rest; the ONE loop in the
-   whole app is the shimmer on a radar point that was never measured, because
-   that point is making a claim about absence and a still dot does not.
-
-   Every animation is `both`-filled so it holds its end state -- and every end
-   state is also written as a static style, so the reduced-motion block below
-   can switch animation off without leaving a needle at zero or a bar at
-   scaleX(0). A chart that animates to the truth but rests on a lie is worse
-   than one that never moves. */
 @keyframes rise     { from { opacity: 0; transform: translateY(16px) } to { opacity: 1; transform: none } }
 @keyframes glide    { from { opacity: 0; transform: translateX(-10px) } to { opacity: 1; transform: none } }
 @keyframes fadeIn   { from { opacity: 0 } to { opacity: 1 } }
@@ -260,9 +143,6 @@ h3 { font-size: 14.5px; }
 @keyframes cellIn   { from { opacity: 0; transform: scale(.6) } to { opacity: 1; transform: scale(1) } }
 @keyframes shimmer  { 0%, 100% { opacity: .25 } 50% { opacity: .7 } }
 
-/* REQUIRED, not a nicety. Vestibular disorders are common and a sweeping
-   needle is exactly the trigger. The end states are static-correct above, so
-   switching everything off leaves a chart that still says the right thing. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation: none !important;
@@ -270,37 +150,14 @@ h3 { font-size: 14.5px; }
   }
 }
 
-/* Focus must remain visible. */
 :focus-visible {
   outline: 2px solid var(--brand);
   outline-offset: 2px;
   border-radius: 3px;
 }
 
-/* ==========================================================================
-   SHELL
-   ========================================================================== */
 main { width: min(1060px, 92vw); margin: 26px auto; padding: 0 4px; }
 
-/* The header. Was `.nav` on a white card; now a distinct warm band so the
-   page body reads as the working surface and the chrome recedes.
-   design.md §4: 18px/30px padding, `--header` ground, 1px `--header-line`
-   bottom.
-
-   THIS IS NOW THE ONLY `.nav` RULE, AND IT HAS TO BE COMPLETE.
-   It was written as an ADDITION to a pre-existing `.nav` block further down
-   the file -- so it carried only the properties it meant to change and relied
-   on that block for `display: flex` and `align-items`. Being ABOVE its base,
-   it lost every one of those changes: the header rendered on `--panel` with
-   12px/24px padding and a `--panel-line` border, and none of this was on
-   screen from the day it was written. The palette sweep passed it, because
-   `--panel` is a perfectly legitimate token; a sweep proves no colour is
-   foreign, not that a rule won.
-   The lower block is deleted and its three load-bearing declarations are
-   folded in here -- `display`/`align-items` below, `.nav__spacer`'s `flex: 1`
-   and, easiest of all to lose in a merge, `text-decoration: none` on `.nav a`,
-   which is the only thing keeping the header links out of the browser's
-   default underline. */
 .nav {
   display: flex;
   align-items: center;
@@ -325,8 +182,6 @@ main { width: min(1060px, 92vw); margin: 26px auto; padding: 0 4px; }
   color: var(--ink);
   letter-spacing: .005em;
 }
-/* The mark (components/Logo.jsx, 2026-10-06): a drop with a pulse line on a
-   forest tile. Decoration, so it takes the brand. */
 .nav__mark { display: block; flex: 0 0 auto; }
 .logo__tile { fill: var(--brand); }
 .logo__drop { fill: var(--logo-drop); }
@@ -334,18 +189,7 @@ main { width: min(1060px, 92vw); margin: 26px auto; padding: 0 4px; }
   fill: none; stroke: var(--brand); stroke-width: 3.4;
   stroke-linecap: round; stroke-linejoin: round;
 }
-/* The italic "AI" is the only brand-coloured thing in the header. */
 .nav__brand em { font-style: italic; color: var(--brand); }
-/* NOTHING IN THE HEADER BREAKS MID-PHRASE.
-   design.md §4's 18px gap and 30px padding leave the row tighter than the
-   12/24 it replaced, and the first thing a squeezed flex row does is wrap its
-   own children's text: "Your details" and "Sign out" each split over two
-   lines at ~780px. A two-line nav label is not an overflow -- no test and no
-   scrollbar would report it -- it just looks broken.
-   These items are short and fixed, so they stay whole; the identity beside
-   them is the one item that may shrink, and it already truncates rather than
-   wrapping. Shrink pressure therefore lands on the one item designed to take
-   it. */
 .nav a {
   display: inline-flex; align-items: center; gap: 10px;
   font-size: 14px; font-weight: 500; color: var(--body);
@@ -355,7 +199,6 @@ main { width: min(1060px, 92vw); margin: 26px auto; padding: 0 4px; }
 }
 .nav a:hover { color: var(--ink); background: var(--panel); }
 .nav a .icon { color: var(--mono); transition: color .15s ease; }
-/* The page you are on: a clay-tinted pill, its icon in the brand colour. */
 .nav a.active { color: var(--ink); background: var(--brand-soft); }
 .nav a.active .icon { color: var(--brand); }
 .nav a.nav__brand, .nav a.nav__brand:hover { color: var(--ink); background: none; padding: 0; }
@@ -381,9 +224,6 @@ main { width: min(1060px, 92vw); margin: 26px auto; padding: 0 4px; }
 }
 .nav button.nav__signout:hover:not(:disabled) { color: var(--ink); background: var(--panel); }
 
-/* Panels. The border does the separating, so it survives dark mode where a
-   shadow barely shows; the soft `--shadow-sm` on top (2026-10-02) is depth,
-   not structure, and has its own dark value. */
 .card, .passage, .roundup, .lab-table {
   background: var(--panel);
   border: 1px solid var(--panel-line);
@@ -401,7 +241,6 @@ main { width: min(1060px, 92vw); margin: 26px auto; padding: 0 4px; }
   color: var(--mono);
 }
 
-/* Controls */
 input, select, textarea {
   font-family: var(--font-sans);
   background: var(--panel);
@@ -411,15 +250,6 @@ input, select, textarea {
 button { font-family: var(--font-sans); font-size: 13px; font-weight: 500; border-radius: 8px; }
 label { font-size: 13px; color: var(--ink-2); }
 
-/* ==========================================================================
-   THEME TOGGLE
-   ==========================================================================
-   design.md ships no in-app toggle and sets the theme once from storage or
-   the system preference. One was asked for, so it is added at the only place
-   that keeps the spec's actual property intact: NO COMPONENT KNOWS ABOUT THE
-   THEME. The button writes `localStorage` and re-stamps `data-theme` on
-   <html>; every colour on every page is already a token, so nothing else has
-   to change and nothing can drift out of step. */
 .theme-toggle {
   background: var(--panel);
   border-radius: 999px;
@@ -439,12 +269,6 @@ label { font-size: 13px; color: var(--ink-2); }
 
 body {
   margin: 0;
-  /* THE `font:` SHORTHAND, NOT `font-family:`. It resets the family, so this
-     one line sat after the typography block and quietly put the entire app
-     back on system-ui -- three webfonts loaded and used by nothing but the
-     wordmark. A shorthand that overwrites a longhand set earlier is the
-     easiest CSS mistake there is to miss by eye, and the reason the design
-     audit checks computed families rather than trusting the stylesheet. */
   font: 400 13.5px/1.55 var(--font-sans);
   color: var(--ink);
   background: var(--bg);
@@ -456,26 +280,7 @@ main { flex: 1; width: min(980px, calc(100% - 48px)); margin: 44px auto 72px; }
 
 h1, h2, h3 { line-height: 1.25; }
 
-/* THE PRE-`--header` `.nav` BLOCK STOOD HERE AND IS DELETED, not moved.
-   Every declaration in it was either superseded by the design system's rule
-   above (gap, padding, background, border, `.nav__brand`'s weight and colour,
-   `.nav__user`'s size and colour, `.nav a`'s colour) or has been folded into
-   it (`display`/`align-items`, `.nav__spacer`, `text-decoration: none`).
-   Keeping it "in case" is what made the design system's header dead for a
-   month: two rules for one element, the later one silently winning. */
 
-/* THE SIGNED-IN IDENTITY IS THE ONLY VARIABLE-LENGTH ITEM IN A FIXED ROW, SO
-   IT TRUNCATES AT EVERY WIDTH -- NOT ONLY ON A PHONE.
-   The first version of this fix scoped truncation to the 560px query and was
-   measured only against the short display name the browser happened to be
-   signed in as. With the project's own test-account email (37 characters) the
-   header still overflowed from 561px to about 890px: `Sign out` sat at x=811
-   on an 800px-wide window, off screen, on the control that ends a session.
-   Fixing the phone and leaving the tablet is the same defect with a narrower
-   audience.
-   `min-width: 0` is the load-bearing half. A flex item defaults to
-   `min-width: auto`, which refuses to shrink below its content -- so
-   `overflow: hidden` alone does nothing and the row grows instead. */
 .nav__user {
   min-width: 0;
   overflow: hidden;
@@ -483,50 +288,19 @@ h1, h2, h3 { line-height: 1.25; }
   white-space: nowrap;
 }
 
-/* THE HEADER ON A PHONE.
- *
- * Measured at 375px BEFORE this rule: the row did not wrap, the page scrolled
- * horizontally to 558px, and `Sign out` sat at x=535 -- 160px off the right
- * edge of the screen, on the control that ends a session. Nothing in the page
- * body overflowed; the header was the whole of it.
- *
- * THIS BLOCK MUST STAY BELOW THE `.nav` RULE ABOVE. A media query adds no
- * specificity, so `@media (...) { .nav { ... } }` placed EARLIER in the file
- * loses to a later plain `.nav` on every shared property -- which is exactly
- * how the design system's own header rules came to be dead (see the note by
- * the `.nav` block above). Moving this higher would silently switch it off.
- */
 @media (max-width: 560px) {
   .nav {
     flex-wrap: wrap;
     gap: 8px 14px;
     padding: 12px 16px;
   }
-  /* The serif wordmark is the single widest fixed item; 24px does not leave
-     room for three links beside it on a 375px screen. */
   .nav__brand { font-size: 20px; }
 
-  /* THE SPACER STOPS BEING A SPACER AND BECOMES A LINE BREAK. Full-width and
-     zero-height, it forces everything after it onto a second row -- so the
-     wrap point is DECLARED (brand + links, then identity + controls) rather
-     than left to whatever happens to fit. A `flex: 1` spacer in a wrapping
-     row would otherwise absorb the free space on row one and let the break
-     land wherever the email's length put it. */
   .nav__spacer { flex-basis: 100%; height: 0; margin: 0; }
 
-  /* The email is by far the widest thing in the header and it is a LABEL, not
-     a destination -- the full value is on "Your details". On row two it takes
-     whatever room is left after the two controls; the leading characters are
-     what identify the account. Truncating beats a page that scrolls sideways,
-     and beats hiding who is signed in.
-     The truncation itself is declared once, at every width, above -- only the
-     row-two sizing is a phone concern. */
   .nav__user { flex: 1 1 0; }
   .theme-toggle, .nav button.link { flex: 0 0 auto; }
 
-  /* Two rows on a phone: the wordmark and the controls, then the three
-     pages as equal tabs. `order` moves the links below the spacer's break
-     without changing the reading order of the markup. */
   .nav__brand { order: 0; flex: 1 1 auto; margin-right: 0; }
   .nav__user { order: 1; flex: 0 0 auto; margin-right: 0; }
   .nav__who { display: none; }
@@ -536,12 +310,6 @@ h1, h2, h3 { line-height: 1.25; }
   .nav > a:not(.nav__brand) { order: 3; flex: 1 1 0; justify-content: center; padding: 8px 6px; font-size: 13px; gap: 6px; }
 }
 
-/* THE SIDEBAR, FROM 900px UP.
- *
- * The same <nav>, turned into a column fixed to the left of the page. Below
- * 900px it stays the top bar above (and wraps on a phone), so there is one
- * element and one set of links, never a second menu that can drift.
- */
 @media (min-width: 900px) {
   .app--shell {
     display: grid;
@@ -573,8 +341,6 @@ h1, h2, h3 { line-height: 1.25; }
   background: var(--card); border: 1px solid var(--line); border-radius: 16px;
   padding: 26px 28px; margin-bottom: 18px; box-shadow: var(--shadow-sm);
 }
-/* Phone. Below the .card and main rules on purpose: a media query adds no
-   specificity, so placed above them it would lose. */
 @media (max-width: 560px) {
   main { margin-top: 24px; }
   .card { padding: 18px; }
@@ -606,67 +372,35 @@ button:not(.link):not(.theme-toggle):not(.danger):hover:not(:disabled) {
 }
 button.danger:hover:not(:disabled) { opacity: .88; }
 button:disabled { opacity: .55; cursor: default; }
-/* The quiet action (Re-analyse, Cancel, Keep it, Delete): a soft pill, no
-   underline (owner's request, 2026-10-02). The border and shape mark it as
-   clickable, so colour is never the only signal. */
 button.link {
   display: inline-flex; align-items: center; gap: 6px;
   background: transparent; border: 1px solid var(--sage-line); border-radius: 999px;
   color: var(--accent); padding: 6px 14px; font-size: 13.5px; text-decoration: none;
 }
 button.link:hover:not(:disabled) { background: var(--brand-soft); border-color: var(--brand-soft); }
-/* Inside a sentence ("If you have not signed up yet, create an account.") a
-   pill would break the line, so it reads as bold green words instead. */
 .hint button.link {
   display: inline; border: none; border-radius: 4px; padding: 0 2px;
   font-size: inherit; font-weight: 600;
 }
 .hint button.link:hover:not(:disabled) { background: var(--brand-soft); }
-/* A link-button sitting directly beside a solid one -- "Sign in" next to
-   "Create an account". Without this they touch, and the underline reads as
-   part of the button. Scoped to the adjacent-sibling case so a link-button
-   used inline inside a sentence is not pushed off its own text. */
 button + button.link { margin-left: 16px; }
 
-/* A HINT HUGS WHAT IT EXPLAINS AND STILL LETS GO OF WHAT FOLLOWS.
-   `margin: 4px 0 0` gave it no bottom at all, so anything after it with no
-   top margin of its own TOUCHED it -- measured across the routes, FOUR
-   collisions at a literal 0px gap: the profile intro against its form, the
-   timeline intro against its first panel, a trend summary against its chart,
-   and a comparison lead against its table. That is why those areas read as
-   clumsy; it was never padding, it was two blocks in contact.
-   The 4px top is kept -- a hint belongs to the thing above it. The bottom is
-   a FLOOR, not an addition: adjacent margins collapse to the larger of the
-   two, so anything that already sets more keeps its own spacing and nothing
-   that was correct becomes looser. */
 .hint { color: var(--muted); font-size: 14px; font-weight: 400; margin: 4px 0 14px; }
-/* Last in its box, the container's own padding is the space. */
 .hint:last-child { margin-bottom: 0; }
 
-/* THE PROFILE FORM'S CLOSING BLOCK.
-   "Saved.", the note about already-analysed reports, and the button arrived
-   as three touching lines directly under the last question. The confirmation
-   and its explanation are ONE thing and are grouped as one; the button is the
-   next thing and is separated from it. */
 .profile .ok { margin: 20px 0 4px; }
 .profile form.card > button { margin-top: 6px; }
-/* Short answers two to a row on a wide screen; everything that is not a
-   single field (the questions, notes, the button) takes the full width. */
 @media (min-width: 720px) {
   .profile form.card { display: grid; grid-template-columns: 1fr 1fr; column-gap: 22px; }
   .profile form.card > :not(label) { grid-column: 1 / -1; }
   .profile form.card > button { justify-self: start; }
 }
-/* The page intro is a lead paragraph, not a caption on the form below it. */
 .profile > .hint { margin: 6px 0 18px; max-width: 74ch; }
 .error { color: var(--danger); font-weight: 600; }
 .ok { color: var(--low); font-weight: 600; }
 .loading, .empty { color: var(--muted); }
-/* A page-level wait ("Checking your session…", "Loading your reports…") sits
-   where the page will be, not jammed against the window's corner. */
 .app > .loading, .app > .error { flex: 1; width: min(980px, calc(100% - 48px)); margin: 56px auto; }
 
-/* ---- absence, made visually distinct from a value ---------------------- */
 .absent { color: var(--absent); font-style: italic; }
 .absent__reason { display: block; font-size: 13px; font-style: normal; }
 .value { font-variant-numeric: tabular-nums; font-weight: 600; }
@@ -683,20 +417,6 @@ button + button.link { margin-left: 16px; }
   background: var(--bg); border: 1px solid var(--line); font-size: 12px; font-style: normal;
 }
 
-/* THE TWO DIAGNOSIS QUESTIONS, as disclosures.
-   They were `<fieldset>`s and the legend sat half on the top border with the
-   line running through it -- a user agent positions a legend OVER that
-   border, so giving the box a background makes the overlap visible. There is
-   no clean CSS fix; `<details>` has no such element and does not have the
-   problem. Grouping for a screen reader is preserved by `role="radiogroup"`.
-
-   THE ANSWER IS ON THE SUMMARY, so closing the box hides no state -- a
-   collapsed question that concealed its own answer would be worse than the
-   open one, and would put "Not sure" out of sight.
-
-   NO RISK COLOUR anywhere here: "yes, I was diagnosed with high blood
-   pressure" is an ANSWER, not a finding, and tinting it would make the form
-   look like it was judging the reply. */
 .tristate {
   border: 1px solid var(--panel-line);
   border-radius: 10px;
@@ -715,10 +435,6 @@ button + button.link { margin-left: 16px; }
 .tristate__summary::-webkit-details-marker { display: none; }
 .tristate__summary:hover { background: var(--panel); border-radius: 9px; }
 .tristate__q { font-weight: 600; color: var(--ink); }
-/* The recorded answer, always visible. `--muted`, not an absence token: an
-   unanswered question is stated by its words ("Not sure / prefer not to say"),
-   and dashing it here would make a deliberate "prefer not to say" look like a
-   fault in the form. */
 .tristate__answer {
   flex: 1;
   text-align: right;
@@ -751,23 +467,13 @@ button + button.link { margin-left: 16px; }
 
 .report__head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
 .report__meta, .report__note { color: var(--muted); font-size: 14px; }
-/* A page the analysis could not read (2026-10-10): amber, like the dashboard's
-   notice, because it qualifies the result -- not muted small print. */
 .report__note.report__unreadable { color: var(--amber-text); font-weight: 500; }
-/* The machine code after a plain-words failure note: for a problem report. */
 .report__code { font-family: var(--font-mono); font-size: 12px; }
-/* A typed date the document itself contradicts. Amber TEXT token: --amber is
-   2.28:1 as text and fails AA (see the token block). */
 .report__date-conflict { color: var(--amber-text); }
-/* Two reports that may be different people, or a report that may not match
-   the profile it was analysed with. A left rule in the amber TEXT token, not
-   a fill: it has to be seen, and it is not a clinical finding. */
 .identity-warning { border-left: 4px solid var(--amber-text); padding: 10px 14px; margin: 0 0 16px; }
 .identity-warning h2 { margin-top: 0; }
 .identity-warning p { margin: 0 0 8px; }
 .identity-warning p:last-child { margin-bottom: 0; }
-/* "Fill in your details" (2026-10-06). A left rule in the BRAND colour, not
-   amber: it is an invitation, and amber means a borderline result here. */
 .profile-nudge { border-left: 4px solid var(--accent); padding: 12px 16px; margin: 0 0 16px; }
 .profile-nudge h2 { margin: 0 0 6px; font-size: 17px; }
 .profile-nudge p { margin: 0 0 8px; max-width: 70ch; }
@@ -786,7 +492,6 @@ button + button.link { margin-left: 16px; }
   transition: background .15s ease;
 }
 .button-link:hover { background: var(--brand-strong); border-color: var(--brand-strong); color: var(--on-brand); }
-/* The quieter partner of a solid button: same size, outline only. */
 .button-link--quiet { background: transparent; color: var(--ink); border-color: var(--band-line); }
 .button-link--quiet:hover { background: var(--panel); color: var(--ink); border-color: var(--ink); }
 .report__actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
@@ -804,9 +509,6 @@ button + button.link { margin-left: 16px; }
 .condition-list { list-style: none; padding: 0; }
 .condition__head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
 .condition__head > strong { font-size: 17px; font-weight: 600; color: var(--ink); }
-/* `separate` with no spacing, not `collapse`: a collapsed table ignores
-   border-radius, and the panel's rounded corners are the one thing that
-   makes it sit in the page like every other panel. */
 .lab-table {
   width: 100%; border-collapse: separate; border-spacing: 0; overflow: hidden;
   background: var(--card); border: 1px solid var(--line); border-radius: 12px;
@@ -819,12 +521,7 @@ button + button.link { margin-left: 16px; }
   background: var(--bg); border-bottom: 1px solid var(--line);
 }
 .lab--rejected { background: var(--rejected-bg); }
-/* Our normalised name, under the lab's own wording. Secondary on purpose:
-   the reader matches rows by what is printed on their paper report. */
 .lab__printed { display: block; font-weight: 400; color: var(--muted); font-size: 13px; }
-/* A cell holding a word, not a number. The monospace/tabular treatment exists
-   so figures line up down the column (design.md §3); applied to "male" or to
-   an absence sentence it only lends them the look of a measured value. */
 .lab-table td.lab__word { font-family: var(--font-sans); font-variant-numeric: normal; }
 .lab__range { color: var(--muted); }
 .flag--high, .flag--critical { color: var(--high); font-weight: 700; }
@@ -838,7 +535,6 @@ button + button.link { margin-left: 16px; }
 .category--newly_normal, .category--improved { color: var(--low); font-weight: 700; }
 .category--worsened { color: var(--high); font-weight: 700; }
 .category--unchanged { color: var(--muted); }
-/* Choose which two reports the comparison and the score describe. */
 .pair-picker {
   display: flex; flex-wrap: wrap; align-items: center; gap: 14px;
   margin: 0 0 16px;
@@ -874,21 +570,14 @@ button + button.link { margin-left: 16px; }
 .doctor-summary h1, .population h1 { margin-bottom: 4px; }
 
 
-
-/* Which pipeline stage raised a warning, shown before its text. */
 .warning__stage { color: var(--muted); font-weight: 600; }
 
-/* Report row: the file name opens the original, and Delete is deliberately
-   quiet until it is armed. A destructive action on medical data should not
-   compete for attention with the action people actually came to take. */
 button.report__name {
   display: inline; font-weight: 600; font-size: 16px; text-align: left; color: var(--ink);
   text-decoration: none; padding: 0; border: none; border-radius: 0;
 }
 button.report__name:hover:not(:disabled) { background: none; color: var(--brand); }
 
-/* THE LIST IS ONE PANEL, ONE ROW PER REPORT. A separate boxed card per file
-   made a list of four reports four screens of chrome. */
 .report-list {
   background: var(--panel); border: 1px solid var(--panel-line); border-radius: 16px; box-shadow: var(--shadow-sm);
   margin: 28px 0 0; overflow: hidden;
@@ -917,9 +606,6 @@ button.link.report__delete:hover:not(:disabled) {
 .report__confirm-text { color: var(--danger); font-size: 14px; font-weight: 600; }
 button.danger { background: var(--danger); border-color: var(--danger); color: var(--on-danger); }
 
-/* The measured values behind a condition: name, value, and a note ONLY where a
-   threshold was crossed. Aligned columns so the eye scans down the numbers
-   instead of re-reading the same sentence stem on every row. */
 .measured { margin: 10px 0; }
 .measured__row {
   display: grid; grid-template-columns: minmax(150px, 1.4fr) auto 1.2fr;
@@ -937,39 +623,15 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
   .measured__note { grid-column: 1 / -1; }
 }
 
-/* Guidance grouped by why it appears. The sub-heading carries the "general,
-   educational" qualifier once, so each bullet does not have to repeat it. */
 .guidance__heading { font-size: 15px; margin: 14px 0 6px; color: var(--muted); font-weight: 600; }
 .guidance__because { color: var(--muted); font-size: 13px; }
 
-/* THE ATTRIBUTION, ONCE, WHEN IT IS THE SAME ONE FOR EVERY ROW. Rendered only
-   by `sharedBecausePhrase`, which refuses to hoist unlike sets -- see the
-   comment at that function. When it is absent the per-row spans come back, so
-   the reason a bullet is on the page is never unstated. */
 .guidance__shared {
   margin: 0 0 10px;
   color: var(--muted);
   font-size: 13px;
 }
 
-/* ROWS, NOT BROWSER BULLETS -- and ONE definition of them, shared by every
-   list that needs it. `list-style` discs at `padding-left: 20px` gave the two
-   most reader-facing lists in the app less structure than a form label.
-
-   `.bullets` is used by the dashboard's guidance topics AND the population
-   page's limitations. It was written for the first; the second turned up an
-   hour later wanting exactly the same thing, and copying it would have been
-   the third duplicated rule this file has had to reverse. One rule, two
-   callers.
-
-   NO HOVER AND NO POINTER, deliberately. These rows are statements, not
-   destinations -- neither list has anywhere to navigate to -- and a row that
-   looks clickable and is not is a worse answer than a plain one.
-
-   The dot is `--brand`, which is decoration and is allowed to be: it is
-   already the app's accent. None of the three risk colours, ever; those mean
-   something, and spending one here would teach the eye that colour is
-   decoration. */
 .bullets {
   list-style: none;
   padding-left: 0;
@@ -995,18 +657,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
 }
 .guidance__text { color: var(--body); }
 
-/* THE METHOD NOTES PANEL -- what a comparison cannot account for, and the
-   statement that follows from it.
-   Three stacked `.hint` blocks ended the population page in an undifferen-
-   tiated grey wall, and the closing disclaimer read as text that merely
-   followed the bullets rather than concluding them. One panel, one heading,
-   the shared `.bullets` rows, and the conclusion divided off by a rule --
-   the same shape as `.passage__close` on the clinician page, which solved
-   this exact problem for that document.
-
-   IT IS A PANEL, NOT A DISCLOSURE. The dashboard's guidance topics collapse;
-   these do not. They are the caveats on the comparison above them, and a
-   caveat behind a toggle is a caveat most readers never open. */
 .notes {
   background: var(--panel);
   border: 1px solid var(--panel-line);
@@ -1026,15 +676,8 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
   font-size: 14px;
   max-width: 68ch;
 }
-/* With no limitations to list, the conclusion is the whole panel and has
-   nothing to be divided from. */
 .notes__close:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
 
-/* THE METHOD STATEMENT. Said once, above the cards it governs -- and NOT a
-   `.hint`. It carries the caveat that every card used to repeat ("it does not
-   say whether a result is normal, high or low"), and demoting the only copy
-   of a caveat to the page's quietest type is how a caveat stops being read.
-   Body ink, panel ground, full measure. */
 .method {
   margin: 14px 0 16px;
   padding: 13px 16px;
@@ -1046,18 +689,10 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
 }
 .method strong { color: var(--ink); }
 
-/* The percentile bar. Geometry only -- the component holds no threshold and
-   no polarity, and the fill is `--brand` because a percentile is not a
-   verdict and must never be painted as one. */
 .pctbar { display: block; margin: 10px 0 2px; max-width: 100%; }
 
-/* The progress card. The score, the scale, one sentence of meaning, then the
-   coverage and the caveat -- in that order, and nothing else. */
 .scorescale { display: block; margin: 2px 0 12px; max-width: 100%; }
 
-/* THE NINE TREND CHARTS, as disclosures.
-   ~200px each made them most of the timeline. Closing is safe only because
-   the summary states the direction; the chart is the detail behind it. */
 .trend-chart__block.disclosure {
   border: 1px solid var(--panel-line);
   border-radius: 10px;
@@ -1070,12 +705,8 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
 .trend-chart__block[open] > .disclosure__summary .disclosure__chevron {
   transform: rotate(-135deg) translate(-2px, -2px);
 }
-/* Not a direction, and never coloured like one. */
 .trend-chart__nodirection { color: var(--muted); font-size: 13px; }
 
-/* THE THRESHOLD A CHANGE HAD TO CROSS, AND WHO STANDS BEHIND IT.
-   Same quiet treatment as the join note: this is the answer to "why does a
-   rise read stable", not a warning banner. */
 .trend-chart__threshold {
   margin: 0 14px 10px;
   color: var(--muted);
@@ -1083,9 +714,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
   line-height: 1.5;
 }
 
-/* WHICH PRINTED NAMES WERE TREATED AS ONE TEST (Module 36).
-   Inside the panel, quiet, and NOT a warning -- a join is an ordinary fact
-   about the reader's two reports, not a caveat about this one. */
 .trend-chart__joined {
   margin: 0 14px 10px;
   color: var(--muted);
@@ -1093,46 +721,18 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
   line-height: 1.5;
 }
 
-/* THE TWO READINGS A DIRECTION WORD IS ABOUT, on the shut row.
-   Quiet on purpose: it restates what the chart draws, and it must not compete
-   with the parameter's name or the word beside it. NEVER COLOURED -- green and
-   rust mean better and worse on this page, and two readings mean neither. The
-   numerals are already monospace and tabular through `.value`. */
 .disclosure__pair { color: var(--muted); font-size: 13px; white-space: nowrap; }
 
-/* STATUS ON A PARAMETER THIS PLATFORM DOES NOT ASSESS.
-   Two chips, and neither is a trend classification -- see LabStatus in
-   Timeline.jsx for why improving/worsening/stable cannot be said here. */
 .lab-status { display: inline-flex; gap: 8px; align-items: center; font-size: 13px; }
 
-/* WHICH WAY THE NUMBERS WENT, AND DELIBERATELY UNCOLOURED.
-   Green and rust on this page mean better and worse. "rose" is arithmetic on
-   two readings and carries no such claim, so it must not borrow their ink --
-   a red "rose" beside an ESR would be a verdict nobody computed. */
 .lab-status__move { color: var(--muted); }
 
-/* THE LABORATORY'S OWN MARKING, in the same hues the results table uses for
-   the same fact (.flag--high / .flag--low), so one laboratory verdict does
-   not appear in two colours on two screens. */
 .lab-status__flag { font-weight: 700; }
 .lab-status__flag--high,
 .lab-status__flag--critical { color: var(--high); }
 .lab-status__flag--low { color: var(--medium); }
 .lab-status__flag--normal { color: var(--muted); font-weight: 600; }
 
-/* ==========================================================================
-   PARAMETERS THIS TOOL DOES NOT ASSESS
-   ==========================================================================
-   They live in "Your results" now, as their own group. The group must read
-   as ADJACENT TO the assessed rows, never as more of them.
-
-   NO RISK COLOUR IN THIS TABLE. `--green` / `--amber` / `--rust` mean THIS
-   TOOL compared a value with a threshold it holds. Nothing here was assessed
-   by this tool, so the laboratory's own marking is set in `--ink` with the
-   word beside it saying whose judgement it is. Borrowing the verdict palette
-   would make a lab's marking indistinguishable from a finding this platform
-   stands behind -- which is the entire distinction the group exists to
-   preserve. */
 .lab-group__title {
   margin: 24px 0 2px;
   font-size: 14px;
@@ -1146,11 +746,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
   font-weight: 400;
   margin-top: 2px;
 }
-/* NORMAL RANGES, moved out of the results table.
-   The interval was a COLUMN, empty on most rows of most reports, so a report
-   whose laboratory printed nothing paid for a column of "not printed". As a
-   list it costs nothing when it is empty and reads as a sentence when it is
-   not. */
 .range-list {
   list-style: none;
   margin: 0;
@@ -1173,7 +768,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
   font-variant-numeric: tabular-nums;
 }
 
-/* The description group in "What these results mean". */
 .explanations__group { margin: 22px 0 2px; font-size: 14px; }
 .explanation__body { padding: 0 20px 14px; }
 .explanation__body > p { margin: 0; max-width: 68ch; }
@@ -1181,28 +775,13 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
 .progress__meaning { color: var(--body); margin: 0 0 10px; max-width: 68ch; }
 .progress__coverage { color: var(--muted); font-size: 14px; margin: 0 0 10px; max-width: 68ch; }
 
-/* Module 23's plain-language explanations -- the main thing a patient reads. */
 .explanations { margin-bottom: 8px; }
 .explanation { padding: 0; }
 .explanation__subject { margin: 0; font-size: 16px; color: var(--accent); }
 .explanation__text { margin: 0; padding: 0 20px 16px; max-width: 68ch; }
-/* 🔊 Read aloud (2026-10-06): a small pill under the text it reads. */
 .explanation button.link.read-aloud { margin: 0 20px 16px; font-size: 13px; padding: 4px 12px; }
 .explanation button.link.read-aloud[aria-pressed="true"] { background: var(--brand-soft); }
 
-/* ==========================================================================
-   DISCLOSURES
-   ==========================================================================
-   Native `<details>`. Keyboard operable, correctly exposed to a screen
-   reader, and open without JavaScript -- none of which is true of a div with
-   a click handler, and all of which matters more here than on a marketing
-   page.
-
-   WHAT GOES BEHIND ONE IS A CLINICAL DECISION, NOT A LAYOUT DECISION. Long
-   explanatory prose may close; a sentence reporting that something is MISSING
-   may not, because a reader who never opens the disclosure never learns the
-   absence exists. The markup enforces nothing here -- the call is made at
-   each call site and the reasoning is written there. */
 .disclosure { border: 1px solid var(--panel-line); }
 .disclosure__summary {
   display: flex;
@@ -1210,7 +789,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
   gap: 10px;
   padding: 13px 20px;
   cursor: pointer;
-  /* The default triangle is replaced by the chevron below. */
   list-style: none;
 }
 .disclosure__summary::-webkit-details-marker { display: none; }
@@ -1218,9 +796,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
 .disclosure__summary > h3 { flex: 1; margin: 0; }
 .disclosure__summary:hover { background: var(--header); }
 
-/* The affordance. A rotating chevron is the one shape readers already know
-   means "there is more here", and it is drawn from the border rather than a
-   glyph so it cannot pick up a font that does not have it. */
 .disclosure__chevron {
   width: 7px;
   height: 7px;
@@ -1234,12 +809,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
   transform: rotate(-135deg) translate(-2px, -2px);
 }
 
-/* The count in a section summary -- how much is behind the toggle, so opening
-   it is an informed choice rather than a surprise.
-
-   FILLED, NOT OUTLINED. An outlined pill beside a heading reads as a second
-   control -- something else to press -- which is exactly what it must not be.
-   A filled chip with no border reads as a quantity attached to the words. */
 .disclosure__count {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -1255,25 +824,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
 
 .disclosure__spacer { flex: 1; }
 
-/* A whole section rather than one card.
-   ==========================================================================
-   THE CLOSED ROW USED TO BE UNBOXED, AND IT READ AS DEBRIS. A hairline rule,
-   a heading, a pale count and -- a full page-width away -- a chevron. At
-   1500px the two ends of the control had nothing between them, so the
-   chevron looked like a stray glyph rather than the affordance for the words
-   on the far left, and the whole row floated on the page background while
-   every section around it sat on a panel.
-
-   The reasoning for leaving it unboxed was that a border around a page
-   heading "reads as a card containing a section rather than the section
-   itself". That is true of a border drawn around an OPEN section. It is not
-   true of the closed state, which is not a section at all yet -- it is a
-   BUTTON, and a button should look like one surface you can press.
-
-   So the summary is a panel row, and opening it joins that row to the body
-   as a single piece: the seam between them is removed rather than drawn, so
-   the open state is one panel with a heading on top and not two stacked
-   boxes. */
 .disclosure--section {
   border: 0;
   margin-top: 22px;
@@ -1285,21 +835,13 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
   border-radius: 12px;
   transition: background .15s ease, border-color .15s ease;
 }
-/* PRESSABLE, NOT LINKED. The whole row lifts on hover rather than the words
-   changing colour: recolouring the heading suggested a destination, and there
-   is nowhere to go -- the control opens something in place. */
 .disclosure--section > .disclosure__summary:hover {
   background: var(--header);
   border-color: var(--header-line);
 }
 .disclosure--section > .disclosure__summary:hover > h2 { color: inherit; }
-/* The heading stops stretching so the count can sit against it. */
 .disclosure--section > .disclosure__summary > h2 { flex: 0 0 auto; }
 
-/* OPEN: one piece, not two. The summary keeps its top corners, loses its
-   bottom ones and its bottom edge, and the body picks up exactly where it
-   stopped -- so the heading reads as the top OF the panel rather than as a
-   separate box sitting on it. */
 .disclosure--section[open] > .disclosure__summary {
   border-radius: 12px 12px 0 0;
   border-bottom-color: transparent;
@@ -1326,33 +868,7 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
   border-top: 1px solid var(--hairline);
 }
 
-/* The topics, inside the panel.
-   NO LEFT RULE AND NO HOVER: these are statements, not destinations. The
-   section was asked for as "hyperlinks", and the rows deliberately did not
-   become any -- there is nowhere for them to go, and a row that looks
-   clickable and is not is a worse answer than a plain one. The clickable
-   thing is the summary above, which is a real control and looks like one.
-   Separation comes from a hairline between rows and a marker that reads as a
-   list bullet, neither of which promises an action. */
 
-/* The topics that were checked and were clear, or could not be checked.
-   Never ten cards -- but NEVER MERGED WITH EACH OTHER, and the separation is
-   structural, not a tint.
-
-   This used to be two paragraphs differing by `color: var(--muted)`. One step
-   of grey, carrying the single distinction this screen exists to preserve:
-   CHECKED AND CLEAR is not COULD NOT CHECK. The file header above says why
-   that could never work -- "a grey number still reads as a number; a dashed
-   empty outline cannot" -- and design.md §6 specifies the treatment used
-   below.
-
-   THE SIGNAL IS THE OUTLINE -- NOT THE TINT, AND NOT THE FILL EITHER.
-   Measured in the page: `--panel` on `--bg` is 1.14:1 in light and 1.06:1 in
-   dark, so the fill alone is very nearly invisible, and a comment claiming it
-   carries the distinction would be a guarantee the code does not make -- the
-   fault this project has now caught five times. What a reader actually sees is
-   SOLID vs DASHED, a tick vs no tick, and the words NOT CHECKED. Three
-   signals, not one, and none of them colour by itself. */
 .roundup { margin: 10px 0 18px; }
 .roundup__lead { color: var(--ink); margin: 0 0 10px; }
 .roundup__note {
@@ -1373,9 +889,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
   line-height: 1.2;
 }
 
-/* CHECKED AND CLEAR -- a filled chip. The tick carries the meaning so the
-   green is never the only signal; the name stays in `--ink` because a
-   cleared topic is a fact, not a colour. */
 .chip--clear {
   background: var(--panel);
   border: 1px solid var(--panel-line);
@@ -1383,17 +896,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
 }
 .chip__mark { color: var(--green-text); font-weight: 700; font-size: 13px; }
 
-/* COULD NOT CHECK -- design.md §6: dashed `--band-line`, NO FILL, and the
-   literal words in `--mono`. An absence must not be able to read as a quiet
-   pass, so it gets no background at all.
-
-   THE TOPIC NAME IS NOT DIMMED. A first version put it in `--mono`, which
-   measures 3.37:1 on `--bg` in light mode -- below AA, and DIMMER than the
-   `--muted` comma-run this replaced (4.04:1). That is the wrong direction
-   twice over: these are the topics a reader most needs to take to a doctor,
-   and the file's own principle is that the OUTLINE carries the absence
-   precisely so the text does not have to be degraded to carry it. The name
-   reads at `--body`; `--mono` is spent on the tag, where design.md puts it. */
 .chip--unassessed {
   background: none;
   border: 1px dashed var(--band-line);
@@ -1406,23 +908,12 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
   color: var(--mono);
 }
 
-/* High / Low / In range, derived from the engine's own threshold crossings. */
 .verdict { font-weight: 600; font-size: 14px; }
-/* A verdict is a word, not a figure: it sits in a mono cell but reads in the
-   text face, so "In range" does not borrow the look of a measurement. */
 .lab-table td .verdict { font-family: var(--font-sans); }
 .verdict--high { color: var(--high); }
 .verdict--low { color: var(--medium); }
 .verdict--normal { color: var(--low); }
-/* TWO REFERENCES THAT DISAGREE, AND DELIBERATELY NOT THE CLEAR GREEN.
-   A row inside the laboratory's printed interval but outside the threshold
-   this tool applies is not a settled "In range", and rendering it in the same
-   colour as one would be the shape of 6bg finding 4 -- a finding reading as a
-   reassurance. It takes the same attention colour as `.verdict--low`. */
 .verdict--mixed { color: var(--medium); }
-/* The two supporting lines: full contrast, because they carry the clinical
-   content. Section 6aj's lesson -- an absence is carried by the SHAPE so the
-   text never has to be dimmed to signal it. */
 .verdict__detail,
 .verdict__secondary {
   display: block;
@@ -1431,8 +922,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
   color: var(--body);
 }
 
-/* Results the platform read but does not assess. Deliberately prominent: a
-   reader who does not see this concludes the whole report was checked. */
 .unanalysed { border: 1px solid var(--line); border-left: 4px solid var(--medium);
   background: var(--card); border-radius: 10px; padding: 16px 20px; margin: 16px 0; }
 .unanalysed h2 { margin-top: 0; font-size: 18px; }
@@ -1443,8 +932,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
 .unanalysed__value { color: var(--muted); font-variant-numeric: tabular-nums; }
 @media (max-width: 560px) { .unanalysed__list { columns: 1; } }
 
-/* The laboratory's own abnormal markings on tests this tool does not assess.
-   Given real prominence: these were being discarded entirely. */
 .unanalysed__flagged { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 12px; }
 .unanalysed__flagged h3 { margin: 0 0 4px; font-size: 16px; color: var(--high); }
 .unanalysed__list--flagged { columns: 1; padding-left: 18px; }
@@ -1452,25 +939,13 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
 .unanalysed__name { font-weight: 600; }
 .unanalysed__range { color: var(--muted); font-size: 13px; }
 
-/* What the test measures, generated from its NAME alone. Set apart from the
-   value beside it -- the number is the laboratory's measurement of this
-   patient, the sentence is a definition of the test in general, and the two
-   must not read as one statement. */
 .unanalysed__description { margin: 2px 0 0; font-size: 13px; line-height: 1.5; color: var(--muted); }
 .unanalysed__description--withheld { font-style: italic; }
 
-/* "In short" -- the whole report in one place, at the foot of the page.
-   Given a heavier top border than an ordinary card because it closes the
-   page rather than continuing it. */
 .in-short { border-top: 3px solid var(--accent); margin-top: 28px; }
 .in-short__headline { font-family: var(--font-serif); font-weight: 500; font-size: 22px; line-height: 1.35; margin: 0 0 10px; }
 .in-short__meta { color: var(--muted); font-size: 14px; margin: 0 0 14px; }
 .in-short p { line-height: 1.6; }
-/* The closing line is set apart from the findings above it: it is a statement
-   about what this whole page is, not another finding. */
-/* Module 34 on the clinician page. Same treatment as the patient summary's:
-   set apart, because these sentences are about the TEST and not about this
-   patient, and a reader must be able to tell the two kinds apart. */
 .passage__context {
   margin: 14px 0 0;
   padding: 12px 14px;
@@ -1479,10 +954,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
 .passage__context p { margin: 0 0 8px; }
 .passage__context p:last-child { margin-bottom: 0; }
 
-/* Module 34 -- what an out-of-range result is generally associated with.
-   Set apart from the composed summary above it, because these sentences are
-   about the TEST and not about this reader: same rule as every other place
-   where two kinds of statement share a panel. */
 .in-short__context {
   margin: 14px 0 0;
   padding: 12px 14px;
@@ -1497,22 +968,17 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
   color: var(--muted); font-size: 14px;
 }
 
-/* ---- clinician summary ------------------------------------------------- */
-/* A key/value block for context a clinician scans rather than reads. */
 .kv { margin: 8px 0 0; }
 .kv__row { display: grid; grid-template-columns: minmax(120px, 200px) 1fr; gap: 12px; padding: 5px 0; border-bottom: 1px solid var(--line); }
 .kv__row:last-child { border-bottom: none; }
 .kv dt { font-weight: 600; color: var(--muted); }
 .kv dd { margin: 0; }
 
-/* A model probability. Rounded on screen; the exact value is in the title. */
 .prob { font-weight: 700; font-variant-numeric: tabular-nums; }
 
-/* Said once, not per row: what each kind of source answers. */
 .legend { background: var(--bg); }
 .legend h3 { margin: 0 0 4px; font-size: 15px; }
 
-/* Assessed and not flagged, in one line instead of one card each. */
 .roundup { padding: 10px 14px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
 
 .refs { list-style: none; padding: 0; }
@@ -1520,29 +986,16 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
 .refs li p { margin: 4px 0 0; }
 
 .scope ul { padding-left: 18px; color: var(--muted); font-size: 14px; }
-/* The scope statement, at the top. A list rather than a run-on paragraph:
-   five statements set as one block of prose read as a wall to scroll past. */
 .scope-list { padding-left: 18px; margin: 4px 0 18px; color: var(--muted); font-size: 14px; }
 .scope-list li { margin-bottom: 4px; }
 .scope li { margin-bottom: 5px; }
 .integrity { background: var(--bg); }
 
-/* Figures, identifiers and provenance a normal reader does not need, one
-   click away rather than deleted. Never holds a caveat -- see DoctorSummary. */
 .tech { margin-top: 6px; }
 .tech > summary { cursor: pointer; color: var(--accent); font-size: 13px; }
 .tech__body { padding: 6px 0 2px 12px; border-left: 2px solid var(--line); margin-top: 6px; }
 .tech__body ul { margin: 0; }
 
-/* The clinician summary as one passage. Set for reading, not scanning: a
-   measured line length and real paragraph spacing. */
-/* THE BOX FOLLOWS THE MEASURE, it does not stretch past it.
-   The paragraphs wrap at 68ch because that is a readable line; the card was
-   still taking the full 1060px page, so a third of it was empty to the right
-   of every line and the panel read as a half-filled container rather than a
-   document. The width here is the measure plus the padding, so the right edge
-   lands just past where the text ends. `min(100%, …)` keeps it fluid below
-   that. */
 .passage {
   background: var(--card);
   border: 1px solid var(--line);
@@ -1555,11 +1008,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
 .passage strong { color: var(--ink); }
 .passage__close { padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
 
-/* ==========================================================================
-   AUTH — the first screen anyone sees
-   ==========================================================================
-   Given the same panel/token vocabulary as everything else, so signing in
-   does not look like a different product from the dashboard behind it. */
 .auth { width: min(1080px, 92vw); margin: 0 auto; padding: 28px 0 56px; }
 .auth__head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .auth__brand {
@@ -1569,16 +1017,10 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
 }
 .auth__brand em { font-style: italic; color: var(--brand); }
 .auth__brand:hover { color: var(--ink); }
-/* Two columns: what this is on the left, the form on the right. On a phone
-   the form comes second, after the one sentence that says what it is for. */
 .auth__body {
   display: grid; grid-template-columns: 1.05fr 1fr; gap: 48px;
   align-items: stretch; margin-top: 7vh;
 }
-/* The left half is a dark forest panel: the one place on this screen that is
-   about the product rather than the form. `--espresso` / `--on-espresso` are
-   the same dark pair in both themes, so it reads the same at night. A large
-   faint leaf sits in its corner -- decoration, drawn as a CSS mask. */
 .auth__intro {
   position: relative; overflow: hidden;
   background: var(--espresso); color: var(--on-espresso); border-radius: 28px;
@@ -1603,7 +1045,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
   color: var(--on-espresso); position: relative;
 }
 .auth__points li:last-child { border-bottom: 1px solid color-mix(in srgb, var(--on-espresso) 14%, transparent); }
-/* A soft green tick in a ring: features of the product, not results. */
 .auth__points li::before {
   content: ""; position: absolute; left: 0; top: 13px;
   width: 22px; height: 22px; border-radius: 50%;
@@ -1619,8 +1060,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
 .auth h2 { font-family: var(--font-serif); font-weight: 500; font-size: 28px; margin: 0 0 24px; }
 .auth button[type="submit"] { width: 100%; padding: 12px 16px; margin-top: 6px; }
 .auth button + button.link { margin-left: 0; margin-top: 14px; display: block; }
-/* Show / Hide, inside the password box on the right (2026-10-02). The input
-   keeps its full width and gains right padding so text never runs under it. */
 .auth__password { position: relative; display: block; }
 .auth__password input { padding-right: 76px; }
 .auth button.link.auth__show {
@@ -1634,24 +1073,12 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
   .auth h1 { font-size: 30px; }
 }
 
-/* ==========================================================================
-   PAGE LEAD
-   ==========================================================================
-   The sentence under a page title. Wider and darker than a hint, because it
-   is the page saying what it is for. */
 .page-lead { color: var(--body); font-size: 15px; max-width: 68ch; margin-bottom: 24px; }
 .visually-hidden {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
 }
 
-/* ==========================================================================
-   LANDING PAGE
-   ==========================================================================
-   Ivory, clay and sage. The one picture on the page is an example of the
-   product's own results table, because that is the thing a visitor is
-   deciding about. The risk colours appear only inside that example, meaning
-   exactly what they mean on the dashboard. */
 .landing { min-height: 100vh; display: flex; flex-direction: column; overflow-x: clip; }
 .landing__bar {
   display: flex; align-items: center; gap: 22px;
@@ -1716,8 +1143,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
   content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--brand);
 }
 
-/* The visual: a sage stage, the example table on it, two small cards over
-   its corners. Still shapes, no motion beyond a gentle rise on load. */
 .hero__visual { position: relative; padding: 44px 34px 100px 44px; }
 .hero__visual::before {
   content: ""; position: absolute; inset: 0 0 0 10%;
@@ -1742,7 +1167,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
 }
 .icon-disc--sm { width: 34px; height: 34px; border-radius: 10px; background: var(--sage); color: var(--green-text); }
 
-/* The example sheet: a printed results table on a white card. */
 .specimen {
   margin: 0; background: var(--panel); border: 1px solid var(--panel-line);
   border-radius: 18px; overflow: hidden; box-shadow: var(--shadow-md);
@@ -1764,13 +1188,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
 .specimen__tag--high { color: var(--high); }
 .specimen__tag--normal { color: var(--low); }
 
-/* THE HERO MOVES (owner, 2026-10-06). Once per page load the example table
-   "reads" itself -- rows glide in one by one, a soft line sweeps down them,
-   each verdict appears -- then the summary card arrives and the safety tick
-   draws. After that only the two small cards keep drifting, each at its own
-   pace. EVERY RESTING STATE IS THE FINISHED PICTURE: the reduced-motion rule
-   switches all of this off and leaves the table, tags and cards exactly as
-   they were before any of it existed. */
 @keyframes heroFloat { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(-9px) } }
 @keyframes heroScan {
   0%   { top: 22%; opacity: 0 }
@@ -1778,11 +1195,8 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
   88%  { opacity: 1 }
   100% { top: 96%; opacity: 0 }
 }
-/* 64 > the tick icon's measured length (50) -- a dash shorter than the path
-   leaves part of the tick missing even at rest. */
 @keyframes heroTick { from { stroke-dashoffset: 64 } to { stroke-dashoffset: 0 } }
 .specimen { position: relative; }
-/* --hero-delay: set by Landing.jsx to the intro's length when the intro plays. */
 .specimen { animation: rise .6s var(--hero-delay, 0ms) both; }
 .specimen__table tbody tr { animation: glide .5s calc(var(--hero-delay, 0ms) + .55s + var(--i, 0) * .32s) both; }
 .specimen__tag { animation: fadeIn .45s calc(var(--hero-delay, 0ms) + 1.05s + var(--i, 0) * .32s) both; }
@@ -1806,7 +1220,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
   animation: heroTick .6s calc(var(--hero-delay, 0ms) + 2.5s) ease-out backwards;
 }
 
-/* What happens to a report, as one line of stages. */
 .pipeline {
   display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 14px;
   padding: 22px 24px; margin: 8px 0 0;
@@ -1820,7 +1233,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
 }
 .pipeline__stage .icon { color: var(--brand); }
 
-/* Sections. */
 .band { padding: 96px 0 0; }
 .band__head { max-width: 680px; margin-bottom: 40px; }
 .band__title {
@@ -1863,7 +1275,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
 .promise__title { font-size: 16.5px; margin: 4px 0 6px; }
 .promise__text { margin: 0; color: var(--body); max-width: 50ch; }
 
-/* The closing band: the one dark surface on the page. */
 .closing { margin: 96px 0 0; background: var(--espresso); color: var(--on-espresso); }
 .closing__inner {
   width: min(1180px, calc(100% - 48px)); margin: 0 auto; padding: 64px 0;
@@ -1914,12 +1325,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
   .landing__foot { grid-template-columns: 1fr; padding: 40px 16px; }
 }
 
-/* ==========================================================================
-   CHARTS
-   ==========================================================================
-   Geometry is in the components; everything visual is here, so the two themes
-   and the reduced-motion rule reach the charts the same way they reach the
-   rest of the page. */
 .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 @media (max-width: 900px) { .chart-grid { grid-template-columns: 1fr; } }
 
@@ -1940,8 +1345,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
   font-size: 30px;
   fill: var(--ink);
 }
-/* An unestablished verdict is never a risk colour and never the same weight
-   as a real one. */
 .gauge__verdict--absent {
   font-family: var(--font-mono);
   font-size: 13px;
@@ -1953,7 +1356,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
 .radar__label { font-family: var(--font-mono); font-size: 10.5px; fill: var(--body); }
 .radar__label--absent { fill: var(--mono); }
 
-/* ---- the range chart --------------------------------------------------- */
 .range__head {
   display: flex; align-items: baseline; justify-content: space-between;
   gap: 16px; margin-bottom: 18px;
@@ -1966,8 +1368,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
   gap: 16px;
   align-items: center;
 }
-/* A row for something never measured is quieter, but NOT greyed into
-   illegibility -- the reader still has to be able to see what is missing. */
 .range__row--absent { opacity: .75; }
 .range__name { font-size: 13.5px; color: var(--ink); }
 .range__flag { display: block; margin-top: 2px; }
@@ -1982,7 +1382,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
   position: absolute; top: 6px; height: 9px;
   background: var(--band); border-radius: 99px;
 }
-/* NO FILL. A dashed empty band is the whole absence signal in this chart. */
 .range__band--absent {
   background: none;
   border: 1px dashed var(--band-line);
@@ -1996,8 +1395,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
 .range__marker {
   position: absolute; top: 3px; width: 15px; height: 15px; margin-left: -7.5px;
   border-radius: 50%;
-  /* The panel-coloured ring is what separates the marker from the track it
-     sits on, in both themes. */
   border: 3px solid var(--panel);
 }
 .range__value { text-align: right; font-size: 13px; font-weight: 500; }
@@ -2012,10 +1409,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
   .range__track { grid-column: 1 / -1; }
 }
 
-/* ---- the trend chart --------------------------------------------------- */
-/* The range chart's vocabulary carried onto a time axis: the same --band for
-   a printed interval, the same --track baseline, and the same dashed unfilled
-   --mono treatment for everything that is not a reading. */
 .trend-chart { margin: 0; }
 .trend-chart__block { margin: 0 0 22px; }
 .trend-chart__title { margin: 0 0 6px; font-size: 14px; font-weight: 500; color: var(--ink-2); }
@@ -2026,7 +1419,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
   letter-spacing: .04em;
   fill: var(--mono);
 }
-/* A sentence, not a caption: these are the states a flat line would hide. */
 .trend-chart__absence {
   margin: 6px 0 0;
   font-size: 12.5px;
@@ -2039,8 +1431,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
   font-size: 12.5px;
   line-height: 1.5;
   color: var(--muted);
-  /* Dashed, unfilled, --mono: the same absence treatment the marker gets, so
-     the lane below the axis and the line below the chart read as one thing. */
   border-left: 1px dashed var(--band-line);
   padding-left: 10px;
   margin-bottom: 4px;
@@ -2048,9 +1438,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
 .trend-chart__reason { color: var(--mono); }
 .trend-chart__legend { display: block; margin: 4px 0 0; color: var(--mono); }
 
-/* ---- entry motion (design.md section 7) -------------------------------- */
-/* `pathLength="1"` on the path, so the line draws itself without anyone
-   measuring it -- and rests fully drawn when animation is off. */
 .trend-chart__line {
   --len: 1;
   stroke-dasharray: 1;
@@ -2063,9 +1450,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
   animation: cellIn .45s cubic-bezier(.3, 1.5, .4, 1) both;
   animation-delay: calc(.9s + var(--i, 0) * 90ms);
 }
-/* The absence markers fade in; they never pop, and they never loop -- the one
-   loop in the app is the radar's, and two competing shimmers would read as
-   decoration rather than as a statement. */
 .trend-chart__gap { animation: fadeIn .6s .5s both; }
 
 .chart-grid > .card { animation: rise .5s both; }
@@ -2076,8 +1460,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
 .gauge__band--medium { animation-duration: .7s; animation-delay: .6s; }
 .gauge__band--high { animation-delay: .8s; }
 
-/* The needle sweeps to `--angle` and STOPS there. The static transform on the
-   element is the same angle, so switching the animation off cannot move it. */
 @keyframes sweep { from { transform: rotate(-96deg) } to { transform: rotate(var(--angle, 0deg)) } }
 .gauge__needle {
   transform-origin: 145px 152px;
@@ -2091,23 +1473,12 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
   animation: cellIn .4s both;
   animation-delay: calc(.8s + var(--i, 0) * 80ms);
 }
-/* The one loop in the app. */
 .radar__vertex--absent { animation: shimmer 2.4s 1.1s ease-in-out infinite; }
 
 .range__row { animation: glide .5s both; animation-delay: calc(.3s + var(--i, 0) * 80ms); }
 .range__excess { animation: barGrow .8s cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(.45s + var(--i, 0) * 100ms); }
 .range__marker { animation: cellIn .45s cubic-bezier(.3, 1.5, .4, 1) both; animation-delay: calc(1.05s + var(--i, 0) * 100ms); }
 
-/* ==========================================================================
-   LINKS
-   ==========================================================================
-   NO BLUE ANYWHERE (design.md section 1). Anchors outside the header were
-   still falling through to the user-agent default, which is the one colour
-   this palette does not contain -- and on the dark ground it was a low-contrast
-   blue on near-black. Links take the brand clay/gold and stay underlined, so
-   colour is never the only thing marking them. */
-/* 2026-10-02: underlines removed on the owner's request. Links are marked by
-   weight as well as colour, so colour is still not the only signal. */
 a { color: var(--brand); font-weight: 500; text-decoration: none; transition: color .15s ease; }
 a:hover { color: var(--brand-strong); }
 .crumbs a { color: var(--body); }
@@ -2115,19 +1486,9 @@ a:hover { color: var(--brand-strong); }
 .dashboard__links a { color: var(--brand); }
 .range__note-all { margin: -6px 0 16px; font-size: 12.5px; color: var(--muted); }
 
-/* `<code>` defaults to the UA's monospace, which is the one place a fourth
-   family was sneaking in. Same token as every other number on the page. */
 code, kbd, samp, pre { font-family: var(--font-mono); }
 .section__code { font-family: var(--font-mono); letter-spacing: .04em; }
 
-/* ==========================================================================
-   BREADCRUMB + CROSS-PAGE LINKS
-   ==========================================================================
-   These two rows were four identical underlined links stacked on top of each
-   other, so the page opened with a list of equal-looking things and none of
-   them was the title. The trail is now mono micro-type that recedes, the
-   filename is set as the heading it actually is, and the two cross-links are
-   given edges so they read as places to go rather than as more prose. */
 .crumbs {
   display: flex;
   flex-wrap: wrap;
@@ -2142,7 +1503,6 @@ code, kbd, samp, pre { font-family: var(--font-mono); }
 }
 .crumbs a { color: var(--mono); text-decoration: none; }
 .crumbs a:hover { color: var(--brand); }
-/* The filename, as a title rather than as the end of a trail. */
 .crumbs__here {
   font-family: var(--font-serif);
   font-size: 26px;
@@ -2152,7 +1512,6 @@ code, kbd, samp, pre { font-family: var(--font-mono); }
   color: var(--ink);
 }
 
-/* On a page that has its own title, the trail's last step is just a step. */
 .doctor-summary .crumbs__here,
 .population .crumbs__here {
   font-family: var(--font-mono); font-size: 11px; letter-spacing: .1em;
@@ -2173,17 +1532,10 @@ code, kbd, samp, pre { font-family: var(--font-mono); }
   font-size: 13.5px;
   font-weight: 500;
 }
-/* A chevron, so the shape says "goes somewhere" without another colour. */
 .page-link::after { content: "\2192"; color: var(--mono); }
 .page-link:hover { border-color: var(--mono); color: var(--ink); }
 .page-link:hover::after { color: var(--brand); }
 
-/* WHY A CHART HAS NO DIRECTION, stated on the chart.
-   The service's sentence was already rendered in the table below the charts,
-   which is no use to a reader looking at the picture: on this project's own
-   data that meant a line climbing from 88 to 168 under the words "no
-   direction", with the explanation a scroll away. Quiet, because it qualifies
-   the panel rather than competing with it. */
 .trend-chart__why {
   margin: 0 14px 10px;
   padding: 9px 12px;
@@ -2194,15 +1546,6 @@ code, kbd, samp, pre { font-family: var(--font-mono); }
   line-height: 1.45;
 }
 
-/* A PARAMETER WITH READINGS BUT NO LINE, in the panel body where the chart
-   would be. Two kinds reach this: a parameter on a single report, and one
-   whose reports printed different units, where a shared axis would state a
-   comparison nobody can make. Both keep their numbers -- neither a missing
-   second reading nor a unit disagreement is a reason to withhold what the
-   laboratory printed.
-
-   Styled as the panel's quiet body, matching .trend-chart__why, so a panel
-   that opens onto readings does not read as a panel that failed to load. */
 .trend-chart__readings {
   margin: 0 14px 12px;
   padding: 9px 12px;
@@ -2213,12 +1556,6 @@ code, kbd, samp, pre { font-family: var(--font-mono); }
   line-height: 1.55;
 }
 
-/* ==========================================================================
-   APP PARTS (2026-10-02)
-   ==========================================================================
-   Icon discs, the upload panel, report rows, the at-a-glance counts and the
-   overall verdict. Clay and sage are decoration; nothing here borrows a
-   risk colour. */
 .icon-disc {
   display: inline-grid; place-items: center; flex: 0 0 auto;
   width: 44px; height: 44px; border-radius: 12px;
@@ -2231,7 +1568,6 @@ code, kbd, samp, pre { font-family: var(--font-mono); }
 .upload__sub { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
 .upload__fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0 22px; }
 
-/* Whose report (2026-10-03): upload form and the per-report editor. */
 .subject-fields { border: 1px solid var(--panel-line); border-radius: 14px; padding: 12px 16px 4px; margin: 4px 0 16px; }
 .subject-fields legend { padding: 0 6px; font-size: 13px; font-weight: 600; color: var(--ink-2); }
 .subject-fields__choice { display: inline-flex; align-items: center; gap: 8px; margin: 0 22px 12px 0; font-weight: 500; }
@@ -2265,10 +1601,6 @@ code, kbd, samp, pre { font-family: var(--font-mono); }
   .report > .progress { margin-left: 0; }
 }
 
-/* ANALYSIS PROGRESS (2026-10-04). Four real steps joined by a line: done
-   steps filled brand green with a tick, the current one ringed and pulsing
-   gently, the rest hollow. Brand colour, never a risk colour -- it says how
-   far the work has got, nothing about the result. */
 .progress { margin-top: 10px; }
 .progress__now { margin: 0 0 10px; font-weight: 600; color: var(--ink); font-size: 14.5px; }
 .progress__time { font-weight: 400; color: var(--muted); }
@@ -2277,7 +1609,6 @@ code, kbd, samp, pre { font-family: var(--font-mono); }
   display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0;
 }
 .progress__step { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding-right: 8px; }
-/* The line to the next step. */
 .progress__step:not(:last-child)::after {
   content: ""; position: absolute; top: 8px; left: 18px; right: 0; height: 2px;
   background: var(--line);
@@ -2313,7 +1644,6 @@ code, kbd, samp, pre { font-family: var(--font-mono); }
 .report-list > li.card.report { transition: background .15s ease; }
 .report-list > li.card.report:hover { background: var(--bg); }
 
-/* The at-a-glance counts. */
 .stats {
   list-style: none; margin: 0 0 18px; padding: 0;
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;
@@ -2330,17 +1660,10 @@ code, kbd, samp, pre { font-family: var(--font-mono); }
 .stat__label { color: var(--muted); font-size: 13.5px; }
 @media (max-width: 640px) { .stats { grid-template-columns: 1fr; } }
 
-/* The overall verdict: the page's headline, on a sage panel. */
 .card.overall { background: var(--sage); border-color: var(--sage-line); padding: 26px 30px; }
 .card.overall .overall__status { font-size: 34px; }
 .card.overall .hint, .card.overall p { max-width: 70ch; }
 
-/* ==========================================================================
-   SPLASH (2026-10-02)
-   ==========================================================================
-   The intro over the landing page. Cream ground, the forest leaf drawing
-   itself, then the screen lifts away. Never rendered for reduced motion (see
-   Splash.jsx), so it needs no fallback of its own. */
 @keyframes splashDraw { from { stroke-dashoffset: 1 } to { stroke-dashoffset: 0 } }
 @keyframes splashFill { from { fill-opacity: 0 } to { fill-opacity: 1 } }
 @keyframes splashBar  { from { transform: scaleX(0) } to { transform: scaleX(1) } }
@@ -2392,12 +1715,6 @@ code, kbd, samp, pre { font-family: var(--font-mono); }
   color: var(--muted); font-size: 13.5px; animation: fadeIn .4s .6s both;
 }
 
-/* ==========================================================================
-   ACCOUNT (2026-10-02)
-   ==========================================================================
-   Change password and delete account, at the foot of "Your details". The
-   danger panel uses the existing `--danger` token, as the report list's
-   delete button already does; nothing here is a clinical finding. */
 .account { margin-top: 48px; }
 .account__title {
   display: flex; align-items: center; gap: 12px;
@@ -2420,15 +1737,7 @@ code, kbd, samp, pre { font-family: var(--font-mono); }
 .account__actions { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
 .account__actions button + button.link { margin-left: 0; }
 
-/* ==========================================================================
-   THE REPORT PAGE (2026-10-02)
-   ==========================================================================
-   A header card, section headings with a forest rule, condition cards with a
-   risk stripe, the explanations as one panel of rows, and "In short" as a
-   feature card. The stripe and the risk badge repeat the risk WORD in its own
-   categorical colour; nothing here spends a risk colour on decoration. */
 
-/* --- header ------------------------------------------------------------- */
 .report-hero {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -2453,8 +1762,6 @@ code, kbd, samp, pre { font-family: var(--font-mono); }
   .report-hero__icon { display: none; }
 }
 
-/* --- section headings: a heading on the page between panels, serif with a
-   forest rule, so the page reads as chapters rather than a stack of boxes. */
 main > h2, .explanations > h2 {
   display: flex; align-items: center; gap: 12px;
   font-family: var(--font-serif); font-weight: 500; font-size: 23px;
@@ -2465,7 +1772,6 @@ main > h2::before, .explanations > h2::before {
   background: var(--brand);
 }
 
-/* --- condition cards ---------------------------------------------------- */
 .condition-list { display: grid; gap: 14px; margin: 0; }
 .condition-list > .card.condition { margin: 0; position: relative; overflow: hidden; padding-left: 34px; }
 .card.condition::before {
@@ -2482,7 +1788,6 @@ main > h2::before, .explanations > h2::before {
 .condition__status { color: var(--ink-2); margin: 6px 0 12px; }
 .card.condition .measured { background: var(--bg); border-radius: 12px; padding: 4px 16px; }
 
-/* --- "What these results mean": one panel, a row per result ------------- */
 .explanation-list {
   background: var(--panel); border: 1px solid var(--panel-line); border-radius: 18px;
   box-shadow: var(--shadow-sm); overflow: hidden; margin: 0 0 14px;
@@ -2519,12 +1824,10 @@ main > h2::before, .explanations > h2::before {
   .explanation-list .explanation[open] > :not(summary) { margin-left: 22px; }
 }
 
-/* "Topics you could read about" -- the same panel language. */
 .disclosure--section > .disclosure__summary { border-radius: 18px; padding: 15px 22px; box-shadow: var(--shadow-sm); }
 .disclosure--section[open] > .disclosure__summary { border-radius: 18px 18px 0 0; box-shadow: none; }
 .disclosure--section[open] > .disclosure__body { border-radius: 0 0 18px 18px; padding: 6px 22px 18px; box-shadow: var(--shadow-sm); }
 
-/* --- "In short": a feature card ----------------------------------------- */
 .card.in-short { border-top: 1px solid var(--line); padding: 0 0 26px; overflow: hidden; box-shadow: var(--shadow-md); }
 .card.in-short > h2:first-child {
   margin: 0 0 24px; padding: 14px 28px;
@@ -2545,12 +1848,6 @@ main > h2::before, .explanations > h2::before {
   .card.in-short > h2:first-child { padding: 12px 18px; }
 }
 
-/* ==========================================================================
-   TIMELINE (2026-10-02)
-   ==========================================================================
-   The same language as the report page. The section icons are CSS MASKS,
-   not <svg>: the timeline tests count a section's <svg> elements to prove a
-   chart was NOT drawn, and an icon must never be mistaken for one. */
 .page-hero {
   display: flex; gap: 20px; align-items: center;
   background: var(--panel); border: 1px solid var(--panel-line); border-radius: 20px;
@@ -2592,7 +1889,6 @@ main > h2::before, .explanations > h2::before {
   --tl-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3.5 19 6v5.5c0 4.4-3 7.7-7 9-4-1.3-7-4.6-7-9V6z'/%3E%3Cpath d='m8.8 12 2.2 2.2 4.2-4.4'/%3E%3C/svg%3E");
 }
 
-/* The trend rows. */
 .tl-section .trend-chart__block.disclosure {
   background: var(--panel); border: 1px solid var(--panel-line); border-radius: 14px;
   margin: 0 0 10px; transition: border-color .15s ease, box-shadow .15s ease;
@@ -2608,9 +1904,6 @@ main > h2::before, .explanations > h2::before {
 .tl-section .trend-chart__title { font-size: 15px; font-weight: 600; color: var(--ink); }
 .tl-section .disclosure__pair { font-family: var(--font-mono); font-size: 13px; color: var(--ink-2); }
 
-/* Direction words as pills, in their own meaning colour. "No direction" is
-   an absence of a classification, so it takes the absence treatment: a dashed
-   outline, no fill. */
 .tl-section .trend {
   padding: 3px 11px; border-radius: 999px; font-size: 12.5px;
   background: color-mix(in srgb, currentColor 12%, transparent);
@@ -2625,7 +1918,6 @@ main > h2::before, .explanations > h2::before {
   background: color-mix(in srgb, currentColor 11%, transparent);
 }
 
-/* Picking the two reports. */
 .tl-section .pair-picker {
   background: var(--bg); border: 1px solid var(--panel-line); border-radius: 14px;
   padding: 14px 16px; gap: 12px 20px;
@@ -2636,7 +1928,6 @@ main > h2::before, .explanations > h2::before {
 }
 .tl-section .pair-picker select:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 4px var(--brand-soft); }
 
-/* The progress score. */
 .tl-section .progress__score {
   display: flex; align-items: baseline; gap: 6px; margin: 4px 0 10px;
 }
@@ -2650,14 +1941,6 @@ main > h2::before, .explanations > h2::before {
   background: var(--sage); border: 1px solid var(--sage-line); color: var(--ink); font-weight: 600;
 }
 
-/* ==========================================================================
-   DOCTOR SUMMARY (2026-10-02)
-   ==========================================================================
-   A clinical letter: a header card with a print button, then the document on
-   a white sheet with a forest strip across its top. Each labelled paragraph
-   ("Reported values.", "Flagged.", "Not used.") reads as its own section. */
-/* One column: this page is a document, not a dashboard, so the header and
-   the sheet share one reading width. */
 main.doctor-summary { width: min(820px, calc(100% - 48px)); }
 .doctor-hero { align-items: flex-start; }
 .doctor-hero__text { flex: 1; min-width: 0; }
@@ -2700,7 +1983,6 @@ main.doctor-summary { width: min(820px, calc(100% - 48px)); }
   .doctor-summary .passage::before { padding: 12px 20px; }
 }
 
-/* Print: the document, without the app around it. */
 @media print {
   body { background: #fff; }
   .nav, .disclaimer, .doctor-hero__print, .page-hero__icon, .doctor-hero .crumbs { display: none !important; }
@@ -2710,17 +1992,8 @@ main.doctor-summary { width: min(820px, calc(100% - 48px)); }
   .doctor-summary .passage::before { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 
-/* ==========================================================================
-   POPULATION (2026-10-02)
-   ==========================================================================
-   A header card, the method as a calm callout, and the comparisons as a grid
-   of cards. A card with NO comparison is an absence and is drawn as one: a
-   dashed outline with no fill and no shadow, never a quieter copy of a
-   result card. */
 .population-hero .crumbs { margin: 0 0 6px; }
 .population-hero h1 { font-size: 30px; }
-/* Not flex: the sentence ends in a <strong>, and a flex row would make it a
-   column of its own. The "i" mark is positioned instead. */
 .population .method {
   position: relative; max-width: none;
   background: var(--sage); border: 1px solid var(--sage-line); border-radius: 16px;
@@ -2747,11 +2020,6 @@ main.doctor-summary { width: min(820px, calc(100% - 48px)); }
 }
 @media (max-width: 720px) { .population__list { grid-template-columns: 1fr; } }
 
-/* ==========================================================================
-   YOUR DETAILS (2026-10-02)
-   ==========================================================================
-   Header card, then the form beside a summary card on wide screens, then the
-   account cards. */
 .profile__grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr); gap: 20px; align-items: start; }
 .profile__grid > .card { margin: 0; border-radius: 20px; }
 .profile__grid > form.card { padding: 28px 30px; }
@@ -2793,9 +2061,6 @@ main.doctor-summary { width: min(820px, calc(100% - 48px)); }
 
 .account .card.account__section { border-radius: 20px; padding: 28px 30px; }
 
-/* ==========================================================================
-   REPORTS (2026-10-02)
-   ========================================================================== */
 .reports-hero { align-items: center; }
 .reports-hero__text { flex: 1; min-width: 0; }
 .reports-hero__stats { display: flex; gap: 10px; margin: 0; }
@@ -2822,13 +2087,6 @@ main.doctor-summary { width: min(820px, calc(100% - 48px)); }
 .reports > h2.reports__heading .disclosure__count { font-family: var(--font-mono); font-size: 12px; }
 .reports > .report-list { margin-top: 0; border-radius: 20px; }
 
-/* ==========================================================================
-   LANDING, SECOND PASS (2026-10-02)
-   ==========================================================================
-   The hero becomes the same dark forest panel as the sign-in page, so the
-   front door and the sign-in screen are one design. Everything on it uses
-   the `--espresso` / `--on-espresso` pair plus `--mint`, which exists only
-   for text and marks ON these panels. */
 .hero {
   position: relative; overflow: hidden; margin: 28px 0 0;
   padding: 64px 56px 60px; border-radius: 32px;
@@ -2866,8 +2124,6 @@ main.doctor-summary { width: min(820px, calc(100% - 48px)); }
   border-color: color-mix(in srgb, var(--on-espresso) 10%, transparent);
 }
 .landing__main > .pipeline { margin-top: 22px; }
-/* Inside the padded panel the visual has less room: tighter stage padding,
-   and the verdict may wrap rather than push the table past its card. */
 .hero .hero__visual { padding: 72px 22px 96px 30px; }
 .hero .float-card--safety { top: 0; }
 .hero .specimen__head .micro:last-child { display: none; }
@@ -2875,13 +2131,11 @@ main.doctor-summary { width: min(820px, calc(100% - 48px)); }
 .closing .closing__button { background: var(--mint); border-color: var(--mint); color: var(--espresso); }
 .closing .closing__button:hover { background: #b9e6cd; border-color: #b9e6cd; color: var(--espresso); }
 
-/* Section labels carry the app's green bar. */
 .landing .eyebrow { display: inline-flex; align-items: center; gap: 10px; }
 .landing .eyebrow::before {
   content: ""; width: 4px; height: 14px; border-radius: 4px; background: var(--brand);
 }
 
-/* Safety points: the sign-in page's ringed tick. */
 .promise__mark {
   background: var(--brand); border-color: var(--brand); color: transparent; position: relative;
 }
@@ -2901,14 +2155,6 @@ main.doctor-summary { width: min(820px, calc(100% - 48px)); }
   .hero__visual::before { inset: 0 -8px; border-radius: 18px; }
 }
 
-/* ==========================================================================
-   TREND CHARTS (2026-10-02)
-   ==========================================================================
-   CSS only -- nothing drawn is added or removed, so every chart still says
-   exactly what it said: the colour of the line is still the trend's own, a
-   HOLLOW point (fill = --panel) is still a questionable reading and is left
-   untouched, the dashed lane circles are still absences, and the band is
-   still the printed range. */
 .tl-section .trend-chart {
   margin: 0 16px 16px; padding: 18px 20px 14px;
   background: var(--panel); border: 1px solid var(--panel-line); border-radius: 14px;
@@ -2917,8 +2163,6 @@ main.doctor-summary { width: min(820px, calc(100% - 48px)); }
 .tl-section .trend-chart__svg { display: block; margin: 0 auto; max-width: 100%; overflow: visible; }
 .trend-chart__band { opacity: .75; }
 .trend-chart__line { stroke-width: 3px; filter: drop-shadow(0 3px 4px rgba(0, 0, 0, .14)); }
-/* Solid points only: a white ring lifts them off the line. A hollow point is
-   a different claim and keeps its own drawing. */
 .trend-chart__point:not([fill="var(--panel)"]) {
   r: 5.5px; stroke: var(--panel); stroke-width: 2.5px;
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .2));
@@ -2932,12 +2176,6 @@ main.doctor-summary { width: min(820px, calc(100% - 48px)); }
 }
 .tl-section .trend-chart__gaps li { border-left-color: var(--band-line); }
 
-/* ==========================================================================
-   DASHBOARD CHARTS (2026-10-02)
-   ==========================================================================
-   CSS only. The gauge's three arcs, the radar's dashed "nothing measured"
-   points and its zero-pinned absences are untouched -- every chart still
-   draws exactly the same claims. */
 .chart-grid { gap: 18px; margin-bottom: 18px; }
 .chart-grid > .card { border-radius: 20px; padding: 22px 22px 20px; margin: 0; display: flex; flex-direction: column; }
 .chart-grid > .card > .gauge, .chart-grid > .card > .radar { flex: 1; justify-content: center; }
@@ -2945,19 +2183,16 @@ main.doctor-summary { width: min(820px, calc(100% - 48px)); }
   margin: 0 0 14px; font-family: var(--font-mono); font-weight: 500; font-size: 11.5px;
   letter-spacing: .1em; text-transform: uppercase; color: var(--mono);
 }
-/* The drawing sits on its own soft panel inside the card. */
 .chart-grid .gauge, .chart-grid .radar {
   background: var(--bg); border: 1px solid var(--hairline); border-radius: 16px;
   padding: 18px 12px 14px;
 }
 .chart-grid .chart__caption { margin: 12px auto 0; text-align: center; }
 
-/* Gauge */
 .gauge__needle { filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .22)); }
 .gauge__verdict { font-size: 32px; font-weight: 500; }
 .gauge__scale { margin-top: 10px; }
 
-/* Radar */
 .radar__shape { stroke-width: 2px; stroke-linejoin: round; }
 .radar__vertex:not(.radar__vertex--absent) {
   stroke: var(--panel); stroke-width: 2px;
@@ -2965,13 +2200,6 @@ main.doctor-summary { width: min(820px, calc(100% - 48px)); }
 }
 .radar__label { font-size: 10.5px; }
 
-/* ==========================================================================
-   PERCENTILE BAR (2026-10-02)
-   ==========================================================================
-   CSS only. The band stays the brand colour (a percentile is not a verdict),
-   a missing cap still means the band runs off the scale, and nothing is
-   added to the drawing. The bar stretches to the card and sits on a soft
-   inset strip. */
 .population__entry .pctbar {
   display: block; width: 100%; height: auto; box-sizing: border-box;
   margin: 16px 0 4px; padding: 12px 14px;
@@ -2982,10 +2210,6 @@ main.doctor-summary { width: min(820px, calc(100% - 48px)); }
 .pctbar__band { filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .18)); }
 .pctbar__cap { stroke-linecap: round; stroke-width: 2.5px; }
 
-/* ==========================================================================
-   DASHBOARD CHARTS, SECOND PASS (2026-10-02)
-   ========================================================================== */
-/* Card titles with an icon tile, drawn as CSS masks (no <svg>). */
 .chart-grid > .card > h2:first-child { display: flex; align-items: center; gap: 12px; }
 .chart-grid > .card > h2:first-child::before {
   content: ""; flex: 0 0 auto; width: 34px; height: 34px; border-radius: 10px;
@@ -3002,25 +2226,16 @@ main.doctor-summary { width: min(820px, calc(100% - 48px)); }
 .chart-grid > .card:nth-child(1) > h2 { --chart-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 16a8 8 0 0 1 16 0'/%3E%3Cpath d='M12 16l3.5-4.5'/%3E%3Ccircle cx='12' cy='16' r='1.2'/%3E%3C/svg%3E"); }
 .chart-grid > .card:nth-child(2) > h2 { --chart-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3.5l8 5.8-3 9.2H7l-3-9.2z'/%3E%3Cpath d='M12 8l4 3-1.6 4.6H9.6L8 11z'/%3E%3C/svg%3E"); }
 
-/* Gauge: the verdict word in its own risk colour (absence keeps its own
-   treatment), and a white ring round the hub. */
 .gauge__verdict--high { fill: var(--high); }
 .gauge__verdict--medium { fill: var(--medium); }
 .gauge__verdict--low { fill: var(--low); }
 .gauge__hub { stroke: var(--bg); stroke-width: 3px; }
 .gauge__scale { color: var(--muted); }
 
-/* Radar: dashed, softer rings; labels a touch stronger. */
 .radar__svg polygon:not(.radar__shape) { stroke: var(--band-line); stroke-dasharray: 2 3; opacity: .7; }
 .radar__svg line { stroke: var(--grid); }
 .radar__label { fill: var(--ink-2); font-weight: 500; }
 
-/* ==========================================================================
-   PROGRESS SCORE (2026-10-02)
-   ==========================================================================
-   The number, its 0-100 scale and its band on one sage panel. The marker
-   keeps the brand colour: the score describes direction of movement, it is
-   not a risk verdict. */
 .progress__panel {
   display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 36px; align-items: center;
   background: var(--sage); border: 1px solid var(--sage-line); border-radius: 18px;
@@ -3043,12 +2258,6 @@ main.doctor-summary { width: min(820px, calc(100% - 48px)); }
   .progress__panel { grid-template-columns: 1fr; padding: 18px; }
 }
 
-/* ==========================================================================
-   COMPARING TWO REPORTS -- THE TABLE (2026-10-02)
-   ==========================================================================
-   Styling only. An absence keeps the app's absence treatment: a dashed,
-   unfilled tag in --mono, with its reason as plain text beneath -- never a
-   quieter-looking number. */
 .tl-section .lab-table { border-radius: 16px; margin-top: 6px; }
 .tl-section .lab-table thead th { padding-top: 13px; padding-bottom: 11px; }
 .tl-section .lab-table tbody th {
@@ -3070,18 +2279,10 @@ main.doctor-summary { width: min(820px, calc(100% - 48px)); }
   font-family: var(--font-sans); font-size: 12.5px; line-height: 1.4; color: var(--muted);
   font-variant-numeric: normal; max-width: 26ch;
 }
-/* "not classifiable" is an absence of a comparison, so it takes the absence
-   treatment -- dashed and unfilled -- not a quieter filled pill. */
 .tl-section .category--not_classifiable {
   background: none; border: 1px dashed var(--band-line); color: var(--mono);
 }
 
-/* ==========================================================================
-   "YOUR RESULTS" AND THE DETAIL TABLES ON THE REPORT PAGE (2026-10-02)
-   ==========================================================================
-   Styling only. The verdict pill is the verdict word in its OWN colour on a
-   tint of that colour -- the same categorical meaning as before, nothing
-   new. An absence keeps the absence treatment: dashed, unfilled, --mono. */
 .dashboard .lab-table { border-radius: 18px; box-shadow: var(--shadow-sm); }
 .dashboard .lab-table thead th { padding-top: 13px; padding-bottom: 11px; }
 .dashboard .lab-table tbody th {
@@ -3111,8 +2312,6 @@ main.doctor-summary { width: min(820px, calc(100% - 48px)); }
   max-width: 30ch;
 }
 .dashboard .lab-table + .hint { margin-top: 10px; }
-/* Column balance: the test name gets room, a value never breaks across
-   lines, and the verdict's explanatory lines read as text, not figures. */
 .dashboard .lab-table thead th:first-child { width: 40%; }
 .dashboard .lab-table td:nth-child(2) { white-space: nowrap; }
 .dashboard .lab-table td .verdict__detail,
@@ -3121,11 +2320,6 @@ main.doctor-summary { width: min(820px, calc(100% - 48px)); }
   font-variant-numeric: tabular-nums;
 }
 
-/* ==========================================================================
-   CONDITION CARDS, SECOND PASS (2026-10-02)
-   ==========================================================================
-   Styling only. The stripe and badge are still the risk word's own colour;
-   the crossed-limit pill is the same --high it already used as text. */
 .condition-list > .card.condition {
   padding: 24px 28px 22px 36px; border-radius: 20px;
   transition: transform .18s ease, box-shadow .18s ease;
@@ -3137,7 +2331,6 @@ main.doctor-summary { width: min(820px, calc(100% - 48px)); }
 }
 .card.condition .condition__status { font-size: 15px; color: var(--ink-2); margin: 6px 0 16px; }
 
-/* The values behind the finding: a small inset table. */
 .card.condition .measured {
   background: var(--bg); border: 1px solid var(--hairline); border-radius: 14px;
   padding: 4px 18px; margin: 0 0 14px;
@@ -3151,8 +2344,6 @@ main.doctor-summary { width: min(820px, calc(100% - 48px)); }
   background: color-mix(in srgb, currentColor 11%, transparent);
 }
 
-/* The notes under it. A missing input is a callout with an amber rule;
-   "also taken into account" stays quiet. */
 .card.condition > .caveat {
   margin: 0 0 10px; padding: 9px 14px; border-left: 3px solid var(--amber);
   background: color-mix(in srgb, var(--amber) 8%, transparent); border-radius: 0 10px 10px 0;
@@ -3161,12 +2352,6 @@ main.doctor-summary { width: min(820px, calc(100% - 48px)); }
 .card.condition > .hint { margin: 0 0 6px; font-size: 13.5px; }
 .card.condition > :last-child { margin-bottom: 0; }
 
-/* ==========================================================================
-   "EVERYTHING ELSE THAT WAS CHECKED" (2026-10-02)
-   ==========================================================================
-   Styling only, layered over the base `.chip--clear` rule (which the design
-   tests pin: filled, SOLID border, --ink name). The solid outline and the
-   tick are still what separate "checked and clear" from "could not check". */
 .dashboard .roundup {
   background: var(--panel); border: 1px solid var(--panel-line); border-radius: 20px;
   padding: 22px 24px; box-shadow: var(--shadow-sm); margin: 0 0 18px;
@@ -3187,12 +2372,6 @@ main.doctor-summary { width: min(820px, calc(100% - 48px)); }
   font-size: 12px; line-height: 1;
 }
 
-/* ==========================================================================
-   "WHAT THESE RESULTS MEAN", SECOND PASS (2026-10-02)
-   ==========================================================================
-   A count beside the heading, one line of instruction, the rows as before,
-   and the notes beneath given their roles: what is MISSING takes the absence
-   treatment (dashed, unfilled); the provenance line is a quiet info note. */
 .explanations > h2 .disclosure__count { font-family: var(--font-mono); font-size: 12px; }
 .explanations__lead { margin: -6px 0 14px; color: var(--muted); font-size: 14px; }
 .explanation-list .explanation__subject { transition: color .15s ease; }
@@ -3214,12 +2393,6 @@ main.doctor-summary { width: min(820px, calc(100% - 48px)); }
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 11v5M12 7.6v.1'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 
-/* ==========================================================================
-   "IN SHORT", SECOND PASS (2026-10-02)
-   ==========================================================================
-   Styling only: an icon in the strip, each "generally associated with" note
-   as its own small card (the test name as its label), and the closing line
-   as an info note. No sentence is added, moved out or reworded. */
 .card.in-short > h2:first-child { display: flex; align-items: center; gap: 10px; }
 .card.in-short > h2:first-child::before {
   content: ""; width: 16px; height: 16px; background: var(--on-brand); flex: 0 0 auto;
@@ -3254,12 +2427,6 @@ main.doctor-summary { width: min(820px, calc(100% - 48px)); }
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 11v5M12 7.6v.1'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 
-/* ==========================================================================
-   "TOPICS YOU COULD READ ABOUT" (2026-10-02)
-   ==========================================================================
-   The shared `.bullets` rows are left as they are (the design tests keep one
-   definition for the dashboard and the population page); only this list's
-   own parts are styled: the topic, its reason, and its NHS link as a pill. */
 .disclosure--section > .disclosure__summary > h2 { display: flex; align-items: center; gap: 12px; position: relative; }
 .disclosure--section > .disclosure__summary > h2::before {
   content: ""; flex: 0 0 auto; width: 34px; height: 34px; border-radius: 10px; background: var(--brand-soft);
@@ -3282,13 +2449,6 @@ main.doctor-summary { width: min(820px, calc(100% - 48px)); }
 .guidance__link:hover { background: var(--brand); color: var(--on-brand); }
 .disclosure--section .disclosure__body > .hint { font-size: 13px; }
 
-/* ==========================================================================
-   "FROM YOUR PROFILE" / "FROM THE REPORT'S PATIENT DETAILS" (2026-10-02)
-   ==========================================================================
-   The same table, laid out as tiles: a label on top, the value large. The
-   column titles are hidden VISUALLY only (the visually-hidden pattern, not
-   display:none), so a screen reader still hears them -- and the tests that
-   read them still find them. */
 .dashboard .lab-table--details {
   display: block; background: none; border: 0; box-shadow: none; border-radius: 0; overflow: visible;
 }
@@ -3317,12 +2477,6 @@ main.doctor-summary { width: min(820px, calc(100% - 48px)); }
 }
 .dashboard .lab-table--details + .hint { margin-top: 12px; }
 
-/* ==========================================================================
-   THE OVERALL CARD, SECOND PASS (2026-10-02)
-   ==========================================================================
-   A large icon, the verdict beside it, the risk word as a pill in its own
-   colour, a stripe in the same colour (only when the risk is known), and a
-   faint leaf. Every colour here is the risk word's own. */
 .card.overall {
   position: relative; overflow: hidden;
   padding: 26px 30px 24px 118px; border-radius: 22px; box-shadow: var(--shadow-sm);
@@ -3345,7 +2499,6 @@ main.doctor-summary { width: min(820px, calc(100% - 48px)); }
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='0.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 19c0-8 5-13.5 14-14-.5 9-6 14-14 14z'/%3E%3Cpath d='M5 19 13 11'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 .card.overall > * { position: relative; }
-/* The heading stays static so its icon is placed against the CARD. */
 .card.overall > h2:first-child { position: static; }
 .card.overall.overall--high, .card.overall.overall--medium, .card.overall.overall--low {
   border-left: 6px solid var(--panel-line);
@@ -3365,11 +2518,6 @@ main.doctor-summary { width: min(820px, calc(100% - 48px)); }
   .card.overall .overall__status { font-size: 28px; }
 }
 
-/* ==========================================================================
-   THE THREE COUNTS, SECOND PASS (2026-10-02)
-   ==========================================================================
-   An icon tile for each count. The numbers stay ink: they are counts, not
-   verdicts, so none of them borrows a risk colour. */
 .stats { gap: 16px; }
 .stat {
   position: relative; padding: 20px 22px 18px 82px; min-height: 96px; border-radius: 18px;
@@ -3393,13 +2541,6 @@ main.doctor-summary { width: min(820px, calc(100% - 48px)); }
 .stat__label { font-size: 13.5px; line-height: 1.35; }
 @media (max-width: 640px) { .stat { min-height: 0; } }
 
-/* ==========================================================================
-   IDENTITY NOTICES (2026-10-02)
-   ==========================================================================
-   The warning stays AMBER: it is a caution about whose report this is, not
-   a clinical finding, so it never takes the "above threshold" red. The quiet
-   "only partly checked" lines become an info note -- still visible, never
-   silence (the rule since 2026-09-24). */
 .identity-warning {
   position: relative; padding: 20px 24px 18px 82px; border-radius: 18px;
   border: 1px solid color-mix(in srgb, var(--amber) 35%, transparent);
@@ -3436,11 +2577,6 @@ main.doctor-summary { width: min(820px, calc(100% - 48px)); }
   .identity-warning::before, .identity-warning::after { display: none; }
 }
 
-/* ==========================================================================
-   DOCTOR SUMMARY, SECOND PASS (2026-10-02)
-   ==========================================================================
-   Which report this is, in the header; a faint leaf on the sheet; and a
-   sign-off drawn by CSS, so it is not part of the document's own text. */
 .doctor-hero__file {
   display: inline-block; margin: 8px 0 0; padding: 3px 12px; border-radius: 999px;
   background: var(--sage); border: 1px solid var(--sage-line);
@@ -3464,9 +2600,6 @@ main.doctor-summary { width: min(820px, calc(100% - 48px)); }
   .doctor-hero__file { border: 0; background: none; padding: 0; }
 }
 
-/* ==========================================================================
-   POPULATION, SECOND PASS (2026-10-02)
-   ========================================================================== */
 .population__list > .card.population__entry:not(.population__entry--none) {
   transition: transform .18s ease, box-shadow .18s ease;
 }
@@ -3506,11 +2639,6 @@ main.doctor-summary { width: min(820px, calc(100% - 48px)); }
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3.5 19 6v5.5c0 4.4-3 7.7-7 9-4-1.3-7-4.6-7-9V6z'/%3E%3Cpath d='M12 9v4M12 15.6v.1'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 
-/* ==========================================================================
-   THE CHATBOT (2026-10-09) -- components/ChatBot.jsx
-   A brand-coloured bubble, bottom right, on signed-in pages; it opens a
-   panel. Theme tokens only, so dark mode needs nothing of its own.
-   ========================================================================== */
 .chatbot__bubble {
   position: fixed; right: 22px; bottom: 22px; z-index: 50;
   width: 56px; height: 56px; padding: 0; border-radius: 50%;

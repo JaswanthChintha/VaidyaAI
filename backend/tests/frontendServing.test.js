@@ -1,14 +1,5 @@
 'use strict';
 
-/**
- * FRONTEND_DIST -- the backend serving the built React app (2026-10-06).
- *
- * A throwaway "build" is written to a temp folder: an index.html with one
- * inline script (like the real theme stamp) and one hashed asset. The tests
- * prove the page loads on every client-side route, the inline script is
- * allowed by its hash and by nothing broader, and the API is untouched --
- * an unknown /api path is still the JSON 404, never the HTML page.
- */
 
 const crypto = require('crypto');
 const fs = require('fs');

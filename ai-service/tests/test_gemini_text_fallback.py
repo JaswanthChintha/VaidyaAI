@@ -1,14 +1,3 @@
-"""The explanation writer moves to the next model on a 5xx, as extraction does.
-
-Found 2026-10-02: 01-all-normal's blood-glucose explanation was lost to a
-`gemini-3.6-flash` ServerError on two separate analyses, while extraction of
-the same report -- which already fell back on 5xx -- read every value. The
-text path fell back on 429 only.
-
-A provider SAFETY BLOCK must still NOT be shopped around: asking more models
-until one complies is what a safety layer must never do.
-"""
-
 from __future__ import annotations
 
 from types import SimpleNamespace

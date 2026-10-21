@@ -1,16 +1,3 @@
-"""The Liver Disease topic -- ALT, AST, total bilirubin (2026-10-04).
-
-Owner's decisions pinned here:
-  * ALT and AST are compared with the upper limit PRINTED ON THE REPORT;
-    the guideline limits (ALT 33 men / 25 women / 33 sex unknown, AST 40)
-    only when the report prints none, or prints one that is not believable.
-  * Above the limit -> flagged (Medium); five times the limit or more -> High.
-  * Total bilirubin: above 1.2 mg/dL flagged, 3.0 or more High.
-  * Adults only.
-And the reading of the report itself: the spellings Indian reports print,
-direct/indirect bilirubin never read as total, units converted.
-"""
-
 from __future__ import annotations
 
 from typing import Optional
@@ -53,30 +40,20 @@ def decision(feature, value, **kw):
     return for_rule(liver(feature, value, **kw), RULE_FOR[feature])
 
 
-# --------------------------------------------------------------------------
-# The topic and its rules exist where they should
-# --------------------------------------------------------------------------
-
-
 def test_the_topic_is_canonical_and_fed_by_three_rules():
     assert C.is_canonical_condition(C.LIVER_DISEASE)
-    assert not C.CONDITIONS[C.LIVER_DISEASE].always_assessed  # no model yet
+    assert not C.CONDITIONS[C.LIVER_DISEASE].always_assessed
     assert set(cr.CONDITION_INPUTS[C.LIVER_DISEASE]) == {"alt", "ast", "bilirubin_total"}
-
-
-# --------------------------------------------------------------------------
-# ALT / AST against the PRINTED limit -- on and either side of each band
-# --------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("feature", ["alt", "ast"])
 @pytest.mark.parametrize(
     "value,status,risk",
     [
-        (45.0, DecisionStatus.NOT_INDICATED, RiskLevel.LOW),  # AT the limit: inside
+        (45.0, DecisionStatus.NOT_INDICATED, RiskLevel.LOW),
         (45.1, DecisionStatus.INDICATED, RiskLevel.MEDIUM),
         (224.9, DecisionStatus.INDICATED, RiskLevel.MEDIUM),
-        (225.0, DecisionStatus.INDICATED, RiskLevel.HIGH),  # AT 5x: fires
+        (225.0, DecisionStatus.INDICATED, RiskLevel.HIGH),
         (900.0, DecisionStatus.INDICATED, RiskLevel.HIGH),
     ],
 )
@@ -89,15 +66,8 @@ def test_bands_use_the_printed_upper_limit(feature, value, status, risk):
 
 
 def test_a_value_the_guideline_would_flag_is_not_flagged_under_a_higher_printed_limit():
-    """The owner's choice in one line: ALT 38 is above the ACG male limit of
-    33 but inside a lab's printed 0-45, and the lab's limit is what applies."""
     assert decision("alt", 38.0, reference_high=45.0).status is DecisionStatus.NOT_INDICATED
     assert decision("alt", 38.0).status is DecisionStatus.INDICATED
-
-
-# --------------------------------------------------------------------------
-# No printed limit -> the guideline, said so
-# --------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -120,7 +90,6 @@ def test_ast_falls_back_to_40():
 
 @pytest.mark.parametrize("printed", [5.0, 400.0, 0.0])
 def test_an_unbelievable_printed_limit_is_not_trusted(printed):
-    """A misread "0-400" must not hide a raised ALT."""
     d = decision("alt", 60.0, reference_high=printed)
     assert d.status is DecisionStatus.INDICATED
     assert d.evidence[0].threshold == 33.0
@@ -149,11 +118,6 @@ def test_sex_is_cited_only_when_it_chose_the_limit():
     assert "gender" in {e.feature for e in guideline.evidence}
 
 
-# --------------------------------------------------------------------------
-# Bilirubin
-# --------------------------------------------------------------------------
-
-
 @pytest.mark.parametrize(
     "value,status,risk",
     [
@@ -166,11 +130,6 @@ def test_sex_is_cited_only_when_it_chose_the_limit():
 def test_bilirubin_bands(value, status, risk):
     d = decision("bilirubin_total", value)
     assert (d.status, d.risk) == (status, risk)
-
-
-# --------------------------------------------------------------------------
-# Adults only, and absence is never "fine"
-# --------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("feature", ["alt", "ast", "bilirubin_total"])
@@ -215,11 +174,6 @@ def test_the_published_rule_table_explains_the_printed_limit():
     assert band["fallback_when_none_printed"]["male"] == 33.0
 
 
-# --------------------------------------------------------------------------
-# Reading the report
-# --------------------------------------------------------------------------
-
-
 @pytest.mark.parametrize(
     "printed,feature",
     [
@@ -245,8 +199,6 @@ def test_printed_names_map(printed, feature):
     ["Bilirubin Direct", "Direct Bilirubin", "Bilirubin (Indirect)", "Conjugated Bilirubin"],
 )
 def test_a_bilirubin_fraction_is_never_read_as_total(printed):
-    """`direct` is a strippable method word for other tests; for bilirubin it
-    names a different fraction and must refuse, not fold into the total."""
     match, reason = lookup_test_name(printed)
     assert match is None
     assert reason == UnmappedReason.DISTINCT_ANALYTE
@@ -285,8 +237,6 @@ def test_an_extracted_liver_panel_becomes_three_features_with_units_converted():
     assert data.features["alt"].value == pytest.approx(64.0)
     assert data.features["alt"].unit == "u/l"
     assert data.features["ast"].value == pytest.approx(38.0)
-    # 20.5 umol/L = 1.199 mg/dL, and the printed interval converts with it.
     assert data.features["bilirubin_total"].value == pytest.approx(1.1986, abs=1e-3)
     assert data.features["bilirubin_total"].unit == "mg/dl"
-    # The direct fraction is listed as printed, never mistaken for the total.
     assert any(u.test_name == "Bilirubin Direct" for u in data.unmapped)

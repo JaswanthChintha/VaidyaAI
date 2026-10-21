@@ -1,18 +1,3 @@
-"""POST /api/v1/chat -- the VaidyaAI chatbot (owner, 2026-10-09).
-
-Thin HTTP wrapper; all logic lives in `app.services.chatbot`.
-
-AUTH: the service-key dependency, like every other /api/v1 route --
-`tests/test_auth.py` walks the route tree and fails on any route without it.
-The only caller is the Node backend, which does the user's sign-in, the
-ownership check on a report, and the per-user rate limit.
-
-THE MODEL IS A DEPENDENCY: `get_chat_llm` returns the OpenRouter client, or
-None when no OpenRouter key is configured (the chat then answers
-"unavailable"). It never returns the Gemini client -- see the service header.
-Overridden in tests.
-"""
-
 from __future__ import annotations
 
 import functools
@@ -39,7 +24,6 @@ router = APIRouter(
 
 
 def get_chat_llm(settings: Settings = Depends(get_settings)) -> Any:
-    """OpenRouter's text client, or None. Never Gemini's."""
     if not settings.openrouter_available:
         return None
     from app.services.openrouter_text import build_openrouter_client

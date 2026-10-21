@@ -1,10 +1,3 @@
-"""The canonical condition vocabulary (app/data/conditions.py).
-
-Module 16 fuses by grouping on `ClinicalDecision.condition`, which is a STRING
-match. These tests pin the exact strings Modules 10-12 will have to emit, so a
-future spelling drift breaks a test here rather than silently disabling fusion.
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -14,7 +7,6 @@ from app.data.clinical_rules import COMPOSITE_RULES, THRESHOLD_RULES
 
 
 def test_the_three_fusion_condition_strings_are_exact():
-    # Modules 10, 11 and 12 MUST emit these byte-for-byte.
     assert C.DIABETES == "Diabetes"
     assert C.HEART_DISEASE == "Heart Disease"
     assert C.KIDNEY_DISEASE == "Kidney Disease"
@@ -22,8 +14,6 @@ def test_the_three_fusion_condition_strings_are_exact():
 
 
 def test_every_fusion_condition_is_always_assessed():
-    # Otherwise Module 16 cannot tell "the rule engine did not assess this"
-    # from "the rule engine found nothing".
     for name in C.FUSION_CONDITIONS:
         assert C.CONDITIONS[name].always_assessed is True
 
@@ -58,7 +48,6 @@ def test_unknown_condition_sorts_last_and_is_not_canonical():
 
 
 def test_self_check_rejects_a_case_only_duplicate(monkeypatch):
-    """The import-time guard is real, not decorative."""
     original = dict(C.CONDITIONS)
     try:
         C.CONDITIONS["diabetes"] = C.ConditionDefinition("diabetes", "clash")

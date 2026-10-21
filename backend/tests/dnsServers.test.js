@@ -1,11 +1,5 @@
 'use strict';
 
-/**
- * DNS_SERVERS (2026-10-07). On the owner's laptop the backend could not start:
- * "querySrv ECONNREFUSED _mongodb._tcp.cluster0...". The Wi-Fi router refuses
- * the SRV question a `mongodb+srv://` link needs. With DNS_SERVERS set, Node's
- * own resolver asks those servers instead.
- */
 
 const dns = require('dns');
 const { parseDnsServers } = require('../src/config/env');
@@ -39,8 +33,6 @@ describe('applyDnsServers', () => {
 
   it('changes nothing when none are configured -- the system DNS stays', () => {
     const set = jest.spyOn(dns, 'setServers').mockImplementation(() => {});
-    // Explicit values only: `undefined` would fall back to config.dnsServers,
-    // which reads the developer's own backend/.env.
     expect(applyDnsServers([])).toBe(false);
     expect(applyDnsServers(null)).toBe(false);
     expect(set).not.toHaveBeenCalled();

@@ -1,11 +1,3 @@
-"""`GeminiTextClient` -- prose generation on top of the Module 4 client.
-
-Nothing here touches the network: the SDK stubs are reused wholesale from
-`tests/test_gemini_client.py`, which is the point of subclassing rather than
-writing a second client -- the transport behaviour under test is the same
-code, so the same stubs exercise it.
-"""
-
 from __future__ import annotations
 
 from typing import Any
@@ -55,17 +47,10 @@ def _client(settings: Settings, *results: Any) -> GeminiTextClient:
     return GeminiTextClient(settings, StubSDKClient(list(results)))
 
 
-# --------------------------------------------------------------------------
-# It reuses the Module 4 client rather than duplicating it
-# --------------------------------------------------------------------------
-
-
 def test_it_is_the_existing_client_with_one_extra_method():
     from app.services.gemini_client import GeminiClient
 
     assert issubclass(GeminiTextClient, GeminiClient)
-    # Bound classmethods are fresh objects on each attribute access, so
-    # compare the underlying functions.
     for name in ("_to_service_error", "_is_retryable", "_extract_text", "_ensure_client"):
         inherited = getattr(GeminiTextClient, name)
         original = getattr(GeminiClient, name)
@@ -73,11 +58,6 @@ def test_it_is_the_existing_client_with_one_extra_method():
             original, "__func__", original
         ), name
     assert "generate_text" in GeminiTextClient.__dict__
-    # The guarantee is about the PUBLIC surface: the text client adds prose
-    # generation and nothing else, so it cannot quietly grow a second way to
-    # talk to the model. Private helpers are implementation -- `generate_text`
-    # is split into a per-model attempt so the shared model-fallback chain can
-    # drive it, which is the parent's transport being reused, not bypassed.
     added = {
         name
         for name in GeminiTextClient.__dict__
@@ -87,14 +67,6 @@ def test_it_is_the_existing_client_with_one_extra_method():
 
 
 def test_build_text_client_returns_the_fallback_wrapper_around_this_client(settings):
-    """It returned a bare `GeminiTextClient` until a second provider existed.
-
-    The assertion is not weakened -- it is MOVED DOWN ONE LEVEL. What mattered
-    then and matters now is that the single construction point yields something
-    whose prose comes from this client; what changed is that the Gemini client
-    is now wrapped by the policy object that decides whether an EXHAUSTED chain
-    may reach a second provider.
-    """
     from app.services.text_fallback import FallbackTextClient
 
     client = build_text_client(settings, StubSDKClient([]))
@@ -103,24 +75,12 @@ def test_build_text_client_returns_the_fallback_wrapper_around_this_client(setti
 
 
 def test_the_wrapper_is_built_even_with_no_secondary_configured(settings):
-    """The configured and unconfigured paths must be ONE code path.
-
-    If the wrapper were applied only when a key is present, the fallback class
-    would be unexercised in the overwhelmingly common case and the first real
-    quota exhaustion would be its first execution. It is always built; only
-    `secondary` differs.
-    """
     from app.services.text_fallback import FallbackTextClient
 
     client = build_text_client(settings, StubSDKClient([]))
     assert isinstance(client, FallbackTextClient)
     assert settings.has_openrouter_key is False
     assert client.secondary is None
-
-
-# --------------------------------------------------------------------------
-# Generation
-# --------------------------------------------------------------------------
 
 
 def test_prose_comes_back_unchanged(settings):
@@ -157,11 +117,6 @@ def test_it_refuses_to_run_without_a_key():
     settings = Settings(_env_file=None)
     with pytest.raises(ModelNotConfiguredError):
         GeminiTextClient(settings).generate_text("prompt")
-
-
-# --------------------------------------------------------------------------
-# Failure modes -- every one of them raises, none returns a placeholder
-# --------------------------------------------------------------------------
 
 
 def test_a_timeout_is_classified(settings):
@@ -204,7 +159,6 @@ def test_an_empty_response_is_resampled_once_and_then_succeeds(settings):
 
 
 def test_a_truncation_is_never_resampled(settings):
-    """Deterministic: a retry burns quota for the same outcome."""
     stub = StubSDKClient([make_response("x", finish_reason="MAX_TOKENS")])
     with pytest.raises(ModelError):
         GeminiTextClient(settings, stub).generate_text("prompt")
@@ -222,11 +176,6 @@ def test_transient_server_errors_are_retried(settings):
     stub = StubSDKClient([FakeAPIError(503), make_response(PROSE)])
     assert GeminiTextClient(settings, stub).generate_text("prompt") == PROSE
     assert stub.models.calls == 2
-
-
-# --------------------------------------------------------------------------
-# Privacy
-# --------------------------------------------------------------------------
 
 
 def test_neither_the_prompt_nor_the_response_is_logged(caplog, settings):

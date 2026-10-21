@@ -7,11 +7,6 @@ const { ROLE_VALUES, ROLES } = require('../utils/roles');
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
 
-/**
- * Hashed refresh tokens. One subdocument per active session, so a user can be
- * signed in on several devices and each session can be revoked independently.
- * The raw token is never persisted - only its SHA-256 digest.
- */
 const refreshTokenSchema = new mongoose.Schema(
   {
     tokenHash: { type: String, required: true },
@@ -44,20 +39,10 @@ const userSchema = new mongoose.Schema(
       required: [true, 'Password is required'],
       minlength: [8, 'Password must be at least 8 characters'],
       select: false,
-      // bcrypt silently ignores every byte past 72, so a longer password would
-      // authenticate against any string sharing its first 72 bytes. Enforced
-      // HERE, at the model, rather than only in the route validator, so it
-      // holds for every entry path: seed scripts, admin provisioning, tests,
-      // and any future change-password / reset flow. Same reasoning as the
-      // session purge in the pre('save') hook below.
-      //
-      // Mongoose runs document validation before user-defined pre('save')
-      // hooks, so `value` here is the plaintext, not the bcrypt hash.
       validate: {
         validator(value) {
           return Buffer.byteLength(String(value), 'utf8') <= config.maxPasswordBytes;
         },
-        // Measured in BYTES, not characters: one emoji is 4 bytes.
         message: `Password is too long. Use at most ${config.maxPasswordBytes} characters (emoji and letters from some other alphabets count as more than one)`,
       },
     },
@@ -101,23 +86,12 @@ userSchema.pre('save', async function hashPassword(next) {
   if (!this.isModified('password')) return next();
   this.password = await bcrypt.hash(this.password, config.bcryptCostFactor);
   if (!this.isNew) {
-    // Backdated by a second so tokens issued right after a change are not
-    // wrongly considered "issued before the password change".
     this.passwordChangedAt = new Date(Date.now() - 1000);
-    // A password change ends every existing session: purge the stored refresh
-    // token digests so no pre-change refresh token can mint a new access token.
-    // Driven from the model layer so it applies to any future code path that
-    // changes a password, not just one endpoint.
     this.refreshTokens = [];
   }
   return next();
 });
 
-/**
- * Constant-time-ish password comparison (delegated to bcrypt).
- * @param {string} candidatePassword
- * @returns {Promise<boolean>}
- */
 userSchema.methods.comparePassword = function comparePassword(candidatePassword) {
   if (!this.password) {
     throw new Error('Password field was not selected on this document');
@@ -125,11 +99,6 @@ userSchema.methods.comparePassword = function comparePassword(candidatePassword)
   return bcrypt.compare(candidatePassword, this.password);
 };
 
-/**
- * Was the password changed after the given JWT `iat` (seconds since epoch)?
- * @param {number} tokenIssuedAtSeconds
- * @returns {boolean}
- */
 userSchema.methods.passwordChangedAfter = function passwordChangedAfter(
   tokenIssuedAtSeconds
 ) {
@@ -138,7 +107,6 @@ userSchema.methods.passwordChangedAfter = function passwordChangedAfter(
   return changedAtSeconds > tokenIssuedAtSeconds;
 };
 
-/** Public-safe representation (used inside the API success envelope). */
 userSchema.methods.toPublicJSON = function toPublicJSON() {
   return {
     id: this._id.toString(),

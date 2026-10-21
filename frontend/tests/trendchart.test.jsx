@@ -2,14 +2,6 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import TrendChart from '../src/components/TrendChart';
 
-/**
- * The trend chart, tested on the four things it has to keep apart:
- * a real change, fewer than two readings, a gap, and a rejected reading.
- *
- * A FLAT LINE AND "WE HAVE NO DATA" LOOK IDENTICAL IF YOU LET THEM, so almost
- * every assertion here is about ink that must NOT be on the screen. Each one
- * has been mutation-tested: flip the guard it names and this test dies.
- */
 
 const D1 = '2026-01-10T00:00:00Z';
 const D2 = '2026-04-10T00:00:00Z';
@@ -54,10 +46,6 @@ describe('a real change', () => {
   });
 
   it('gives every dot its own tooltip, not the whole chart summary', () => {
-    // READ OFF A REAL THREE-POINT CHART. With only the SVG-level <title>,
-    // pointing at any dot showed "8.4 % on 7 Sept to 5.2 % on 11 Sept" -- so
-    // the MIDDLE reading, which the axis does not label either (two dates,
-    // not a ruler), could not be read off the chart at all.
     const { container } = render(<TrendChart {...classified} />);
     const titles = [...container.querySelectorAll('.trend-chart__point title')]
       .map((t) => t.textContent);
@@ -67,8 +55,6 @@ describe('a real change', () => {
   });
 
   it('names every reading in its summary while the list stays readable', () => {
-    // The middle value was absent from the one sentence describing the
-    // series, so a screen reader user got the two ends and a count.
     render(<TrendChart {...classified} />);
     const label = screen.getByRole('img').getAttribute('aria-label');
     expect(label).toMatch(/6\.1 %/);
@@ -77,8 +63,6 @@ describe('a real change', () => {
   });
 
   it('falls back to the two ends when the series is long', () => {
-    // A sentence naming fourteen dates is not a summary; the per-point
-    // tooltips carry the detail there.
     const many = Array.from({ length: 9 }, (_, i) => ({
       date: `2026-0${i + 1}-10T00:00:00Z`,
       value: 6 + i * 0.1,
@@ -87,21 +71,15 @@ describe('a real change', () => {
     render(<TrendChart {...classified} points={many} />);
     const label = screen.getByRole('img').getAttribute('aria-label');
     expect(label).toMatch(/across 9 readings/);
-    // The fourth reading is not spelled out.
     expect(label).not.toMatch(/6\.3 %/);
   });
 
   it('prints the scale it drew the slope against', () => {
     const { container } = render(<TrendChart {...classified} />);
-    // Both axis ends, or the slope can be made to say anything by padding.
     expect(container.querySelectorAll('.trend-chart__axis').length).toBeGreaterThanOrEqual(4);
   });
 
   it('reserves a gutter wide enough for its own axis labels', () => {
-    // FOUND BY LOOKING AT THE RENDERED CHART, not by reading it: at a
-    // `0 0 560 196` viewBox, "186 mg/dl" -- right-anchored 8 units left of the
-    // plot -- ran off the left edge and rendered as "16 mg/dl". A clipped
-    // label on a chart does not look broken, it looks like a smaller number.
     const { container } = render(
       <TrendChart
         label="Blood sugar"
@@ -115,7 +93,6 @@ describe('a real change', () => {
     );
     const [minX] = container.querySelector('svg').getAttribute('viewBox').split(' ').map(Number);
     const anchor = Number(container.querySelector('.trend-chart__axis').getAttribute('x'));
-    // Room for the longest label this chart can produce, at ~6 units a glyph.
     expect(anchor - minX).toBeGreaterThanOrEqual(66);
   });
 
@@ -125,8 +102,6 @@ describe('a real change', () => {
   });
 
   it('refuses a risk colour when no direction was classified', () => {
-    // Two real readings, no classification: the readings are real, the
-    // direction is not, and colour in this palette is categorical.
     const { container } = render(
       <TrendChart {...classified} classified={false} trend={null} />
     );
@@ -138,11 +113,6 @@ describe('a real change', () => {
   });
 
   it('refuses a trend word that arrives WITHOUT the classification', () => {
-    // The contradictory shape: `classified: false` carrying a direction
-    // anyway. Module 28's own model validator forbids it; if it ever arrives,
-    // the unclassified reading wins. `classified={false} trend={null}` cannot
-    // test this clause -- with a null trend the colour branch is false either
-    // way, which is one condition tested and two conditions written.
     const { container } = render(
       <TrendChart {...classified} classified={false} trend="worsening" />
     );
@@ -153,8 +123,6 @@ describe('a real change', () => {
   });
 
   it('never prints a trend word it does not recognise, or a null one', () => {
-    // `classified: true` with `trend: null` printed the string "null" as the
-    // direction before the two halves were checked together.
     render(<TrendChart {...classified} classified trend={null} />);
     const title = screen.getByRole('img').getAttribute('aria-label');
     expect(title).not.toMatch(/null|undefined/);
@@ -171,11 +139,6 @@ describe('a real change', () => {
 
 describe('a genuinely flat line', () => {
   it('prints its one reading once, not twice and not never', () => {
-    // Two identical readings: a flat line that EARNED it, `stable` from the
-    // service. High and low are the same number, so a naive pair of labels
-    // either stacks it on itself or -- with a not-equal guard -- prints no
-    // scale at all beside a flat line, which is the one shape most easily
-    // mistaken for an empty chart.
     const { container } = render(
       <TrendChart
         label="BMI"
@@ -208,8 +171,6 @@ describe('fewer than two readings', () => {
   it('draws NO LINE AT ALL for one reading', () => {
     const { container } = render(<TrendChart {...single} />);
     expect(paths(container)).toHaveLength(0);
-    // The reading itself is still shown -- hiding it is the same failure from
-    // the other side.
     expect(markers(container)).toHaveLength(1);
   });
 
@@ -218,7 +179,6 @@ describe('fewer than two readings', () => {
     expect(
       screen.getByText(/no line is drawn, because a change needs two/i)
     ).toBeInTheDocument();
-    // Said both on the page and in the SVG's own words, hence getAllByText.
     expect(
       screen.getAllByText(/not the same as no change having occurred/i).length
     ).toBeGreaterThan(0);
@@ -233,15 +193,11 @@ describe('fewer than two readings', () => {
   });
 
   it('prints NO y scale around a single reading', () => {
-    // The domain there is a 10% nudge either side of the only value. Printing
-    // 5.34 and 6.86 around a lone 6.1 offers a scale nobody chose and nothing
-    // was compared against.
     const { container } = render(<TrendChart {...single} />);
     const axisText = [...container.querySelectorAll('.trend-chart__axis')]
       .map((node) => node.textContent)
       .join(' ');
     expect(axisText).not.toMatch(/6\.86|5\.34/);
-    // The date it was taken on is still shown: that is a fact, not a scale.
     expect(axisText).toMatch(/10 Jan 2026/);
   });
 
@@ -276,9 +232,6 @@ describe('a gap where a reading was expected', () => {
 
   it('BREAKS the line across the gap instead of drawing through it', () => {
     const { container } = render(<TrendChart {...withGap} />);
-    // Two readings with a gap between them are two runs of one point each,
-    // and a run of one point is not a line. Drawing straight through would
-    // assert the value moved smoothly through a period nobody measured.
     expect(paths(container)).toHaveLength(0);
     expect(markers(container)).toHaveLength(2);
   });
@@ -304,8 +257,6 @@ describe('a gap where a reading was expected', () => {
     expect(gap.getAttribute('fill')).toBe('none');
     expect(gap.getAttribute('stroke')).toBe('var(--mono)');
     expect(gap.getAttribute('stroke-dasharray')).toBe('2 2');
-    // Below the axis: an absence has no y position, and inside the plot it
-    // would have acquired one.
     expect(Number(gap.getAttribute('cy'))).toBeGreaterThan(134);
   });
 
@@ -318,8 +269,6 @@ describe('a gap where a reading was expected', () => {
   });
 
   it('gives the gap marker its own tooltip too', () => {
-    // Same reason as the readings: the lane sits below the axis with no date
-    // label of its own, so pointing at it has to say which report it is.
     const { container } = render(<TrendChart {...withGap} />);
     const title = container.querySelector('.trend-chart__gap title');
     expect(title).not.toBeNull();
@@ -331,8 +280,6 @@ describe('a gap where a reading was expected', () => {
   it('gives the reason a report carried nothing', () => {
     render(<TrendChart {...withGap} />);
     expect(screen.getByText('No reading')).toBeInTheDocument();
-    // Twice on purpose now: once in the marker's own tooltip, once in the
-    // list below, so pointing at the gap and reading the page both work.
     expect(
       screen.getAllByText(/did not carry a value for hba1c/).length
     ).toBeGreaterThanOrEqual(2);
@@ -360,30 +307,21 @@ describe('a rejected reading', () => {
 
   it('never plots it, and says why it was refused', () => {
     const { container } = render(<TrendChart {...rejected} />);
-    // A rejected 999 is not a high result; it is not a result. If it reached
-    // the domain the axis maximum would be 999 and both real readings would
-    // flatten onto the floor.
     expect(markers(container)).toHaveLength(2);
     expect(gapMarkers(container)).toHaveLength(1);
     expect(screen.getByText('Not usable')).toBeInTheDocument();
     expect(
       screen.getAllByText(/not physiologically plausible/).length
     ).toBeGreaterThanOrEqual(1);
-    // The refused number appears ONLY inside the service's reason sentence.
-    // It must never have reached the scale: an axis topping out at 999 would
-    // flatten both real readings onto the floor of the chart.
     const axisText = [...container.querySelectorAll('.trend-chart__axis')]
       .map((node) => node.textContent)
       .join(' ');
     expect(axisText).not.toContain('999');
-    // And it breaks the line like any other gap: a refused reading is a
-    // report that contributed nothing, not a reading of some other value.
     expect(paths(container)).toHaveLength(0);
   });
 
   it('calls a reading that could not be used "not usable", not "no reading"', () => {
     render(<TrendChart {...rejected} gaps={[{ date: D2, kind: 'unusable', reason: 'r' }]} />);
-    // "No reading" would claim the report was silent. It was not.
     expect(screen.getByText('Not usable')).toBeInTheDocument();
     expect(screen.queryByText('No reading')).not.toBeInTheDocument();
   });
@@ -413,8 +351,6 @@ describe('the reference band', () => {
   });
 
   it('is NOT drawn from a one-sided optimum', () => {
-    // A floor with no declared ceiling drawn as a band runs to the edge of the
-    // frame and asserts a ceiling nobody declared.
     const { container } = render(<TrendChart {...base} band={{ low: 200, high: null }} />);
     expect(container.querySelector('.trend-chart__band')).toBeNull();
   });
@@ -434,9 +370,6 @@ describe('readings in two different units', () => {
   it('are never placed on one axis at all', () => {
     const { container } = render(<TrendChart {...mixed} />);
     expect(paths(container)).toHaveLength(0);
-    // Not even as two dots. A shared y scale makes the comparison whether or
-    // not a line joins them: 7.2 mmol/L would sit at the floor and 100 mg/dL
-    // at the ceiling, and that is the same measurement twice.
     expect(markers(container)).toHaveLength(0);
     expect(container.querySelector('svg')).toBeNull();
   });
@@ -454,8 +387,6 @@ describe('nothing at all', () => {
       <TrendChart label="hba1c" points={[]} gaps={[]} classified={false} />
     );
     expect(container.querySelector('svg')).toBeNull();
-    // Not an empty figure either: a frame with nothing in it is not a chart,
-    // and the table beside it already carries the service's own refusal.
     expect(container.querySelector('.trend-chart')).toBeNull();
   });
 
@@ -474,16 +405,6 @@ describe('nothing at all', () => {
   });
 });
 
-/**
- * THE AXIS IS THE SCALE A CHANGE IS JUDGED AGAINST.
- *
- * Found by a reader looking at their cholesterol chart: 186 -> 172 drawn from
- * ceiling to floor, labelled "stable". Both were true. The service reports
- * -7.53 % against a 17 % stability band, so "stable" is correct -- and an axis
- * spanning only the two readings stretches any change, however small, across
- * the whole box. The picture said collapse, the label said stable, and the
- * picture is what a reader believes.
- */
 describe('TrendChart -- the significance span sets the scale', () => {
   const STABILITY = { significant_change_pct: 17, min_absolute_change: 5 };
   const POINTS = [
@@ -491,7 +412,6 @@ describe('TrendChart -- the significance span sets the scale', () => {
     { date: '2026-09-11', value: 172, unit: 'mg/dl' },
   ];
 
-  /** Vertical distance between the two plotted readings, in svg units. */
   const dropHeight = () => {
     const dots = [...document.querySelectorAll('circle')].filter(
       (c) => c.getAttribute('r') && !c.getAttribute('stroke-dasharray')
@@ -520,14 +440,10 @@ describe('TrendChart -- the significance span sets the scale', () => {
 
     expect(withoutBand).toBeGreaterThan(0);
     expect(withBand).toBeGreaterThan(0);
-    // THE WHOLE POINT: the same two readings, drawn against what would have
-    // counted, occupy a fraction of the height they did before.
     expect(withBand).toBeLessThan(withoutBand / 2);
   });
 
   it('still prints the readings themselves, never the scale', () => {
-    // Every number on this chart is a reading somebody took. Widening the
-    // domain must not start labelling the axis with the band's edges.
     render(
       <TrendChart
         label="Total cholesterol"
@@ -540,8 +456,6 @@ describe('TrendChart -- the significance span sets the scale', () => {
     const text = document.body.textContent;
     expect(text).toMatch(/186/);
     expect(text).toMatch(/172/);
-    // 186 +/- 17 % is about 154 and 218. Neither is a reading and neither may
-    // appear.
     expect(text).not.toMatch(/154/);
     expect(text).not.toMatch(/218/);
   });
@@ -560,24 +474,7 @@ describe('TrendChart -- the significance span sets the scale', () => {
   });
 });
 
-/**
- * THE SAME FIX FOR THE CHARTS THAT HAVE NO BAND.
- *
- * The parameters this platform does not assess have no polarity and no
- * stability figure, so neither `band` nor `stability` exists for them and
- * their axes still spanned the readings alone. What they DO have is the
- * interval their own laboratory printed beside the value, and `scaleOnly`
- * carries it in.
- *
- * It SETS THE SCALE AND IS NEVER DRAWN, for two independent reasons: the
- * reader's reports disagree about the range on most parameters, so there is
- * no single interval a band could represent; and `band` is this platform's
- * own declared optimal range, so drawing a laboratory's interval in the same
- * ink would merge two authors' claims into one rectangle.
- */
 describe('TrendChart -- a printed interval sets the scale and is not drawn', () => {
-  // Lymphocytes 15 -> 14 % against a union range of 20-45: a one-point move
-  // in a test whose usual range is 25 points wide.
   const POINTS = [
     { date: '2026-09-09', value: 15, unit: '%' },
     { date: '2026-09-11', value: 14, unit: '%' },
@@ -623,7 +520,6 @@ describe('TrendChart -- a printed interval sets the scale and is not drawn', () 
         scaleOnly={{ low: 20, high: 45 }}
       />
     );
-    // A `band` of the same numbers WOULD add one; this must not.
     expect(rects()).toBe(before);
   });
 
@@ -639,13 +535,11 @@ describe('TrendChart -- a printed interval sets the scale and is not drawn', () 
     const text = document.body.textContent;
     expect(text).toMatch(/15/);
     expect(text).toMatch(/14/);
-    // Neither bound is a reading anybody took.
     expect(text).not.toMatch(/\b45\b/);
     expect(text).not.toMatch(/\b20\b/);
   });
 
   it('uses a one-sided range without inventing the missing half', () => {
-    // `< 6 mg/l` is a high and no low. The high must still widen the scale.
     const crp = [
       { date: '2026-09-09', value: 12.1, unit: 'mg/L' },
       { date: '2026-09-11', value: 38.9, unit: 'mg/L' },
@@ -659,8 +553,6 @@ describe('TrendChart -- a printed interval sets the scale and is not drawn', () 
     );
     const scaled = dropHeight();
 
-    // Lower than before, because the domain now reaches down to 6 -- but a
-    // tripling is a real change and must still read as one.
     expect(scaled).toBeLessThan(unscaled);
     expect(scaled).toBeGreaterThan(unscaled / 2);
   });

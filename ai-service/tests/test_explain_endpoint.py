@@ -1,20 +1,3 @@
-"""The Modules 23/25/26 HTTP layer -- `app/api/routes_explain.py`.
-
-WHY THIS FILE BUILDS ITS OWN APP
---------------------------------
-`app/main.py` is owned by the integrator, who mounts the routers. Until the
-`include_router` line lands there, mounting inside a test would mutate the
-shared `app` object for the rest of the session. So these tests assemble a
-minimal FastAPI app carrying only this router plus the same error handling
-`main.py` installs.
-
-`test_the_router_is_mounted_when_main_includes_it` closes the loop: once the
-line is added, it asserts the routes are reachable on the real app, and
-`tests/test_auth.py`'s recursive walk starts covering them automatically. It
-skips (rather than fails) while the router is unmounted, so this file is honest
-about which state it is in.
-"""
-
 from __future__ import annotations
 
 import re
@@ -73,15 +56,6 @@ def explain_client(client_factory: Any) -> TestClient:
 
 @pytest.fixture(autouse=True)
 def _clear_lab_polarity_cache():
-    """Module 35 caches by test NAME in the process, so tests share it.
-
-    WITHOUT THIS THE PROMPT ASSERTION PASSES VACUOUSLY. A test that checks no
-    patient value reaches the model found an empty prompt list and would have
-    reported success for a model that was never called, because an earlier
-    test in the same process had already cached that test name. The cache is
-    correct -- one answer per test name is the point -- and a suite that does
-    not isolate it is measuring the previous test.
-    """
     from app.services import lab_name_match, lab_polarity
 
     lab_polarity.reset_cache()
@@ -102,11 +76,6 @@ FEATURE_BODY = {
 }
 
 
-# --------------------------------------------------------------------------
-# Auth -- the same guarantee routes_report.py carries
-# --------------------------------------------------------------------------
-
-
 ROUTES = [
     ("post", "/api/v1/explain/feature", FEATURE_BODY),
     ("post", "/api/v1/explain/report", {"report": {}}),
@@ -114,35 +83,23 @@ ROUTES = [
     ("get", "/api/v1/explain/terms", None),
     ("post", "/api/v1/explain/guidance", {"conditions": ["Diabetes"]}),
     ("get", "/api/v1/explain/policy", None),
-    # ADDING THIS LINE IS THE WHOLE FIX FOR A FEATURE THAT WAS DEAD ON EVERY
-    # CALL. `/glossary` shipped returning a bare payload instead of the
-    # `{success, data}` envelope, so the backend rejected every 200 as
-    # malformed and threw away descriptions it had already generated and
-    # safety-validated. `test_every_route_answers_with_the_key` asserts
-    # `success is True` and would have caught it on the first run -- the route
-    # was simply never listed here.
     ("post", "/api/v1/explain/glossary", {"test_names": ["Blood Urea"]}),
-    # Listed HERE on the day it was written, not after it shipped dead.
     (
         "post",
         "/api/v1/explain/lab-polarity",
         {"series": [{"test_name": "Blood Urea", "first_value": 1.0, "last_value": 2.0}]},
     ),
-    # Listed HERE on the day it was written, not after it shipped dead.
     (
         "post",
         "/api/v1/explain/lab-name-match",
         {"names": ["Blood Urea", "Urea Nitrogen"]},
     ),
-    # Listed HERE on the day it was written, not after it shipped dead.
     ("post", "/api/v1/explain/clinician-summary", {"summary": {}}),
-    # Same day, same reason.
     (
         "post",
         "/api/v1/explain/summary-prose",
         {"sentences": ["This tool checked 8 conditions."], "names": []},
     ),
-    # And this one.
     (
         "post",
         "/api/v1/explain/finding-context",
@@ -172,7 +129,6 @@ def test_every_route_answers_with_the_key(method, path, body, explain_client):
 
 
 def test_every_route_declares_the_dependency_on_the_router_itself():
-    """Belt and braces: the dependency is on the router, not per-handler."""
     from app.api.routes_explain import router
     from app.core.auth import require_service_key
 
@@ -183,7 +139,6 @@ def test_every_route_declares_the_dependency_on_the_router_itself():
 
 
 def test_the_router_is_mounted_when_main_includes_it():
-    """Skips while `main.py` has not yet been updated by the integrator."""
     from app.main import app
 
     def walk(routes):
@@ -209,11 +164,6 @@ def test_the_router_is_mounted_when_main_includes_it():
                 getattr(d, "dependency", None) is require_service_key
                 for d in route.dependencies
             ), route.path
-
-
-# --------------------------------------------------------------------------
-# Module 23 over HTTP
-# --------------------------------------------------------------------------
 
 
 def test_an_approved_explanation_comes_back_with_its_sources(explain_client):
@@ -334,11 +284,6 @@ def test_the_report_route_caps_the_number_of_model_calls(explain_client):
     assert response.status_code == 422
 
 
-# --------------------------------------------------------------------------
-# Module 25 over HTTP
-# --------------------------------------------------------------------------
-
-
 @pytest.mark.parametrize("term", ["TSH", "ferritin", "PSA"])
 def test_an_uncovered_term_is_refused_over_http(term, explain_client):
     response = explain_client.post(
@@ -376,13 +321,7 @@ def test_the_terms_route_publishes_the_vocabulary_and_the_gaps(explain_client):
     assert data["known_gaps"]
 
 
-# --------------------------------------------------------------------------
-# Module 26 over HTTP
-# --------------------------------------------------------------------------
-
-
 def test_guidance_is_served_without_any_model(client_factory):
-    """No LLM is configured at all, and the route still answers in full."""
     client = client_factory(None)
     response = client.post(
         "/api/v1/explain/guidance",
@@ -406,11 +345,6 @@ def test_guidance_reports_unknown_names(explain_client):
     assert data["unknown_codes"] == ["NOPE"]
 
 
-# --------------------------------------------------------------------------
-# Policy
-# --------------------------------------------------------------------------
-
-
 def test_the_policy_route_publishes_all_three_modules(explain_client):
     data = explain_client.get("/api/v1/explain/policy", headers=HEADERS).json()["data"]
 
@@ -421,16 +355,6 @@ def test_the_policy_route_publishes_all_three_modules(explain_client):
     assert data["lifestyle_guidance"]["uses_llm"] is False
 
 
-# --------------------------------------------------------------------------
-# The glossary over HTTP
-# --------------------------------------------------------------------------
-#
-# The module itself has its own suite. These are about the TRANSPORT, which is
-# where it was broken: the descriptions were generated, validated and cached,
-# and then discarded by the backend because the reply was not in the envelope
-# every other route here uses.
-
-
 def test_the_glossary_answers_inside_the_standard_envelope(explain_client):
     response = explain_client.post(
         "/api/v1/explain/glossary",
@@ -439,20 +363,12 @@ def test_the_glossary_answers_inside_the_standard_envelope(explain_client):
     )
     assert response.status_code == 200
     body = response.json()
-    # The two properties the backend's `unwrapEnvelope` requires, asserted
-    # separately from the payload so a future change to either is visible.
     assert body["success"] is True
     assert isinstance(body["data"], dict)
     assert body["data"]["entries"][0]["test_name"] == "Blood Urea"
 
 
 def test_the_glossary_answers_with_no_model_configured(client_factory):
-    """An unconfigured key is a service state, not an error.
-
-    The caller renders the values with no description, exactly as it does when
-    a description is refused -- and it must be able to tell the difference,
-    which is why `entries` is empty rather than carrying placeholder text.
-    """
     client = client_factory(None)
     response = client.post(
         "/api/v1/explain/glossary",
@@ -466,12 +382,6 @@ def test_the_glossary_answers_with_no_model_configured(client_factory):
 
 
 def test_the_glossary_request_has_nowhere_to_put_a_patient_value(explain_client):
-    """The safety property is the SHAPE, so it is asserted at the shape.
-
-    A caller cannot send a value, a unit, a reference range or a flag even by
-    accident: the request model forbids extra fields, so the model can never be
-    asked what a particular person's number means.
-    """
     response = explain_client.post(
         "/api/v1/explain/glossary",
         json={"test_names": ["Potassium"], "value": 5.2, "unit": "mmol/L"},
@@ -479,13 +389,6 @@ def test_the_glossary_request_has_nowhere_to_put_a_patient_value(explain_client)
     )
     assert response.status_code == 422
 
-
-# --------------------------------------------------------------------------
-# Module 35 -- the trend classification, over HTTP
-# --------------------------------------------------------------------------
-#
-# The module has its own suite. These are about the TRANSPORT and the SHAPE,
-# which is where the glossary was broken for its whole first life.
 
 _POLARITY_JSON = (
     '{"polarity":"higher_is_worse","analytical_cv_pct":4.0,'
@@ -512,8 +415,6 @@ def test_lab_polarity_answers_inside_the_standard_envelope(client_factory):
 
     assert response.status_code == 200
     body = response.json()
-    # The two properties the backend's `unwrapEnvelope` requires, asserted
-    # separately from the payload so a change to either is visible.
     assert body["success"] is True
     assert isinstance(body["data"], dict)
 
@@ -523,11 +424,6 @@ def test_lab_polarity_answers_inside_the_standard_envelope(client_factory):
 
 
 def test_lab_polarity_answers_with_no_model_configured(client_factory):
-    """An unconfigured key is a service state, not a finding.
-
-    `verdicts` is empty rather than carrying a placeholder, so the caller can
-    tell "no model" from "the model declined to classify this test".
-    """
     client = client_factory(None)
     response = client.post(
         "/api/v1/explain/lab-polarity", json=LAB_POLARITY_BODY, headers=HEADERS
@@ -540,11 +436,6 @@ def test_lab_polarity_answers_with_no_model_configured(client_factory):
 
 
 def test_lab_polarity_refuses_a_field_it_does_not_declare(client_factory):
-    """The safety property is the SHAPE, so it is asserted at the shape.
-
-    A caller cannot smuggle the patient's age, sex or diagnosis alongside the
-    readings: the request model forbids extra fields.
-    """
     client = client_factory(FakeTextClient(_POLARITY_JSON))
     body = {
         "series": [
@@ -561,11 +452,6 @@ def test_lab_polarity_refuses_a_field_it_does_not_declare(client_factory):
 
 
 def test_lab_polarity_sends_no_patient_data_to_the_model(client_factory):
-    """THE ONE THAT MATTERS, asserted on the prompt the service really built.
-
-    The values travel to this SERVICE, because the classification arithmetic
-    runs here. They must not travel to the MODEL.
-    """
     fake = FakeTextClient(_POLARITY_JSON)
     client = client_factory(fake)
     client.post(
@@ -593,7 +479,6 @@ def test_lab_polarity_sends_no_patient_data_to_the_model(client_factory):
 
 
 def test_the_glossary_sends_no_patient_data_to_the_model(client_factory):
-    """What actually reaches the model is the test name and nothing else."""
     llm = FakeTextClient(_APPROVABLE)
     client = client_factory(llm)
     client.post(
@@ -605,9 +490,6 @@ def test_the_glossary_sends_no_patient_data_to_the_model(client_factory):
     assert llm.prompts, "the route did not call the model at all"
     prompt = "\n".join(llm.prompts)
     assert "Potassium, Serum" in prompt
-    # This patient's actual result, from fixture 06. None of it can be in the
-    # prompt, because none of it was ever sent to this route -- and the request
-    # model has nowhere to put it even if a caller tried.
     for forbidden in ("5.2", "mmol/L", "3.5 - 5.1"):
         assert forbidden not in prompt
 
@@ -620,10 +502,6 @@ def test_an_oversized_name_list_is_rejected_by_the_schema(explain_client):
     )
     assert response.status_code == 422
 
-
-# --------------------------------------------------------------------------
-# Module 36 -- lab-name-match
-# --------------------------------------------------------------------------
 
 _NAME_MATCH_JSON = '{"groups": [["Zorblex Factor", "Frimbulin"]]}'
 
@@ -647,11 +525,6 @@ def test_lab_name_match_answers_inside_the_standard_envelope(client_factory):
 
 
 def test_lab_name_match_answers_with_no_model_configured(client_factory):
-    """An unconfigured key joins nothing, which is the status quo.
-
-    `groups` is empty rather than carrying a guess, so the backend groups by
-    word set exactly as it did before Module 36 existed.
-    """
     client = client_factory(None)
     response = client.post(
         "/api/v1/explain/lab-name-match", json=LAB_NAME_MATCH_BODY, headers=HEADERS
@@ -664,12 +537,6 @@ def test_lab_name_match_answers_with_no_model_configured(client_factory):
 
 
 def test_lab_name_match_has_nowhere_to_put_a_patient_value(client_factory):
-    """THE SAFETY PROPERTY IS THE SHAPE, and here it is the strongest form.
-
-    Module 35's request carries the readings and keeps them out of the prompt
-    by construction. This request model has no field for a value at all, so a
-    caller cannot leak one even by trying.
-    """
     client = client_factory(FakeTextClient(_NAME_MATCH_JSON))
     response = client.post(
         "/api/v1/explain/lab-name-match",
@@ -689,8 +556,6 @@ def test_lab_name_match_sends_no_figure_to_the_model(client_factory):
     assert fake.prompts, "the model was never called, so this proves nothing"
     prompt = fake.prompts[-1]
     assert "Zorblex Factor" in prompt
-    # No digit at all -- see test_lab_name_match.py for why that is the
-    # assertion rather than a list of forbidden words.
     assert re.search(r"\d", prompt) is None
 
 
@@ -701,11 +566,6 @@ def test_an_oversized_lab_name_list_is_rejected_by_the_schema(explain_client):
         headers=HEADERS,
     )
     assert response.status_code == 422
-
-
-# --------------------------------------------------------------------------
-# Logging
-# --------------------------------------------------------------------------
 
 
 def test_the_http_layer_logs_no_phi(caplog, explain_client):

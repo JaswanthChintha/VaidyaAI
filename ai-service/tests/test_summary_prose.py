@@ -1,11 +1,3 @@
-"""The patient summary rewrite -- and the five gates that make it safe.
-
-The property under test is never "the prose is good". It is that the WORST
-CASE IS THE COMPOSED TEXT: on any refusal `text` is None, the caller renders
-what it already had, and no gate can be passed by a model that drops a
-qualifying clause or adds a verdict of its own.
-"""
-
 from __future__ import annotations
 
 from typing import Any, List, Optional
@@ -14,9 +6,6 @@ import pytest
 
 from app.services import summary_prose as sp
 
-# --------------------------------------------------------------------------
-# Builders
-# --------------------------------------------------------------------------
 
 SENTENCES = [
     "This tool checked 8 conditions against a fixed set of thresholds.",
@@ -28,7 +17,6 @@ NAMES = ("Kidney Disease", "Anemia", "Obesity")
 
 
 class FakeLLM:
-    """Returns canned text, and records what it was asked."""
 
     def __init__(self, *replies: str) -> None:
         self.replies: List[str] = list(replies)
@@ -37,11 +25,6 @@ class FakeLLM:
 
     def generate_text(self, prompt: str) -> Any:
         self.prompts.append(prompt)
-        # EXHAUSTED MEANS "SAYS THE SAME THING AGAIN", not "says nothing". A
-        # fake that returns "" on the retry makes every fact-check failure
-        # report `withheld_by_safety` instead, because empty text fails the
-        # safety gate first -- so the test would pass on the wrong reason and
-        # the real gate would never be exercised.
         if not self.replies:
             return self.last
         self.last = self.replies.pop(0)
@@ -49,7 +32,6 @@ class FakeLLM:
 
 
 def approved(text: str):
-    """A `guarded_generation` result that approved `text`."""
 
     class _V:
         codes = ()
@@ -78,7 +60,6 @@ def refused(*codes: str):
 
 @pytest.fixture
 def guard(monkeypatch):
-    """Replace the safety layer with one that approves whatever it is given."""
 
     seen = {"contexts": []}
 
@@ -90,14 +71,7 @@ def guard(monkeypatch):
     return seen
 
 
-# --------------------------------------------------------------------------
-# GATE 1 -- no model, no rewrite, no network
-# --------------------------------------------------------------------------
-
-
 def test_without_a_model_it_refuses_and_never_calls_out(monkeypatch):
-    # The caller's fallback has to be the NORMAL path, not an error path --
-    # it is also what lets the whole suite run offline.
     monkeypatch.setattr(sp, "_resolve_llm", lambda llm, settings: None)
     out = sp.rewrite_summary(SENTENCES, names=NAMES)
     assert out.outcome == sp.OUTCOME_NO_MODEL
@@ -119,11 +93,6 @@ def test_blank_sentences_do_not_count_as_something_to_write():
     assert out.outcome == sp.OUTCOME_NOTHING_TO_WRITE
 
 
-# --------------------------------------------------------------------------
-# GATE 2 -- Module 24
-# --------------------------------------------------------------------------
-
-
 def test_a_safety_refusal_yields_no_text(monkeypatch):
     monkeypatch.setattr(
         sp, "guarded_generation", lambda g, *, context, attempts=2: refused("X_CODE")
@@ -137,20 +106,11 @@ def test_a_safety_refusal_yields_no_text(monkeypatch):
 def test_the_composed_sentences_are_the_only_grounding(guard):
     sp.rewrite_summary(SENTENCES, names=NAMES, llm=FakeLLM(" ".join(SENTENCES)))
     context = guard["contexts"][0]
-    # Nothing else may ground this generation: the sentences ARE the source,
-    # which is what stops the model saying anything the page does not.
     assert context.grounding_sources == tuple(SENTENCES)
     assert context.purpose == "patient_summary_prose"
 
 
-# --------------------------------------------------------------------------
-# GATE 3 -- nothing may be lost
-# --------------------------------------------------------------------------
-
-
 def test_a_dropped_number_throws_the_rewrite_away(guard):
-    # "8 conditions" gone. A summariser drops the qualifying clause first and
-    # this is the shape of that failure.
     out = sp.rewrite_summary(
         SENTENCES,
         names=NAMES,
@@ -180,8 +140,6 @@ def test_a_dropped_condition_name_throws_the_rewrite_away(guard):
 
 
 def test_a_whole_dropped_sentence_is_caught_by_its_figures(guard):
-    # THE SENTENCE MOST LIKELY TO BE DROPPED is the laboratory's own count --
-    # it reads like an aside and it is the one a doctor is asked to look at.
     out = sp.rewrite_summary(
         SENTENCES,
         names=NAMES,
@@ -193,11 +151,6 @@ def test_a_whole_dropped_sentence_is_caught_by_its_figures(guard):
     )
     assert out.outcome == sp.OUTCOME_FACTS_MISSING
     assert "number:11" in out.missing_facts
-
-
-# --------------------------------------------------------------------------
-# GATE 4 -- nothing may be added. The gate that makes this a REWRITE.
-# --------------------------------------------------------------------------
 
 
 def test_an_invented_number_throws_the_rewrite_away(guard):
@@ -217,14 +170,6 @@ def test_an_invented_number_throws_the_rewrite_away(guard):
 
 
 def test_an_invented_reassurance_throws_the_rewrite_away(guard):
-    """THE FAILURE THIS MODULE EXISTS FOR.
-
-    Not one false statement in it, and every required fact present -- the
-    model has simply decided what it all adds up to. On a report carrying
-    SGPT 101.9, CRP 12.1 and ESR 35, none of which fed any verdict, that
-    word is the difference between "we did not look" and "we looked and it
-    was fine".
-    """
     out = sp.rewrite_summary(
         SENTENCES,
         names=NAMES,
@@ -258,8 +203,6 @@ def test_every_verdict_word_is_refused_when_it_was_not_in_the_input(guard, word)
 
 
 def test_a_verdict_word_ALREADY_in_the_input_is_allowed_through(guard):
-    # The gate forbids NEW verdicts, not the page's own words. Refusing these
-    # would make the rewrite impossible on every report that has a finding.
     sentences = ["Your haemoglobin is low at 10.6 g/dl."]
     out = sp.rewrite_summary(
         sentences, llm=FakeLLM("Your haemoglobin is low, at 10.6 g/dl.")
@@ -268,17 +211,10 @@ def test_a_verdict_word_ALREADY_in_the_input_is_allowed_through(guard):
     assert "low" in out.text
 
 
-# --------------------------------------------------------------------------
-# GATE 5 -- no silent substitution
-# --------------------------------------------------------------------------
-
-
 @pytest.mark.parametrize(
     "outcome", [o for o in sp.OUTCOME_VALUES if o != sp.OUTCOME_GENERATED]
 )
 def test_text_is_none_on_every_refusal(outcome):
-    # Not a behaviour test -- a shape one. A caller must not be able to render
-    # a partial summary, whatever went wrong.
     out = sp.SummaryProse(outcome=outcome, safety=sp.ProseSafety(validated=False))
     assert out.text is None
 
@@ -300,40 +236,26 @@ def test_a_clean_rewrite_is_returned_and_says_so(guard):
     assert out.invented_facts == ()
 
 
-# --------------------------------------------------------------------------
-# The second round, and what it is told
-# --------------------------------------------------------------------------
-
-
 def test_a_dropped_fact_is_named_back_to_the_model_on_the_retry(guard):
     llm = FakeLLM(
-        # First attempt drops Obesity...
         "This tool checked 8 conditions. 3 need a closer look: Kidney "
         "Disease, Anemia. Your laboratory marked 11 further results outside "
         "its own range.",
-        # ...second puts it back.
         "This tool checked 8 conditions. 3 need a closer look: Kidney "
         "Disease, Anemia, Obesity. Your laboratory marked 11 further results "
         "outside its own range.",
     )
     out = sp.rewrite_summary(SENTENCES, names=NAMES, llm=llm)
     assert out.outcome == sp.OUTCOME_GENERATED
-    # "Try again" is not feedback. The second prompt has to say what went.
     assert "Obesity" in llm.prompts[1]
     assert "DROPPED" in llm.prompts[1]
 
 
 def test_the_retry_is_capped(guard):
-    # Two rounds, and then it gives up with the composed text intact.
     llm = FakeLLM("nothing useful", "still nothing useful")
     out = sp.rewrite_summary(SENTENCES, names=NAMES, llm=llm)
     assert out.outcome == sp.OUTCOME_FACTS_MISSING
     assert len(llm.prompts) == 2
-
-
-# --------------------------------------------------------------------------
-# The prompt itself
-# --------------------------------------------------------------------------
 
 
 def test_the_prompt_forbids_an_opinion_in_as_many_words():
@@ -345,8 +267,6 @@ def test_the_prompt_forbids_an_opinion_in_as_many_words():
 
 
 def test_numbers_are_compared_as_written_not_as_floats():
-    # "5.0" and "5" are the same number and a different figure, and one of
-    # them is what is printed beside a reference range.
     assert sp.numbers_in("a 5.0 b 11 c -2.5") == ("5.0", "11", "-2.5")
     assert sp._invented("we found 5 things", ["we found 5.0 things"]) == (
         "number:5",

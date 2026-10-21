@@ -1,24 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 
-/**
- * 🔊 READ ALOUD (2026-10-06).
- *
- * THE BROWSER SPEAKS, NOT THE SERVER. The Web Speech API runs on the reader's
- * own device: no Gemini call, no server work, nothing to deploy. It works the
- * same on localhost and on a public site.
- *
- * ON-DEVICE VOICES FIRST. Some browsers offer "online" voices that send the
- * text to Microsoft or Google to be spoken. For a medical explanation the
- * voice that runs on the device (`localService`) is preferred, and an online
- * one is used only when the device has nothing else for that language.
- *
- * NO VOICE, NO BUTTON. Where speech is not supported, or the device has no
- * voice for the language, the button is not shown -- never an English voice
- * reading another language. `lang` is ready for Hindi ('hi') and Telugu
- * ('te') once translated text exists.
- *
- * ONE AT A TIME. Starting one stops any other; leaving the page stops it.
- */
 
 const PREFERRED_REGION = { en: ['en-IN', 'en-GB', 'en-US'], hi: ['hi-IN'], te: ['te-IN'] };
 
@@ -32,7 +13,6 @@ export function pickVoice(voices, lang) {
     const region = regions.findIndex(
       (r) => String(v.lang).toLowerCase().replace('_', '-') === r.toLowerCase()
     );
-    // On-device first, then the preferred region order, then anything.
     return (v.localService ? 0 : 100) + (region === -1 ? 50 : region);
   };
   return [...matching].sort((a, b) => rank(a) - rank(b))[0];
@@ -51,7 +31,6 @@ export default function ReadAloud({ text, lang = 'en', label }) {
   const [speaking, setSpeaking] = useState(false);
   const mine = useRef(null);
 
-  // Voices arrive asynchronously in most browsers.
   useEffect(() => {
     if (!speechAvailable()) return undefined;
     const synth = window.speechSynthesis;
@@ -61,7 +40,6 @@ export default function ReadAloud({ text, lang = 'en', label }) {
     return () => synth.removeEventListener?.('voiceschanged', update);
   }, [lang]);
 
-  // Leaving the page stops THIS reading (not someone else's).
   useEffect(
     () => () => {
       if (mine.current && speechAvailable()) window.speechSynthesis.cancel();
@@ -78,7 +56,7 @@ export default function ReadAloud({ text, lang = 'en', label }) {
       setSpeaking(false);
       return;
     }
-    synth.cancel(); // one at a time
+    synth.cancel();
     const utterance = new window.SpeechSynthesisUtterance(String(text));
     utterance.voice = voice;
     utterance.lang = voice.lang;

@@ -1,9 +1,3 @@
-"""End-to-end tests for POST /api/v1/ocr/extract, with Gemini mocked.
-
-Covers the full contract Module 5 depends on, the error envelope, and the
-degradation behaviour when individual pages fail.
-"""
-
 from __future__ import annotations
 
 import io
@@ -23,11 +17,6 @@ URL = "/api/v1/ocr/extract"
 
 def upload(client, data: bytes, name: str = "report.pdf", mime: str = "application/pdf"):
     return client.post(URL, files={"file": (name, io.BytesIO(data), mime)})
-
-
-# --------------------------------------------------------------------------
-# Happy path / contract shape
-# --------------------------------------------------------------------------
 
 
 def test_pdf_extraction_returns_the_full_contract(client, synthetic_pdf):
@@ -67,7 +56,7 @@ def test_extracted_parameters_match_the_contract_per_row(client, synthetic_pdf):
     assert len(params) == 2
 
     hba1c = params[0]
-    assert hba1c["test_name"] == "HbA1c"       # verbatim, not normalised
+    assert hba1c["test_name"] == "HbA1c"
     assert hba1c["value_raw"] == "6.8"
     assert hba1c["value_numeric"] == 6.8
     assert hba1c["unit"] == "%"
@@ -113,7 +102,6 @@ def test_multipage_pdf_calls_the_model_per_page_and_stamps_page_numbers(
     assert len(fake.calls) == 2
     assert data["source"]["page_count"] == 2
     assert [p["page_number"] for p in data["pages"]] == [1, 2]
-    # Page numbers are stamped by the service, not taken from the model.
     assert {p["page_number"] for p in data["extracted_parameters"]} == {1, 2}
     assert len(data["extracted_parameters"]) == 4
 
@@ -147,7 +135,7 @@ def test_model_receives_a_png_image_of_a_reasonable_size(
     client = client_factory(fake)
     upload(client, synthetic_pdf)
     assert fake.calls[0]["mime_type"] == "image/png"
-    assert fake.calls[0]["size"] > 1000  # a real rendered page, not a stub
+    assert fake.calls[0]["size"] > 1000
 
 
 def test_filename_path_components_are_stripped(client, synthetic_pdf):
@@ -163,11 +151,6 @@ def test_filename_path_components_are_stripped(client, synthetic_pdf):
     )
     assert response.status_code == 200
     assert response.json()["data"]["source"]["filename"] == "report.pdf"
-
-
-# --------------------------------------------------------------------------
-# Confidence and warnings
-# --------------------------------------------------------------------------
 
 
 def test_low_confidence_produces_a_warning(client_factory, synthetic_pdf):
@@ -208,12 +191,10 @@ def test_no_parameters_found_is_warned_about(client_factory, synthetic_pdf):
     data = upload(client, synthetic_pdf).json()["data"]
     assert data["extracted_parameters"] == []
     assert any("No laboratory parameters" in w for w in data["warnings"])
-    # No results is not an error -- Module 5 decides what to do with it.
     assert data["source"]["page_count"] == 1
 
 
 def test_declared_type_mismatch_is_warned_about(client, synthetic_png):
-    """PNG bytes uploaded as application/pdf: content wins, caller is told."""
     response = upload(client, synthetic_png, "report.pdf", "application/pdf")
     assert response.status_code == 200
     data = response.json()["data"]
@@ -240,7 +221,7 @@ def test_inverted_reference_range_is_flagged_but_preserved(
     client = client_factory(fake)
     data = upload(client, synthetic_pdf).json()["data"]
     param = data["extracted_parameters"][0]
-    assert param["reference_low"] == 145  # preserved as read
+    assert param["reference_low"] == 145
     assert param["reference_high"] == 135
     assert any("inverted" in w for w in data["warnings"])
 
@@ -252,11 +233,6 @@ def test_warnings_are_deduplicated(client_factory, synthetic_pdf_2pages):
     client = client_factory(fake)
     warnings = upload(client, synthetic_pdf_2pages).json()["data"]["warnings"]
     assert len(warnings) == len(set(warnings))
-
-
-# --------------------------------------------------------------------------
-# Degradation when the model fails
-# --------------------------------------------------------------------------
 
 
 def test_one_failed_page_degrades_rather_than_failing_the_request(
@@ -273,7 +249,7 @@ def test_one_failed_page_degrades_rather_than_failing_the_request(
     assert response.status_code == 200
 
     data = response.json()["data"]
-    assert len(data["extracted_parameters"]) == 2  # page 1 only
+    assert len(data["extracted_parameters"]) == 2
     assert data["pages"][1]["raw_text"] is None
     assert any("Page 2 could not be processed" in w for w in data["warnings"])
 
@@ -296,7 +272,7 @@ def test_schema_violating_model_response_skips_the_page(
     fake = FakeGeminiClient(
         payloads=[
             WELL_FORMED_PAGE_PAYLOAD,
-            {"raw_text": "t", "parameters": [{"value_raw": "6.8"}]},  # no test_name
+            {"raw_text": "t", "parameters": [{"value_raw": "6.8"}]},
         ]
     )
     client = client_factory(fake)
@@ -317,7 +293,7 @@ def test_model_error_surfaces_as_a_clean_envelope(client_factory, synthetic_pdf)
     )
     client = client_factory(fake)
     response = upload(client, synthetic_pdf)
-    assert response.status_code == 502  # all pages failed
+    assert response.status_code == 502
     assert response.json()["success"] is False
 
 
@@ -329,14 +305,8 @@ def test_unexpected_exception_becomes_a_clean_500(client_factory, synthetic_pdf)
     body = response.json()
     assert body["success"] is False
     assert body["error"]["code"] == ErrorCode.INTERNAL_ERROR
-    # No stack trace or internal detail leaks to the caller.
     assert "boom" not in response.text
     assert "Traceback" not in response.text
-
-
-# --------------------------------------------------------------------------
-# Intake rejection through the endpoint
-# --------------------------------------------------------------------------
 
 
 def test_missing_file_field_is_rejected(client):
@@ -360,7 +330,6 @@ def test_unsupported_type_is_rejected(client):
 
 
 def test_text_file_renamed_as_pdf_is_rejected(client):
-    """Extension spoofing must not get past content sniffing."""
     response = upload(client, b"just plain text, not a pdf" * 20)
     assert response.status_code == 415
 
@@ -373,7 +342,6 @@ def test_oversized_file_is_rejected(client_factory, synthetic_pdf):
 
 
 def test_oversized_upload_is_rejected_before_full_buffering(client_factory):
-    """The size cap must trip during the read, not after."""
     client = client_factory(max_file_size_bytes=1024)
     huge = b"%PDF-1.4\n" + b"\x00" * (8 * 1024 * 1024)
     response = upload(client, huge)
@@ -414,11 +382,6 @@ def test_wrong_method_uses_the_error_envelope(client, method):
     assert response.json()["success"] is False
 
 
-# --------------------------------------------------------------------------
-# Module boundary: this service must not do Module 5/6/7 work
-# --------------------------------------------------------------------------
-
-
 def test_service_does_not_normalise_test_names(client_factory, synthetic_pdf):
     fake = FakeGeminiClient(
         payload={
@@ -440,8 +403,6 @@ def test_service_does_not_normalise_test_names(client_factory, synthetic_pdf):
 def test_service_does_not_invent_a_flag_from_the_reference_range(
     client_factory, synthetic_pdf
 ):
-    """Value is out of range, but the model returned no flag. We must not add
-    one -- flagging beyond what the model reports is clinical inference."""
     fake = FakeGeminiClient(
         payload={
             "raw_text": "t",

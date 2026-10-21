@@ -1,51 +1,3 @@
-"""Module 6 -- Medical Feature Validation Engine.
-
-Extracted values are not correct merely because OCR produced them. This module
-takes Module 5's canonical, unit-normalised features and decides, per feature,
-whether the value is BELIEVABLE and USABLE.
-
-It performs, per the specification:
-
-  * data-type validation      -- a number where a number belongs, a real
-                                 boolean where a tri-state boolean belongs, a
-                                 known token where a category belongs
-  * numeric validation        -- finite, and integral where required
-  * range validation          -- against the physiologically possible band
-  * unit consistency          -- a value Module 5 could NOT convert
-                                 (`canonical_unit: false`) is never used as-is
-  * missing-value handling    -- absent stays absent; UNKNOWN never becomes
-                                 false; a partially unreadable document is
-                                 flagged so absence is not read as a negative
-  * physiologically unreasonable value detection
-  * feature-specific validation via the reviewable rule table
-
---------------------------------------------------------------------------
-THE LINE THIS MODULE MUST NOT CROSS
---------------------------------------------------------------------------
-
-It validates PLAUSIBILITY AND USABILITY. It does not diagnose, and it never
-rejects a value for being abnormal -- abnormal findings are the whole product.
-
-    blood_glucose 400 mg/dL   -> VALID, tagged `clinically_extreme`
-    blood_glucose 40000 mg/dL -> REJECTED as an extraction error
-
-The two bands that encode that distinction live in
-`app/data/validation_rules.py`, with the clinical basis of every bound.
-
---------------------------------------------------------------------------
-INVARIANTS
---------------------------------------------------------------------------
-
-* NEVER invent, repair, rescale or clamp a value. Values are passed through
-  untouched, flagged untouched, or rejected untouched.
-* NEVER drop an upstream warning, and never flatten its origin. Module 4's
-  warnings stay `stage="extraction"`, Module 5's stay
-  `stage="feature_engineering"`, Module 6 adds `stage="validation"`.
-* NEVER coerce an absent tri-state boolean to false.
-* `valid` and `rejected` are disjoint; `questionable` is a subset view of
-  `valid`.
-"""
-
 from __future__ import annotations
 
 import math
@@ -80,8 +32,6 @@ from app.schemas.validation import (
     ValidationFinding,
 )
 
-#: Documentation string returned by the endpoint and by `rules_document()`
-#: consumers, stating the policy in one line.
 VALIDATION_POLICY = (
     "A value is rejected only when it is physiologically impossible (a "
     "suspected extraction error) or structurally unusable (wrong type, or a "
@@ -91,17 +41,7 @@ VALIDATION_POLICY = (
 )
 
 
-# --------------------------------------------------------------------------
-# Helpers
-# --------------------------------------------------------------------------
-
-
 def _numeric(value: Any) -> Optional[float]:
-    """The value as a float, or None if it is not a real number.
-
-    `bool` is excluded deliberately: in Python `True == 1`, and a boolean that
-    slipped into a numeric feature must be caught, not silently measured.
-    """
     if isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
@@ -129,9 +69,6 @@ def _finding(
     observed: Any = None,
     basis: Optional[str] = None,
 ) -> ValidationFinding:
-    # `observed` is constrained to a JSON scalar by the schema; anything else
-    # (a dict, a list) is rendered as text rather than dropped, so the reason
-    # for a rejection is never lost.
     if observed is not None and not isinstance(observed, (bool, int, float, str)):
         observed = repr(observed)
     return ValidationFinding(
@@ -146,25 +83,14 @@ def _finding(
 
 
 def _default_provenance(feature: IncomingFeature, name: str) -> FeatureProvenance:
-    """A minimal provenance when the caller supplied none.
-
-    Nothing is invented: only the source, which the catalog already fixes for
-    every canonical feature.
-    """
     definition = FEATURES.get(name)
     source = feature.source or (definition.source if definition else "unknown")
     return FeatureProvenance(source=source)
 
 
-# --------------------------------------------------------------------------
-# Per-feature checks
-# --------------------------------------------------------------------------
-
-
 def _check_type(
     rule: ValidationRule, value: Any
 ) -> Optional[ValidationFinding]:
-    """Data-type and numeric validation. Returns a finding on failure."""
     if rule.value_type in ("number", "integer"):
         number = _numeric(value)
         if number is None:
@@ -193,12 +119,6 @@ def _check_type(
         return None
 
     if rule.value_type == "boolean":
-        # TRI-STATE. Reaching here means the feature is PRESENT, so only a
-        # real boolean is acceptable. An unknown value is expressed by the
-        # feature being ABSENT, never by a placeholder, and a string such as
-        # "yes" is rejected rather than interpreted -- Module 5 owns that
-        # interpretation, and anything it could not interpret must not be
-        # silently resolved here.
         if not isinstance(value, bool):
             return _finding(
                 RejectionCode.NOT_A_BOOLEAN,
@@ -229,13 +149,6 @@ def _check_type(
 def _check_range(
     rule: ValidationRule, number: float
 ) -> Tuple[Optional[ValidationFinding], List[ValidationFinding], Optional[str]]:
-    """Range validation.
-
-    Returns `(rejection_or_None, extreme_flags, extreme_direction)`.
-
-    The possible band decides REJECTION (a suspected extraction error). The
-    extreme band decides only a FLAG -- the value stays valid and usable.
-    """
     if rule.possible_low is not None and number < rule.possible_low:
         return (
             _finding(
@@ -309,7 +222,6 @@ def _check_range(
 def _confidence_flags(
     name: str, provenance: FeatureProvenance, pages_unreadable: List[int]
 ) -> List[ValidationFinding]:
-    """Flags that leave a feature usable but less trustworthy."""
     flags: List[ValidationFinding] = []
 
     if provenance.unit_assumed:
@@ -362,12 +274,6 @@ def _confidence_flags(
                 observed=provenance.confidence,
             )
         )
-    # Only the feature's OWN page matters here. A document with an unreadable
-    # page elsewhere does not make a cleanly-read row less trustworthy -- that
-    # is a document-level warning, raised once, and its real consequence is
-    # that ABSENT features may be UNREAD. Flagging every row of such a document
-    # would drown the signal. But a value claimed to come from a page Module 4
-    # says it could not read is self-contradictory, and that IS suspicious.
     if provenance.page_number is not None and provenance.page_number in set(
         pages_unreadable
     ):
@@ -384,11 +290,6 @@ def _confidence_flags(
     return flags
 
 
-# --------------------------------------------------------------------------
-# The engine
-# --------------------------------------------------------------------------
-
-
 def _coerce_input(engineered: Any) -> EngineeredFeaturesInput:
     if isinstance(engineered, EngineeredFeaturesInput):
         return engineered
@@ -396,8 +297,6 @@ def _coerce_input(engineered: Any) -> EngineeredFeaturesInput:
         return EngineeredFeaturesInput()
     if isinstance(engineered, dict):
         return EngineeredFeaturesInput.model_validate(engineered)
-    # A `FeatureEngineeringData` (or anything else pydantic) from an in-process
-    # call to `engineer_features()`.
     dump = getattr(engineered, "model_dump", None)
     if callable(dump):
         return EngineeredFeaturesInput.model_validate(dump())
@@ -405,13 +304,6 @@ def _coerce_input(engineered: Any) -> EngineeredFeaturesInput:
 
 
 def _carried_warnings(data: EngineeredFeaturesInput) -> List[StageWarning]:
-    """Every upstream warning, origins intact.
-
-    `all_warnings` is authoritative when present. The fallback exists because
-    dropping upstream warnings has ALREADY happened once on the 4->5 boundary:
-    a caller that forwards only `upstream_warnings` / `warnings` must not lose
-    them here.
-    """
     if data.all_warnings:
         return list(data.all_warnings)
 
@@ -430,17 +322,6 @@ def _carried_warnings(data: EngineeredFeaturesInput) -> List[StageWarning]:
 
 
 def validate_features(engineered: Any = None) -> FeatureValidationData:
-    """Validate Module 5's engineered feature set.
-
-    Framework-independent: no FastAPI, no I/O, no global state. Accepts a
-    `FeatureEngineeringData` straight from `engineer_features()`, an
-    `EngineeredFeaturesInput`, or a plain dict (Module 5's `data` object as
-    JSON), so Module 7, Module 8 and the ML layer can call it directly.
-
-    Raises `pydantic.ValidationError` only if the input does not satisfy the
-    Module 5 contract at all. Individual bad VALUES never raise -- they are
-    rejected per-feature, with a reason, so the rest of the payload survives.
-    """
     data = _coerce_input(engineered)
 
     pages_unreadable = list(data.upstream.pages_unreadable)
@@ -453,7 +334,6 @@ def validate_features(engineered: Any = None) -> FeatureValidationData:
     extreme_names: List[str] = []
     warnings: List[str] = []
 
-    # Catalog order, not caller order, so the output is stable.
     ordered_names = [n for n in FEATURES if n in data.features]
     ordered_names += [n for n in data.features if n not in FEATURES]
 
@@ -477,7 +357,6 @@ def validate_features(engineered: Any = None) -> FeatureValidationData:
             )
             warnings.append(f"Feature '{name}' was rejected: {finding.message}")
 
-        # -- the feature name itself -------------------------------------
         if rule is None:
             reject(
                 _finding(
@@ -490,11 +369,6 @@ def validate_features(engineered: Any = None) -> FeatureValidationData:
             )
             continue
 
-        # -- unit consistency --------------------------------------------
-        # Module 5 emits `canonical_unit: false` when the printed unit was not
-        # recognised and the value was therefore NOT converted. Its magnitude
-        # is meaningless, so no range check can rescue it and no conversion is
-        # attempted here. This is the explicit unit-consistency rejection.
         if rule.unit is not None and not feature.canonical_unit:
             reject(
                 _finding(
@@ -511,13 +385,11 @@ def validate_features(engineered: Any = None) -> FeatureValidationData:
             )
             continue
 
-        # -- data type / numeric validation ------------------------------
         type_finding = _check_type(rule, feature.value)
         if type_finding is not None:
             reject(type_finding)
             continue
 
-        # -- unit mismatch (defensive; Module 5 should never produce this) --
         if rule.unit is not None and not _units_agree(feature.unit, rule.unit):
             reject(
                 _finding(
@@ -534,19 +406,17 @@ def validate_features(engineered: Any = None) -> FeatureValidationData:
             )
             continue
 
-        # -- range validation --------------------------------------------
         flags: List[ValidationFinding] = []
         direction: Optional[str] = None
         if rule.is_numeric:
             number = _numeric(feature.value)
-            assert number is not None  # guaranteed by _check_type
+            assert number is not None
             range_finding, extreme_flags, direction = _check_range(rule, number)
             if range_finding is not None:
                 reject(range_finding)
                 continue
             flags.extend(extreme_flags)
 
-        # -- usable, but how much do we trust it? ------------------------
         flags.extend(_confidence_flags(name, provenance, pages_unreadable))
 
         is_questionable = any(f.code in QUESTIONABLE_FLAGS for f in flags)
@@ -580,7 +450,6 @@ def validate_features(engineered: Any = None) -> FeatureValidationData:
                 f"({direction}) value and should be prioritised downstream."
             )
 
-    # -- document-level observations -------------------------------------
     if partial_document:
         pages = ", ".join(str(p) for p in pages_unreadable)
         warnings.append(
@@ -609,7 +478,6 @@ def validate_features(engineered: Any = None) -> FeatureValidationData:
             "supplied feature(s) were rejected."
         )
 
-    # -- warnings: carried forward with origins intact --------------------
     upstream_warnings = _carried_warnings(data)
     own_warnings = [
         StageWarning(
@@ -639,10 +507,6 @@ def validate_features(engineered: Any = None) -> FeatureValidationData:
         questionable=questionable,
         rejected=rejected,
         clinically_extreme=extreme_names,
-        # Carried forward from Module 5 unchanged. A rejected feature is NOT
-        # added to `missing_features`: "we read a value and refused it" and
-        # "there was no value" are different facts, and `rejected` already
-        # records the first.
         missing_features=list(data.missing_features),
         unmapped=list(data.unmapped),
         warnings=warnings,
@@ -655,12 +519,6 @@ def validate_features(engineered: Any = None) -> FeatureValidationData:
 
 
 def usable_features(result: FeatureValidationData) -> Dict[str, Any]:
-    """The plain `{name: value}` map of everything usable.
-
-    A convenience for the ML layer. Questionable features ARE included -- they
-    are usable by definition; a caller that wants to exclude them can consult
-    `result.questionable`.
-    """
     return {name: feature.value for name, feature in result.valid.items()}
 
 

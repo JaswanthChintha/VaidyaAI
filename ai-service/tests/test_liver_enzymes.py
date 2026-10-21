@@ -1,17 +1,3 @@
-"""Liver enzymes -- the reviewed ALT/SGPT and AST/SGOT documents (2026-10-04).
-
-What is pinned:
-
-1. The printed spellings map by EXACT alias onto the right document, and a
-   near-miss is still refused (the terminology module's core rule).
-2. The documents pass both safety scanners and describe the test only: no
-   threshold, and no feature or condition tag that would let retrieval treat
-   them as evidence about an assessed result.
-3. The dashboard's "what this test is" line uses the reviewed summary for
-   these names WITHOUT a model call, and every other unassessed test still
-   goes to the model exactly as before.
-"""
-
 from __future__ import annotations
 
 import re
@@ -66,7 +52,6 @@ def _clear_cache():
 
 
 class RefusingClient:
-    """A text client that fails the test if it is ever asked anything."""
 
     def generate_text(self, *args, **kwargs):
         raise AssertionError("the model was asked for a reviewed description")
@@ -82,17 +67,8 @@ class StubClient:
         return self.reply
 
 
-# --------------------------------------------------------------------------
-# 1. Exact mapping
-# --------------------------------------------------------------------------
-
-
 @pytest.mark.parametrize("name", ALT_NAMES)
 def test_alt_spellings_resolve_to_the_alt_document(name):
-    # Since ALT became a feature (later on 2026-10-04) the bare key "ALT"
-    # resolves as the canonical feature and also brings its limits document;
-    # every other spelling resolves by exact alias. Either way, the ALT
-    # document is what answers.
     resolution = resolve_term(name)
     assert resolution.covered is True
     assert "term_alt_sgpt" in resolution.doc_ids
@@ -108,8 +84,6 @@ def test_ast_spellings_resolve_to_the_ast_document(name):
 
 
 @pytest.mark.parametrize(
-    # "SGPT level" and "bilirubin" LEFT THIS LIST ON 2026-10-04: the liver
-    # panel made both real features ("level" is a strippable qualifier).
     "name", ["liver enzymes", "ALTT", "GGT", "ALP"]
 )
 def test_near_misses_and_other_liver_tests_are_still_refused(name):
@@ -127,18 +101,10 @@ def test_the_term_explainer_serves_the_reviewed_document(name, doc):
     assert {s.doc_id for s in answer.sources} == {doc}
 
 
-# --------------------------------------------------------------------------
-# 2. The documents themselves
-# --------------------------------------------------------------------------
-
-
 @pytest.mark.parametrize(
     "doc_id,feature", [("term_alt_sgpt", "alt"), ("term_ast_sgot", "ast")]
 )
 def test_documents_describe_the_test_and_carry_their_feature(doc_id, feature):
-    # Untagged when written; tagged once ALT and AST became features of the
-    # Liver Disease topic (2026-10-04). Still no number in the body: the
-    # limits live in `ref_liver_bands`.
     from app.data import conditions as C
 
     doc = DOCUMENTS[doc_id]
@@ -146,7 +112,6 @@ def test_documents_describe_the_test_and_carry_their_feature(doc_id, feature):
     assert doc.conditions == (C.LIVER_DISEASE,)
     assert doc.basis.strip()
     assert doc.last_reviewed == "2026-10-04"
-    # No threshold: this platform applies none to these tests.
     assert not re.search(r"\d", doc.body), "a number in the body reads as a cut-off"
 
 
@@ -161,17 +126,10 @@ def test_every_part_passes_the_module_24_validator(doc_id):
 
 @pytest.mark.parametrize("doc_id", ["term_alt_sgpt", "term_ast_sgot"])
 def test_the_summary_obeys_the_glossary_rules(doc_id):
-    """It is shown on the dashboard in place of a model description, so it is
-    held to the same rules: no number, at most two sentences."""
     summary = DOCUMENTS[doc_id].summary
     assert not glossary._ANY_DIGIT.search(summary)
     assert not glossary._SPELLED_NUMBER.search(summary)
     assert summary.count(". ") + 1 <= 2
-
-
-# --------------------------------------------------------------------------
-# 3. The dashboard description
-# --------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -192,17 +150,13 @@ def test_reviewed_entry_uses_the_summary_word_for_word(name, doc):
     [
         "TSH",
         "ESR",
-        "LDL Cholesterol",  # an alias WITH a feature: not a reviewed description
-        "fasting",  # an alias for a word, not a test, but feature-less: see below
+        "LDL Cholesterol",
+        "fasting",
     ],
 )
 def test_reviewed_entry_is_only_for_feature_less_single_document_aliases(name):
     entry = reviewed_entry(name)
     if name == "fasting":
-        # Feature-less single-document aliases DO qualify; none of the
-        # non-test words is a name a laboratory prints as a result row, so in
-        # practice this path is the liver documents. Pinned so a widening of
-        # the alias table is noticed here.
         assert entry is not None and entry.source_doc == "term_fasting_sample"
     else:
         assert entry is None
@@ -232,9 +186,6 @@ def test_a_reviewed_description_costs_no_budget():
 
 
 def test_a_summary_that_gains_a_number_is_not_shown(monkeypatch):
-    """The reviewed path is held to the glossary's no-number rule, so an edit
-    that slips a cut-off into a summary falls back to the model rather than
-    reaching the dashboard."""
     from dataclasses import replace
 
     original = DOCUMENTS["term_alt_sgpt"]

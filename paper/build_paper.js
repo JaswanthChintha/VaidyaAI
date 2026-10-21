@@ -1,6 +1,3 @@
-/* VaidyaAI manuscript, revision 2.
- * Format matches the supplied sample: A4, title and author block full width,
- * two-column body. All quantitative content is measured; nothing estimated. */
 const {
   Document, Packer, Paragraph, TextRun, AlignmentType, SectionType,
   Table, TableRow, TableCell, WidthType, ShadingType, BorderStyle, ImageRun,
@@ -35,7 +32,6 @@ const CAPFIG = (t) => new Paragraph({
   alignment: AlignmentType.CENTER, spacing: { before: 60, after: 160 },
   children: [new TextRun({ text: t, font: F, size: 16 })],
 });
-/* IEEE: table caption ABOVE the table. */
 const CAPTBL = (num, title) => [
   new Paragraph({
     alignment: AlignmentType.CENTER, spacing: { before: 160, after: 20 },
@@ -47,7 +43,7 @@ const CAPTBL = (num, title) => [
   }),
 ];
 
-const CW = 4600; // usable column width, DXA
+const CW = 4600;
 function TBL(headers, rows, widths) {
   const cw = widths || headers.map(() => Math.floor(CW / headers.length));
   const none = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
@@ -75,7 +71,6 @@ function TBL(headers, rows, widths) {
   });
 }
 
-/* ================================================== front matter (1 col) */
 const front = [];
 front.push(new Paragraph({
   alignment: AlignmentType.CENTER, spacing: { after: 120 },
@@ -97,7 +92,6 @@ front.push(new Paragraph({
   })],
 }));
 
-/* ======================================================== body (2 cols) */
 const b = [];
 
 b.push(new Paragraph({
@@ -143,7 +137,6 @@ b.push(new Paragraph({
   ],
 }));
 
-/* ------------------------------------------------------- introduction */
 b.push(H1('I.  Introduction'));
 b.push(P(
   'A laboratory report is a dense document. It carries test names in abbreviated form, numeric values, units '
@@ -205,7 +198,6 @@ b.push(P(
   + 'methodology. Section IV reports and analyzes the results. Section V concludes.'
 ));
 
-/* -------------------------------------------------------- related work */
 b.push(H1('II.  Related Work'));
 b.push(P(
   'Computerized clinical decision support predates current LLMs by decades, and the systems that achieved '
@@ -259,7 +251,6 @@ b.push(BUL(
   + 'that circularity, so reported discrimination may reflect re-derivation of a diagnostic rule.'
 ));
 
-/* -------------------------------------------- materials and methodology */
 b.push(H1('III.  Materials and Methodology'));
 
 b.push(H2('A.  Materials'));
@@ -414,7 +405,6 @@ b.push(P(
   + 'nearby group.'
 ));
 
-/* -------------------------------------------------------------- results */
 b.push(H1('IV.  Results and Analysis'));
 b.push(P(
   'Model figures are held-out results recorded in the shipped model artifacts. System figures come from the '
@@ -725,7 +715,6 @@ b.push(P(
   + 'platform reports risk indicators and educational explanations rather than diagnoses [25].'
 ));
 
-/* ----------------------------------------------------------- conclusion */
 b.push(H1('V.  Conclusion and Future Work'));
 b.push(P(
   'This paper presented VaidyaAI, a platform that converts laboratory reports into validated structured '
@@ -758,7 +747,6 @@ b.push(P(
   + 'explanation would materially widen access for the population the platform is intended to serve.'
 ));
 
-/* ----------------------------------------------------------- references */
 b.push(H1('References'));
 const refs = [
   'E. J. Topol, "High-performance medicine: the convergence of human and artificial intelligence," Nature Medicine, vol. 25, no. 1, pp. 44\u201356, 2019.',

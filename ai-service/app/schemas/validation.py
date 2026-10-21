@@ -1,51 +1,3 @@
-"""The Module 6 (Medical Feature Validation) contract, enforced by pydantic v2.
-
-Module 6 consumes Module 5's `FeatureEngineeringData` and answers one question
-per feature: **is this value believable?** It never answers "is this value
-healthy?" -- that belongs to Module 8 and the ML layer.
-
---------------------------------------------------------------------------
-THE OUTPUT PARTITION -- read this before consuming the response
---------------------------------------------------------------------------
-
-    valid        Dict[str, ValidatedFeature]
-                 THE USABLE FEATURE SET. Take this and go; nothing needs to be
-                 re-derived. Every entry carries the same `name/value/unit/
-                 canonical_unit/source/provenance` fields as Module 5's
-                 `EngineeredFeature`, so an existing Module 5 consumer works
-                 unchanged, plus validation metadata.
-
-    questionable Dict[str, ValidatedFeature]
-                 A SUBSET VIEW OF `valid`, not a separate partition. These are
-                 the entries whose `questionable` flag is true (unit assumed,
-                 censored, derived, low extraction confidence, partial
-                 document). They ARE usable -- a consumer that ignores this
-                 field still behaves correctly -- but a consumer that wants to
-                 down-weight shaky inputs can read it directly.
-
-    rejected     Dict[str, RejectedFeature]
-                 DISJOINT from `valid`. Not usable. The ORIGINAL value is
-                 preserved untouched together with full provenance and a
-                 machine-readable `reason_code`, so Module 20 can explain the
-                 exclusion. Never repaired, never guessed at.
-
-So: `set(valid) & set(rejected) == set()` and `set(questionable) <= set(valid)`.
-
---------------------------------------------------------------------------
-WHAT IS CARRIED FORWARD UNCHANGED
---------------------------------------------------------------------------
-
-`missing_features`, `unmapped`, `upstream` (including `extraction_confidence`
-and `pages_unreadable`) and every upstream warning. Warnings keep their origin:
-Module 4's stay `stage="extraction"`, Module 5's stay
-`stage="feature_engineering"`, and Module 6 adds `stage="validation"`. They are
-never flattened into one undifferentiated list -- the final report (spec
-Module 17) has to say which stage raised what.
-
-For the tri-state booleans `hypertension` / `heart_disease`, absence from
-`valid`, `questionable` AND `rejected` means UNKNOWN. It never means false.
-"""
-
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Union
@@ -66,11 +18,9 @@ from app.schemas.features import (
     UpstreamExtraction,
 )
 
-#: The stage identifier Module 6 stamps on its own warnings.
 STAGE_VALIDATION = "validation"
 VALIDATION_MODULE = 6
 
-#: Extends `app.schemas.features.STAGE_MODULE` without mutating it.
 STAGE_MODULE_VALIDATION = {
     STAGE_EXTRACTION: 4,
     STAGE_FEATURE_ENGINEERING: 5,
@@ -82,21 +32,7 @@ STATUS_QUESTIONABLE = "questionable"
 STATUS_REJECTED = "rejected"
 
 
-# --------------------------------------------------------------------------
-# Request
-# --------------------------------------------------------------------------
-
-
 class IncomingFeature(BaseModel):
-    """One feature as received from Module 5.
-
-    DELIBERATELY PERMISSIVE about `value`. Module 5's own `EngineeredFeature`
-    pins the value to a strict scalar union, but Module 6 exists precisely to
-    catch values that are the wrong type or the wrong shape. Rejecting them at
-    the parse boundary with a 422 would turn a per-feature, explainable
-    rejection into an opaque whole-request failure, and would lose the other,
-    perfectly good, features in the same payload.
-    """
 
     model_config = ConfigDict(extra="ignore")
 
@@ -109,7 +45,6 @@ class IncomingFeature(BaseModel):
 
 
 class EngineeredFeaturesInput(BaseModel):
-    """Module 5's `data` object. Post it verbatim; extra keys are ignored."""
 
     model_config = ConfigDict(extra="ignore")
 
@@ -137,25 +72,6 @@ class EngineeredFeaturesInput(BaseModel):
 
 
 class FeatureValidationRequest(BaseModel):
-    """Accepts Module 5's output under `engineered`, or its whole envelope.
-
-    THE CANONICAL FORM is:
-
-        {"engineered": <Module 5's `data` object>}
-
-    Two other unambiguous forms are also accepted, mirroring exactly what
-    `POST /api/v1/features/engineer` does for Module 4's output, so that a
-    caller relaying a response verbatim is never silently handed an empty
-    result:
-
-      * `{"success": ..., "data": {...}}` -- Module 5's response envelope
-        relayed unchanged. `data` is used as the engineered feature set.
-      * `{"features": {...}, ...}` -- a bare Module 5 `data` object posted at
-        the top level.
-
-    An explicit `engineered` key always wins. A body carrying BOTH `data` and a
-    top-level `features` key is REJECTED as ambiguous rather than guessed at.
-    """
 
     model_config = ConfigDict(extra="ignore")
 
@@ -169,7 +85,7 @@ class FeatureValidationRequest(BaseModel):
         if not isinstance(value, dict):
             return value
         if "engineered" in value:
-            return value  # Explicit wins.
+            return value
 
         envelope = value.get("data")
         has_envelope = isinstance(envelope, dict)
@@ -190,17 +106,7 @@ class FeatureValidationRequest(BaseModel):
         return value
 
 
-# --------------------------------------------------------------------------
-# Response
-# --------------------------------------------------------------------------
-
-
 class ValidationFinding(BaseModel):
-    """One machine-readable reason, with a human-readable message.
-
-    Attached to rejections and to flags alike so Module 20 (Explainability)
-    can show a user exactly why a value was excluded or down-weighted.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -224,12 +130,6 @@ class ValidationFinding(BaseModel):
 
 
 class ValidatedFeature(BaseModel):
-    """A usable feature.
-
-    The first six fields are byte-identical in meaning to Module 5's
-    `EngineeredFeature`, so a consumer written against Module 5 keeps working.
-    `value` is passed through UNCHANGED -- validation never repairs.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -261,12 +161,6 @@ class ValidatedFeature(BaseModel):
 
 
 class RejectedFeature(BaseModel):
-    """A feature excluded from the usable set.
-
-    Nothing is deleted and nothing is corrected: the original value, unit and
-    provenance are all preserved so the exclusion can be explained and, if the
-    rule is wrong, challenged.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -307,7 +201,6 @@ class FeatureValidationSummary(BaseModel):
 
 
 class FeatureValidationData(BaseModel):
-    """The `data` object of a successful validation response."""
 
     model_config = ConfigDict(extra="forbid")
 

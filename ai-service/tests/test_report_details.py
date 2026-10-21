@@ -1,12 +1,3 @@
-"""The report's own sex and age are used in place of the profile's.
-
-The owner's decision, 2026-09-25. Every analysis used the ACCOUNT PROFILE's
-sex and age: `01-all-normal.pdf` prints "34 Years / Female" and was scored as
-the profile's "20, male", male thresholds and all. A value the report prints,
-and this service can read, now wins -- labelled `report_details`, a patient
-DETAIL, never a measurement.
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -43,7 +34,6 @@ def test_the_printed_sex_and_age_replace_the_profiles():
         feature = data.features[name]
         assert feature.source == SOURCE_REPORT_DETAILS == "report_details"
         assert feature.provenance.source == "report_details"
-    # Both values are named where they disagree, and it is warned about.
     assert "The profile gives male." in data.features["gender"].provenance.notes
     assert any("patient's sex as 'Female'; the profile gives male" in w for w in data.warnings)
     assert any("patient's age as '34 Years'; the profile gives 20" in w for w in data.warnings)
@@ -52,7 +42,6 @@ def test_the_printed_sex_and_age_replace_the_profiles():
 
 
 def test_the_printed_sex_chooses_between_per_sex_printed_ranges():
-    """Test 3 prints `F:11 -15 M:12- 16`; a woman's report must be read with F."""
     data = engineer_features(profile=PROFILE, extraction=extraction("F", "34"))
     hb = data.features["hemoglobin"]
     assert (hb.provenance.reference_low, hb.provenance.reference_high) == (11.0, 15.0)
@@ -73,7 +62,7 @@ def test_nothing_printed_means_the_profile_exactly_as_before():
 
 def test_an_unreadable_printed_value_falls_back_to_the_profile_field_by_field():
     data = engineer_features(profile=PROFILE, extraction=extraction("Other", "34 Years"))
-    assert data.features["gender"].source == "patient_profile"  # "Other" is not read
+    assert data.features["gender"].source == "patient_profile"
     assert data.features["age"].source == "report_details"
 
 
@@ -91,7 +80,6 @@ def test_printed_details_are_used_with_no_profile_at_all():
 
 
 def test_a_replaced_profile_value_is_not_reported_as_a_discarded_duplicate():
-    """The report's value winning is the decided order, not a collision."""
     data = engineer_features(profile=PROFILE, extraction=extraction("Female", "34 Years"))
     assert not any(item.test_name in ("age", "gender") for item in data.unmapped)
 
@@ -129,6 +117,5 @@ def test_the_clinician_narrative_does_not_list_a_printed_age_as_a_value():
     strings = cn._value_strings(summary)
     assert not any("34" in s for s in strings)
     assert any("12.5" in s for s in strings)
-    # The out-of-range list uses the same predicate.
     rows[0]["position"] = "above_reference_interval"
     assert not any("34" in s for s in cn._out_of_range(summary))

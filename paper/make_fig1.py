@@ -1,11 +1,3 @@
-"""Render Fig. 1 (the VaidyaAI pipeline) as a PNG for the manuscript.
-
-Drawn with Pillow rather than set as text art, so the figure is a single
-image object that cannot be broken across a column boundary -- which is what
-happened to the ASCII version in the first draft.
-
-Sized for a single IEEE column: 1000 px wide at ~300 dpi placement.
-"""
 from PIL import Image, ImageDraw, ImageFont
 
 W, H = 1000, 1560
@@ -83,7 +75,6 @@ for t in stack_top:
     arrow(CX, y, y + gap)
     y += gap
 
-# --- the two peers -------------------------------------------------------
 split_y = y
 left, right = CX - 250, CX + 250
 d.line([(CX, split_y - gap), (CX, split_y - gap + 14)], fill=INK, width=3)
@@ -107,7 +98,6 @@ for t in ["Decision engine", "Fusion engine  (per condition, evidence retained)"
     arrow(CX, y, y + gap)
     y += gap
 
-# --- RAG and XAI ---------------------------------------------------------
 split_y = y
 harrow(split_y - 22, left, right)
 arrow(left, split_y - 22, split_y)

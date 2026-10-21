@@ -1,19 +1,3 @@
-"""POST /api/v1/rules/evaluate -- the Module 8 endpoint.
-
-Thin HTTP wrapper. All logic lives in
-`app.services.rule_engine.evaluate_rules`, which is importable directly by
-Module 15 (Decision Engine), exactly as `engineer_features` and
-`validate_features` are.
-
-The router lives in its own file and carries its own prefix so it can be
-mounted alongside the other routers without either module owning the other.
-
-AUTH: this endpoint receives medical feature values and returns clinical
-decisions about them, so it is PHI-bearing and carries the same service-key
-dependency as `routes_validation.py`. `tests/test_auth.py` walks the route tree
-recursively and fails if any `/api/v1` route lacks it.
-"""
-
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
@@ -39,9 +23,6 @@ router = APIRouter(
     summary="Apply the deterministic clinical rule table to validated features",
 )
 async def evaluate(request: RuleEvaluationRequest) -> RuleEvaluationResponse:
-    # `validated` is preferred; `engineered` is accepted so the engine is usable
-    # before Module 6 has been run (it is then validated in-process, so the
-    # rules still only ever see validated values).
     data = evaluate_rules(request.validated, engineered=request.engineered)
     return RuleEvaluationResponse(success=True, data=data)
 
@@ -51,7 +32,6 @@ async def evaluate(request: RuleEvaluationRequest) -> RuleEvaluationResponse:
     summary="The clinical rule table, its thresholds and their clinical basis",
 )
 async def clinical_rules() -> dict:
-    """Machine-readable rule table, for clinical review and for Module 20."""
     document = rules_document()
     document["policy"] = RULE_ENGINE_POLICY
     return {"success": True, "data": document}

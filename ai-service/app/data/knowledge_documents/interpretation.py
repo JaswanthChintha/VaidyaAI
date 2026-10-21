@@ -1,24 +1,3 @@
-"""Module 22 content -- GENERAL INTERPRETATION.
-
-How to read a result at all: what a single number can and cannot support, what
-borderline means, why values move, what a refused or missing value means, and
-what this platform is and is not.
-
-WHY THIS TOPIC EXISTS SEPARATELY
---------------------------------
-These are the documents that should be retrievable for EVERY patient,
-regardless of finding, because they are about the act of interpretation rather
-than about any analyte. They are deliberately tagged with many features and
-conditions (and some with none at all) so that a query built from any finding
-can reach them.
-
-They also carry most of the platform's honesty about its own limits -- the
-partial view, the refused values, the absence of blood pressure, the fact that
-absence of a finding is not a finding of health. Spec section 14 puts safety
-before the LLM as well as after it, and grounding the model on its own limits is
-part of that.
-"""
-
 from __future__ import annotations
 
 from typing import Tuple

@@ -1,17 +1,3 @@
-"""The Gemini extraction prompt for Module 4.
-
-Kept in its own module so it can be reviewed, diffed and versioned
-independently of the service code. Bump PROMPT_VERSION on any change to the
-wording -- extraction behaviour is prompt-sensitive and downstream modules may
-want to know which prompt produced a given result.
-
-Design rules baked into this prompt:
-  * TRANSCRIBE, do not interpret. Module 4 is an OCR/extraction layer.
-  * Return null rather than guessing. Missing data must stay missing.
-  * Never diagnose, never infer clinical meaning, never normalise test names
-    (Module 5 owns canonical feature names).
-"""
-
 PROMPT_VERSION = "m4-extract-v1"
 
 SYSTEM_INSTRUCTION = (
@@ -135,11 +121,6 @@ If the page contains no readable laboratory results, return an empty \
 
 
 def build_page_prompt(page_number: int, total_pages: int) -> str:
-    """Prompt for a single page, with position context.
-
-    Page position is included so the model can flag tables continued across a
-    page break rather than inventing missing halves.
-    """
     header = (
         f"This is page {page_number} of {total_pages} of the document.\n"
         if total_pages > 1

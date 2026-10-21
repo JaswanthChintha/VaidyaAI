@@ -6,22 +6,12 @@ import Dashboard from '../src/pages/Dashboard';
 import Timeline from '../src/pages/Timeline';
 import { api } from '../src/lib/api';
 
-/**
- * WHOSE REPORT IS THIS? -- 2026-09-24.
- *
- * `01-all-normal.pdf` prints "34 Years / Female" and was analysed as the
- * profile's "20, male"; it was compared with `03-renal...pdf` ("63 Years /
- * Male") as haemoglobin 9.2 -> 13.6 "in 2 days". Nothing on screen said
- * either. The four states, and above all: "not checked" is never silence.
- */
 
 beforeEach(() => {
   vi.restoreAllMocks();
 });
 
 describe('ProfileIdentityNotice', () => {
-  // 2026-09-25: the report's own sex and age are USED. The notice names both
-  // sides and says truthfully which one the analysis took.
   const conflict = (sexSource, ageSource) => ({
     status: 'conflict',
     conflicts: [{ field: 'sex' }, { field: 'age' }],
@@ -135,8 +125,6 @@ describe('the report\'s own sex and age are details, never results (2026-09-25)'
     expect(profile.textContent).toMatch(/BMI/);
     expect(profile.textContent).not.toMatch(/female/i);
 
-    // 2026-10-02: the printed details' column said "You entered" -- nobody
-    // entered them, the report printed them -- and called age a "Test".
     const head = (table) => [...table.querySelectorAll('thead th')].map((th) => th.textContent);
     expect(head(detailsTable)).toEqual(['Detail', 'Printed on the report']);
     expect(head(profile)).toEqual(['Detail', 'You entered']);
@@ -175,7 +163,6 @@ describe('on the pages', () => {
     );
     const note = await screen.findByRole('note', { name: /may not match your profile/i });
     const verdict = document.querySelector('.overall');
-    // eslint-disable-next-line no-bitwise
     expect(note.compareDocumentPosition(verdict) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
@@ -208,7 +195,6 @@ describe('on the pages', () => {
     );
     const note = await screen.findByRole('note', { name: /different people/i });
     const table = document.querySelector('table');
-    // eslint-disable-next-line no-bitwise
     expect(note.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });

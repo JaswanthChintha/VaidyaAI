@@ -1,10 +1,3 @@
-/**
- * A small set of line icons, drawn for this app at 24px on a 1.6 stroke.
- *
- * Decorative by default (`aria-hidden`): every icon sits beside words that
- * already say what it means, so a screen reader hears the words once rather
- * than an icon name and then the words.
- */
 const PATHS = {
   reports: (
     <>
@@ -73,7 +66,6 @@ const PATHS = {
     </>
   ),
   arrow: <path d="M5 12h14M13.5 6.5 19 12l-5.5 5.5" />,
-  // The chatbot (2026-10-09).
   chat: (
     <>
       <path d="M4.5 5.5h15v10h-8l-4.5 3.5v-3.5h-2.5z" />

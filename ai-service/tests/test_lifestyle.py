@@ -1,25 +1,6 @@
-"""Module 26 -- Educational Lifestyle Guidance.
-
-The module serves catalogue text and calls no model. Most of this file is
-therefore about proving the ABSENCE of things:
-
-* no import of a model client, no `generate_text` call site, no LLM dependency
-  on the route (`test_module_26_contains_no_generation_path`),
-* no parameter through which a caller can supply wording
-  (`test_no_caller_supplied_text_can_reach_the_output`),
-* no reachable code that depends on how abnormal a patient's value was
-  (`test_band_specific_recommendations_are_unreachable`), which is what keeps
-  the output general education rather than personalised advice.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
-
-
-# --------------------------------------------------------------------------
-# It serves catalogue text
-# --------------------------------------------------------------------------
 
 
 def test_guidance_is_resolved_by_code_from_the_reviewed_catalogue():
@@ -31,12 +12,10 @@ def test_guidance_is_resolved_by_code_from_the_reviewed_catalogue():
     assert result.items
     for item in result.items:
         assert item.code in RECOMMENDATIONS
-        # Byte-identical to the catalogue. Not paraphrased, not assembled.
         assert item.text == RECOMMENDATIONS[item.code].text
 
 
 def test_the_spec_s_own_guidance_categories_are_covered():
-    """Healthy eating, physical activity, hydration, monitoring, consult."""
     from app.services.lifestyle import lifestyle_guidance
 
     eating = lifestyle_guidance(conditions=("Diabetes",))
@@ -74,7 +53,6 @@ def test_the_output_passes_module_24():
 
 
 def test_every_condition_and_feature_produces_safe_guidance():
-    """Sweep the whole vocabulary rather than one lucky example."""
     from app.data.conditions import CONDITIONS
     from app.data.feature_catalog import FEATURES
     from app.services.lifestyle import lifestyle_guidance
@@ -109,11 +87,6 @@ def test_each_item_records_why_it_was_selected():
     assert "hba1c" in diet.because_of_features
 
 
-# --------------------------------------------------------------------------
-# It generates nothing
-# --------------------------------------------------------------------------
-
-
 def test_the_payload_says_it_was_not_generated():
     from app.services.lifestyle import lifestyle_guidance
 
@@ -123,7 +96,6 @@ def test_the_payload_says_it_was_not_generated():
 
 
 def test_module_26_contains_no_generation_path():
-    """Read the source: no model client, no prompt, no generation call."""
     source = Path("app/services/lifestyle.py").read_text(encoding="utf-8")
     for forbidden in (
         "generate_text",
@@ -136,7 +108,6 @@ def test_module_26_contains_no_generation_path():
 
 
 def test_the_guidance_route_takes_no_llm_dependency():
-    """The absence of generation is visible in the signature, not a comment."""
     import inspect
 
     from app.api.routes_explain import guidance
@@ -153,13 +124,7 @@ def test_the_published_policy_states_that_no_model_is_used():
     assert document["uses_llm"] is False
 
 
-# --------------------------------------------------------------------------
-# No free-text entry point
-# --------------------------------------------------------------------------
-
-
 def test_no_caller_supplied_text_can_reach_the_output():
-    """`lifestyle_guidance` takes codes and names. There is no text parameter."""
     import inspect
 
     from app.services.lifestyle import lifestyle_guidance
@@ -177,7 +142,6 @@ def test_an_unknown_code_is_reported_not_served():
 
 
 def test_a_non_educational_code_is_refused():
-    """This endpoint is not a way to fetch arbitrary catalogue entries."""
     from app.services.lifestyle import lifestyle_guidance
 
     result = lifestyle_guidance(codes=("INPUT_QUALITY_CAVEAT",))
@@ -200,18 +164,7 @@ def test_an_unknown_feature_is_reported():
     assert result.unknown_features == ("tsh",)
 
 
-# --------------------------------------------------------------------------
-# General, never personalised
-# --------------------------------------------------------------------------
-
-
 def test_band_specific_recommendations_are_unreachable():
-    """Nothing that depends on HOW abnormal a value was can be served here.
-
-    `SEEK_PROMPT_MEDICAL_ADVICE` is reserved for HIGH-risk bands. Module 26 has
-    no access to a patient's value at all, so serving it would be presenting a
-    risk-tier response as general education.
-    """
     from app.data.conditions import CONDITIONS
     from app.data.feature_catalog import FEATURES
     from app.services.lifestyle import guidance_codes, lifestyle_guidance
@@ -245,7 +198,6 @@ def test_the_guidance_never_instructs_or_prescribes():
 
 
 def test_guidance_takes_no_patient_value_of_any_kind():
-    """There is no parameter through which a value could arrive."""
     import inspect
 
     from app.services.lifestyle import lifestyle_guidance
@@ -253,11 +205,6 @@ def test_guidance_takes_no_patient_value_of_any_kind():
     for name in inspect.signature(lifestyle_guidance).parameters:
         assert "value" not in name
         assert "result" not in name
-
-
-# --------------------------------------------------------------------------
-# Determinism
-# --------------------------------------------------------------------------
 
 
 def test_the_same_request_always_produces_the_same_guidance():

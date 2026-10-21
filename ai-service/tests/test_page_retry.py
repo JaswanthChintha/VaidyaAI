@@ -1,12 +1,3 @@
-"""A page the whole model chain could not read gets ONE more try (2026-10-10).
-
-Test 3's page 2 -- glucose, creatinine, SGPT -- was skipped as
-MODEL_UNAVAILABLE: every model's own retries ran within seconds, inside one
-provider outage, and the report read "Healthy (partial assessment)". Now a
-page that failed in a way a later moment can fix is read once more after
-`page_retry_delay_seconds`; anything else, and a second failure, is final.
-"""
-
 from __future__ import annotations
 
 from typing import Dict, List
@@ -43,8 +34,6 @@ def _error(code: ErrorCode) -> ModelError:
 
 
 class _ScriptedClient:
-    """Each page answers from its own script, one entry per call; a page with
-    no script left answers normally. Calls are counted per page."""
 
     def __init__(self, scripts: Dict[int, List[object]]):
         self.scripts = {page: list(items) for page, items in scripts.items()}
@@ -84,7 +73,6 @@ def test_a_page_unavailable_once_is_read_on_the_second_try(sleeps):
     assert [p.page_number for p in result.extracted_parameters] == [1, 2]
     assert _skipped(result) == []
     assert result.pages[1].raw_text == "page 2 text"
-    # The pause happens, once, at the configured length (20 s by default).
     assert sleeps == [20.0]
 
 
@@ -93,7 +81,7 @@ def test_a_page_that_fails_twice_is_skipped_and_said_so(sleeps):
     client = _ScriptedClient({2: [down, down]})
     result = _service(client).extract(_document(2))
 
-    assert client.calls == {1: 1, 2: 2}  # one retry, never a third read
+    assert client.calls == {1: 1, 2: 2}
     assert [p.test_name for p in result.extracted_parameters] == ["TEST 1"]
     assert _skipped(result) == [
         "Page 2 could not be processed by the extraction model (MODEL_UNAVAILABLE); it was skipped."
@@ -123,11 +111,8 @@ def test_an_answer_that_did_not_fit_the_schema_is_read_again(sleeps):
 @pytest.mark.parametrize(
     "code",
     [
-        # The free tier's cap is daily: twenty seconds later it is still spent.
         ErrorCode.MODEL_RATE_LIMITED,
-        # Another full attempt chain would run past the backend's deadline.
         ErrorCode.MODEL_TIMEOUT,
-        # Answers, not accidents: the same page gets the same answer.
         ErrorCode.MODEL_RESPONSE_BLOCKED,
         ErrorCode.MODEL_RESPONSE_TRUNCATED,
     ],
@@ -154,7 +139,7 @@ def test_only_the_failed_pages_are_read_again(sleeps):
     client = _ScriptedClient({1: [down], 3: [down]})
     result = _service(client).extract(_document(3))
     assert client.calls == {1: 2, 2: 1, 3: 2}
-    assert sleeps == [20.0]  # one pause for all of them, not one each
+    assert sleeps == [20.0]
     assert [p.page_number for p in result.extracted_parameters] == [1, 2, 3]
 
 

@@ -1,90 +1,3 @@
-"""VaidyaAI AI service -- Modules 4 through 26 of the analysis pipeline.
-
-A standalone FastAPI service. Each stage feeds the next:
-
-* Module 4  OCR/Extraction   -- transcribes a report (PDF/JPEG/PNG) with a
-                                Gemini vision model into structured parameters.
-                                Does NOT normalise test names.
-* Module 5  Feature Eng.     -- maps those parameters (plus optional Module 2
-                                profile context) onto canonical, unit-normalised
-                                features with full provenance.
-* Module 6  Validation       -- decides which values are believable. Separates
-                                valid / questionable / rejected.
-* Module 7  Repository       -- the single access point for validated features;
-                                holds snapshots over time for Modules 28-30.
-* Module 8  Clinical Rules   -- deterministic, threshold-based decisions.
-* Module 14 Decision Object  -- the shared ClinicalDecision every component emits.
-* Module 9/13 ML Registry    -- plugin-style condition-specific predictors.
-* Module 10 Diabetes Model   -- Random Forest over real Kaggle data.
-* Module 11 Heart Model      -- Random Forest over the real Cardiovascular set.
-* Module 12 Kidney Model     -- Random Forest over the official UCI CKD set,
-                                with the spec's information-sufficiency SKIP:
-                                it refuses to predict rather than guess.
-* Module 15 Decision Engine  -- collects decisions, groups by (condition, source).
-* Module 16 Fusion Engine    -- merges rule + ML decisions for one condition:
-                                highest risk, strongest available confidence,
-                                unioned evidence, de-duplicated recommendations
-                                and sources. This is the hybrid AI layer.
-
-* Module 17-20 Reporting     -- the clinical report, overall status (incl. the
-                                spec's unwritten 4th case: NOTHING assessed is
-                                not "Healthy"), risk prioritisation, evidence.
-* Module 21/22 RAG + KB      -- a curated, import-time-safety-scanned corpus,
-                                chunked and indexed; retrieval is driven by the
-                                patient's findings and returns NOTHING rather
-                                than a poor match.
-* Module 24 Safety Validator -- the gate between an LLM and a patient. Fails
-                                CLOSED: unanalysable input is rejected, never
-                                approved. See `app/safety/`.
-* Module 23/25/26 Explanation-- patient-friendly prose, terminology, and
-                                educational guidance. Every generation goes
-                                through Module 24; Module 26 serves reviewed
-                                catalogue text and calls no model at all.
-
-* Module 28 Trends        -- classifies each feature's trajectory across a
-                                patient's reports as improving/worsening/stable,
-                                against a per-feature declared polarity. Fewer
-                                than two usable readings is INSUFFICIENT_DATA,
-                                never "stable". Deterministic; calls no model.
-
-* Module 31 Population    -- how a value compares with an age- and sex-matched
-                                group, from survey-weighted NHANES tables built
-                                from real published microdata. Reports a BAND
-                                between published cut-points, never an
-                                interpolated percentile, and refuses rather than
-                                substituting an unmatched cohort.
-
-* Module 29 Comparison    -- baseline vs latest: improved / worsened /
-                                unchanged / newly abnormal. Reuses Module 28's
-                                polarity and stability tables rather than
-                                carrying a second copy that could disagree.
-                                "Newly abnormal" needs the abnormality of BOTH
-                                reports to be KNOWN; otherwise it is explicitly
-                                not determinable, never "unchanged".
-
-* Module 30 Progress      -- a 0-100 Health Progress Score over Module 29's
-                                finished categories. It recomputes nothing:
-                                no polarity lookup, no stability threshold, no
-                                arithmetic on a patient value beyond a weighted
-                                mean of table lookups. Fewer than three
-                                contributing parameters yields NO score rather
-                                than a confident-looking number.
-
-* Module 32 Doctor Summary-- the clinician-facing structured document. It
-                                ASSEMBLES already-validated structures and
-                                generates no prose: it imports no model client
-                                and has no free-text entry point, so the safety
-                                property Module 26 established holds on the
-                                higher-stakes clinical surface too.
-
-The service still deliberately does NOT serve a dashboard (27 lives in the Node
-backend, which holds the durable report) or touch a database. The Module 7 repository is in-memory and
-process-local; `backend/` holds the durable copy.
-
-Every /api/v1 route except health requires the `X-Service-Key` header. The
-service refuses to start if no key is configured -- see app/core/auth.py.
-"""
-
 from __future__ import annotations
 
 import time
@@ -132,19 +45,9 @@ settings = get_settings()
 configure_logging(settings.log_level)
 logger = get_logger(__name__)
 
-# FAIL CLOSED, at import time, so `uvicorn app.main:app` refuses to start
-# rather than serving PHI to anyone who can reach the port. See app/core/auth.py.
 enforce_service_auth_configuration(settings)
 
 def _preload() -> None:
-    """Load the ML models and the knowledge index now, not on first use.
-
-    Each is loaded lazily and cached, so this only moves the cost from the
-    first patient's analysis to service startup -- where Render is still
-    showing its "waking up" page and nobody is waiting on a 30 s stage timeout.
-    A failure here is logged and NOT raised: the same failure would surface,
-    with its proper reason, on the first request anyway.
-    """
     started = time.monotonic()
     try:
         from app.ml.registry import default_registry
@@ -157,13 +60,12 @@ def _preload() -> None:
             safe_meta(models=models, knowledge_chunks=chunks,
                       seconds=round(time.monotonic() - started, 1)),
         )
-    except Exception as exc:  # noqa: BLE001 - startup must not die on this
+    except Exception as exc:
         logger.error("preload_failed %s", safe_meta(error_type=type(exc).__name__))
 
 
 @asynccontextmanager
 async def _lifespan(_: FastAPI):
-    # Read at startup, not import, so a test can switch it.
     if get_settings().preload_on_startup:
         _preload()
     yield
@@ -186,13 +88,6 @@ app = FastAPI(
 
 @app.middleware("http")
 async def _correlation_id_middleware(request: Request, call_next):
-    """Bind a correlation id for the request and echo it on the response.
-
-    The backend sends an opaque report id in `X-Request-Id` so one pipeline run
-    (Module 4 then Module 5) can be traced across both services. A missing or
-    unusable value is replaced by a generated id -- see
-    `app.core.request_context` for why the value is charset-restricted.
-    """
     request_id = resolve_request_id(request.headers.get(REQUEST_ID_HEADER))
     token = set_request_id(request_id)
     try:
@@ -203,8 +98,6 @@ async def _correlation_id_middleware(request: Request, call_next):
     return response
 
 
-# CORS is irrelevant to the server-side Node backend (no browser, no origin),
-# so `CORS_ALLOW_ORIGINS` defaults to empty -- no browser origin is allowed.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_allow_origins,
@@ -233,11 +126,6 @@ app.include_router(routes_progress.router)
 app.include_router(routes_doctor_summary.router)
 
 
-# --------------------------------------------------------------------------
-# Exception handlers -- every failure leaves as the same JSON envelope.
-# --------------------------------------------------------------------------
-
-
 @app.exception_handler(ServiceError)
 async def _service_error_handler(_: Request, exc: ServiceError) -> JSONResponse:
     logger.warning("service_error %s", safe_meta(code=exc.code, status=exc.status_code))
@@ -248,8 +136,6 @@ async def _service_error_handler(_: Request, exc: ServiceError) -> JSONResponse:
 async def _validation_handler(
     _: Request, exc: RequestValidationError
 ) -> JSONResponse:
-    # Missing/!multipart uploads land here. Report the shape problem without
-    # echoing the submitted body, which could contain report content.
     missing_file = any(
         "file" in [str(p) for p in err.get("loc", ())] for err in exc.errors()
     )
@@ -281,8 +167,6 @@ async def _http_error_handler(
 
 @app.exception_handler(Exception)
 async def _unhandled_handler(_: Request, exc: Exception) -> JSONResponse:
-    # Log the TYPE only. An exception's message may embed document content,
-    # which must never reach the logs (medical data).
     logger.error("unhandled_error %s", safe_meta(error_type=type(exc).__name__))
     return JSONResponse(
         status_code=500,

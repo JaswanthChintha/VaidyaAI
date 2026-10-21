@@ -1,22 +1,5 @@
 'use strict';
 
-/**
- * `src/services/historyService.js` - the shared assembler behind Modules 28,
- * 29, 30 and 32.
- *
- * This is the one module in the longitudinal layer that decides WHICH of a
- * patient's reports exist as far as every timeline answer is concerned. Get it
- * wrong in the permissive direction and one patient's readings appear in
- * another's trend; get it wrong in the restrictive direction and a patient's
- * timeline silently shortens, which MEMORY.md section 6m names as the exact
- * failure the `considered` / `included` / `excludedCount` accounting exists to
- * prevent.
- *
- * It is tested directly rather than through a route because its contract is a
- * function contract - the routes that consume it are covered in
- * `tests/timeline.test.js`. axios is still mocked, because nothing in this
- * suite may reach a service even by accident.
- */
 
 const mongoose = require('mongoose');
 
@@ -28,18 +11,16 @@ jest.mock('axios', () => ({
   }),
 }));
 
-require('./helpers'); // boots src/app.js and therefore src/config/env.js
+require('./helpers');
 const config = require('../src/config/env');
 const Report = require('../src/models/Report');
 const User = require('../src/models/User');
 const { ROLES } = require('../src/utils/roles');
 const historyService = require('../src/services/historyService');
 
-// --- fixtures ---------------------------------------------------------------
 
 let userSeq = 0;
 
-/** A real User row, so `user.id` is a genuine ObjectId the filters can match. */
 async function makeUser(role = ROLES.PATIENT) {
   userSeq += 1;
   const user = await User.create({
@@ -48,11 +29,9 @@ async function makeUser(role = ROLES.PATIENT) {
     password: 'Str0ng!Passw0rd',
     role,
   });
-  // The shape `protect` attaches to `req.user`.
   return { id: user._id.toString(), _id: user._id, role };
 }
 
-/** Module 6's `data` object, in the shape `TimelineReportInput.validated` takes. */
 function validatedFeatureSet(features = { hba1c: 6.4 }) {
   const valid = {};
   for (const [name, value] of Object.entries(features)) {
@@ -67,13 +46,6 @@ function validatedFeatureSet(features = { hba1c: 6.4 }) {
   };
 }
 
-/**
- * One report row.
- *
- * `analysed` and `validated` are separated on purpose: the inclusion rule is a
- * conjunction of two independent facts, and a fixture that could not express
- * one without the other could not exercise either half of it.
- */
 async function seedReport(
   userId,
   { analysed = true, validated = true, status = 'processed', chronoDate, features } = {}
@@ -97,12 +69,6 @@ async function seedReport(
 const day = (n) => new Date(Date.UTC(2026, 0, n, 12, 0, 0));
 
 describe('historyService - the shared timeline assembler', () => {
-  // ========================================================= inclusion rule ==
-  //
-  // The documented rule is `analysis.version > 0` AND `featureValidation`
-  // stored, with `status` DELIBERATELY not consulted. Each case below pins one
-  // consequence of that, because each one is a decision somebody could
-  // reasonably undo by "simplifying" the filter to a status check.
   describe('inclusion and exclusion', () => {
     let user;
     beforeEach(async () => {
@@ -117,8 +83,6 @@ describe('historyService - the shared timeline assembler', () => {
     });
 
     it("EXCLUDES someone else's report as SOMEONE_ELSE (2026-10-03)", async () => {
-      // Another person's values on the owner's timeline read as changes in
-      // the owner. Fully analysed and validated -- excluded for whose it is.
       const own = await seedReport(user.id, { chronoDate: day(1) });
       const theirs = await seedReport(user.id, { chronoDate: day(2) });
       await Report.updateOne({ _id: theirs }, { $set: { 'subject.owner': 'other' } });
@@ -147,14 +111,9 @@ describe('historyService - the shared timeline assembler', () => {
     });
 
     it('INCLUDES a `partial` report when validation succeeded', async () => {
-      // A partial run is one where validation succeeded and the rules or the
-      // predictors did not. Its readings are exactly as validated as a
-      // `processed` report's, and dropping them would shorten the timeline over
-      // a failure that has nothing to do with the readings.
       const id = await seedReport(user.id, { status: 'partial', chronoDate: day(1) });
       const history = await historyService.assembleHistory({ user });
       expect(history.snapshots.map((s) => s.report_id)).toEqual([id]);
-      // And the status travels with it, so this is visible rather than assumed.
       expect(history.included[0].status).toBe('partial');
     });
 
@@ -164,19 +123,12 @@ describe('historyService - the shared timeline assembler', () => {
       expect(history.snapshots).toEqual([]);
 
       const excluded = await historyService.describeExcluded({ user });
-      // The SAME test excluded it - not a special case. Different reason code,
-      // because the report did analyse; it just has no Module 6 verdict.
       expect(excluded.reports[0].reasonCode).toBe(
         historyService.EXCLUSION_REASONS.NO_VALIDATED_FEATURES
       );
     });
 
     it('INCLUDES a `failed` report that still holds a real Module 6 verdict', async () => {
-      // The failure path writes only status bookkeeping; it never touches the
-      // stored payloads or `analysis.version`. A report that analysed and then
-      // failed a LATER re-run still carries a genuine reading of its own
-      // document, and dropping it would remove that reading from the series
-      // because of a subsequent unrelated failure.
       const id = await seedReport(user.id, { status: 'failed', chronoDate: day(1) });
       const history = await historyService.assembleHistory({ user });
       expect(history.snapshots.map((s) => s.report_id)).toEqual([id]);
@@ -184,10 +136,6 @@ describe('historyService - the shared timeline assembler', () => {
     });
 
     it('INCLUDES a report whose every reading was rejected', async () => {
-      // Module 28 renders it as a `TimelineGap` carrying the reason each
-      // feature is unavailable, which beats it vanishing from the series. A gap
-      // has no `value` field on either side of the wire, so it can never be
-      // read back as a zero.
       const doc = await Report.create({
         user: user.id,
         originalName: 'labs.pdf',
@@ -206,8 +154,6 @@ describe('historyService - the shared timeline assembler', () => {
       });
       const history = await historyService.assembleHistory({ user });
       expect(history.snapshots).toHaveLength(1);
-      // Module 6's data object goes VERBATIM - `rejected` included, because it
-      // is the map that lets a gap say WHY a reading is missing.
       expect(history.snapshots[0].validated.rejected.hba1c.rejection_code).toBe(
         'IMPLAUSIBLE_VALUE'
       );
@@ -215,11 +161,11 @@ describe('historyService - the shared timeline assembler', () => {
     });
 
     it('`considered = included + excludedCount` holds across a mixed library', async () => {
-      await seedReport(user.id, { chronoDate: day(1) }); // included
-      await seedReport(user.id, { status: 'partial', chronoDate: day(2) }); // included
-      await seedReport(user.id, { status: 'failed', chronoDate: day(3) }); // included
-      await seedReport(user.id, { analysed: false, validated: false }); // excluded
-      await seedReport(user.id, { validated: false }); // excluded
+      await seedReport(user.id, { chronoDate: day(1) });
+      await seedReport(user.id, { status: 'partial', chronoDate: day(2) });
+      await seedReport(user.id, { status: 'failed', chronoDate: day(3) });
+      await seedReport(user.id, { analysed: false, validated: false });
+      await seedReport(user.id, { validated: false });
 
       const history = await historyService.assembleHistory({ user });
       const excluded = await historyService.describeExcluded({ user });
@@ -227,9 +173,6 @@ describe('historyService - the shared timeline assembler', () => {
 
       expect(summary.included).toBe(3);
       expect(summary.excludedCount).toBe(2);
-      // THE ACCOUNTING IDENTITY. Without it a timeline built from three of a
-      // patient's five reports is indistinguishable from a patient with only
-      // three reports.
       expect(summary.considered).toBe(
         summary.included + summary.excludedCount + summary.droppedByCap
       );
@@ -242,26 +185,11 @@ describe('historyService - the shared timeline assembler', () => {
     });
 
     it('the accounting identity survives the cap engaging', async () => {
-      /**
-       * THE CASE THE TEST ABOVE CANNOT REACH, and an audit found it broken.
-       *
-       * That test seeds fewer eligible reports than the cap, so truncation
-       * never engages and the identity holds trivially. With the cap engaged
-       * the two-term version silently lost reports: 5 eligible + 2 unanalysed
-       * against a cap of 3 reported `considered: 7, included: 3,
-       * excludedCount: 2` and left TWO reports in neither bucket, with
-       * `truncated: true` the only hint that anything was missing.
-       *
-       * `droppedByCap` is the third term that closes it. Keep this strict: a
-       * history block that loses reports is indistinguishable from a patient
-       * who never had them, which is the exact confusion the block exists to
-       * prevent.
-       */
       const realCap = config.history.maxReports;
       config.history.maxReports = 3;
       try {
         for (let i = 1; i <= 5; i += 1) {
-          await seedReport(user.id, { chronoDate: day(i) }); // eligible
+          await seedReport(user.id, { chronoDate: day(i) });
         }
         await seedReport(user.id, { analysed: false, validated: false });
         await seedReport(user.id, { validated: false });
@@ -274,7 +202,6 @@ describe('historyService - the shared timeline assembler', () => {
         expect(summary.considered).toBe(7);
         expect(summary.included).toBe(3);
         expect(summary.excludedCount).toBe(2);
-        // The two eligible reports the cap dropped are named, not lost.
         expect(summary.droppedByCap).toBe(2);
         expect(summary.considered).toBe(
           summary.included + summary.excludedCount + summary.droppedByCap
@@ -285,9 +212,6 @@ describe('historyService - the shared timeline assembler', () => {
     });
 
     it('the three exclusion codes are the only ones, and they are ours', () => {
-      // Fixed machine codes from this table and nowhere else - never built from
-      // a service response and never from user input. SOMEONE_ELSE added
-      // 2026-10-03: a report marked as another person's.
       expect(Object.values(historyService.EXCLUSION_REASONS)).toEqual([
         'NOT_ANALYSED',
         'NO_VALIDATED_FEATURES',
@@ -296,7 +220,6 @@ describe('historyService - the shared timeline assembler', () => {
     });
   });
 
-  // ================================================================ ordering ==
   describe('ordering and the window', () => {
     let user;
     beforeEach(async () => {
@@ -317,8 +240,6 @@ describe('historyService - the shared timeline assembler', () => {
     it('sends `chrono_date` as ISO-8601 with an explicit offset', async () => {
       await seedReport(user.id, { chronoDate: day(1) });
       const history = await historyService.assembleHistory({ user });
-      // The far side reads a naive datetime as UTC, so the offset is the only
-      // thing that stops the two sides disagreeing about a report's position.
       expect(history.snapshots[0].chrono_date).toBe('2026-01-01T12:00:00.000Z');
     });
 
@@ -336,18 +257,11 @@ describe('historyService - the shared timeline assembler', () => {
       await seedReport(user.id, { analysed: false, validated: false });
       const history = await historyService.assembleHistory({ user });
       expect(history.window).toBeNull();
-      // A refusal, not an error, and not an empty-but-successful trend.
       expect(history.snapshots).toEqual([]);
       expect(history.truncated).toBe(false);
     });
   });
 
-  // ==================================================================== cap ===
-  //
-  // `truncated` must be PROVEN by fetching cap+1, not inferred. Inferring it
-  // from `rows.length === cap` calls a patient with exactly `cap` reports
-  // truncated; comparing against the total report count calls a patient with
-  // many unanalysed reports truncated. Both are asserted below.
   describe('the HISTORY_MAX_REPORTS cap', () => {
     const realCap = config.history.maxReports;
     let user;
@@ -369,14 +283,10 @@ describe('historyService - the shared timeline assembler', () => {
     it('takes the MOST RECENT cap reports and returns them oldest-first', async () => {
       const ids = [];
       for (let n = 1; n <= 5; n += 1) {
-        // eslint-disable-next-line no-await-in-loop
         ids.push(await seedReport(user.id, { chronoDate: day(n) }));
       }
 
       const history = await historyService.assembleHistory({ user });
-      // Days 3, 4, 5 - the newest three. Dropping the oldest keeps the series a
-      // trend is actually read off; dropping the newest would answer a question
-      // about the patient's past while claiming to describe their present.
       expect(history.snapshots.map((s) => s.report_id)).toEqual([ids[2], ids[3], ids[4]]);
       expect(history.includedCount).toBe(3);
       expect(history.truncated).toBe(true);
@@ -385,44 +295,35 @@ describe('historyService - the shared timeline assembler', () => {
 
     it('exactly `cap` eligible reports is NOT truncated', async () => {
       for (let n = 1; n <= 3; n += 1) {
-        // eslint-disable-next-line no-await-in-loop
         await seedReport(user.id, { chronoDate: day(n) });
       }
       const history = await historyService.assembleHistory({ user });
       expect(history.includedCount).toBe(3);
-      // The failure mode of inferring truncation from `rows.length === cap`.
       expect(history.truncated).toBe(false);
     });
 
     it('`cap + 1` eligible reports IS truncated - the boundary, proven not guessed', async () => {
       for (let n = 1; n <= 4; n += 1) {
-        // eslint-disable-next-line no-await-in-loop
         await seedReport(user.id, { chronoDate: day(n) });
       }
       const history = await historyService.assembleHistory({ user });
       expect(history.includedCount).toBe(3);
       expect(history.truncated).toBe(true);
-      // The extra probe row is discarded, never sent.
       expect(history.snapshots).toHaveLength(3);
     });
 
     it('many INELIGIBLE reports do not make a short history look truncated', async () => {
       await seedReport(user.id, { chronoDate: day(1) });
       for (let n = 0; n < 10; n += 1) {
-        // eslint-disable-next-line no-await-in-loop
         await seedReport(user.id, { analysed: false, validated: false });
       }
       const history = await historyService.assembleHistory({ user });
       expect(history.includedCount).toBe(1);
-      // `truncated` means "the CAP dropped an eligible report", not "this
-      // patient has reports that did not qualify". The second fact is
-      // `excludedCount`'s job.
       expect(history.truncated).toBe(false);
       expect(history.totalReports).toBe(11);
     });
   });
 
-  // ============================================================== ownership ===
   describe('ownership', () => {
     it('never returns another patient\'s report', async () => {
       const alice = await makeUser();
@@ -448,8 +349,6 @@ describe('historyService - the shared timeline assembler', () => {
 
       const staff = await makeUser(role);
       const history = await historyService.assembleHistory({ user: staff });
-      // No `allowRoles` grant is passed anywhere in this module. A widened
-      // filter here would leak a patient's entire library, not one report.
       expect(history.snapshots).toEqual([]);
       expect(history.totalReports).toBe(0);
       expect((await historyService.describeExcluded({ user: staff })).count).toBe(0);
@@ -459,9 +358,6 @@ describe('historyService - the shared timeline assembler', () => {
       const patient = await makeUser();
       await seedReport(patient.id, { chronoDate: day(1) });
 
-      // `{}` as a filter would match every report in the collection. The
-      // guarantee is that this is impossible to reach, not that no caller does
-      // it today.
       await expect(historyService.assembleHistory({ user: {} })).rejects.toThrow();
       await expect(historyService.assembleHistory({ user: null })).rejects.toThrow();
       await expect(historyService.assembleHistory({ user: undefined })).rejects.toThrow();
@@ -471,11 +367,6 @@ describe('historyService - the shared timeline assembler', () => {
     });
   });
 
-  // ================================================== an explicitly named pair =
-  //
-  // "The id appears in a filter" is not the same guarantee as "the caller may
-  // read this report". Being able to NAME a report is not permission to read
-  // it, and here the difference is a whole patient's data.
   describe('resolveNamedPair', () => {
     let alice;
     let bob;
@@ -536,12 +427,9 @@ describe('historyService - the shared timeline assembler', () => {
         .catch((err) => err);
 
       expect(named.statusCode).toBe(404);
-      // The two are indistinguishable: a non-owner cannot use this parameter to
-      // probe whether a report exists.
       expect(named.statusCode).toBe(random.statusCode);
       expect(named.code).toBe(random.code);
       expect(named.message).toBe(random.message);
-      // And the submitted id is never echoed back.
       expect(named.message).not.toContain(aliceIds[0]);
     });
 
@@ -578,22 +466,16 @@ describe('historyService - the shared timeline assembler', () => {
         })
         .catch((e) => e);
 
-      // NOT a 404. The report demonstrably exists and belongs to the caller;
-      // answering 404 would tell an owner their own report does not exist.
       expect(err.statusCode).toBe(422);
       expect(err.code).toBe('REPORT_NOT_IN_HISTORY');
       expect(err.message).not.toContain(unanalysed);
     });
 
     it('422s exactly one of the two ids, without querying `_id: undefined`', async () => {
-      // The validator enforces both-or-neither; this is the authorisation half,
-      // which a validator cannot do. If only one arrived anyway, the loop would
-      // query `_id: undefined`.
       for (const args of [
         { baseline: aliceIds[0], comparison: undefined },
         { baseline: undefined, comparison: aliceIds[1] },
       ]) {
-        // eslint-disable-next-line no-await-in-loop
         const err = await historyService
           .resolveNamedPair({ user: alice, ...args, snapshotIds: await idsOf(alice) })
           .catch((e) => e);
@@ -603,16 +485,7 @@ describe('historyService - the shared timeline assembler', () => {
     });
   });
 
-  // =========================================================== PHI / payloads =
-  // ================================================= the printed intervals ==
-  //
-  // `loadPrintedParameters` carries the laboratory's own reference interval
-  // forward to the one page that needs it. It is a SEPARATE query on purpose,
-  // so the three tests that matter are: it is scoped like everything else
-  // here, it stays narrow, and its absence degrades to no scale rather than a
-  // wrong one.
   describe('loadPrintedParameters', () => {
-    /** A report carrying an extraction with printed ranges. */
     async function seedExtracted(userId, parameters, extra = {}) {
       const doc = await Report.create({
         user: userId,
@@ -644,17 +517,12 @@ describe('historyService - the shared timeline assembler', () => {
         reportIds: [a, b],
       });
 
-      // Two spellings, each found in its OWN report. That is what lets one
-      // series carry both without this function deciding they are the same.
       expect(printed.get(a).get('Lymphocytes').reference_high).toBe(45);
       expect(printed.get(b).get('LYMPHOCYTES').reference_high).toBe(40);
       expect(printed.get(a).has('LYMPHOCYTES')).toBe(false);
     });
 
     it('will not read another patient\'s report, even when handed its id', async () => {
-      // Being able to NAME a report is not permission to read it. These ids
-      // normally come from the caller's own history, which is a reason to
-      // keep this check rather than to drop it.
       const owner = await makeUser();
       const stranger = await makeUser();
       const theirs = await seedExtracted(owner.id, [
@@ -683,9 +551,6 @@ describe('historyService - the shared timeline assembler', () => {
     });
 
     it('reads the four range fields and NOT the rest of the extraction', async () => {
-      // The narrowness `HISTORY_PROJECTION` argues for, held one function
-      // down. `extraction` is a large payload and this takes four fields out
-      // of one array.
       const user = await makeUser();
       const id = await seedExtracted(
         user.id,
@@ -717,7 +582,6 @@ describe('historyService - the shared timeline assembler', () => {
     it('answers with an empty map, never a throw, when there is nothing to load', async () => {
       const user = await makeUser();
       for (const reportIds of [undefined, null, [], [null, undefined]]) {
-        // eslint-disable-next-line no-await-in-loop
         const printed = await historyService.loadPrintedParameters({ user, reportIds });
         expect(printed.size).toBe(0);
       }
@@ -728,14 +592,10 @@ describe('historyService - the shared timeline assembler', () => {
       const id = await seedReport(user.id, { chronoDate: day(1) });
 
       const printed = await historyService.loadPrintedParameters({ user, reportIds: [id] });
-      // Present with nothing in it, not absent: the report WAS read and had
-      // no parameters, which is a different fact from not being readable.
       expect(printed.get(id).size).toBe(0);
     });
 
     it('keeps the FIRST of two rows printing the same name, as the dashboard does', async () => {
-      // Two screens disagreeing about one test's range would be worse than
-      // either choice; this matches `buildUnanalysedSection`'s own join.
       const user = await makeUser();
       const id = await seedExtracted(user.id, [
         { test_name: 'Zorblex', value_raw: '1', reference_low: 0, reference_high: 9 },
@@ -807,9 +667,6 @@ describe('historyService - the shared timeline assembler', () => {
     });
 
     it('summariseHistory reports absence as `undefined`, never as zero', () => {
-      // Section 6n D6: a documented-but-absent `excluded[]` key means a caller
-      // trusting it reads `undefined` and renders "nothing was excluded".
-      // Both keys must exist when the caller supplied the second query...
       const history = {
         totalReports: 4,
         includedCount: 1,
@@ -825,8 +682,6 @@ describe('historyService - the shared timeline assembler', () => {
       expect(withExcluded.excludedCount).toBe(3);
       expect(withExcluded.excluded).toHaveLength(1);
 
-      // ...and be honestly absent when it did not, rather than reading as
-      // "nothing was excluded".
       const without = historyService.summariseHistory(history, undefined);
       expect(without.excludedCount).toBeUndefined();
       expect(without.excludedCount).not.toBe(0);
@@ -835,16 +690,6 @@ describe('historyService - the shared timeline assembler', () => {
     });
   });
 
-  // ============================================= the date ON the report ==
-  //
-  // `chronoDate` is `reportDate ?? uploadedAt` and is NEVER absent, so a
-  // consumer holding only that cannot tell a date somebody read off their
-  // document from the clock at upload time. Both arrive as a Date.
-  //
-  // FOUND ON THE REAL PAGE, 2026-09-19: a report printed 13 September,
-  // uploaded on the 19th with the optional field blank, was labelled
-  // `9/19/2026 - Test 3.pdf` in the comparison picker. The upload clock was
-  // being presented as the date on the document.
 
   describe('reportDate travels beside chronoDate', () => {
     let user;
@@ -862,28 +707,20 @@ describe('historyService - the shared timeline assembler', () => {
     });
 
     it('carries NULL when none was given, while chronoDate still sorts', async () => {
-      // THE CASE THE PAGE GOT WRONG. `seedReport` maps its `chronoDate`
-      // argument onto the schema's `reportDate`, so omitting it is exactly a
-      // person leaving the optional field blank.
       await seedReport(user.id, {});
       const history = await historyService.assembleHistory({ user });
       const entry = history.included[0];
 
       expect(entry.reportDate).toBeNull();
-      // The sort key is still a real date -- the upload time -- because
-      // ordering must keep working. That is the whole reason the two fields
-      // are different, and why printing one as the other was wrong.
       expect(entry.chronoDate).toBeInstanceOf(Date);
       expect(Number.isNaN(entry.chronoDate.getTime())).toBe(false);
     });
 
     it('does not change the ORDER, only what can be said about it', async () => {
       const older = await seedReport(user.id, { chronoDate: day(1) });
-      const undated = await seedReport(user.id, {}); // sorts on upload time
+      const undated = await seedReport(user.id, {});
       const history = await historyService.assembleHistory({ user });
 
-      // Oldest first, and the undated one sorts by when it arrived -- today,
-      // which is after January.
       expect(history.snapshots.map((s) => s.report_id)).toEqual([older, undated]);
       expect(history.included.map((e) => e.reportDate === null)).toEqual([false, true]);
     });

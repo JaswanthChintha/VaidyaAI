@@ -1,17 +1,3 @@
-"""Turning Module 6's validated output into what a predictor consumes.
-
-The ML layer takes the SAME input the rule engine takes -- Module 6's validated
-feature set, or Module 5's engineered set which is validated in-process first.
-That is not a convenience: it means a model can never see a value Module 6
-rejected as physiologically impossible, for exactly the reason
-`app/schemas/rules.py` gives about the rule engine.
-
-`FeatureBundle` flattens that into the two things a predictor needs -- a plain
-`{name: value}` map, and the quality context needed to be honest about it --
-so `Predictor.predict(features)` stays callable from a test with a dict
-literal.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -34,7 +20,6 @@ INPUT_NONE = "none"
 
 @dataclass
 class FeatureBundle:
-    """Everything the ML engine extracted from one request."""
 
     values: Dict[str, Any] = field(default_factory=dict)
     units: Dict[str, Optional[str]] = field(default_factory=dict)
@@ -60,11 +45,6 @@ class FeatureBundle:
 
 
 def _coerce_validated(source: Any) -> Optional[ValidatedFeaturesInput]:
-    """Accept a `ValidatedFeaturesInput`, a Module 6 result object, or a dict.
-
-    Mirrors the rule engine's own coercion so both consumers of Module 6
-    tolerate exactly the same shapes.
-    """
     if source is None:
         return None
     if isinstance(source, ValidatedFeaturesInput):
@@ -77,12 +57,6 @@ def _coerce_validated(source: Any) -> Optional[ValidatedFeaturesInput]:
 
 
 def _carried_warnings(data: ValidatedFeaturesInput) -> List[StageWarning]:
-    """Every upstream warning, origins intact.
-
-    Same shape as the rule engine's helper, and for the same reason: dropping
-    upstream warnings has already been a real defect on this project twice.
-    `all_warnings` is authoritative when the caller supplied it.
-    """
     if data.all_warnings:
         return list(data.all_warnings)
     rebuilt: List[StageWarning] = list(data.upstream_warnings)
@@ -100,10 +74,6 @@ def _carried_warnings(data: ValidatedFeaturesInput) -> List[StageWarning]:
 def build_feature_bundle(
     validated: Any = None, *, engineered: Any = None
 ) -> FeatureBundle:
-    """Module 6 output (preferred) or Module 5 output -> a `FeatureBundle`.
-
-    When both are supplied `validated` wins, matching `evaluate_rules()`.
-    """
     input_kind = INPUT_NONE
     data = _coerce_validated(validated)
     if data is not None:
@@ -127,9 +97,6 @@ def build_feature_bundle(
     extreme: List[str] = []
     for name, incoming in data.valid.items():
         if name not in FEATURES:
-            # Not silently ignored: a non-canonical key means an upstream
-            # naming drift, and the ML layer says so rather than quietly
-            # predicting without it.
             bundle.warnings.append(
                 f"'{name}' is not a canonical feature and was ignored by the ML "
                 "prediction engine"

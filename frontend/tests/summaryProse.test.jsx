@@ -4,36 +4,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Dashboard from '../src/pages/Dashboard';
 import { api } from '../src/lib/api';
 
-/**
- * Module 33 at the rendering layer -- the closing summary, rewritten.
- *
- * ==========================================================================
- * WHY EVERY ASSERTION HERE IS ABOUT DOM SHAPE
- * ==========================================================================
- *
- * jsdom renders a `hidden` element's children exactly like any others, which
- * is the same trap §6an records for `<details>`: every `getByText` still finds
- * text no reader can see, so "is this sentence present" cannot answer "can the
- * reader see it". When the rewrite lands, the composed body is HIDDEN rather
- * than unmounted -- so a test written the obvious way would pass whether the
- * page showed the rewrite, the composed text, or both at once.
- *
- * `toBeVisible()` honours the `hidden` attribute. That is the matcher this
- * whole file turns on.
- *
- * ==========================================================================
- * WHAT MUST BE TRUE, WHATEVER THE MODEL DOES
- * ==========================================================================
- *
- *   1. The reader sees exactly ONE of the two -- never both, never neither.
- *   2. THE CLOSING LINE IS NEVER TOUCHED. It is the one sentence stating what
- *      this tool is, and it lives outside the rewritable body by construction.
- *   3. Every failure path lands on the composed text, which is what the page
- *      showed before Module 33 existed. There is no error state because there
- *      is nothing to report: the page is complete either way.
- *   4. What is SENT is what is RENDERED. The sentences are read out of the
- *      DOM, so the request cannot drift from the screen.
- */
 
 const DASHBOARD = {
   overall: {
@@ -83,41 +53,18 @@ function withDashboard(dashboard = DASHBOARD) {
   });
 }
 
-/** The ai-service answered with an approved rewrite. */
 function withProse(text) {
   return vi.spyOn(api, 'rewriteSummary').mockResolvedValue({
     prose: { outcome: 'generated', text },
   });
 }
 
-/** Every refusal shape: a 200 carrying an outcome and no text. */
 function withRefusal(outcome) {
   return vi.spyOn(api, 'rewriteSummary').mockResolvedValue({
     prose: { outcome, text: null },
   });
 }
 
-/* MUTATION-TESTED, AND ONE SURVIVED HONESTLY.
- *
- *   KILLED  the composed body never hidden (2 tests)
- *   KILLED  the closing line moved inside the rewritable body (5)
- *   KILLED  the names no longer sent (1)
- *   SURVIVED `typeof text === 'string' && text.trim()` removed
- *
- * The survivor is recorded rather than papered over. Asking which INPUT
- * reaches it answers why: without the guard, whitespace calls `setProse('')`
- * which is falsy downstream, and a number, a null or a missing key make
- * `text.trim()` throw into the effect's own catch -- so EVERY input still
- * lands on the composed text and nothing observable changes. The check is
- * correct defensive code (control flow through an exception is worse than an
- * explicit test) but it is not independently observable, so this file does
- * not claim to test it.
- *
- * Worth recording how that was nearly got wrong: a scratch probe printed the
- * thrown string as though it were a value and concluded the mutant would show
- * prose. It would not -- the throw propagates to the catch. A probe's output
- * is a claim about the probe.
- */
 
 const body = () => document.querySelector('.in-short__body');
 const prose = () => document.querySelector('.in-short__prose');
@@ -134,18 +81,12 @@ describe('when the rewrite is approved', () => {
     renderDashboard();
 
     await waitFor(() => expect(prose()).not.toBeNull());
-    // ONE OF THE TWO, NEVER BOTH. `toBeInTheDocument` cannot tell these apart
-    // -- the composed body is still in the DOM and jsdom will happily find
-    // its text.
     expect(prose()).toBeVisible();
     expect(body()).not.toBeVisible();
     expect(body().hasAttribute('hidden')).toBe(true);
   });
 
   it('NEVER replaces or hides the closing line', async () => {
-    // The one sentence on this panel that says what this tool is. A model may
-    // not reword it and a rewrite may not swallow it, which is why it sits
-    // outside the rewritable body by construction.
     withDashboard();
     withProse('A rewritten summary.');
     renderDashboard();
@@ -153,7 +94,6 @@ describe('when the rewrite is approved', () => {
     await waitFor(() => expect(prose()).not.toBeNull());
     expect(closing()).toBeVisible();
     expect(closing().textContent).toMatch(/not a diagnosis/i);
-    // And it is not INSIDE the part that gets hidden.
     expect(closing().closest('.in-short__body')).toBeNull();
   });
 
@@ -166,15 +106,10 @@ describe('when the rewrite is approved', () => {
     const visible = [...document.querySelectorAll('.in-short p')].filter(
       (node) => !node.closest('[hidden]')
     );
-    // THREE, and each is there for a reason: the headline verdict, the
-    // rewrite, and the closing line. The headline sits outside the rewritable
-    // body deliberately -- it is the one sentence a reader takes away, and it
-    // is composed straight from Module 18's label.
     expect(visible).toHaveLength(3);
     expect(visible.map((n) => n.className)).toEqual(
       expect.arrayContaining(['in-short__prose', 'in-short__closing'])
     );
-    // And NOTHING composed inside the body is visible alongside the rewrite.
     const compositionStillShowing = [...body().querySelectorAll('p')].filter(
       (node) => !node.closest('[hidden]')
     );
@@ -202,8 +137,6 @@ describe('every refusal lands on the composed text', () => {
   });
 
   it('renders the composed body when the request itself fails', async () => {
-    // A rewrite that did not happen is not an error the reader has any use
-    // for. There must be no error state and no empty panel.
     withDashboard();
     vi.spyOn(api, 'rewriteSummary').mockRejectedValue(new Error('network'));
     renderDashboard();
@@ -216,8 +149,6 @@ describe('every refusal lands on the composed text', () => {
   });
 
   it('renders the composed body when the reply has a shape nobody expected', async () => {
-    // NOT A CRASH AND NOT A BLANK PANEL. `prose` stays null unless a real
-    // string arrived, so a null, a number or a missing key all land here.
     withDashboard();
     vi.spyOn(api, 'rewriteSummary').mockResolvedValue({ prose: { text: 42 } });
     renderDashboard();
@@ -229,8 +160,6 @@ describe('every refusal lands on the composed text', () => {
   });
 
   it('treats an all-whitespace rewrite as no rewrite', async () => {
-    // An empty rewrite that replaced the body would blank the summary -- the
-    // worst of the three outcomes, and the one a truthy check would allow.
     withDashboard();
     withProse('   \n  ');
     renderDashboard();
@@ -251,9 +180,6 @@ describe('what is sent is what is rendered', () => {
     await waitFor(() => expect(spy).toHaveBeenCalled());
     const [id, sentences] = spy.mock.calls[0];
     expect(id).toBe('abc');
-    // THE SENTENCES ARE THE PAGE'S OWN. Asserted against the rendered body
-    // rather than against a fixture, because a fixture would be a second
-    // composition and could drift from the screen without failing.
     const rendered = [...body().querySelectorAll('p')].map((node) =>
       node.textContent.replace(/\s+/g, ' ').trim()
     );
@@ -268,33 +194,9 @@ describe('what is sent is what is rendered', () => {
 
     await waitFor(() => expect(spy).toHaveBeenCalled());
     const names = spy.mock.calls[0][2];
-    // Every condition on the page, and the laboratory's own flagged test --
-    // the service must not have to guess which tokens are names.
     expect(names).toEqual(expect.arrayContaining(['Anemia', 'Diabetes', 'Potassium']));
   });
 
-  /* ======================================================================
-     A NAME MAY ONLY BE REQUIRED TO SURVIVE IF IT IS IN THE SENTENCES.
-     ======================================================================
-
-     `251c971` removed the paragraph naming the conditions this tool could
-     not check, and left those names in the must-survive list. The rewrite
-     was then required to reproduce names the model had never been shown.
-
-     THE REAL COST, MEASURED ON THE STORED RECORDS OF ALL FOUR REPORTS:
-     0 unassessed conditions -> outcome `generated` (2 of 2); 4 unassessed
-     -> no prose at all (2 of 2), by two different routes. Test 3 refused
-     with `facts_missing`; Test 2's retry fed the model the names it had
-     "dropped" and the model wrote about conditions that were never
-     described, tripping `facts_invented`. An impossible must-survive list
-     does not merely refuse -- it pressures the model into inventing.
-
-     THE INVARIANT IS THE ASSERTION, NOT THE ONE ABSENCE. Testing only that
-     `Vitamin D Deficiency` is missing would pass again the moment some
-     other name's paragraph is removed, which is precisely how this arrived.
-     So the check is the contract `_missing` actually applies: every name
-     sent must appear in the text sent, compared the way `summary_prose.py`
-     compares it -- case-insensitive substring. */
   const WITH_UNASSESSED = {
     ...DASHBOARD,
     conditions: [
@@ -317,8 +219,6 @@ describe('what is sent is what is rendered', () => {
     await waitFor(() => expect(spy).toHaveBeenCalled());
     const [, sentences, names] = spy.mock.calls[0];
 
-    // A count of zero out of zero is not a pass: this asserts nothing at all
-    // unless names were actually sent.
     expect(names.length).toBeGreaterThan(0);
 
     const sent = sentences.join(' ').toLowerCase();
@@ -333,8 +233,6 @@ describe('what is sent is what is rendered', () => {
 
     await waitFor(() => expect(spy).toHaveBeenCalled());
     const names = spy.mock.calls[0][2];
-    // The unassessed one is absent; the assessed ones are untouched, so this
-    // fails on a fix that simply stopped sending names.
     expect(names).not.toContain('Vitamin D Deficiency');
     expect(names).toEqual(expect.arrayContaining(['Anemia', 'Diabetes', 'Potassium']));
   });
@@ -350,7 +248,6 @@ describe('what is sent is what is rendered', () => {
   });
 
   it('asks once, not once per render', async () => {
-    // One model call per report. The free tier is twenty a day.
     withDashboard();
     const spy = withProse('rewritten');
     const { rerender } = renderDashboard();
@@ -393,8 +290,6 @@ describe('Module 34 -- general context in the summary', () => {
     await waitFor(() => expect(ctx()).not.toBeNull());
     expect(ctx()).toBeVisible();
     expect(ctx().textContent).toMatch(/commonly associated with inflammation/);
-    // A SUMMARY REWRITE MAY NOT REWORD OR SWALLOW THESE. They sit outside the
-    // body Module 33 replaces, by construction.
     expect(ctx().closest('.in-short__body')).toBeNull();
   });
 
@@ -412,22 +307,6 @@ describe('Module 34 -- general context in the summary', () => {
   });
 
   it('names a finding whose description was refused, instead of dropping it', async () => {
-    // THE DEFECT, FROM A REAL REPORT. `03-renal-anaemia-deficiency.pdf`
-    // produced FOUR findings and the page showed THREE:
-    //
-    //     Serum Creatinine       raised    available=true
-    //     Haemoglobin            lowered   available=true
-    //     Vitamin D, 25-Hydroxy  lowered   available=FALSE  <-- gone
-    //     Vitamin B12            lowered   available=true
-    //
-    // Vitamin D was correctly identified as out of range -- the rule engine
-    // recorded `vitamin_d 12 < 20`, and "Vitamin D Deficiency" is named in
-    // the sentence above as one of five needing a closer look. Only its
-    // SENTENCE was missing (`refused_by: "number"`, a correct Module 24
-    // refusal), and the page turned that into the finding being absent.
-    //
-    // A shorter list reads as the complete one. The name and the direction
-    // are facts this tool derived, not the model's, so both survive.
     withDashboard();
     vi.spyOn(api, 'rewriteSummary').mockResolvedValue({ prose: null });
     withContext([
@@ -447,18 +326,13 @@ describe('Module 34 -- general context in the summary', () => {
 
     const box = ctx();
     expect(box).not.toBeNull();
-    // The finding is NAMED, with its direction.
     expect(box.textContent).toMatch(/Vitamin D, 25-Hydroxy/);
     expect(box.textContent).toMatch(/\(lowered\)/);
-    // And the reader is told what is missing rather than shown a short list.
     expect(box.textContent).toMatch(/No general description could be prepared/i);
-    // The described entry is untouched.
     expect(box.textContent).toMatch(/commonly associated with inflammation/);
   });
 
   it('renders NOTHING when every entry was refused', async () => {
-    // No notice and no placeholder: the reader loses a paragraph they never
-    // saw, and an absence is not created by withholding one.
     withDashboard();
     vi.spyOn(api, 'rewriteSummary').mockResolvedValue({ prose: null });
     withContext([
@@ -472,12 +346,6 @@ describe('Module 34 -- general context in the summary', () => {
     expect(document.body.textContent).not.toMatch(/could not be prepared/i);
   });
 
-  // ======================= a description STILL BEING WRITTEN (2026-09-24) ==
-  //
-  // The ai-service answers within a deadline and leaves slow descriptions
-  // running (`refused_by: "in_progress"`). "Could not be prepared" would be
-  // false for those, and during an outage the FIRST view is the one where
-  // nothing is finished yet.
 
   it('says a description is still being prepared, not that it could not be', async () => {
     withDashboard();
@@ -523,9 +391,6 @@ describe('Module 34 -- general context in the summary', () => {
   });
 
   it('SENDS A NAME AND A DIRECTION, AND NO VALUE', async () => {
-    // The contract the whole module rests on. Nothing about the reader may
-    // reach the model, or "generally associated with" becomes a statement
-    // about a named person.
     withDashboard();
     vi.spyOn(api, 'rewriteSummary').mockResolvedValue({ prose: null });
     const spy = withContext([GOOD]);
@@ -538,17 +403,10 @@ describe('Module 34 -- general context in the summary', () => {
       expect(Object.keys(f).sort()).toEqual(['direction', 'test_name']);
       expect(['raised', 'lowered']).toContain(f.direction);
     }
-    // The laboratory's own flagged test is in there, by name.
     expect(findings.some((f) => /Potassium/i.test(f.test_name))).toBe(true);
   });
 
   it('never asks about a PROFILE answer, and never sends a feature key', async () => {
-    // Found on the live page: "bmi (raised)" appeared among the findings. BMI
-    // comes from the questionnaire, so "a raised body mass index is commonly
-    // associated with..." under a heading about this report's results is a
-    // finding computed from what the reader typed, presented as something the
-    // laboratory measured -- §6t's category error. And "bmi" is the internal
-    // feature key, which §6an-i swept off every reader-facing screen.
     withDashboard({
       ...DASHBOARD,
       laboratory: [
